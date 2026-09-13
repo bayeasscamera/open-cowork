@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runPiAiOneShotMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../main/agent/sdk-one-shot', () => ({
+vi.mock('../src/main/agent/sdk-one-shot', () => ({
   runPiAiOneShot: runPiAiOneShotMock,
 }));
 
-import type { AppConfig } from '../../main/config/config-store';
-import { MemoryLLMClient } from '../../main/memory/memory-llm-client';
+import type { AppConfig } from '../src/main/config/config-store';
+import { MemoryLLMClient } from '../src/main/memory/memory-llm-client';
 
 function makeConfig(timeoutMs: number): AppConfig {
   return {

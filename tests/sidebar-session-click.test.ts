@@ -20,7 +20,7 @@
  * (confirming the fix is correct).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useAppStore } from '../../renderer/store';
+import { useAppStore } from '../src/renderer/store';
 
 describe('Sidebar handleSessionClick — sessionStates dep loop prevention', () => {
   beforeEach(() => {

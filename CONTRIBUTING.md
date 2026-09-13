@@ -56,7 +56,7 @@ src/
     └── styles/              # Tailwind + global CSS
 ```
 
-Test files live in `src/` alongside their source, or under `tests/` at the root, mirroring the source path (e.g. `src/main/mcp/foo.ts` → `src/tests/mcp/foo.test.ts`).
+Test files live under `tests/` at the repository root, co-located by feature (e.g. `src/main/mcp/mcp-manager.ts` → `tests/mcp-manager-core.test.ts`).
 
 ---
 
@@ -163,14 +163,14 @@ Open Cowork uses **Vitest**.
 
 **File placement**
 
-Place test files next to their source or under a mirrored path:
+Place test files under the root `tests/` directory, named after the module:
 
 ```
-src/main/mcp/mcp-manager.ts      →  src/tests/mcp/mcp-manager.test.ts
-src/main/session/session-manager.ts  →  src/tests/session/session-manager.test.ts
+src/main/mcp/mcp-manager.ts      →  tests/mcp-manager-core.test.ts
+src/main/session/session-manager.ts  →  tests/session-manager-*.test.ts
 ```
 
-Both `src/**/*.{test,spec}.ts` and `tests/**/*.{test,spec}.ts` are picked up automatically.
+`tests/**/*.{test,spec}.ts` are picked up automatically.
 
 **Run tests**
 

@@ -6,7 +6,7 @@ import type { ChildProcess, SpawnOptions } from 'child_process';
 import {
   buildWindowsShellInvocation,
   createWindowsBashOperations,
-} from '../../main/agent/windows-bash-operations';
+} from '../src/main/agent/windows-bash-operations';
 
 class FakeChildProcess extends EventEmitter {
   stdout = new EventEmitter();

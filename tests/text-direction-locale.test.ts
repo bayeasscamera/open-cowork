@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AUTO_TEXT_DIRECTION_PROPS } from '../renderer/utils/text-direction';
+import { AUTO_TEXT_DIRECTION_PROPS } from '../src/renderer/utils/text-direction';
 
 describe('automatic chat text direction', () => {
   it('delegates direction detection to the browser for every text block', () => {

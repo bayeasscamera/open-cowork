@@ -24,13 +24,13 @@ vi.mock('@mariozechner/pi-ai', () => ({
   getModel: vi.fn(() => undefined),
 }));
 
-vi.mock('../../main/agent/shared-auth', () => ({
+vi.mock('../src/main/agent/shared-auth', () => ({
   getSharedAuthStorage: () => ({ setRuntimeApiKey: vi.fn() }),
   ModelRegistry: vi.fn(),
 }));
 
-import type { ContentBlock } from '../../renderer/types';
-import { serializeMessageContentForHistory } from '../../main/agent/agent-runner';
+import type { ContentBlock } from '../src/renderer/types';
+import { serializeMessageContentForHistory } from '../src/main/agent/agent-runner';
 
 describe('serializeMessageContentForHistory', () => {
   it('serializes a single text block as raw text (legacy compatible)', () => {

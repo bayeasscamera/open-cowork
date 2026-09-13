@@ -69,7 +69,7 @@ describe('runPreflight', () => {
     touch(path.join(tmpDir, 'lima-agent/index.js'));
     makeSkillsDir(tmpDir);
 
-    const { runPreflight } = await import('../main/preflight');
+    const { runPreflight } = await import('../src/main/preflight');
     const issues = runPreflight();
     expect(issues).toHaveLength(0);
 
@@ -91,7 +91,7 @@ describe('runPreflight', () => {
     touch(path.join(tmpDir, 'lima-agent/index.js'));
     makeSkillsDir(tmpDir);
 
-    const { runPreflight } = await import('../main/preflight');
+    const { runPreflight } = await import('../src/main/preflight');
     const issues = runPreflight();
     const critical = issues.filter((i) => i.severity === 'critical');
     expect(critical).toHaveLength(1);
@@ -116,7 +116,7 @@ describe('runPreflight', () => {
     touch(path.join(tmpDir, 'lima-agent/index.js'));
     makeSkillsDir(tmpDir);
 
-    const { runPreflight } = await import('../main/preflight');
+    const { runPreflight } = await import('../src/main/preflight');
     const issues = runPreflight();
     const critical = issues.filter((i) => i.severity === 'critical');
     expect(critical).toHaveLength(1);
@@ -141,7 +141,7 @@ describe('runPreflight', () => {
     touch(path.join(tmpDir, 'wsl-agent/index.js'));
     makeSkillsDir(tmpDir);
 
-    const { runPreflight } = await import('../main/preflight');
+    const { runPreflight } = await import('../src/main/preflight');
     const issues = runPreflight();
     const critical = issues.filter((i) => i.severity === 'critical');
     expect(critical).toHaveLength(1);
@@ -167,7 +167,7 @@ describe('runPreflight', () => {
     touch(path.join(tmpDir, 'lima-agent/index.js'));
     // skills directory intentionally omitted
 
-    const { runPreflight } = await import('../main/preflight');
+    const { runPreflight } = await import('../src/main/preflight');
     const issues = runPreflight();
     const warnings = issues.filter((i) => i.severity === 'warning');
     expect(warnings.some((w) => w.resource === 'Built-in Skills')).toBe(true);
@@ -188,7 +188,7 @@ describe('runPreflight', () => {
     }));
 
     // Do NOT create any resources in tmpDir — should still return []
-    const { runPreflight } = await import('../main/preflight');
+    const { runPreflight } = await import('../src/main/preflight');
     const issues = runPreflight();
     expect(issues).toHaveLength(0);
   });

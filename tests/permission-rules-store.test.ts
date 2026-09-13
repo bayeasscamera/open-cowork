@@ -20,7 +20,7 @@ import {
   rememberAlwaysAllow,
   setAutoApproveAll,
   setPermissionRules,
-} from '../../main/config/permission-rules-store';
+} from '../src/main/config/permission-rules-store';
 
 const SESSION_A = 'session-a';
 const SESSION_B = 'session-b';

@@ -30,7 +30,7 @@ vi.mock('electron', () => ({
 }));
 
 // Mock the logger to avoid file I/O
-vi.mock('../../main/utils/logger', () => ({
+vi.mock('../src/main/utils/logger', () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
@@ -60,7 +60,7 @@ describe('StdioChannel', () => {
   }
 
   async function getStdioChannel() {
-    const { StdioChannel } = await import('../../main/remote/channels/stdio-channel');
+    const { StdioChannel } = await import('../src/main/remote/channels/stdio-channel');
     return new StdioChannel();
   }
 

@@ -52,7 +52,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../main/config/config-store', () => {
+vi.mock('../src/main/config/config-store', () => {
   const configStore = {
     getAll: () => ({ ...mockConfigState.config }),
     get: (key: string) => mockConfigState.config[key],
@@ -73,13 +73,13 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DatabaseInstance, MessageRow, SessionRow } from '../../main/db/database';
+import type { DatabaseInstance, MessageRow, SessionRow } from '../src/main/db/database';
 import type {
   MemoryCompletionRequest,
   MemoryLLMClientLike,
-} from '../../main/memory/memory-llm-client';
-import { MemoryService } from '../../main/memory/memory-service';
-import { configStore } from '../../main/config/config-store';
+} from '../src/main/memory/memory-llm-client';
+import { MemoryService } from '../src/main/memory/memory-service';
+import { configStore } from '../src/main/config/config-store';
 
 class MockMemoryLLMClient implements MemoryLLMClientLike {
   async complete(request: MemoryCompletionRequest): Promise<{ text: string }> {

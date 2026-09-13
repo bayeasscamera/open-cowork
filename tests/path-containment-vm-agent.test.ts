@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePathForContainment, isPathWithinRoot } from '../main/tools/path-containment';
+import { normalizePathForContainment, isPathWithinRoot } from '../src/main/tools/path-containment';
 
 describe('normalizePathForContainment', () => {
   it('normalizes backslashes to forward slashes', () => {

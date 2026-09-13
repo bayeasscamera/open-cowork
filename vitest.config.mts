@@ -26,7 +26,6 @@ export default defineConfig({
         'dist/',
         'dist-electron/',
         'src/renderer/',
-        'src/tests/',
         'tests/',
         '**/*.d.ts',
         '**/*.config.*',

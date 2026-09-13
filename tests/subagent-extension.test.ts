@@ -6,14 +6,14 @@ import { describe, it, expect, vi } from 'vitest';
 // `vi.mock` factories are hoisted above imports/const declarations, so the
 // mock function must be created via `vi.hoisted` to avoid a TDZ reference error.
 const { mockGetAll } = vi.hoisted(() => ({ mockGetAll: vi.fn() }));
-vi.mock('../../main/config/config-store', () => ({
+vi.mock('../src/main/config/config-store', () => ({
   configStore: {
     getAll: mockGetAll,
     get: vi.fn(),
   },
 }));
 
-import { SubagentExtension } from '../../main/agent/subagent-extension';
+import { SubagentExtension } from '../src/main/agent/subagent-extension';
 
 type ToolExecuteFn = (id: string, params: unknown) => Promise<unknown>;
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePathAgainstWorkspace } from '../shared/workspace-path';
+import { resolvePathAgainstWorkspace } from '../src/shared/workspace-path';
 
 describe('resolvePathAgainstWorkspace', () => {
   it('returns empty/falsy pathValue as-is', () => {

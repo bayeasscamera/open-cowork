@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import type { ServerEvent } from '../../renderer/types';
+import type { ServerEvent } from '../src/renderer/types';
 
 // ── SessionManager delegation tests ──
 

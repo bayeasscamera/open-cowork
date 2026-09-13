@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
 }));
 
 // Mock logger to suppress output during tests
-vi.mock('../../main/utils/logger', () => ({
+vi.mock('../src/main/utils/logger', () => ({
   log: vi.fn(),
   logWarn: vi.fn(),
   logError: vi.fn(),
@@ -25,12 +25,12 @@ vi.mock('../../main/utils/logger', () => ({
 }));
 
 // Mock shell-resolver
-vi.mock('../../main/utils/shell-resolver', () => ({
+vi.mock('../src/main/utils/shell-resolver', () => ({
   getDefaultShell: () => '/bin/bash',
 }));
 
-import { MCPManager } from '../../main/mcp/mcp-manager';
-import type { MCPServerConfig } from '../../main/mcp/mcp-manager';
+import { MCPManager } from '../src/main/mcp/mcp-manager';
+import type { MCPServerConfig } from '../src/main/mcp/mcp-manager';
 
 type TestMCPClient = {
   listTools?: () => Promise<{

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { EXPORTABLE_FIELDS, FIELD_VALIDATORS } from '../../main/config/config-store';
+import { EXPORTABLE_FIELDS, FIELD_VALIDATORS } from '../src/main/config/config-store';
 
 /**
  * Test the config file export/import logic.

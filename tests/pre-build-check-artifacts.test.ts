@@ -6,7 +6,7 @@ import { createRequire } from 'module';
 
 // Import the runChecks function from the CommonJS script using createRequire
 const require = createRequire(import.meta.url);
-const { runChecks } = require('../../scripts/pre-build-check.js');
+const { runChecks } = require('../scripts/pre-build-check.js');
 
 // ---------------------------------------------------------------------------
 // Helpers

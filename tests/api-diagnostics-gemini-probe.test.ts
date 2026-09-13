@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isLikelyAuthFailure,
   shouldContinueAfterGeminiAuthProbeError,
-} from '../../main/config/api-diagnostics';
+} from '../src/main/config/api-diagnostics';
 
 describe('Gemini diagnostics auth probe handling', () => {
   it('continues to model verification when the lightweight models.get probe is unavailable', () => {

@@ -37,6 +37,11 @@ const mockConfigState = vi.hoisted(() => ({
       maxNavSteps: 2,
       ingestionConcurrency: 2,
       storageRoot: '',
+      evalEnabled: true,
+      evalWorkspaces: [],
+      evalMaxRounds: 6,
+      evalArtifactsRoot: '',
+      promptIterationRounds: 2,
     },
     enableThinking: false,
     isConfigured: true,
@@ -52,7 +57,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../main/config/config-store', () => {
+vi.mock('../src/main/config/config-store', () => {
   const configStore = {
     getAll: () => ({ ...mockConfigState.config }),
     get: (key: string) => mockConfigState.config[key],
@@ -73,15 +78,18 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DatabaseInstance, MessageRow, SessionRow } from '../../main/db/database';
+import type { DatabaseInstance, MessageRow, SessionRow } from '../src/main/db/database';
+import { MemoryEvalHarness } from '../src/main/memory/memory-eval-harness';
 import type {
   MemoryCompletionRequest,
   MemoryLLMClientLike,
-} from '../../main/memory/memory-llm-client';
-import { MemoryService } from '../../main/memory/memory-service';
-import { configStore } from '../../main/config/config-store';
+} from '../src/main/memory/memory-llm-client';
+import { MemoryPromptOptimizer } from '../src/main/memory/memory-prompt-optimizer';
+import { MemoryService } from '../src/main/memory/memory-service';
+import type { MemoryRuntimeConfig } from '../src/main/config/config-store';
+import { configStore } from '../src/main/config/config-store';
 
-class SmokeMemoryLLM implements MemoryLLMClientLike {
+class EvalMockLLM implements MemoryLLMClientLike {
   async complete(request: MemoryCompletionRequest): Promise<{ text: string }> {
     if (request.systemPrompt.includes('Memory Profiler')) {
       return {
@@ -102,25 +110,35 @@ class SmokeMemoryLLM implements MemoryLLMClientLike {
 
     if (
       request.systemPrompt.includes('experience memory extraction system') ||
-      request.systemPrompt.includes('memory extraction system')
+      request.systemPrompt.includes('Given a full user-assistant session')
     ) {
-      const isWorkspaceA = request.userPrompt.includes('workspace A');
+      const transcript = request.userPrompt;
+      if (transcript.includes('gateway token rotation')) {
+        return {
+          text: JSON.stringify({
+            session_summary: '记录 gateway token rotation 与 remote gateway 约束',
+            session_keywords: ['gateway', 'rotation'],
+            chunks: [
+              {
+                summary: 'gateway token rotation 的实现与约束',
+                details: '需要同时同步 remote gateway，避免状态不一致。',
+                keywords: ['gateway', 'remote gateway'],
+                source_turns: [1, 2, 3, 4],
+              },
+            ],
+          }),
+        };
+      }
       return {
         text: JSON.stringify({
-          session_summary: isWorkspaceA
-            ? 'workspace A 的 gateway token rotation 经验'
-            : 'workspace B 的其他经验',
-          session_keywords: isWorkspaceA ? ['gateway', 'rotation'] : ['other'],
+          session_summary: '记录订单状态机设计约束',
+          session_keywords: ['refund', 'cancel'],
           chunks: [
             {
-              summary: isWorkspaceA
-                ? 'workspace A 中关于 gateway token rotation 的结论'
-                : 'workspace B 中不相关的总结',
-              details: isWorkspaceA
-                ? '在 workspace A 中完成 gateway token rotation，并保留后续整理说明。'
-                : '这条记录属于另一个 workspace。',
-              keywords: isWorkspaceA ? ['gateway', 'rotation'] : ['other'],
-              source_turns: [1, 2, 3, 4],
+              summary: 'refunded 和 cancelled 不能合并',
+              details: '两者代表不同财务语义。',
+              keywords: ['refunded', 'cancelled', '财务语义'],
+              source_turns: [1, 2],
             },
           ],
         }),
@@ -131,8 +149,31 @@ class SmokeMemoryLLM implements MemoryLLMClientLike {
       return {
         text: JSON.stringify({
           sufficient: true,
-          reason: 'summaries_are_enough',
+          reason: 'enough',
           actions: [],
+        }),
+      };
+    }
+
+    if (request.systemPrompt.includes('strict memory retrieval evaluator')) {
+      return {
+        text: JSON.stringify({
+          score: request.userPrompt.includes('gateway token rotation') ? 0.9 : 0.8,
+          reason: 'good',
+        }),
+      };
+    }
+
+    if (request.systemPrompt.includes('optimizing prompts for a memory system')) {
+      return {
+        text: JSON.stringify({
+          candidates: [
+            {
+              coreMemoryUpdateSystemPrompt: 'candidate core prompt',
+              sessionChunkExtractionPrompt: 'candidate chunk prompt',
+              memoryNavigationPrompt: 'candidate nav prompt',
+            },
+          ],
         }),
       };
     }
@@ -222,136 +263,75 @@ function createDatabaseInstance(db: Database.Database): DatabaseInstance {
   };
 }
 
-function makeMessages(
-  sessionId: string,
-  items: Array<{ role: 'user' | 'assistant'; text: string; timestamp: number }>
-) {
-  return items.map((item, index) => ({
-    id: `${sessionId}-${index}`,
-    sessionId,
-    role: item.role,
-    content: [{ type: 'text' as const, text: item.text }],
-    timestamp: item.timestamp,
-  }));
-}
-
-describe('memory smoke harness', () => {
+describe('MemoryEvalHarness and MemoryPromptOptimizer', () => {
   let rawDb: Database.Database;
   let service: MemoryService;
-  let storageRoot: string;
+  let tempRoot: string;
+  const llm = new EvalMockLLM();
 
   beforeEach(() => {
-    storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-smoke-'));
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-eval-'));
     rawDb = new Database(':memory:');
     createSchema(rawDb);
-    service = new MemoryService(createDatabaseInstance(rawDb), {
-      llmClient: new SmokeMemoryLLM(),
-    });
+    service = new MemoryService(createDatabaseInstance(rawDb), { llmClient: llm });
+    const runtimeConfig = mockConfigState.config.memoryRuntime as unknown as MemoryRuntimeConfig;
+    const memoryRoot = path.join(tempRoot, 'memory-root');
     configStore.update({
       memoryEnabled: true,
       memoryRuntime: {
-        llm: {
-          inheritFromActive: true,
-          apiKey: '',
-          baseUrl: '',
-          model: '',
-          timeoutMs: 180000,
-        },
-        embedding: {
-          inheritFromActive: true,
-          apiKey: '',
-          baseUrl: '',
-          model: 'text-embedding-3-small',
-          timeoutMs: 180000,
-        },
-        useEmbedding: false,
-        maxNavSteps: 2,
-        ingestionConcurrency: 2,
-        storageRoot: path.join(storageRoot, 'memory-root'),
+        ...runtimeConfig,
+        storageRoot: memoryRoot,
+        evalArtifactsRoot: path.join(memoryRoot, 'artifacts'),
       },
     });
   });
 
   afterEach(() => {
     rawDb.close();
-    fs.rmSync(storageRoot, { recursive: true, force: true });
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  it('simulates multi-session recall across same and different workspaces', async () => {
-    const workspaceA = '/repo/workspace-a';
-    const workspaceB = '/repo/workspace-b';
+  it('runs a multi-workspace eval harness and writes artifacts', async () => {
+    const harness = new MemoryEvalHarness(service, llm);
+    const artifactDir = path.join(tempRoot, 'memory-root', 'artifacts', 'run-1');
+    const report = await harness.run({ artifactDir });
 
-    await service.enqueueIngestion({
-      session: {
-        id: 'a-1',
-        title: 'Gateway implementation',
-        status: 'idle',
-        cwd: workspaceA,
-        mountedPaths: [],
-        allowedTools: [],
-        memoryEnabled: true,
-        createdAt: 1000,
-        updatedAt: 1000,
-      },
-      prompt: '实现 gateway token rotation',
-      messages: makeMessages('a-1', [
-        { role: 'user', text: '请用中文回答。', timestamp: 1 },
-        { role: 'assistant', text: '好的。', timestamp: 2 },
-        {
-          role: 'user',
-          text: '在 workspace A 里实现 gateway token rotation，并同步 remote gateway。',
-          timestamp: 3,
-        },
-        {
-          role: 'assistant',
-          text: '已在 workspace A 完成 gateway token rotation。',
-          timestamp: 4,
-        },
-      ]),
-    });
-
-    await service.enqueueIngestion({
-      session: {
-        id: 'b-1',
-        title: 'Other workspace',
-        status: 'idle',
-        cwd: workspaceB,
-        mountedPaths: [],
-        allowedTools: [],
-        memoryEnabled: true,
-        createdAt: 2000,
-        updatedAt: 2000,
-      },
-      prompt: '记录别的事情',
-      messages: makeMessages('b-1', [
-        { role: 'user', text: '在 workspace B 中讨论不相关的话题。', timestamp: 5 },
-        { role: 'assistant', text: '已记录。', timestamp: 6 },
-      ]),
-    });
-
-    const sameWorkspacePrompt = await service.buildPromptPrefix(
-      { cwd: workspaceA },
-      '继续 gateway token rotation'
-    );
-    const otherWorkspacePrompt = await service.buildPromptPrefix(
-      { cwd: workspaceB },
-      '继续 gateway token rotation'
-    );
-
-    expect(sameWorkspacePrompt).toContain('gateway token rotation');
-    expect(sameWorkspacePrompt).toContain('<experience_memory');
-    expect(otherWorkspacePrompt).toContain('workspace A');
-    expect(otherWorkspacePrompt).toContain('source=/repo/workspace-a');
-    expect(otherWorkspacePrompt).toContain('<core_memory>');
+    expect(report.caseResults.length).toBeGreaterThan(1);
+    expect(report.averageScore).toBeGreaterThan(0.5);
+    expect(fs.existsSync(path.join(artifactDir, 'report.json'))).toBe(true);
   });
 
-  it('keeps the manual live checklist alongside deterministic smoke coverage', async () => {
-    const checklist = fs.readFileSync(
-      path.resolve(process.cwd(), 'docs/memory-live-smoke-checklist.md'),
-      'utf8'
-    );
-    expect(checklist).toContain('Cross-Workspace Recall');
-    expect(checklist).toContain('Source Provenance');
-    expect(checklist).toContain('Non-Interactive Flows');
+  it('uses the configured eval artifacts root when no artifactDir is passed', async () => {
+    const harness = new MemoryEvalHarness(service, llm);
+    const report = await harness.run();
+
+    expect(report.artifactDir).toContain(path.join(tempRoot, 'memory-root', 'artifacts'));
+    expect(path.basename(report.artifactDir)).toMatch(/^memory-eval-/);
+    expect(fs.existsSync(path.join(report.artifactDir, 'report.json'))).toBe(true);
+  });
+
+  it('iterates prompt candidates and keeps the best score', async () => {
+    const optimizer = new MemoryPromptOptimizer(llm);
+    const baselineReport = {
+      runId: 'baseline',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      averageScore: 0.5,
+      caseResults: [],
+      artifactDir: tempRoot,
+    };
+
+    const result = await optimizer.optimize({
+      baselineReport,
+      rounds: 1,
+      evaluate: async (prompts) => ({
+        ...baselineReport,
+        averageScore: prompts.coreMemoryUpdateSystemPrompt === 'candidate core prompt' ? 0.8 : 0.4,
+      }),
+    });
+
+    expect(result.bestScore).toBe(0.8);
+    expect(result.prompts.coreMemoryUpdateSystemPrompt).toBe('candidate core prompt');
+    expect(result.iterations[0]?.accepted).toBe(true);
   });
 });

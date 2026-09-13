@@ -5,7 +5,7 @@ import {
   buildCustomInstructions,
   DEFAULT_COMPACTION_INSTRUCTIONS,
   type CompactionConfig,
-} from '../../main/agent/compaction-extension';
+} from '../src/main/agent/compaction-extension';
 
 describe('compaction-extension', () => {
   describe('createCompactionExtensionFactory', () => {

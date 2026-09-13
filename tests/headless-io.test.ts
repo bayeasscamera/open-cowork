@@ -47,7 +47,7 @@ describe('headless-io', () => {
 
     it('detects --headless flag', async () => {
       process.argv = ['node', 'app', '--headless'];
-      const { parseHeadlessArgs } = await import('../../main/cli/headless-io');
+      const { parseHeadlessArgs } = await import('../src/main/cli/headless-io');
       const args = parseHeadlessArgs();
       expect(args.headless).toBe(true);
       expect(args.prompt).toBeNull();
@@ -57,7 +57,7 @@ describe('headless-io', () => {
 
     it('parses -p flag', async () => {
       process.argv = ['node', 'app', '--headless', '-p', 'hello world'];
-      const { parseHeadlessArgs } = await import('../../main/cli/headless-io');
+      const { parseHeadlessArgs } = await import('../src/main/cli/headless-io');
       const args = parseHeadlessArgs();
       expect(args.prompt).toBe('hello world');
       expect(args.mode).toBe('json'); // default when prompt given
@@ -65,42 +65,42 @@ describe('headless-io', () => {
 
     it('parses --prompt flag', async () => {
       process.argv = ['node', 'app', '--headless', '--prompt', 'test prompt'];
-      const { parseHeadlessArgs } = await import('../../main/cli/headless-io');
+      const { parseHeadlessArgs } = await import('../src/main/cli/headless-io');
       const args = parseHeadlessArgs();
       expect(args.prompt).toBe('test prompt');
     });
 
     it('parses --cwd flag', async () => {
       process.argv = ['node', 'app', '--headless', '--cwd', '/tmp/test'];
-      const { parseHeadlessArgs } = await import('../../main/cli/headless-io');
+      const { parseHeadlessArgs } = await import('../src/main/cli/headless-io');
       const args = parseHeadlessArgs();
       expect(args.cwd).toBe('/tmp/test');
     });
 
     it('detects --auto-approve flag', async () => {
       process.argv = ['node', 'app', '--headless', '--auto-approve', '-p', 'test'];
-      const { parseHeadlessArgs } = await import('../../main/cli/headless-io');
+      const { parseHeadlessArgs } = await import('../src/main/cli/headless-io');
       const args = parseHeadlessArgs();
       expect(args.autoApprove).toBe(true);
     });
 
     it('parses --mode rpc', async () => {
       process.argv = ['node', 'app', '--headless', '--mode', 'rpc'];
-      const { parseHeadlessArgs } = await import('../../main/cli/headless-io');
+      const { parseHeadlessArgs } = await import('../src/main/cli/headless-io');
       const args = parseHeadlessArgs();
       expect(args.mode).toBe('rpc');
     });
 
     it('parses --mode json', async () => {
       process.argv = ['node', 'app', '--headless', '--mode', 'json'];
-      const { parseHeadlessArgs } = await import('../../main/cli/headless-io');
+      const { parseHeadlessArgs } = await import('../src/main/cli/headless-io');
       const args = parseHeadlessArgs();
       expect(args.mode).toBe('json');
     });
 
     it('defaults headless to false when flag absent', async () => {
       process.argv = ['node', 'app'];
-      const { parseHeadlessArgs } = await import('../../main/cli/headless-io');
+      const { parseHeadlessArgs } = await import('../src/main/cli/headless-io');
       const args = parseHeadlessArgs();
       expect(args.headless).toBe(false);
     });
@@ -118,7 +118,7 @@ describe('headless-io', () => {
     });
 
     it('writes stream.partial as JSONL', async () => {
-      const { createHeadlessSendToRenderer } = await import('../../main/cli/headless-io');
+      const { createHeadlessSendToRenderer } = await import('../src/main/cli/headless-io');
       const send = createHeadlessSendToRenderer();
       send({
         type: 'stream.partial',
@@ -134,7 +134,7 @@ describe('headless-io', () => {
     });
 
     it('writes session.status as JSONL', async () => {
-      const { createHeadlessSendToRenderer } = await import('../../main/cli/headless-io');
+      const { createHeadlessSendToRenderer } = await import('../src/main/cli/headless-io');
       const send = createHeadlessSendToRenderer();
       send({
         type: 'session.status',
@@ -148,7 +148,7 @@ describe('headless-io', () => {
     });
 
     it('writes error events as JSONL', async () => {
-      const { createHeadlessSendToRenderer } = await import('../../main/cli/headless-io');
+      const { createHeadlessSendToRenderer } = await import('../src/main/cli/headless-io');
       const send = createHeadlessSendToRenderer();
       send({
         type: 'error',
@@ -162,7 +162,7 @@ describe('headless-io', () => {
     });
 
     it('forwards unknown event types as passthrough', async () => {
-      const { createHeadlessSendToRenderer } = await import('../../main/cli/headless-io');
+      const { createHeadlessSendToRenderer } = await import('../src/main/cli/headless-io');
       const send = createHeadlessSendToRenderer();
       send({
         type: 'new-session',
@@ -195,7 +195,7 @@ describe('headless-io', () => {
     });
 
     it('redirects console.log to stderr', async () => {
-      const { redirectConsoleToStderr } = await import('../../main/cli/headless-io');
+      const { redirectConsoleToStderr } = await import('../src/main/cli/headless-io');
       redirectConsoleToStderr();
       console.log('test message');
       expect(stderrSpy).toHaveBeenCalled();
@@ -216,7 +216,7 @@ describe('headless-io', () => {
     });
 
     it('emits session.started', async () => {
-      const { emitSessionStarted } = await import('../../main/cli/headless-io');
+      const { emitSessionStarted } = await import('../src/main/cli/headless-io');
       emitSessionStarted('sid-1');
       const output = writeSpy.mock.calls[0][0] as string;
       const parsed = JSON.parse(output.trim());
@@ -225,7 +225,7 @@ describe('headless-io', () => {
     });
 
     it('emits session.ended', async () => {
-      const { emitSessionEnded } = await import('../../main/cli/headless-io');
+      const { emitSessionEnded } = await import('../src/main/cli/headless-io');
       emitSessionEnded('sid-2');
       const output = writeSpy.mock.calls[0][0] as string;
       const parsed = JSON.parse(output.trim());

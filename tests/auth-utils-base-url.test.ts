@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeOpenAICompatibleBaseUrl } from '../../main/config/auth-utils';
+import { normalizeOpenAICompatibleBaseUrl } from '../src/main/config/auth-utils';
 
 describe('normalizeOpenAICompatibleBaseUrl', () => {
   // --- Empty / undefined inputs ---

@@ -19,8 +19,8 @@ import {
   isKeyReadable,
   isKeyWritable,
   isKeyBlocked,
-} from '../../main/config/config-extension';
-import type { AppConfig } from '../../main/config/config-store';
+} from '../src/main/config/config-extension';
+import type { AppConfig } from '../src/main/config/config-store';
 
 // Minimal mock of ConfigStore — getAll/get/set backed by a shared mutable
 // state object so config_write's effects are observable in tests.
