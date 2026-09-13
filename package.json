@@ -132,7 +132,10 @@
   },
   "overrides": {
     "fast-xml-parser": "^5.5.6",
-    "tar": "^7.5.11"
+    "tar": "^7.5.11",
+    "ngrok": {
+      "uuid": "^11.1.1"
+    }
   },
   "author": "Open Cowork Team",
   "license": "MIT",

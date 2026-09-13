@@ -1,0 +1,20 @@
+--- a/node_modules/extract-zip/index.js	1985-10-26 08:15:00
++++ b/node_modules/extract-zip/index.js
+@@ -127,6 +127,17 @@
+     if (symlink) {
+       const link = await getStream(readStream)
+       debug('creating symlink', link, dest)
++      // Security: reject symlink entries whose target escapes the extraction
++      // directory (GHSA-7pqw-9j4j-h8q3, GHSA-jmr9-qjv8-65gv). A symlink pointing
++      // outside opts.dir would let subsequent entries write arbitrary files.
++      if (path.isAbsolute(link)) {
++        throw new Error(`Refusing to extract symlink "${entry.fileName}" with absolute target "${link}"`)
++      }
++      const symlinkTarget = path.resolve(path.dirname(dest), link)
++      const relativeTarget = path.relative(this.opts.dir, symlinkTarget)
++      if (relativeTarget.split(path.sep).includes('..')) {
++        throw new Error(`Refusing to extract symlink "${entry.fileName}" escaping the extraction directory (targets "${symlinkTarget}")`)
++      }
+       await fs.symlink(link, dest)
+     } else {
+       await pipeline(readStream, createWriteStream(dest, { mode: procMode }))
