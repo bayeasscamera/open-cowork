@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+
+# Run typecheck + fast test suite before push
+# Skippable with: git push --no-verify
+
+echo "🔍 Pre-push: running typecheck..."
+npx tsc --noEmit || {
+  echo ""
+  echo "=========================================="
+  echo "  BLOCKED: TypeScript errors found"
+  echo "  Fix them or push with --no-verify"
+  echo "=========================================="
+  exit 1
+}
+
+echo "🧪 Pre-push: running tests..."
+npx vitest run --reporter=verbose 2>&1 | tail -30 || {
+  echo ""
+  echo "=========================================="
+  echo "  BLOCKED: Tests failed"
+  echo "  Fix them or push with --no-verify"
+  echo "=========================================="
+  exit 1
+}
+
+echo "✅ Pre-push checks passed"

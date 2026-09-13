@@ -273,6 +273,18 @@
           "name": "MiniMax",
           "note": "Use OpenAI-compatible mode unless your MiniMax gateway documents another protocol."
         },
+        "groq": {
+          "name": "Groq Cloud",
+          "note": "Ultra-fast inference via OpenAI-compatible endpoint with Llama 3.3 and DeepSeek models."
+        },
+        "mistral": {
+          "name": "Mistral AI",
+          "note": "Official Mistral endpoint using OpenAI protocol compatibility."
+        },
+        "together": {
+          "name": "Together AI",
+          "note": "Open-source model cloud using standard OpenAI-compatible completions."
+        },
         "genericOpenAI": {
           "name": "Generic OpenAI-compatible",
           "note": "Use this for custom relays, gateways, or inference servers that mimic the OpenAI API."

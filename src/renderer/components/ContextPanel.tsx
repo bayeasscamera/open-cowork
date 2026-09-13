@@ -13,6 +13,7 @@ import {
 } from '../utils/artifact-steps';
 import { useIPC } from '../hooks/useIPC';
 import { CompactionHistory } from './CompactionHistory';
+import { ArtifactModal } from './ArtifactModal';
 import {
   ChevronDown,
   ChevronUp,
@@ -59,6 +60,7 @@ export function ContextPanel() {
   const [mcpServers, setMcpServers] = useState<MCPServerInfo[]>([]);
   const [copiedPath, setCopiedPath] = useState(false);
   const [isChangingDir, setIsChangingDir] = useState(false);
+  const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
   const [recentWorkspaceFiles, setRecentWorkspaceFiles] = useState<
     Array<{
       path: string;
@@ -431,25 +433,38 @@ export function ContextPanel() {
                   return (
                     <div
                       key={artifact.path || artifact.label || `artifact-${index}`}
-                      className={`flex items-center gap-2 px-4 py-1.5 transition-colors ${canClick ? 'cursor-pointer hover:bg-surface-hover' : ''}`}
-                      onClick={async () => {
+                      className={`flex items-center justify-between gap-2 px-4 py-1.5 transition-colors group ${canClick ? 'cursor-pointer hover:bg-surface-hover' : ''}`}
+                      onClick={() => {
                         if (!canClick) return;
-                        const revealed = await window.electronAPI.showItemInFolder(
-                          artifactPath,
-                          currentWorkingDir ?? undefined
-                        );
-                        if (!revealed) {
-                          setGlobalNotice({
-                            id: `artifact-reveal-failed-${Date.now()}`,
-                            type: 'warning',
-                            message: t('context.revealFailed'),
-                          });
-                        }
+                        setPreviewFilePath(artifactPath);
                       }}
-                      title={artifactPath || undefined}
+                      title={`${artifactPath || ''} (Cliquer pour prévisualiser)`}
                     >
-                      <IconComponent className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                      <span className="text-xs text-text-primary truncate">{label}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <IconComponent className="w-3.5 h-3.5 text-text-muted shrink-0 group-hover:text-accent transition-colors" />
+                        <span className="text-xs text-text-primary truncate">{label}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const revealed = await window.electronAPI.showItemInFolder(
+                            artifactPath,
+                            currentWorkingDir ?? undefined
+                          );
+                          if (!revealed) {
+                            setGlobalNotice({
+                              id: `artifact-reveal-failed-${Date.now()}`,
+                              type: 'warning',
+                              message: t('context.revealFailed'),
+                            });
+                          }
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-surface rounded text-text-muted hover:text-text-primary transition-all text-[10px]"
+                        title={t('context.openInFileManager')}
+                      >
+                        <FolderOpen className="w-3 h-3" />
+                      </button>
                     </div>
                   );
                 })}
@@ -560,6 +575,27 @@ export function ContextPanel() {
           )}
         </div>
       </div>
+
+      {/* Live Artifact Preview Modal */}
+      {previewFilePath && (
+        <ArtifactModal
+          filePath={previewFilePath}
+          onClose={() => setPreviewFilePath(null)}
+          onRevealInFolder={async (path) => {
+            const revealed = await window.electronAPI.showItemInFolder(
+              path,
+              currentWorkingDir ?? undefined
+            );
+            if (!revealed) {
+              setGlobalNotice({
+                id: `artifact-reveal-failed-${Date.now()}`,
+                type: 'warning',
+                message: t('context.revealFailed'),
+              });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

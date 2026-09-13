@@ -652,6 +652,7 @@ export interface ProviderProfile {
   apiKey: string;
   baseUrl?: string;
   model: string;
+  customModels?: string[];
   contextWindow?: number;
   maxTokens?: number;
 }

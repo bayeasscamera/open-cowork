@@ -218,8 +218,11 @@ function getDatabasePath(): string {
  */
 function initializeSchema(database: Database.Database): void {
   try {
-    // Enable WAL mode for better performance
+    // Enable WAL mode for better performance & concurrent writes
     database.pragma('journal_mode = WAL');
+    database.pragma('synchronous = NORMAL');
+    database.pragma('cache_size = -64000'); // 64MB cache
+    database.pragma('temp_store = MEMORY');
 
     // Create sessions table
     database.exec(`

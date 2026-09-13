@@ -86,6 +86,7 @@ import {
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
+import { EliteCodingIntelligence } from './elite-coding-intelligence';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -2128,6 +2129,7 @@ Tool routing:
 - If user explicitly asks to use Chrome/browser/web navigation, prioritize Chrome MCP tools (mcp__Chrome__*) over generic WebSearch/WebFetch.
 - Use WebSearch/WebFetch only when Chrome MCP is unavailable or the user explicitly asks for generic web search.
 </tool_behavior>`,
+        EliteCodingIntelligence.getElitePrompt(),
         this.getBundledPathHints(),
       ]
         .filter((section): section is string => Boolean(section && section.trim()))

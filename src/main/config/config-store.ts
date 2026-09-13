@@ -61,6 +61,7 @@ export interface ProviderProfile {
   apiKey: string;
   baseUrl?: string;
   model: string;
+  customModels?: string[];
   contextWindow?: number;
   maxTokens?: number;
 }
@@ -218,41 +219,57 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
     apiKey: '',
     baseUrl: 'https://openrouter.ai/api/v1',
     model: 'anthropic/claude-sonnet-4-6',
+    contextWindow: 1_000_000,
+    maxTokens: 64000,
   },
   anthropic: {
     apiKey: '',
     baseUrl: 'https://api.anthropic.com',
     model: 'claude-sonnet-4-6',
+    contextWindow: 1_000_000,
+    maxTokens: 64000,
   },
   openai: {
     apiKey: '',
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-5.4',
+    contextWindow: 1_000_000,
+    maxTokens: 64000,
   },
   ollama: {
     apiKey: '',
     baseUrl: 'http://localhost:11434/v1',
     model: '',
+    contextWindow: 1_000_000,
+    maxTokens: 64000,
   },
   gemini: {
     apiKey: '',
     baseUrl: 'https://generativelanguage.googleapis.com',
     model: 'gemini-2.5-flash',
+    contextWindow: 1_000_000,
+    maxTokens: 64000,
   },
   'custom:anthropic': {
     apiKey: '',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     model: 'glm-5',
+    contextWindow: 1_000_000,
+    maxTokens: 64000,
   },
   'custom:openai': {
     apiKey: '',
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-5.4',
+    contextWindow: 1_000_000,
+    maxTokens: 64000,
   },
   'custom:gemini': {
     apiKey: '',
     baseUrl: 'https://generativelanguage.googleapis.com',
     model: 'gemini-2.5-flash',
+    contextWindow: 1_000_000,
+    maxTokens: 64000,
   },
 };
 
@@ -657,6 +674,10 @@ export class ConfigStore {
     }
     if (typeof profile?.maxTokens === 'number' && profile.maxTokens > 0) {
       result.maxTokens = profile.maxTokens;
+    }
+    // Preserve user-configured custom model list
+    if (Array.isArray(profile?.customModels) && profile.customModels.length > 0) {
+      result.customModels = profile.customModels.filter(Boolean);
     }
     return result;
   }

@@ -6,7 +6,7 @@ export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
+  const currentLang = i18n.language.startsWith('zh') ? 'zh' : i18n.language.startsWith('fr') ? 'fr' : 'en';
   const [appVer, setAppVer] = useState('');
   useEffect(() => {
     try {
@@ -21,6 +21,7 @@ export function SettingsGeneral() {
   const languages = [
     { code: 'en', nativeName: 'English' },
     { code: 'zh', nativeName: '中文' },
+    { code: 'fr', nativeName: 'Français' },
   ];
 
   const themeOptions = [
@@ -71,12 +72,26 @@ export function SettingsGeneral() {
         </div>
       </div>
 
-      {/* About */}
-      {appVer && (
-        <div className="pt-4 border-t border-border">
-          <p className="text-xs text-text-muted">Open Cowork v{appVer}</p>
+      {/* About & System Specs */}
+      <div className="pt-4 border-t border-border space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">Système & Environnement</h4>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+          <div className="p-2.5 rounded-lg bg-surface border border-border">
+            <span className="text-text-muted block text-[11px]">Version</span>
+            <span className="font-mono font-medium text-text-primary">{appVer ? `v${appVer}` : '3.5.0'}</span>
+          </div>
+          <div className="p-2.5 rounded-lg bg-surface border border-border">
+            <span className="text-text-muted block text-[11px]">Plateforme</span>
+            <span className="font-mono font-medium text-text-primary">
+              {window.electronAPI?.platform || 'darwin'} ({navigator.userAgent.includes('Arm') || navigator.userAgent.includes('Apple') ? 'arm64' : 'x64'})
+            </span>
+          </div>
+          <div className="p-2.5 rounded-lg bg-surface border border-border">
+            <span className="text-text-muted block text-[11px]">Moteur IA</span>
+            <span className="font-mono font-medium text-text-primary">Pi-AI Native 1M</span>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

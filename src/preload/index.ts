@@ -191,6 +191,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       limit = 50
     ): Promise<Array<{ path: string; modifiedAt: number; size: number }>> =>
       ipcRenderer.invoke('artifacts.listRecentFiles', cwd, sinceMs, Math.min(limit, 500)),
+    readFile: (filePath: string): Promise<string> =>
+      ipcRenderer.invoke('artifacts.readFile', filePath),
   },
 
   // Config methods
@@ -513,6 +515,7 @@ declare global {
           sinceMs: number,
           limit?: number
         ) => Promise<Array<{ path: string; modifiedAt: number; size: number }>>;
+        readFile: (filePath: string) => Promise<string>;
       };
       config: {
         get: () => Promise<AppConfig>;

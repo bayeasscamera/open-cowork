@@ -1,0 +1,84 @@
+name: 🤖 Agent Task / Spec
+description: Spec structurée pour une tâche d'implémentation par un agent coding (Antigravity, Codex, etc.)
+title: "[Agent] "
+labels: ["agent-task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Spec → Agent → Tests → Review
+        Ce template suit le cycle complet. Remplis chaque section avant d'assigner à un agent.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 🎯 Objectif
+      description: "Que doit faire cette tâche ? Une phrase claire et actionnable."
+      placeholder: "Ex: Ajouter le support du provider Groq dans les paramètres API"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 📋 Contexte et fichiers concernés
+      description: "Quels fichiers/modules sont impliqués ? Quel est le comportement actuel ?"
+      placeholder: |
+        - `src/shared/api-provider-guidance.ts` — ajouter le type Groq
+        - `src/renderer/components/settings/SettingsAPI.tsx` — afficher Groq dans la liste
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: ✅ Critères d'acceptation
+      description: "Liste des comportements attendus. Chaque item doit être vérifiable."
+      placeholder: |
+        - [ ] Le provider Groq apparaît dans la liste des providers
+        - [ ] La clé API est masquée par défaut
+        - [ ] Les tests passent (`npm run test`)
+        - [ ] TypeScript check passe (`npm run typecheck`)
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: 🧪 Tests à écrire / mettre à jour
+      description: "Quels tests unitaires ou d'intégration couvrent cette tâche ?"
+      placeholder: |
+        - `tests/provider-guidance.test.ts` — ajouter un cas pour Groq
+    validations:
+      required: false
+
+  - type: textarea
+    id: review_checklist
+    attributes:
+      label: 🔍 Checklist de review (diff)
+      description: "Points à vérifier lors de la review du diff généré par l'agent"
+      value: |
+        - [ ] Le diff est minimal et ciblé (pas de changements parasites)
+        - [ ] Pas de `console.log` ou code debug oublié
+        - [ ] Les types TypeScript sont stricts (pas de `any`)
+        - [ ] Sécurité : pas de donnée sensible exposée, pas d'injection possible
+        - [ ] i18n : nouvelles chaînes ajoutées en `en.json` et `fr.json`
+        - [ ] Tests ajoutés ou mis à jour
+        - [ ] `npm run typecheck` ✅
+        - [ ] `npm run test` ✅
+        - [ ] `npm run lint` ✅
+    validations:
+      required: false
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Complexité estimée
+      options:
+        - XS — < 30 min
+        - S — 30 min–1h
+        - M — 1–3h
+        - L — 3–8h
+        - XL — > 1 jour
+    validations:
+      required: true

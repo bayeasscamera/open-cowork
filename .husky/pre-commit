@@ -25,3 +25,13 @@ fi
 
 # Run lint-staged on staged files
 npx lint-staged
+
+# Quick TypeScript check — catches type errors before they reach CI
+npx tsc --noEmit || {
+  echo ""
+  echo "=========================================="
+  echo "  BLOCKED: TypeScript errors found"
+  echo "  Fix or commit with --no-verify"
+  echo "=========================================="
+  exit 1
+}

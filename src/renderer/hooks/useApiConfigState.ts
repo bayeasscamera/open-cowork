@@ -42,6 +42,7 @@ interface UIProviderProfile {
   model: string;
   customModel: string;
   useCustomModel: boolean;
+  customModels: string[];
   contextWindow: string;
   maxTokens: string;
 }
@@ -199,6 +200,7 @@ function defaultProfileForKey(
     model: profileKey === 'ollama' ? '' : (preset.models[0]?.id || ''),
     customModel: '',
     useCustomModel: prefersCustomInput,
+    customModels: [],
     contextWindow: '',
     maxTokens: '',
   };
@@ -246,6 +248,10 @@ function normalizeProfile(
     return fallback;
   }
 
+  const configuredCustomModels = Array.isArray(profile.customModels)
+    ? profile.customModels.filter(Boolean)
+    : [];
+
   if (isPristineCustomProfile(profileKey, profile, fallback)) {
     return {
       ...fallback,
@@ -253,6 +259,7 @@ function normalizeProfile(
       baseUrl: fallback.baseUrl,
       customModel: '',
       useCustomModel: true,
+      customModels: configuredCustomModels,
       contextWindow: '',
       maxTokens: '',
     };
@@ -271,6 +278,7 @@ function normalizeProfile(
     model: hasPresetModel ? modelValue : fallback.model,
     customModel: hasPresetModel ? '' : modelValue,
     useCustomModel: !hasPresetModel,
+    customModels: configuredCustomModels,
     contextWindow: profile?.contextWindow ? String(profile.contextWindow) : '',
     maxTokens: profile?.maxTokens ? String(profile.maxTokens) : '',
   };
@@ -345,10 +353,14 @@ function toPersistedProfiles(
     const finalModel = profile.useCustomModel
       ? profile.customModel.trim() || profile.model
       : profile.model;
+    const customModels = Array.isArray(profile.customModels)
+      ? Array.from(new Set(profile.customModels.filter(Boolean)))
+      : [];
     persisted[key] = {
       apiKey: profile.apiKey,
       baseUrl: profile.baseUrl.trim() || undefined,
       model: finalModel,
+      customModels: customModels.length > 0 ? customModels : undefined,
       contextWindow: profile.contextWindow ? Number(profile.contextWindow) : undefined,
       maxTokens: profile.maxTokens ? Number(profile.maxTokens) : undefined,
     };
@@ -370,6 +382,7 @@ export function buildApiConfigDraftSignature(
       apiKey: persisted[key]?.apiKey || '',
       baseUrl: persisted[key]?.baseUrl || '',
       model: persisted[key]?.model || '',
+      customModels: (persisted[key]?.customModels || []).join(','),
     })),
   });
 }
@@ -407,12 +420,14 @@ export function buildApiConfigSets(
       const normalizedProfiles = {} as Record<ProviderProfileKey, ProviderProfile>;
       for (const key of PROFILE_KEYS) {
         const uiProfile = normalizeProfile(key, set.profiles?.[key], presets);
+        const cm = set.profiles?.[key]?.customModels;
         normalizedProfiles[key] = {
           apiKey: uiProfile.apiKey,
           baseUrl: uiProfile.baseUrl,
           model: uiProfile.useCustomModel
             ? uiProfile.customModel.trim() || uiProfile.model
             : uiProfile.model,
+          customModels: Array.isArray(cm) && cm.length > 0 ? cm : undefined,
         };
       }
 
@@ -929,13 +944,26 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     profiles[activeProfileKey] || defaultProfileForKey(activeProfileKey, presets);
   const modelPreset = modelPresetForProfile(activeProfileKey, presets);
   const currentPreset = modelPreset;
-  const hasDiscoveredOllamaModels =
-    provider === 'ollama' && Object.prototype.hasOwnProperty.call(discoveredModels, activeProfileKey);
-  const modelOptions = provider === 'ollama'
-    ? (discoveredModels[activeProfileKey] || [])
-    : hasDiscoveredOllamaModels
-      ? (discoveredModels[activeProfileKey] || [])
-      : modelPreset.models;
+  const modelOptions = useMemo(() => {
+    if (provider === 'ollama') {
+      return discoveredModels[activeProfileKey] || [];
+    }
+    if (activeProfileKey.startsWith('custom:')) {
+      // For custom endpoints: only show models the user explicitly added.
+      // currentProfile.model can be a preset id (e.g. gpt-5.4) — skip it.
+      // Only add currentProfile.customModel (the manual input field value).
+      const userCustomModels = currentProfile.customModels || [];
+      const list = [...userCustomModels];
+      // Add the active custom model input if not already listed
+      const activeManual = currentProfile.useCustomModel ? currentProfile.customModel : '';
+      if (activeManual && !list.includes(activeManual)) {
+        list.unshift(activeManual);
+      }
+      const unique = Array.from(new Set(list.filter(Boolean)));
+      return unique.map((id) => ({ id, name: id }));
+    }
+    return modelPreset.models;
+  }, [activeProfileKey, currentProfile.customModel, currentProfile.customModels, currentProfile.useCustomModel, discoveredModels, modelPreset.models, provider]);
   const modelInputGuidance = getModelInputGuidance(provider, customProtocol);
 
   const currentConfigSet = useMemo(
@@ -1208,6 +1236,42 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const setCustomModel = useCallback(
     (value: string) => {
       updateActiveProfile((prev) => ({ ...prev, customModel: value, useCustomModel: true }));
+    },
+    [updateActiveProfile]
+  );
+
+  const addCustomModel = useCallback(
+    (newModelId: string) => {
+      const trimmed = newModelId.trim();
+      if (!trimmed) return;
+      updateActiveProfile((prev) => {
+        const existing = Array.isArray(prev.customModels) ? prev.customModels : [];
+        const nextList = existing.includes(trimmed) ? existing : [...existing, trimmed];
+        return {
+          ...prev,
+          customModels: nextList,
+          customModel: trimmed,
+          model: trimmed,
+          useCustomModel: true,
+        };
+      });
+    },
+    [updateActiveProfile]
+  );
+
+  const removeCustomModel = useCallback(
+    (modelIdToRemove: string) => {
+      updateActiveProfile((prev) => {
+        const existing = Array.isArray(prev.customModels) ? prev.customModels : [];
+        const nextList = existing.filter((m) => m !== modelIdToRemove);
+        const nextModel = prev.customModel === modelIdToRemove ? (nextList[0] || '') : prev.customModel;
+        return {
+          ...prev,
+          customModels: nextList,
+          customModel: nextModel,
+          model: nextModel,
+        };
+      });
     },
     [updateActiveProfile]
   );
@@ -2092,6 +2156,8 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     setBaseUrl,
     setModel,
     setCustomModel,
+    addCustomModel,
+    removeCustomModel,
     setContextWindow,
     setMaxTokens,
     toggleCustomModel,

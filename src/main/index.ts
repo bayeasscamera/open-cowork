@@ -12,7 +12,7 @@
  * Dependencies: session-manager, config-store, mcp-manager, sandbox-adapter,
  *               skills-manager, scheduled-task-manager, nav-server, remote-manager
  */
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, globalShortcut } from 'electron';
 import { join, resolve, dirname, isAbsolute, basename } from 'path';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
@@ -104,6 +104,10 @@ import {
   readStdinPrompt,
   startRpcLoop,
 } from './cli/headless-io';
+import { CrashGuard } from './utils/crash-guard';
+
+// Initialize Global Crash & Robustness Guardian
+CrashGuard.initialize();
 
 // Current working directory (persisted between sessions)
 let currentWorkingDir: string | null = null;
@@ -124,8 +128,16 @@ if (configStore.isConfigured()) {
   configStore.applyToEnv();
 }
 
-// Disable hardware acceleration for better compatibility
-app.disableHardwareAcceleration();
+// Enable Metal / Hardware Acceleration on macOS for 60/120Hz ProMotion smoothness
+if (process.platform !== 'darwin') {
+  app.disableHardwareAcceleration();
+} else {
+  // Apple Silicon performance flags
+  app.commandLine.appendSwitch('enable-accelerated-mjpeg-decode');
+  app.commandLine.appendSwitch('enable-accelerated-video-decode');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+}
 
 let mainWindow: BrowserWindow | null = null;
 let sessionManager: SessionManager | null = null;
@@ -599,6 +611,15 @@ function createWindow() {
   } else {
     mainWindow.loadFile(join(__dirname, '../../dist/index.html'));
   }
+
+  // macOS: intercept the close button — call app.quit() instead of hiding
+  // This prevents the app from lingering as a zombie process after the window is closed
+  mainWindow.on('close', (event) => {
+    if (!isCleaningUp) {
+      event.preventDefault();
+      app.quit();
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -1370,6 +1391,31 @@ app
       app.dock?.setMenu(dockMenu);
     }
 
+    // Register global toggle shortcut (Alt+Space or CommandOrControl+Shift+Space)
+    try {
+      const toggleWindow = () => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          createWindow();
+        } else if (mainWindow.isVisible() && mainWindow.isFocused()) {
+          mainWindow.hide();
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      };
+
+      // Try Alt+Space first (Spotlight/Raycast style), then fallback
+      const registeredAltSpace = globalShortcut.register('Alt+Space', toggleWindow);
+      if (!registeredAltSpace) {
+        logWarn('[Shortcut] Alt+Space occupied, trying CommandOrControl+Shift+Space');
+        globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
+      } else {
+        log('[Shortcut] Registered Alt+Space global toggle shortcut');
+      }
+    } catch (shortcutErr) {
+      logWarn('[Shortcut] Failed to register global shortcut:', shortcutErr);
+    }
+
     // macOS: send initial system theme to renderer
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.on('did-finish-load', () => {
@@ -1526,11 +1572,8 @@ function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string)
  * Called on app quit (both Windows and macOS)
  */
 async function cleanupSandboxResources(): Promise<void> {
-  if (isCleaningUp) {
-    log('[App] Cleanup already in progress, skipping...');
-    return;
-  }
-  isCleaningUp = true;
+  // isCleaningUp is set by the caller (before-quit) before calling this function.
+  // Do NOT guard here — that would skip all cleanup when called from before-quit.
 
   stopNavServer();
   stopConfigFileWatcher();
@@ -1553,11 +1596,11 @@ async function cleanupSandboxResources(): Promise<void> {
     log('[App] Cleaning up all sandbox sessions...');
 
     // Cleanup WSL sessions
-    await withTimeout(SandboxSync.cleanupAllSessions(), 30000, 'WSL session cleanup');
+    await withTimeout(SandboxSync.cleanupAllSessions(), 5000, 'WSL session cleanup');
 
     // Cleanup Lima sessions
     const { LimaSync } = await import('./sandbox/lima-sync');
-    await withTimeout(LimaSync.cleanupAllSessions(), 30000, 'Lima session cleanup');
+    await withTimeout(LimaSync.cleanupAllSessions(), 5000, 'Lima session cleanup');
 
     log('[App] Sandbox sessions cleanup complete');
   } catch (error) {
@@ -1566,7 +1609,7 @@ async function cleanupSandboxResources(): Promise<void> {
 
   // Shutdown sandbox adapter
   try {
-    await withTimeout(shutdownSandbox(), 8000, 'Sandbox shutdown');
+    await withTimeout(shutdownSandbox(), 3000, 'Sandbox shutdown');
     log('[App] Sandbox shutdown complete');
   } catch (error) {
     logError('[App] Error shutting down sandbox:', error);
@@ -1595,20 +1638,14 @@ async function cleanupSandboxResources(): Promise<void> {
   // pi-ai doesn't need proxy shutdown
 }
 
-// Handle app quit - window-all-closed (primary for Windows/Linux)
-app.on('window-all-closed', async () => {
+// Handle app quit - window-all-closed (quitte directement l'application sur tous les OS)
+app.on('window-all-closed', () => {
   // In headless mode there are no windows, so this event fires immediately.
   // The headless path manages its own lifecycle — skip cleanup here.
   if (process.argv.includes('--headless')) return;
 
-  if (process.platform !== 'darwin' || process.env.VITE_DEV_SERVER_URL) {
-    // On Windows/Linux, closing all windows means quit.
-    // On macOS dev mode, also quit — so vite-plugin-electron can restart cleanly
-    // without the old process holding the single-instance lock.
-    await cleanupSandboxResources();
-    app.quit();
-  }
-  // On macOS production, keep app alive — cleanup happens in before-quit
+  // cleanup is handled by before-quit; just trigger quit
+  app.quit();
 });
 
 // Handle SIGTERM/SIGINT (e.g. pkill) — route through app.quit() for clean shutdown
@@ -1635,12 +1672,24 @@ app.on('before-quit', async (event) => {
     // Set the flag immediately before any await to prevent re-entrant cleanup
     isCleaningUp = true;
     event.preventDefault();
+
+    // Hard failsafe: if cleanup takes >3s, force exit to avoid zombie process
+    const failsafeTimer = setTimeout(() => {
+      logError('[App] Cleanup timed out — forcing exit');
+      process.exit(0);
+    }, 3000);
+
     try {
       await cleanupSandboxResources();
     } catch (error) {
       logError('[App] before-quit cleanup failed, forcing quit:', error);
+    } finally {
+      clearTimeout(failsafeTimer);
     }
-    app.quit();
+    // Unregister shortcuts
+    globalShortcut.unregisterAll();
+    // Use app.exit() to avoid re-triggering before-quit event loop
+    app.exit(0);
   }
 });
 
@@ -1871,6 +1920,23 @@ ipcMain.handle(
     return listRecentWorkspaceFiles(cwd, sinceMs, limit);
   }
 );
+
+ipcMain.handle('artifacts.readFile', async (_event, filePath: string) => {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    // Limit to 5MB to avoid freezing UI
+    const stat = fs.statSync(filePath);
+    if (stat.size > 5 * 1024 * 1024) {
+      return fs.readFileSync(filePath, 'utf-8').slice(0, 100000) + '\n\n[Content truncated: file exceeds 5MB]';
+    }
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch (err: any) {
+    logError('[artifacts.readFile] failed:', err);
+    throw err;
+  }
+});
 
 ipcMain.handle('dialog.selectFiles', async () => {
   const result = await dialog.showOpenDialog({

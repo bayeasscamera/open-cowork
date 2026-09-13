@@ -16,7 +16,8 @@ import { MessageCard } from './MessageCard';
 import { SubagentTracker } from './SubagentTracker';
 import { ContextUsageBar } from './ContextUsageBar';
 import type { Message, ContentBlock } from '../types';
-import { Send, Square, Plus, Loader2, Plug, X, Clock } from 'lucide-react';
+import { Send, Square, Plus, Loader2, Plug, X, Clock, ChevronDown, Mic, MicOff } from 'lucide-react';
+import { API_PROVIDER_PRESETS } from '../../shared/api-model-presets';
 import { isScrollNearBottom, resolveSessionScrollTop } from '../utils/chat-scroll-position';
 
 type AttachedFile = {
@@ -42,6 +43,68 @@ export function ChatView() {
   const { continueSession, stopSession, isElectron } = useIPC();
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [customModelInput, setCustomModelInput] = useState('');
+  const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const toggleVoiceInput = useCallback(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setGlobalNotice({
+        id: `speech-unavailable-${Date.now()}`,
+        type: 'warning',
+        message: 'La reconnaissance vocale n’est pas disponible sur ce navigateur / système.',
+      });
+      return;
+    }
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      const currentLang = document.documentElement.lang || 'fr-FR';
+      recognition.lang = currentLang.startsWith('fr') ? 'fr-FR' : currentLang.startsWith('zh') ? 'zh-CN' : 'en-US';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          setPrompt((prev) => (prev ? prev + ' ' + transcript : transcript));
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start voice input:', err);
+      setIsListening(false);
+    }
+  }, [isListening, setGlobalNotice]);
   const [activeConnectors, setActiveConnectors] = useState<
     { id: string; name: string; connected: boolean; toolCount: number }[]
   >([]);
@@ -877,10 +940,171 @@ export function ChatView() {
               />
 
               <div className="flex items-center gap-2">
-                {/* Model display */}
-                <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted">
-                  {appConfig?.model || t('chat.noModel')}
-                </span>
+                {/* Interactive Model Selector & Custom Model Addition */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowModelPicker(!showModelPicker)}
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-border-subtle bg-surface-muted hover:bg-surface-hover text-xs font-medium text-text-primary transition-colors"
+                    title="Changer le modèle actif pour ce provider"
+                  >
+                    <span className="truncate max-w-[130px]">{appConfig?.model || t('chat.noModel')}</span>
+                    <ChevronDown className="w-3 h-3 text-text-muted" />
+                  </button>
+
+                  {showModelPicker && (
+                    <div className="absolute right-0 bottom-full mb-2 w-72 rounded-2xl bg-surface border border-border shadow-soft p-2 z-50 animate-in fade-in zoom-in-95">
+                      <div className="px-2 py-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider flex items-center justify-between">
+                        <span>Modèles ({appConfig?.provider || 'openai'})</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddCustomModel(!showAddCustomModel)}
+                          className="text-[11px] text-accent hover:underline lowercase font-normal"
+                        >
+                          {showAddCustomModel ? 'fermer' : '+ ajouter'}
+                        </button>
+                      </div>
+
+                      {showAddCustomModel && (
+                        <div className="p-2 my-1 bg-surface-muted rounded-xl border border-border-subtle flex flex-col gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="ex: deepseek-chat, gpt-4o, mistral"
+                            value={customModelInput}
+                            onChange={(e) => setCustomModelInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && customModelInput.trim()) {
+                                e.preventDefault();
+                                const newModel = customModelInput.trim();
+                                if (appConfig) {
+                                  const currentProvider = appConfig.provider || 'openai';
+                                  const activeKey = appConfig.activeProfileKey || (currentProvider === 'custom' ? `custom:${appConfig.customProtocol || 'openai'}` : currentProvider);
+                                  const currentProfile = (appConfig.profiles as any)?.[activeKey] || {};
+                                  const currentCustomModels = Array.isArray(currentProfile.customModels) ? currentProfile.customModels : [];
+                                  const nextCustomModels = Array.from(new Set([...currentCustomModels, newModel]));
+                                  const updated = {
+                                    ...appConfig,
+                                    model: newModel,
+                                    profiles: {
+                                      ...appConfig.profiles,
+                                      [activeKey]: {
+                                        ...currentProfile,
+                                        model: newModel,
+                                        customModels: nextCustomModels,
+                                      },
+                                    },
+                                  };
+                                  useAppStore.getState().setAppConfig(updated as any);
+                                  window.electronAPI?.config?.save?.(updated as any);
+                                }
+                                setCustomModelInput('');
+                                setShowAddCustomModel(false);
+                                setShowModelPicker(false);
+                              }
+                            }}
+                            className="w-full px-2 py-1 rounded text-xs bg-background border border-border outline-none text-text-primary"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (customModelInput.trim() && appConfig) {
+                                const newModel = customModelInput.trim();
+                                const currentProvider = appConfig.provider || 'openai';
+                                const activeKey = appConfig.activeProfileKey || (currentProvider === 'custom' ? `custom:${appConfig.customProtocol || 'openai'}` : currentProvider);
+                                const currentProfile = (appConfig.profiles as any)?.[activeKey] || {};
+                                const currentCustomModels = Array.isArray(currentProfile.customModels) ? currentProfile.customModels : [];
+                                const nextCustomModels = Array.from(new Set([...currentCustomModels, newModel]));
+                                const updated = {
+                                  ...appConfig,
+                                  model: newModel,
+                                  profiles: {
+                                    ...appConfig.profiles,
+                                    [activeKey]: {
+                                      ...currentProfile,
+                                      model: newModel,
+                                      customModels: nextCustomModels,
+                                    },
+                                  },
+                                };
+                                useAppStore.getState().setAppConfig(updated as any);
+                                window.electronAPI?.config?.save?.(updated as any);
+                                setCustomModelInput('');
+                                setShowAddCustomModel(false);
+                                setShowModelPicker(false);
+                              }
+                            }}
+                            className="w-full py-1 text-xs rounded bg-accent text-background font-medium hover:bg-accent-hover transition-colors text-center"
+                          >
+                            Valider le modèle
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="max-h-48 overflow-y-auto space-y-0.5 mt-1">
+                        {(() => {
+                          const currentProvider = appConfig?.provider || 'openai';
+                          const activeProfileKey = appConfig?.activeProfileKey;
+                          const activeProfile = activeProfileKey
+                            ? appConfig?.profiles?.[activeProfileKey as keyof typeof appConfig.profiles]
+                            : undefined;
+
+                          let allModels: Array<{ id: string; name: string }> = [];
+
+                          if (currentProvider === 'custom') {
+                            // Pour les providers custom : uniquement les modèles configurés par l'utilisateur
+                            const configured = (activeProfile as any)?.customModels as string[] | undefined;
+                            if (configured && configured.length > 0) {
+                              allModels = configured.map((id: string) => ({ id, name: id }));
+                            }
+                          } else {
+                            // Pour les autres providers : liste preset
+                            const preset = (API_PROVIDER_PRESETS as Record<string, any>)[currentProvider];
+                            allModels = preset?.models || [];
+                          }
+
+                          // Toujours inclure le modèle actif s'il n'est pas déjà dans la liste
+                          if (appConfig?.model && !allModels.some(m => m.id === appConfig.model)) {
+                            allModels = [{ id: appConfig.model, name: appConfig.model }, ...allModels];
+                          }
+
+                          if (allModels.length === 0) {
+                            return (
+                              <p className="px-2.5 py-2 text-xs text-text-muted italic">
+                                Aucun modèle configuré — ajoutez-en dans les réglages API.
+                              </p>
+                            );
+                          }
+
+                          return allModels.map((m) => {
+                            const isSelected = appConfig?.model === m.id;
+                            return (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => {
+                                  if (appConfig) {
+                                    const updated = { ...appConfig, model: m.id };
+                                    useAppStore.getState().setAppConfig(updated);
+                                    window.electronAPI?.config?.save?.(updated);
+                                  }
+                                  setShowModelPicker(false);
+                                }}
+                                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors ${
+                                  isSelected
+                                    ? 'bg-accent/10 text-accent font-medium'
+                                    : 'text-text-primary hover:bg-surface-hover'
+                                }`}
+                              >
+                                <span className="truncate">{m.name}</span>
+                                {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-accent ml-2" />}
+                              </button>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {canStop && (
                   <button
@@ -892,6 +1116,19 @@ export function ChatView() {
                     <Square className="w-4 h-4" />
                   </button>
                 )}
+                {/* Voice Input Button */}
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${
+                    isListening
+                      ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/20'
+                      : 'border border-border-subtle bg-surface-muted hover:bg-surface-hover text-text-secondary hover:text-text-primary'
+                  }`}
+                  title={isListening ? 'Arrêter la dictée vocale' : 'Activer la dictée vocale'}
+                >
+                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
                 <button
                   type="submit"
                   disabled={

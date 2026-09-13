@@ -155,8 +155,8 @@ export function buildSyntheticPiModel(
     reasoning: autoReasoning,
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 128000,
-    maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 16384,
+    contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 1_000_000,
+    maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 64000,
   } as Model<Api>;
 }
 

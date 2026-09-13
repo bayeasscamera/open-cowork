@@ -8,6 +8,9 @@ export type CommonProviderSetupId =
   | 'ollama'
   | 'gemini-custom'
   | 'minimax'
+  | 'groq'
+  | 'mistral'
+  | 'together'
   | 'generic-openai';
 
 export interface CommonProviderSetup {
@@ -136,6 +139,45 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     matcher: {
       hosts: ['api.minimax.chat'],
       hostContains: ['minimax'],
+      pathPrefixes: ['/v1'],
+    },
+  },
+  {
+    id: 'groq',
+    nameKey: 'api.guidance.setups.groq.name',
+    noteKey: 'api.guidance.setups.groq.note',
+    applyProvider: 'custom',
+    recommendedProtocol: 'openai',
+    recommendedBaseUrl: 'https://api.groq.com/openai/v1',
+    exampleModel: 'llama-3.3-70b-versatile',
+    matcher: {
+      hosts: ['api.groq.com'],
+      pathPrefixes: ['/openai/v1'],
+    },
+  },
+  {
+    id: 'mistral',
+    nameKey: 'api.guidance.setups.mistral.name',
+    noteKey: 'api.guidance.setups.mistral.note',
+    applyProvider: 'custom',
+    recommendedProtocol: 'openai',
+    recommendedBaseUrl: 'https://api.mistral.ai/v1',
+    exampleModel: 'mistral-large-latest',
+    matcher: {
+      hosts: ['api.mistral.ai'],
+      pathPrefixes: ['/v1'],
+    },
+  },
+  {
+    id: 'together',
+    nameKey: 'api.guidance.setups.together.name',
+    noteKey: 'api.guidance.setups.together.note',
+    applyProvider: 'custom',
+    recommendedProtocol: 'openai',
+    recommendedBaseUrl: 'https://api.together.xyz/v1',
+    exampleModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    matcher: {
+      hosts: ['api.together.xyz', 'api.together.ai'],
       pathPrefixes: ['/v1'],
     },
   },

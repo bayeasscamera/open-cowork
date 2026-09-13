@@ -35,7 +35,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
 
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="card w-full max-w-md p-6 m-4 shadow-elevated animate-slide-up">
+      <div className="card w-full max-w-xl p-6 m-4 shadow-elevated animate-slide-up">
         {/* Header */}
         <div className="flex items-start gap-4">
           <div
@@ -67,12 +67,47 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
             <span className="font-mono text-accent text-sm">{permission.toolName}</span>
           </div>
 
-          <div className="text-sm text-text-secondary">
-            <span className="font-medium text-text-primary">{t('permission.input')}</span>
-            <pre className="mt-1 text-xs code-block max-h-32 overflow-auto">
-              {JSON.stringify(permission.input, null, 2)}
-            </pre>
-          </div>
+          {/* Diff preview for file modifications */}
+          {(() => {
+            const input = permission.input as Record<string, any> | undefined;
+            const filePath = input?.path || input?.file_path || input?.filePath;
+            const content = input?.content || input?.new_string || input?.new_str || input?.patch;
+            const oldContent = input?.old_string || input?.old_str;
+
+            if (filePath && (content || oldContent)) {
+              return (
+                <div className="text-xs space-y-1.5 my-2">
+                  <div className="flex items-center justify-between text-text-secondary">
+                    <span className="font-mono font-medium truncate">{String(filePath)}</span>
+                    <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface border border-border text-accent">Modifications</span>
+                  </div>
+                  <div className="max-h-48 overflow-auto rounded-lg border border-border bg-background p-2 font-mono text-[11px] leading-relaxed">
+                    {oldContent && (
+                      <div className="bg-red-500/10 text-red-400 p-1 rounded mb-1">
+                        <span className="select-none font-bold mr-1">-</span>
+                        <pre className="inline whitespace-pre-wrap">{String(oldContent)}</pre>
+                      </div>
+                    )}
+                    {content && (
+                      <div className="bg-green-500/10 text-green-400 p-1 rounded">
+                        <span className="select-none font-bold mr-1">+</span>
+                        <pre className="inline whitespace-pre-wrap">{String(content)}</pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="text-sm text-text-secondary">
+                <span className="font-medium text-text-primary">{t('permission.input')}</span>
+                <pre className="mt-1 text-xs code-block max-h-32 overflow-auto">
+                  {JSON.stringify(permission.input, null, 2)}
+                </pre>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Warning */}

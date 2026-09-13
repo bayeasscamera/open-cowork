@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Key,
@@ -9,6 +10,10 @@ import {
   AlertCircle,
   CheckCircle,
   RefreshCw,
+  Plus,
+  X,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useApiConfigState } from '../../hooks/useApiConfigState';
 import { ApiConfigSetManager } from '../ApiConfigSetManager';
@@ -20,10 +25,43 @@ interface ModelOptionItem {
   name: string;
 }
 
+function AddCustomModelRow({ onAdd }: { onAdd: (id: string) => void }) {
+  const [value, setValue] = useState('');
+  const submit = () => {
+    const trimmed = value.trim();
+    if (trimmed) {
+      onAdd(trimmed);
+      setValue('');
+    }
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && submit()}
+        placeholder="ex: mon-modele-1.0"
+        className="flex-1 px-3 py-1.5 rounded-lg bg-background border border-border text-text-primary text-sm placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+      />
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!value.trim()}
+        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-40 hover:bg-accent/90 transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Ajouter
+      </button>
+    </div>
+  );
+}
+
 // ==================== API Settings Tab ====================
 
 export function SettingsAPI() {
   const { t } = useTranslation();
+  const [showApiKey, setShowApiKey] = useState(false);
   const {
     provider,
     customProtocol,
@@ -64,6 +102,8 @@ export function SettingsAPI() {
     setBaseUrl,
     setModel,
     setCustomModel,
+    addCustomModel,
+    removeCustomModel,
     setContextWindow,
     setMaxTokens,
     toggleCustomModel,
@@ -157,14 +197,24 @@ export function SettingsAPI() {
           {t('api.apiKey')}
         </label>
         <p className="text-xs leading-5 text-text-muted">{t('api.apiKeyDescription')}</p>
-        <input
-          id="api-key-input"
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
-          className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-        />
+        <div className="relative">
+          <input
+            id="api-key-input"
+            type={showApiKey ? 'text' : 'password'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
+            className="w-full px-4 py-3 pr-11 rounded-lg bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all font-mono text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => setShowApiKey(!showApiKey)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary transition-colors"
+            title={showApiKey ? t('common.hide', 'Masquer') : t('common.show', 'Afficher')}
+          >
+            {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
         {currentPreset?.keyHint && (
           <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
         )}
@@ -311,39 +361,118 @@ export function SettingsAPI() {
           </div>
         </div>
         {useCustomModel ? (
-          <input
-            id="api-model-input"
-            type="text"
-            value={customModel}
-            onChange={(e) => setCustomModel(e.target.value)}
-            placeholder={modelInputPlaceholder}
-            className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-          />
-        ) : (
-          <select
-            id="api-model-input"
-            value={modelOptions.length ? model : ''}
-            onChange={(e) => setModel(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all appearance-none cursor-pointer"
-          >
-            {modelOptions.length ? (
-              (modelOptions as ModelOptionItem[]).map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))
+          <div className="space-y-3">
+            {/* Champ de saisie du modèle actif */}
+            <input
+              id="api-model-input"
+              type="text"
+              value={customModel}
+              onChange={(e) => setCustomModel(e.target.value)}
+              placeholder={modelInputPlaceholder}
+              className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+            />
+            {/* Pour custom provider : gestion des modèles configurés */}
+            {provider === 'custom' ? (
+              <div className="space-y-2">
+                {modelOptions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {(modelOptions as ModelOptionItem[]).map((m) => (
+                      <span
+                        key={m.id}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono border transition-colors ${
+                          customModel === m.id
+                            ? 'border-accent bg-accent/15 text-accent font-semibold'
+                            : 'border-border-muted bg-surface-muted text-text-secondary'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setCustomModel(m.id)}
+                          className="hover:text-text-primary transition-colors"
+                        >
+                          {m.name}
+                        </button>
+                        <button
+                          type="button"
+                          title="Supprimer ce modèle"
+                          onClick={() => removeCustomModel(m.id)}
+                          className="ml-0.5 text-text-muted hover:text-red-400 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <AddCustomModelRow onAdd={addCustomModel} />
+              </div>
             ) : (
-              <option value="" disabled>
-                {t('api.noModelsAvailable')}
-              </option>
+              modelOptions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] text-text-muted font-medium mr-1">Modèles :</span>
+                  {(modelOptions as ModelOptionItem[]).slice(0, 8).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setCustomModel(m.id)}
+                      className={`px-2 py-0.5 rounded-md text-xs font-mono transition-colors border ${
+                        customModel === m.id
+                          ? 'border-accent bg-accent/15 text-accent font-semibold'
+                          : 'border-border-muted bg-surface-muted hover:border-border text-text-secondary hover:text-text-primary'
+                      }`}
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              )
             )}
-          </select>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <select
+              id="api-model-input"
+              value={modelOptions.length ? model : ''}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all appearance-none cursor-pointer"
+            >
+              {modelOptions.length ? (
+                (modelOptions as ModelOptionItem[]).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))
+              ) : (
+                <option value="" disabled>
+                  {t('api.noModelsAvailable')}
+                </option>
+              )}
+            </select>
+            {/* Quick model pills */}
+            {modelOptions.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {(modelOptions as ModelOptionItem[]).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setModel(m.id)}
+                    className={`px-2 py-0.5 rounded-md text-xs font-mono transition-colors border ${
+                      model === m.id
+                        ? 'border-accent bg-accent/15 text-accent font-semibold'
+                        : 'border-border-muted bg-surface-muted hover:border-border text-text-secondary hover:text-text-primary'
+                    }`}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {useCustomModel && <p className="text-xs text-text-muted">{modelInputHint}</p>}
 
-        {/* Context Window & Max Tokens — only for non-registry providers */}
-        {(provider === 'ollama' || provider === 'custom') && (
-          <div className="grid grid-cols-2 gap-3 pt-2">
+        {/* Context Window & Max Tokens — Configurable & Durci pour tous les fournisseurs */}
+        <div className="grid grid-cols-2 gap-3 pt-2">
             <div>
               <label
                 htmlFor="api-context-window-input"
@@ -382,7 +511,6 @@ export function SettingsAPI() {
             </div>
             <p className="col-span-2 text-xs text-text-muted">{t('api.contextWindowHint')}</p>
           </div>
-        )}
       </div>
 
       {provider === 'custom' && (
