@@ -71,11 +71,23 @@ export function getPermissionRules(): PermissionRule[] {
   return rules.map((r) => ({ ...r }));
 }
 
+/** Global flag to automatically approve all tool calls without asking */
+let autoApproveAll = false;
+
+export function setAutoApproveAll(enabled: boolean): void {
+  autoApproveAll = Boolean(enabled);
+}
+
+export function isAutoApproveAll(): boolean {
+  return autoApproveAll;
+}
+
 /**
  * Decide how a given tool call should be handled.
  *
  * Matching order:
- *   1. Session-scoped "always allow" memory
+ *   0. Global autoApproveAll flag (Full Access mode)
+ *   1. Session-scoped "always allow" memory (including '*' for full session bypass)
  *   2. First rule whose `tool` matches (case-insensitive) AND whose
  *      optional `pattern` (glob-ish: `*` = any substring) matches the
  *      stringified input
@@ -91,10 +103,12 @@ export function decidePermission(
   toolName: string,
   input: Record<string, unknown>
 ): 'allow' | 'deny' | 'ask' {
+  if (autoApproveAll) return 'allow';
+
   const lowered = toolName.toLowerCase();
 
   const session = alwaysAllowBySession.get(sessionId);
-  if (session?.has(lowered)) return 'allow';
+  if (session?.has('*') || session?.has(lowered)) return 'allow';
 
   const inputStr = safeStringify(input);
 

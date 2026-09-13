@@ -909,6 +909,12 @@
     "deny": "Deny",
     "allow": "Allow",
     "alwaysAllow": "Always allow this tool",
+    "autoApproveAll": "Auto-Approve All (Full Access)",
+    "autoApproveAllDesc": "Execute all tools without asking for confirmation",
+    "autoApproveAllEnabled": "Full access enabled",
+    "autoApproveAllDisabled": "Full access disabled",
+    "attachFiles": "Attach files",
+    "actions": "Actions & permissions",
     "useTool": "Use the {{toolName}} tool",
     "toolDescriptions": {
       "write": "Write to files on your system",

@@ -41,7 +41,7 @@ import {
 } from './config/config-file-watcher';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
-import { setPermissionRules, decidePermission } from './config/permission-rules-store';
+import { setPermissionRules, decidePermission, setAutoApproveAll } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
@@ -3403,6 +3403,10 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         setPermissionRules(
           (event.payload as { permissionRules: PermissionRule[] }).permissionRules
         );
+      }
+
+      if (typeof (event.payload as { autoApproveAll?: unknown }).autoApproveAll === 'boolean') {
+        setAutoApproveAll((event.payload as { autoApproveAll: boolean }).autoApproveAll);
       }
       return null;
 

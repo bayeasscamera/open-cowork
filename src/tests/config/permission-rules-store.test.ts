@@ -16,7 +16,9 @@ import {
   decidePermission,
   forgetSessionPermissions,
   getPermissionRules,
+  isAutoApproveAll,
   rememberAlwaysAllow,
+  setAutoApproveAll,
   setPermissionRules,
 } from '../../main/config/permission-rules-store';
 
@@ -26,6 +28,7 @@ const SESSION_B = 'session-b';
 // Reset to DEFAULT_RULES before each test by passing garbage input — the
 // module documents that this falls back to defaults rather than empty rules.
 function resetToDefaults(): void {
+  setAutoApproveAll(false);
   setPermissionRules(null);
   forgetSessionPermissions(SESSION_A);
   forgetSessionPermissions(SESSION_B);
@@ -247,6 +250,41 @@ describe('permission-rules-store', () => {
       rules[0].action = 'deny';
       // Internal cache should be unaffected
       expect(decidePermission(SESSION_A, 'bash', {})).toBe('allow');
+    });
+  });
+
+  describe('autoApproveAll (Full Access mode)', () => {
+    it('is false by default', () => {
+      expect(isAutoApproveAll()).toBe(false);
+    });
+
+    it('when enabled, auto-allows all tools regardless of default rules', () => {
+      setAutoApproveAll(true);
+      expect(isAutoApproveAll()).toBe(true);
+      expect(decidePermission(SESSION_A, 'bash', { command: 'rm -rf /' })).toBe('allow');
+      expect(decidePermission(SESSION_A, 'write', { path: '/etc/shadow' })).toBe('allow');
+      expect(decidePermission(SESSION_A, 'unknown_custom_tool', {})).toBe('allow');
+    });
+
+    it('when enabled, takes precedence even over explicit deny rules', () => {
+      setPermissionRules([{ tool: 'bash', action: 'deny' }]);
+      expect(decidePermission(SESSION_A, 'bash', {})).toBe('deny');
+
+      setAutoApproveAll(true);
+      expect(decidePermission(SESSION_A, 'bash', {})).toBe('allow');
+
+      setAutoApproveAll(false);
+      expect(decidePermission(SESSION_A, 'bash', {})).toBe('deny');
+    });
+
+    it('supports session-scoped wildcard * to allow all tools for that session only', () => {
+      rememberAlwaysAllow(SESSION_A, '*');
+      expect(decidePermission(SESSION_A, 'bash', { command: 'ls' })).toBe('allow');
+      expect(decidePermission(SESSION_A, 'write', { path: '/tmp/f' })).toBe('allow');
+      expect(decidePermission(SESSION_A, 'any_random_tool', {})).toBe('allow');
+
+      // Session B is not wildcarded, so it must still ask
+      expect(decidePermission(SESSION_B, 'bash', { command: 'ls' })).toBe('ask');
     });
   });
 });

@@ -102,6 +102,12 @@
     "deny": "Refuser",
     "allow": "Autoriser",
     "alwaysAllow": "Toujours autoriser cet outil",
+    "autoApproveAll": "Tout autoriser (Accès total)",
+    "autoApproveAllDesc": "Exécuter tous les outils sans jamais demander d'autorisation",
+    "autoApproveAllEnabled": "Accès total activé",
+    "autoApproveAllDisabled": "Accès total désactivé",
+    "attachFiles": "Joindre des fichiers",
+    "actions": "Actions et autorisations",
     "useTool": "Utiliser l’outil {{toolName}}",
     "toolDescriptions": {
       "write": "Écrire des fichiers sur votre système",

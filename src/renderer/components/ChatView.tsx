@@ -16,7 +16,7 @@ import { MessageCard } from './MessageCard';
 import { SubagentTracker } from './SubagentTracker';
 import { ContextUsageBar } from './ContextUsageBar';
 import type { Message, ContentBlock } from '../types';
-import { Send, Square, Plus, Loader2, Plug, X, Clock, ChevronDown, Mic, MicOff } from 'lucide-react';
+import { Send, Square, Plus, Loader2, Plug, X, Clock, ChevronDown, Mic, MicOff, Paperclip, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { API_PROVIDER_PRESETS } from '../../shared/api-model-presets';
 import { isScrollNearBottom, resolveSessionScrollTop } from '../utils/chat-scroll-position';
 
@@ -48,6 +48,23 @@ export function ChatView() {
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const settings = useAppStore((s) => s.settings);
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const autoApproveAll = Boolean(settings.autoApproveAll);
+  const [showActionMenu, setShowActionMenu] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(e.target as Node)) {
+        setShowActionMenu(false);
+      }
+    };
+    if (showActionMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showActionMenu]);
 
   const toggleVoiceInput = useCallback(() => {
     const SpeechRecognition =
@@ -903,14 +920,97 @@ export function ChatView() {
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
               }`}
             >
-              <button
-                type="button"
-                onClick={handleFileSelect}
-                className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-                title={t('welcome.attachFiles')}
-              >
-                <Plus className="w-5 h-5" />
-              </button>
+              {/* Plus Button & Actions / Permissions Menu */}
+              <div ref={actionMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowActionMenu(!showActionMenu)}
+                  className={`relative w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${
+                    autoApproveAll
+                      ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 ring-1 ring-emerald-500/30'
+                      : 'text-text-muted hover:text-text-primary hover:bg-surface-hover'
+                  }`}
+                  title={autoApproveAll ? t('permission.autoApproveAllEnabled') : t('permission.actions')}
+                >
+                  <Plus className={`w-5 h-5 transition-transform duration-200 ${showActionMenu ? 'rotate-45' : ''}`} />
+                  {autoApproveAll && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full ring-2 ring-background animate-pulse" />
+                  )}
+                </button>
+
+                {showActionMenu && (
+                  <div className="absolute left-0 bottom-full mb-2 w-80 rounded-2xl bg-surface border border-border shadow-elevated p-2 z-50 animate-in fade-in zoom-in-95">
+                    {/* Header */}
+                    <div className="px-3 py-1.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+                      {t('permission.actions')}
+                    </div>
+
+                    {/* Option 1: Joindre des fichiers */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowActionMenu(false);
+                        handleFileSelect();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-text-primary hover:bg-surface-hover transition-colors text-left"
+                    >
+                      <Paperclip className="w-4 h-4 text-text-secondary flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="font-medium text-xs">{t('permission.attachFiles')}</div>
+                      </div>
+                    </button>
+
+                    <div className="my-1.5 border-t border-border-subtle" />
+
+                    {/* Option 2: Tout autoriser (Full Access Mode) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !autoApproveAll;
+                        updateSettings({ autoApproveAll: next });
+                      }}
+                      className={`w-full flex items-start gap-2.5 p-2.5 rounded-xl text-left transition-colors ${
+                        autoApproveAll
+                          ? 'bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25'
+                          : 'hover:bg-surface-hover border border-transparent'
+                      }`}
+                    >
+                      <div
+                        className={`p-1.5 rounded-lg flex-shrink-0 mt-0.5 transition-colors ${
+                          autoApproveAll
+                            ? 'bg-emerald-500/20 text-emerald-500'
+                            : 'bg-surface-muted text-text-secondary'
+                        }`}
+                      >
+                        {autoApproveAll ? (
+                          <ShieldCheck className="w-4 h-4" />
+                        ) : (
+                          <ShieldAlert className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="text-xs font-semibold text-text-primary">
+                            {t('permission.autoApproveAll')}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider transition-colors ${
+                              autoApproveAll
+                                ? 'bg-emerald-500 text-white'
+                                : 'bg-surface-muted text-text-muted border border-border-subtle'
+                            }`}
+                          >
+                            {autoApproveAll ? 'ON' : 'OFF'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-text-secondary mt-0.5 leading-snug">
+                          {t('permission.autoApproveAllDesc')}
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
 
               <textarea
                 ref={textareaRef}
@@ -940,6 +1040,19 @@ export function ChatView() {
               />
 
               <div className="flex items-center gap-2">
+                {/* Full Access Status Badge (Auto-approve all) */}
+                {autoApproveAll && (
+                  <button
+                    type="button"
+                    onClick={() => updateSettings({ autoApproveAll: false })}
+                    className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/25 text-xs font-medium transition-colors"
+                    title={`${t('permission.autoApproveAllDesc')} — Cliquez pour désactiver`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span className="truncate max-w-[120px]">{t('permission.autoApproveAllEnabled')}</span>
+                  </button>
+                )}
+
                 {/* Interactive Model Selector & Custom Model Addition */}
                 <div className="relative">
                   <button

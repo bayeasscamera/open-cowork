@@ -603,6 +603,7 @@ export interface Settings {
   apiKey?: string;
   defaultTools: string[];
   permissionRules: PermissionRule[];
+  autoApproveAll?: boolean;
   globalSkillsPath: string;
   memoryStrategy: 'auto' | 'manual' | 'rolling';
   maxContextTokens: number;

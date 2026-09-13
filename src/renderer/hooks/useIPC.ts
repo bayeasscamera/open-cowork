@@ -373,10 +373,10 @@ export function useIPC() {
           const latest = useAppStore.getState();
           window.electronAPI.send({
             type: 'settings.update',
-            payload: { permissionRules: latest.settings.permissionRules } as Record<
-              string,
-              unknown
-            >,
+            payload: {
+              permissionRules: latest.settings.permissionRules,
+              autoApproveAll: Boolean(latest.settings.autoApproveAll),
+            } as Record<string, unknown>,
           });
         } catch (syncErr) {
           console.warn('[useIPC] Failed to sync permissionRules to main:', syncErr);

@@ -897,6 +897,12 @@
     "deny": "拒绝",
     "allow": "允许",
     "alwaysAllow": "始终允许此工具",
+    "autoApproveAll": "全部授权（完全访问）",
+    "autoApproveAllDesc": "直接执行所有工具，不再弹出权限确认",
+    "autoApproveAllEnabled": "完全访问已开启",
+    "autoApproveAllDisabled": "完全访问已关闭",
+    "attachFiles": "添加附件文件",
+    "actions": "操作与权限",
     "useTool": "使用 {{toolName}} 工具",
     "toolDescriptions": {
       "write": "写入系统文件",
