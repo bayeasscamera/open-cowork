@@ -1,7 +1,8 @@
 import type Database from 'better-sqlite3';
 import type { Message, MemoryEntry, ContentBlock } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
-import { logError } from '../utils/logger';
+import { logError, logWarn } from '../utils/logger';
+import type { MemoryLLMClientLike } from './memory-llm-client';
 
 interface ContextStrategy {
   type: 'full' | 'compressed' | 'rolling';
@@ -9,20 +10,63 @@ interface ContextStrategy {
   summary?: string;
 }
 
+/** A recorded error pattern to avoid repeating the same mistakes */
+export interface ErrorPattern {
+  id: string;
+  pattern: string;       // What went wrong (normalized)
+  rootCause: string;     // Why it happened
+  fix: string;           // How it was resolved
+  context: string;       // In what situation (tool, file, operation)
+  occurrences: number;   // Times seen
+  lastSeenAt: number;
+  createdAt: number;
+}
+
 /**
- * MemoryManager - Handles message history and context management
+ * MemoryManager - Handles message history, intelligent context management,
+ * and causal error-pattern learning for self-improvement.
  *
- * Two main functions:
+ * Three main functions:
  * 1. Message storage and retrieval
- * 2. Intelligent context management for Claude API calls
+ * 2. Intelligent context compression via real LLM calls
+ * 3. Error-pattern memory: learn from failures, avoid repetition
  */
 export class MemoryManager {
   private db: Database.Database;
   private maxContextTokens: number;
+  private llmClient?: MemoryLLMClientLike;
 
-  constructor(db: Database.Database, maxContextTokens = 180000) {
+  constructor(
+    db: Database.Database,
+    maxContextTokens = 180000,
+    llmClient?: MemoryLLMClientLike
+  ) {
     this.db = db;
     this.maxContextTokens = maxContextTokens;
+    this.llmClient = llmClient;
+    this.ensureErrorPatternTable();
+  }
+
+  /** Ensure the error_patterns table exists (idempotent) */
+  private ensureErrorPatternTable(): void {
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS error_patterns (
+          id TEXT PRIMARY KEY,
+          pattern TEXT NOT NULL,
+          root_cause TEXT NOT NULL,
+          fix TEXT NOT NULL,
+          context TEXT NOT NULL DEFAULT '',
+          occurrences INTEGER NOT NULL DEFAULT 1,
+          last_seen_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_error_patterns_pattern
+          ON error_patterns(pattern);
+      `);
+    } catch (error) {
+      logError('[MemoryManager] Failed to create error_patterns table:', error);
+    }
   }
 
   /**
@@ -143,8 +187,8 @@ export class MemoryManager {
     const recent = messages.slice(-recentCount);
     const older = messages.slice(0, -recentCount);
 
-    // Generate summary of older messages
-    const summary = this.generateSummary(older);
+    // Generate summary of older messages (sync fallback; use compressContextAsync for LLM quality)
+    const summary = this.generateSummaryFallback(older);
 
     return {
       type: 'compressed',
@@ -214,17 +258,52 @@ export class MemoryManager {
   }
 
   /**
-   * Generate a summary of messages (placeholder - would call Claude API)
+   * Generate an intelligent summary of messages using the LLM.
+   * Falls back to keyword extraction if no LLM client is available.
    */
-  private generateSummary(messages: Message[]): string {
-    // In production, this would call Claude API to generate a proper summary
+  private async generateSummaryAsync(messages: Message[]): Promise<string> {
+    if (!this.llmClient) {
+      return this.generateSummaryFallback(messages);
+    }
+
+    try {
+      const transcript = messages
+        .map((m) => {
+          const text = m.content
+            .filter((b) => b.type === 'text')
+            .map((b) => (b as { type: 'text'; text: string }).text)
+            .join('\n');
+          return `[${m.role.toUpperCase()}]: ${text}`;
+        })
+        .join('\n\n');
+
+      const result = await this.llmClient.complete({
+        systemPrompt: `You are a concise conversation summarizer. 
+Produce a dense, factual summary (3-5 sentences max) of the conversation below.
+Focus on: decisions made, problems solved, key facts established, and any open issues.
+Do NOT include greetings or meta-commentary.`,
+        userPrompt: `Summarize this conversation:\n\n${transcript.slice(0, 12000)}`,
+        temperature: 0,
+        maxTokens: 512,
+      });
+
+      return result.text.trim() || this.generateSummaryFallback(messages);
+    } catch (error) {
+      logWarn('[MemoryManager] LLM summary failed, using fallback:', error);
+      return this.generateSummaryFallback(messages);
+    }
+  }
+
+  /**
+   * Keyword-based fallback summary (no LLM required).
+   */
+  private generateSummaryFallback(messages: Message[]): string {
     const userMessages = messages.filter((m) => m.role === 'user');
     const topicSet = new Set<string>();
 
     for (const message of userMessages) {
       for (const block of message.content) {
         if (block.type === 'text') {
-          // Extract key topics (simple keyword extraction)
           const words = block.text.split(/\s+/).filter((w) => w.length > 5);
           words.slice(0, 3).forEach((w) => topicSet.add(w.toLowerCase()));
         }
@@ -232,11 +311,137 @@ export class MemoryManager {
     }
 
     const topics = Array.from(topicSet).slice(0, 5).join(', ');
-
     return (
       `Previous conversation covered topics including: ${topics}. ` +
       `The conversation had ${messages.length} messages.`
     );
+  }
+
+  /**
+   * Compress context using real LLM summary (async version).
+   */
+  async compressContextAsync(messages: Message[]): Promise<ContextStrategy> {
+    const recentCount = 20;
+
+    if (messages.length <= recentCount) {
+      return { type: 'full', messages };
+    }
+
+    const recent = messages.slice(-recentCount);
+    const older = messages.slice(0, -recentCount);
+    const summary = await this.generateSummaryAsync(older);
+
+    return { type: 'compressed', messages: recent, summary };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CAUSAL ERROR-PATTERN MEMORY
+  // Learn from failures to avoid repeating the same mistakes across sessions.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Record an error pattern. If a similar pattern already exists, increment
+   * its occurrence count rather than creating a duplicate.
+   */
+  recordErrorPattern(
+    pattern: string,
+    rootCause: string,
+    fix: string,
+    context = ''
+  ): ErrorPattern {
+    const normalizedPattern = pattern.toLowerCase().trim().slice(0, 500);
+    const now = Date.now();
+
+    // Check for an existing similar pattern (exact normalized match)
+    const existing = this.db
+      .prepare('SELECT * FROM error_patterns WHERE pattern = ? LIMIT 1')
+      .get(normalizedPattern) as Record<string, unknown> | undefined;
+
+    if (existing) {
+      this.db
+        .prepare(
+          'UPDATE error_patterns SET occurrences = occurrences + 1, last_seen_at = ?, root_cause = ?, fix = ? WHERE id = ?'
+        )
+        .run(now, rootCause, fix, existing.id as string);
+      return this.rowToErrorPattern({ ...existing, occurrences: (existing.occurrences as number) + 1, last_seen_at: now });
+    }
+
+    const id = uuidv4();
+    this.db
+      .prepare(
+        'INSERT INTO error_patterns (id, pattern, root_cause, fix, context, occurrences, last_seen_at, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)'
+      )
+      .run(id, normalizedPattern, rootCause, fix, context, now, now);
+
+    return { id, pattern: normalizedPattern, rootCause, fix, context, occurrences: 1, lastSeenAt: now, createdAt: now };
+  }
+
+  /**
+   * Find error patterns similar to a given query (keyword overlap).
+   * Returns the top matches sorted by relevance × recency.
+   */
+  getSimilarErrorPatterns(query: string, limit = 5): ErrorPattern[] {
+    const queryWords = new Set(
+      query.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
+    );
+
+    const rows = this.db
+      .prepare('SELECT * FROM error_patterns ORDER BY last_seen_at DESC LIMIT 100')
+      .all() as Record<string, unknown>[];
+
+    const scored = rows.map((row) => {
+      const patternWords = (row.pattern as string).split(/\s+/);
+      const score = patternWords.filter((w) => queryWords.has(w)).length;
+      return { row, score };
+    });
+
+    return scored
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ row }) => this.rowToErrorPattern(row));
+  }
+
+  /**
+   * Format known error patterns as a context block to inject into the agent prompt,
+   * so it avoids repeating past mistakes.
+   */
+  formatErrorPatternsForContext(query: string): string {
+    const patterns = this.getSimilarErrorPatterns(query);
+    if (patterns.length === 0) return '';
+
+    const lines = patterns.map(
+      (p, i) =>
+        `${i + 1}. PATTERN: ${p.pattern}\n   ROOT CAUSE: ${p.rootCause}\n   FIX: ${p.fix}${p.context ? `\n   CONTEXT: ${p.context}` : ''}\n   (seen ${p.occurrences}x)`
+    );
+
+    return `\n\n<known_error_patterns>\nAvoid these previously encountered failure patterns:\n${lines.join('\n\n')}\n</known_error_patterns>`;
+  }
+
+  /** Get all recorded error patterns */
+  getAllErrorPatterns(): ErrorPattern[] {
+    const rows = this.db
+      .prepare('SELECT * FROM error_patterns ORDER BY occurrences DESC, last_seen_at DESC')
+      .all() as Record<string, unknown>[];
+    return rows.map((r) => this.rowToErrorPattern(r));
+  }
+
+  /** Delete an error pattern by id */
+  deleteErrorPattern(id: string): void {
+    this.db.prepare('DELETE FROM error_patterns WHERE id = ?').run(id);
+  }
+
+  private rowToErrorPattern(row: Record<string, unknown>): ErrorPattern {
+    return {
+      id: row.id as string,
+      pattern: row.pattern as string,
+      rootCause: row.root_cause as string,
+      fix: row.fix as string,
+      context: (row.context as string) || '',
+      occurrences: row.occurrences as number,
+      lastSeenAt: row.last_seen_at as number,
+      createdAt: row.created_at as number,
+    };
   }
 
   /**
