@@ -21,6 +21,25 @@ import type {
 } from './types';
 import { MessageRouter } from './message-router';
 
+/**
+ * Constant-time string comparison for secrets (tokens, codes).
+ * Equal-length strings compare via timingSafeEqual; length mismatch still
+ * leaks only the length, which is acceptable and unavoidable.
+ */
+export function timingSafeEqualStrings(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') {
+    return false;
+  }
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) {
+    // Burn comparable time to reduce length-based timing signal
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 // WebSocket client connection
 interface WSClient {
   id: string;
@@ -383,6 +402,11 @@ export class RemoteGateway extends EventEmitter {
 
   /**
    * Handle pairing request from unauthorized user
+   *
+   * Security: the pairing code is a *request identifier* shown to the admin in
+   * the desktop UI — it never grants access on its own. Replying with the code
+   * in the channel must not self-approve the pairing (otherwise anyone who
+   * requests pairing could pair themselves without human approval).
    */
   private async handlePairingRequest(message: RemoteMessage): Promise<void> {
     const userKey = `${message.channelType}:${message.sender.id}`;
@@ -391,45 +415,17 @@ export class RemoteGateway extends EventEmitter {
     if (this.pairingRequests.has(userKey)) {
       const existing = this.pairingRequests.get(userKey)!;
 
-      // Check if message contains the pairing code
-      const inputCode = message.content.text?.trim();
-      if (inputCode === existing.code) {
-        // Pairing successful
-        this.pairedUsers.set(userKey, {
-          userId: message.sender.id,
-          userName: message.sender.name,
-          channelType: message.channelType,
-          pairedAt: Date.now(),
-          lastActiveAt: Date.now(),
-        });
-
-        this.pairingRequests.delete(userKey);
-
-        await this.sendToChannel({
-          channelType: message.channelType,
-          channelId: message.channelId,
-          content: {
-            type: 'text',
-            text: '✅ 配对成功！您现在可以开始使用机器人了。',
-          },
-          replyTo: message.id,
-        });
-
-        log('[Gateway] User paired successfully:', userKey);
-        return;
-      }
-
       // Check if expired
       if (Date.now() > existing.expiresAt) {
         this.pairingRequests.delete(userKey);
       } else {
-        // Already has valid pairing request
+        // Already has valid pairing request — awaiting admin approval only
         await this.sendToChannel({
           channelType: message.channelType,
           channelId: message.channelId,
           content: {
             type: 'text',
-            text: `请输入配对码进行验证。\n\n您的配对码是: **${existing.code}**\n\n请将此配对码发送给管理员进行确认，或直接回复配对码完成配对。`,
+            text: `您的配对请求正在等待管理员确认，请耐心等待。\n\n您的配对码是: **${existing.code}**（请勿将配对码透露给他人）。\n\n如需加急，请联系管理员在其桌面端确认。`,
           },
           replyTo: message.id,
         });
@@ -455,7 +451,7 @@ export class RemoteGateway extends EventEmitter {
       channelId: message.channelId,
       content: {
         type: 'text',
-        text: `👋 您好！首次使用需要进行配对验证。\n\n您的配对码是: **${code}**\n\n请将此配对码发送给管理员进行确认。配对码有效期10分钟。`,
+        text: `👋 您好！首次使用需要进行配对验证。\n\n您的配对码是: **${code}**\n\n请将此配对码告知管理员，由管理员在桌面端确认后即可使用。配对码有效期10分钟。`,
       },
       replyTo: message.id,
     });
@@ -586,8 +582,18 @@ export class RemoteGateway extends EventEmitter {
       return;
     }
 
-    // Status endpoint
+    // Status endpoint — only exposed without credentials when no token is
+    // configured (auth mode 'open'/allowlist/pairing on loopback). With a
+    // token configured, require it to avoid leaking channel/session state.
     if (url === '/status') {
+      if (this.config.auth.mode === 'token' && this.config.auth.token) {
+        const provided = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim() || '';
+        if (!timingSafeEqualStrings(provided, this.config.auth.token)) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Unauthorized' }));
+          return;
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(this.getStatus()));
       return;
@@ -738,6 +744,15 @@ export class RemoteGateway extends EventEmitter {
 
   private checkAuthRateLimit(ip: string): boolean {
     const now = Date.now();
+    // Periodically purge expired entries so the map cannot grow unbounded
+    if (this.authAttempts.size > 0 && (now - this.lastAuthAttemptPurge) > 300000) {
+      this.lastAuthAttemptPurge = now;
+      for (const [key, entry] of this.authAttempts) {
+        if (now > entry.resetTime) {
+          this.authAttempts.delete(key);
+        }
+      }
+    }
     const attempt = this.authAttempts.get(ip);
     if (!attempt || now > attempt.resetTime) {
       this.authAttempts.set(ip, { count: 1, resetTime: now + 60000 });
@@ -746,6 +761,8 @@ export class RemoteGateway extends EventEmitter {
     attempt.count++;
     return attempt.count <= 5;
   }
+
+  private lastAuthAttemptPurge: number = Date.now();
 
   private handleWSAuth(client: WSClient, message: WSMessage): void {
     // Rate limit auth attempts by IP
@@ -761,7 +778,12 @@ export class RemoteGateway extends EventEmitter {
     const { token } = message.payload as { token?: string };
 
     if (this.config.auth.mode === 'token') {
-      if (token === this.config.auth.token) {
+      if (
+        timingSafeEqualStrings(
+          typeof token === 'string' ? token : '',
+          this.config.auth.token || ''
+        ) && this.config.auth.token
+      ) {
         client.authenticated = true;
         this.sendWSMessage(client.ws, {
           type: 'auth_result',
