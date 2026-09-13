@@ -10,19 +10,17 @@
 
 import { spawn, execFile, ChildProcess } from 'child_process';
 import { promisify } from 'util';
-import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
 import { log, logError, logWarn } from '../utils/logger';
+import { VMJsonRpcTransport } from './vm-jsonrpc-transport';
 import type {
   WSLStatus,
   SandboxConfig,
   SandboxExecutor,
   ExecutionResult,
   DirectoryEntry,
-  JSONRPCRequest,
-  JSONRPCResponse,
   PathConverter,
 } from './types';
 
@@ -94,7 +92,7 @@ export const pathConverter: PathConverter = {
 /**
  * WSL Bridge - Manages communication with WSL2
  */
-export class WSLBridge implements SandboxExecutor {
+export class WSLBridge extends VMJsonRpcTransport implements SandboxExecutor {
   /** Validate WSL distro name to prevent command injection */
   private static validateDistroName(distro: string): string {
     if (!/^[a-zA-Z0-9\-_.]+$/.test(distro)) {
@@ -104,19 +102,20 @@ export class WSLBridge implements SandboxExecutor {
   }
 
   private wslProcess: ChildProcess | null = null;
-  private pendingRequests: Map<
-    string,
-    {
-      resolve: (value: unknown) => void;
-      reject: (reason: Error) => void;
-      timeout: NodeJS.Timeout;
-    }
-  > = new Map();
-  private buffer: string = '';
   private config: SandboxConfig | null = null;
   private distro: string = 'Ubuntu';
   private isInitialized: boolean = false;
   private initPromise: Promise<void> | null = null;
+
+  protected readonly logTag = '[WSL]';
+
+  protected getAgentStdin(): NodeJS.WritableStream | null {
+    return this.wslProcess?.stdin ?? null;
+  }
+
+  protected agentName(): string {
+    return 'WSL';
+  }
 
   /**
    * Decode UTF-16LE buffer to string (Windows WSL output)
@@ -840,17 +839,9 @@ export class WSLBridge implements SandboxExecutor {
     });
 
     // Handle stdout (JSON-RPC responses)
-    const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
     this.wslProcess.stdout?.on('data', (data: Buffer) => {
       try {
-        this.buffer += data.toString();
-        if (this.buffer.length > MAX_BUFFER_SIZE) {
-          logError('[WSL] Buffer size exceeded limit, disconnecting agent');
-          this.buffer = '';
-          this.wslProcess?.kill();
-          return;
-        }
-        this.processBuffer();
+        this.ingestStdout(data, () => this.wslProcess?.kill());
       } catch (error) {
         logError('[WSL] Error processing stdout data:', error);
       }
@@ -866,13 +857,7 @@ export class WSLBridge implements SandboxExecutor {
       log('[WSL] Agent process exited:', { code, signal });
       this.wslProcess = null;
       this.isInitialized = false;
-
-      // Reject all pending requests
-      for (const pending of this.pendingRequests.values()) {
-        pending.reject(new Error('WSL agent process exited'));
-        clearTimeout(pending.timeout);
-      }
-      this.pendingRequests.clear();
+      this.failAllPendingRequests();
     });
 
     this.wslProcess.on('error', (error) => {
@@ -899,72 +884,6 @@ export class WSLBridge implements SandboxExecutor {
     });
 
     log('[WSL] Agent is ready');
-  }
-
-  /**
-   * Process incoming data buffer for complete JSON messages
-   */
-  private processBuffer(): void {
-    const lines = this.buffer.split(/\r?\n/);
-    this.buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
-      try {
-        const response = JSON.parse(line) as JSONRPCResponse;
-        const pending = this.pendingRequests.get(response.id);
-
-        if (pending) {
-          clearTimeout(pending.timeout);
-          this.pendingRequests.delete(response.id);
-
-          if (response.error) {
-            pending.reject(new Error(response.error.message));
-          } else {
-            pending.resolve(response.result);
-          }
-        }
-      } catch (error) {
-        logError('[WSL] Failed to parse response:', line, error);
-      }
-    }
-  }
-
-  /**
-   * Send a JSON-RPC request to the WSL agent
-   */
-  private async sendRequest<T = unknown>(
-    method: string,
-    params: Record<string, unknown>,
-    timeoutMs: number = 60000
-  ): Promise<T> {
-    if (!this.wslProcess?.stdin) {
-      throw new Error('WSL agent not running');
-    }
-
-    const id = uuidv4();
-    const request: JSONRPCRequest = {
-      jsonrpc: '2.0',
-      id,
-      method,
-      params,
-    };
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        reject(new Error(`Request timeout: ${method}`));
-      }, timeoutMs);
-
-      this.pendingRequests.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
-        timeout,
-      });
-
-      this.wslProcess!.stdin!.write(JSON.stringify(request) + '\n');
-    });
   }
 
   /**
@@ -1166,7 +1085,7 @@ export class WSLBridge implements SandboxExecutor {
     }
 
     this.isInitialized = false;
-    this.pendingRequests.clear();
+    this.failAllPendingRequests();
     log('[WSL] Bridge shutdown complete');
   }
 

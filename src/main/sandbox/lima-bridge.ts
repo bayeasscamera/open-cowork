@@ -10,19 +10,17 @@
 
 import { spawn, exec, execFile, ChildProcess } from 'child_process';
 import { promisify } from 'util';
-import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
 import { log, logError } from '../utils/logger';
+import { VMJsonRpcTransport } from './vm-jsonrpc-transport';
 import type {
   LimaStatus,
   SandboxConfig,
   SandboxExecutor,
   ExecutionResult,
   DirectoryEntry,
-  JSONRPCRequest,
-  JSONRPCResponse,
   PathConverter,
 } from './types';
 
@@ -117,20 +115,21 @@ export const pathConverter = limaPathConverter;
 /**
  * Lima Bridge - Manages communication with Lima VM
  */
-export class LimaBridge implements SandboxExecutor {
+export class LimaBridge extends VMJsonRpcTransport implements SandboxExecutor {
   private limaProcess: ChildProcess | null = null;
-  private pendingRequests: Map<
-    string,
-    {
-      resolve: (value: unknown) => void;
-      reject: (reason: Error) => void;
-      timeout: NodeJS.Timeout;
-    }
-  > = new Map();
-  private buffer: string = '';
   private config: SandboxConfig | null = null;
   private isInitialized: boolean = false;
   private initPromise: Promise<void> | null = null;
+
+  protected readonly logTag = '[Lima]';
+
+  protected getAgentStdin(): NodeJS.WritableStream | null {
+    return this.limaProcess?.stdin ?? null;
+  }
+
+  protected agentName(): string {
+    return 'Lima';
+  }
 
   /**
    * Check if Lima is available on this system
@@ -706,8 +705,11 @@ export class LimaBridge implements SandboxExecutor {
 
     // Handle stdout (JSON-RPC responses)
     this.limaProcess.stdout?.on('data', (data: Buffer) => {
-      this.buffer += data.toString();
-      this.processBuffer();
+      try {
+        this.ingestStdout(data, () => this.limaProcess?.kill());
+      } catch (error) {
+        logError('[Lima] Error processing stdout data:', error);
+      }
     });
 
     // Handle stderr (logging)
@@ -720,12 +722,7 @@ export class LimaBridge implements SandboxExecutor {
       log('[Lima] Agent process exited:', { code, signal });
       this.limaProcess = null;
       this.isInitialized = false;
-
-      for (const pending of this.pendingRequests.values()) {
-        pending.reject(new Error('Lima agent process exited'));
-        clearTimeout(pending.timeout);
-      }
-      this.pendingRequests.clear();
+      this.failAllPendingRequests();
     });
 
     this.limaProcess.on('error', (error) => {
@@ -752,72 +749,6 @@ export class LimaBridge implements SandboxExecutor {
     });
 
     log('[Lima] Agent is ready');
-  }
-
-  /**
-   * Process incoming data buffer for complete JSON messages
-   */
-  private processBuffer(): void {
-    const lines = this.buffer.split(/\r?\n/);
-    this.buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
-      try {
-        const response = JSON.parse(line) as JSONRPCResponse;
-        const pending = this.pendingRequests.get(response.id);
-
-        if (pending) {
-          clearTimeout(pending.timeout);
-          this.pendingRequests.delete(response.id);
-
-          if (response.error) {
-            pending.reject(new Error(response.error.message));
-          } else {
-            pending.resolve(response.result);
-          }
-        }
-      } catch (error) {
-        logError('[Lima] Failed to parse response:', line, error);
-      }
-    }
-  }
-
-  /**
-   * Send a JSON-RPC request to the Lima agent
-   */
-  private async sendRequest<T = unknown>(
-    method: string,
-    params: Record<string, unknown>,
-    timeoutMs: number = 60000
-  ): Promise<T> {
-    if (!this.limaProcess?.stdin) {
-      throw new Error('Lima agent not running');
-    }
-
-    const id = uuidv4();
-    const request: JSONRPCRequest = {
-      jsonrpc: '2.0',
-      id,
-      method,
-      params,
-    };
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        reject(new Error(`Request timeout: ${method}`));
-      }, timeoutMs);
-
-      this.pendingRequests.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
-        timeout,
-      });
-
-      this.limaProcess!.stdin!.write(JSON.stringify(request) + '\n');
-    });
   }
 
   /**
@@ -1000,7 +931,7 @@ export class LimaBridge implements SandboxExecutor {
     }
 
     this.isInitialized = false;
-    this.pendingRequests.clear();
+    this.failAllPendingRequests();
     log('[Lima] Bridge shutdown complete');
   }
 
