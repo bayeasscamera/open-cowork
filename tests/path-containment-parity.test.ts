@@ -4,16 +4,15 @@ import path from 'node:path';
 
 const COPIES = [
   'src/main/tools/path-containment.ts',
-  'src/main/sandbox/wsl-agent/path-containment.ts',
-  'src/main/sandbox/lima-agent/path-containment.ts',
+  'src/main/sandbox/vm-agent/path-containment.ts',
 ] as const;
 
 /**
- * The in-VM agents cannot import from `src/shared/`, so path-containment is
- * intentionally duplicated into wsl-agent/ and lima-agent/ with inlined
+ * The in-VM agent cannot import from `src/shared/` (it compiles standalone),
+ * so path-containment is intentionally duplicated into vm-agent/ with inlined
  * Windows-path helpers. These guards fail when a copy silently diverges from
  * the canonical implementation — a containment fix applied to one copy but
- * not the others would be a security regression.
+ * not the other would be a security regression.
  */
 describe('path-containment copy parity', () => {
   it('has exactly the expected copies', () => {
@@ -44,17 +43,11 @@ describe('path-containment copy parity', () => {
         .join('\n');
 
     // tools/ copy: import line + blank line (2 lines).
-    // Agent copies: NOTE comment + inlined helpers (14 lines).
+    // Agent copy: NOTE comment + inlined helpers (14 lines).
     const canonical = read(COPIES[0], 2);
     for (const copy of COPIES.slice(1)) {
       const agentCopy = read(copy, 14);
       expect(agentCopy, `${copy} logic diverges from ${COPIES[0]}`).toBe(canonical);
     }
-  });
-
-  it('wsl and lima agent copies are byte-identical', () => {
-    const wsl = fs.readFileSync(path.resolve(process.cwd(), COPIES[1]), 'utf8');
-    const lima = fs.readFileSync(path.resolve(process.cwd(), COPIES[2]), 'utf8');
-    expect(lima).toBe(wsl.replace('WSL', 'Lima'));
   });
 });

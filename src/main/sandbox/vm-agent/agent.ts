@@ -1,16 +1,17 @@
-#!/usr/bin/env node
 /**
- * Lima Sandbox Agent
+ * Shared VM Sandbox Agent
  *
- * This script runs inside Lima VM and handles:
+ * Single implementation of the JSON-RPC sandbox agent that runs inside a VM
+ * (WSL2 on Windows, Lima on macOS). It is compiled per-platform into
+ * self-contained bundles (dist-wsl-agent, dist-lima-agent) via the entry
+ * points in wsl/ and lima/, which inject the platform descriptor.
+ *
+ * Responsibilities:
  * - Command execution in isolated environment
  * - File operations with path validation
  * - Claude-code execution
  *
- * Communication is via stdin/stdout JSON-RPC.
- *
- * NOTE: This is functionally identical to wsl-agent,
- * adapted for Lima on macOS.
+ * Communication is via stdin/stdout JSON-RPC. Logging goes to stderr.
  */
 
 import * as readline from 'readline';
@@ -18,6 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { isPathWithinRoot } from './path-containment';
+import type { VMAgentPlatform } from './platform';
 
 // Types
 interface JSONRPCRequest {
@@ -44,30 +46,29 @@ interface DirectoryEntry {
   size?: number;
 }
 
-// Logging to stderr (stdout is for JSON-RPC)
-function log(...args: unknown[]): void {
-  console.error('[Lima-Agent]', ...args);
-}
-
-function logError(...args: unknown[]): void {
-  console.error('[Lima-Agent ERROR]', ...args);
-}
-
 /**
- * Lima Sandbox Agent
+ * VM Sandbox Agent — behavior is identical across platforms; everything that
+ * differs (log prefix, env var name, host path prefix) comes from the
+ * injected platform descriptor.
  */
-class SandboxAgent {
+export class SandboxAgent {
   private workspacePath: string = '';
-  private macWorkspacePath: string = '';
+  private hostWorkspacePath: string = '';
   private isShuttingDown: boolean = false;
+
+  constructor(private readonly platform: VMAgentPlatform) {}
+
+  private log(...args: unknown[]): void {
+    console.error(this.platform.logPrefix, ...args);
+  }
 
   /**
    * Set the allowed workspace directory
    */
-  setWorkspace(limaPath: string, macPath: string): void {
-    this.workspacePath = path.resolve(limaPath);
-    this.macWorkspacePath = macPath;
-    log('Workspace set to:', this.workspacePath);
+  setWorkspace(vmPath: string, hostPath: string): void {
+    this.workspacePath = path.resolve(vmPath);
+    this.hostWorkspacePath = hostPath;
+    this.log('Workspace set to:', this.workspacePath);
   }
 
   /**
@@ -164,8 +165,8 @@ class SandboxAgent {
         continue;
       }
 
-      // Check if it's a path in /Users/ (macOS paths mounted by Lima)
-      if (p.startsWith('/Users/')) {
+      // Check if it's a host-mounted path (e.g. /mnt/ on WSL2, /Users/ on Lima)
+      if (p.startsWith(this.platform.hostPathPrefix)) {
         const resolved = path.resolve(p);
         if (!isPathWithinRoot(resolved, this.workspacePath)) {
           throw new Error(`Command references path outside workspace: ${p}`);
@@ -189,7 +190,7 @@ class SandboxAgent {
     // Validate command
     this.validateCommand(params.command, cwd);
 
-    log('Executing:', params.command, 'in', cwd);
+    this.log('Executing:', params.command, 'in', cwd);
 
     return new Promise((resolve, reject) => {
       const proc = spawn('/bin/bash', ['-c', params.command], {
@@ -199,7 +200,7 @@ class SandboxAgent {
           ...params.env,
           // Ensure workspace is set
           WORKSPACE: this.workspacePath,
-          MAC_WORKSPACE: this.macWorkspacePath,
+          [this.platform.hostWorkspaceEnv]: this.hostWorkspacePath,
         },
         timeout,
       });
@@ -349,7 +350,7 @@ class SandboxAgent {
     const cwd = params.cwd || this.workspacePath;
     this.validatePath(cwd);
 
-    log('Running claude-code in:', cwd);
+    this.log('Running claude-code in:', cwd);
 
     // Build claude command
     const args = ['--print'];
@@ -423,7 +424,7 @@ class SandboxAgent {
    */
   shutdown(): { success: boolean } {
     this.isShuttingDown = true;
-    log('Shutting down, isShuttingDown:', this.isShuttingDown);
+    this.log('Shutting down, isShuttingDown:', this.isShuttingDown);
     // Exit after sending response
     setImmediate(() => process.exit(0));
     return { success: true };
@@ -440,9 +441,11 @@ class SandboxAgent {
         return this.ping();
 
       case 'setWorkspace':
+        // Bridges send the host-side path under different keys (macPath or
+        // windowsPath depending on the platform harness).
         this.setWorkspace(
           params.path as string,
-          (params.macPath || params.windowsPath) as string // Support both macPath and windowsPath for compatibility
+          ((params.macPath || params.windowsPath) as string) ?? ''
         );
         return { success: true };
 
@@ -483,10 +486,11 @@ class SandboxAgent {
 }
 
 /**
- * Main entry point
+ * Main entry point — called by the per-platform entry files with their
+ * platform descriptor injected.
  */
-async function main(): Promise<void> {
-  const agent = new SandboxAgent();
+export async function runAgent(platform: VMAgentPlatform): Promise<void> {
+  const agent = new SandboxAgent(platform);
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -494,7 +498,7 @@ async function main(): Promise<void> {
     terminal: false,
   });
 
-  log('Lima Sandbox Agent started');
+  console.error(`${platform.label} Sandbox Agent started`);
 
   // Helper to send JSON-RPC response
   function sendResponse(response: JSONRPCResponse): void {
@@ -523,7 +527,7 @@ async function main(): Promise<void> {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logError('Request failed:', errorMessage);
+      console.error(`${platform.logPrefix} ERROR`, 'Request failed:', errorMessage);
 
       sendResponse({
         jsonrpc: '2.0',
@@ -537,34 +541,28 @@ async function main(): Promise<void> {
   });
 
   rl.on('close', () => {
-    log('Input stream closed, shutting down');
+    console.error(`${platform.logPrefix} Input stream closed, shutting down`);
     process.exit(0);
   });
 
   // Handle process signals
   process.on('SIGTERM', () => {
-    log('Received SIGTERM, shutting down');
+    console.error(`${platform.logPrefix} Received SIGTERM, shutting down`);
     process.exit(0);
   });
 
   process.on('SIGINT', () => {
-    log('Received SIGINT, shutting down');
+    console.error(`${platform.logPrefix} Received SIGINT, shutting down`);
     process.exit(0);
   });
 
   // Handle uncaught errors
   process.on('uncaughtException', (error) => {
-    logError('Uncaught exception:', error);
+    console.error(`${platform.logPrefix} ERROR Uncaught exception:`, error);
     process.exit(1);
   });
 
   process.on('unhandledRejection', (reason) => {
-    logError('Unhandled rejection:', reason);
+    console.error(`${platform.logPrefix} ERROR Unhandled rejection:`, reason);
   });
 }
-
-// Run the agent
-main().catch((error) => {
-  console.error('Failed to start Lima agent:', error);
-  process.exit(1);
-});

@@ -2,81 +2,80 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const WSL_AGENT = 'src/main/sandbox/wsl-agent/index.ts';
-const LIMA_AGENT = 'src/main/sandbox/lima-agent/index.ts';
+const AGENT_DIR = 'src/main/sandbox/vm-agent';
 
 /**
- * The WSL (Windows) and Lima (macOS) sandbox agents are intentionally separate
- * bundles: each compiles standalone (own tsconfig, rootDir=.) because the
- * compiled index.js is copied into the VM and must be self-contained.
- *
- * Functionally they are the same agent modulo the platform harness. This test
- * applies the canonical WSL→Lima substitution and fails on any divergence
- * beyond the documented platform differences — so a fix applied to one agent
- * but not the other cannot slip through silently.
+ * The WSL (Windows) and Lima (macOS) sandbox agents share a single
+ * implementation in vm-agent/agent.ts, parameterized by a platform
+ * descriptor injected at each entry point. These guards make sure neither
+ * entry point regresses: both must be self-contained bootstraps that import
+ * the shared agent and inject their own platform constants.
  */
-describe('sandbox agent parity (wsl vs lima)', () => {
-  const read = (rel: string) =>
-    fs.readFileSync(path.resolve(process.cwd(), rel), 'utf8');
+describe('sandbox agent platform entry points', () => {
+  const read = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), AGENT_DIR, rel), 'utf8');
 
-  const CANONICAL_SUBSTITUTIONS: Array<[string, string]> = [
-    ['WSL Sandbox Agent', 'Lima Sandbox Agent'],
-    ['WSL2', 'Lima VM'],
-    ['[WSL-Agent]', '[Lima-Agent]'],
-    ['[WSL-Agent ERROR]', '[Lima-Agent ERROR]'],
-    ['WSL Sandbox Agent started', 'Lima Sandbox Agent started'],
-    ['Failed to start WSL agent', 'Failed to start Lima agent'],
-    ['windowsWorkspacePath', 'macWorkspacePath'],
-    ['windowsPath', 'macPath'],
-    ['WINDOWS_WORKSPACE', 'MAC_WORKSPACE'],
-    ['/mnt/', '/Users/'],
-    ['Windows paths', 'macOS paths mounted by Lima'],
-    ['wslPath', 'limaPath'],
+  const ENTRY_POINTS = [
+    { file: 'wsl/index.ts', platform: 'WSL2', logPrefix: '[WSL-Agent]', env: 'WINDOWS_WORKSPACE', prefix: '/mnt/' },
+    { file: 'lima/index.ts', platform: 'Lima VM', logPrefix: '[Lima-Agent]', env: 'MAC_WORKSPACE', prefix: '/Users/' },
   ];
 
-  const applySubstitutions = (source: string) =>
-    CANONICAL_SUBSTITUTIONS.reduce(
-      (acc, [from, to]) => acc.split(from).join(to),
-      source
-    );
-
-  it('both agent sources exist', () => {
-    expect(fs.existsSync(path.resolve(process.cwd(), WSL_AGENT))).toBe(true);
-    expect(fs.existsSync(path.resolve(process.cwd(), LIMA_AGENT))).toBe(true);
-  });
-
-  it('lima agent matches the canonical WSL→Lima transformation (structure parity)', () => {
-    const collapsed = (src: string) =>
-      src.replace(
-        /this\.setWorkspace\(\s*params\.path as string,\s*\(params\.macPath \|\| params\.windowsPath\) as string[^;]*\);/g,
-        'this.setWorkspace(params.path as string, params.macPath as string);'
-      );
-
-    const transformed = applySubstitutions(collapsed(read(WSL_AGENT))).split('\n');
-    const limaLines = collapsed(read(LIMA_AGENT)).split('\n');
-
-    const normalize = (lines: string[]) =>
-      lines
-        .map(line => line.trim())
-        .map(line => (line.startsWith('*') || line.startsWith('//') ? '' : line))
-        .filter(line => line.length > 0);
-
-    const expected = normalize(transformed);
-    const actual = normalize(limaLines);
-
-    expect(actual.length).toBe(expected.length);
-    // Line-by-line comparison gives a precise failure location.
-    for (let i = 0; i < expected.length; i += 1) {
-      expect(actual[i], `line ${i + 1} diverges: "${expected[i]}" vs "${actual[i]}"`).toBe(
-        expected[i]
-      );
+  it('both entry points exist', () => {
+    for (const entry of ENTRY_POINTS) {
+      expect(fs.existsSync(path.resolve(process.cwd(), AGENT_DIR, entry.file)), entry.file).toBe(true);
     }
   });
 
-  it('both agents expose the same public method surface', () => {
-    const methodPattern = /^\s{2}(?:async )?(\w+)\(/gm;
-    const methods = (src: string) =>
-      [...src.matchAll(methodPattern)].map(m => m[1]).sort();
-    expect(methods(read(LIMA_AGENT))).toEqual(methods(read(WSL_AGENT)));
+  it('each entry point imports the shared agent and injects its platform descriptor', () => {
+    for (const entry of ENTRY_POINTS) {
+      const source = read(entry.file);
+      expect(source, entry.file).toContain("import { runAgent } from '../agent'");
+      expect(source, entry.file).toContain(`label: '${entry.platform}'`);
+      expect(source, entry.file).toContain(`logPrefix: '${entry.logPrefix}'`);
+      expect(source, entry.file).toContain(`hostWorkspaceEnv: '${entry.env}'`);
+      expect(source, entry.file).toContain(`hostPathPrefix: '${entry.prefix}'`);
+    }
+  });
+
+  it('shared agent has no hardcoded platform identifiers', () => {
+    const agent = read('agent.ts');
+    // Strip docblock/comment lines so the check only covers actual code.
+    const codeOnly = agent
+      .split('\n')
+      .filter(line => !line.trim().startsWith('//') && !line.trim().startsWith('*'))
+      .join('\n');
+    expect(codeOnly).not.toContain('WINDOWS_WORKSPACE');
+    expect(codeOnly).not.toContain('MAC_WORKSPACE');
+    expect(codeOnly).not.toContain('[WSL-Agent]');
+    expect(codeOnly).not.toContain('[Lima-Agent]');
+    expect(codeOnly).not.toContain("'WSL2'");
+    expect(codeOnly).not.toContain("'Lima VM'");
+    expect(codeOnly).not.toContain("'/mnt/'");
+    expect(codeOnly).not.toContain("'/Users/'");
+    expect(codeOnly).toContain('this.platform.hostPathPrefix');
+    expect(codeOnly).toContain('[this.platform.hostWorkspaceEnv]');
+  });
+
+  it('both platform bundles expose the same JSON-RPC method surface', () => {
+    const methodPattern = /case '(\w+)':/g;
+    const methods = (src: string) => [...src.matchAll(methodPattern)].map((m) => m[1]).sort();
+    expect(methods(read('agent.ts'))).toEqual([
+      'copyFile',
+      'createDirectory',
+      'deleteFile',
+      'executeCommand',
+      'fileExists',
+      'listDirectory',
+      'ping',
+      'readFile',
+      'runClaudeCode',
+      'setWorkspace',
+      'shutdown',
+      'writeFile',
+    ]);
+  });
+
+  it('setWorkspace accepts both bridge payload shapes (windowsPath / macPath)', () => {
+    const agent = read('agent.ts');
+    expect(agent).toContain('params.macPath || params.windowsPath');
   });
 });
