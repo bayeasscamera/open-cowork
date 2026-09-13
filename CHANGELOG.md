@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-09-13
+
+### Added
+
+- Agent Platform Phase 3 — UI/UX + StdioChannel + Config Write (#282)
+- `spawn_subagent` tool for in-process child sessions with streaming progress events (#279, #280)
+- Native system notifications when app is unfocused (permissions, questions, task completion)
+- Auto-approve all (full access) toggle in the input action menu
+- MemoryManager upgrade with LLM summaries + causal error-pattern memory
+- Config plaintext export/import with bidirectional sync (#277)
+- MCP protocol support for 2026-07-28 (#318)
+
+### Fixed
+
+- Zombie process on window close
+- Gemini SDK module boundary in Electron (#299)
+- RTL message direction + per-session scroll position (#265, #267)
+- Inline think-tag parser removal + frontend escaping
+- i18n en/fr/zh key parity and placeholder consistency
+
+### Security
+
+- Patch extract-zip symlink escape (GHSA-7pqw-9j4j-h8q3, GHSA-jmr9-qjv8-65gv)
+- Pin ngrok transitive uuid@8 → uuid@11
+- npm audit fix — 48→7 vulnerabilities (29→4 in production)
+
+### Refactor
+
+- Move IPC/domain contracts from renderer/types to shared/types
+- Extract shared JSON-RPC transport for VM bridges
+- Remove dead ToolExecutor and SandboxToolExecutor
+
 ## [3.3.0] - 2026-04-18
 
 First stable release of the 3.3.x series. Graduated from 9 beta releases with 30+ commits since beta.9.
