@@ -247,6 +247,32 @@ function truncateLogText(value: string, maxLength = MAX_LOG_STRING_LENGTH): stri
   return `${value.slice(0, maxLength)}… [truncated ${value.length - maxLength} chars]`;
 }
 
+// Secret patterns commonly carried in API keys/tokens that must never reach logs.
+// Each match keeps a short prefix for debuggability and masks the remainder.
+const SECRET_PATTERNS: RegExp[] = [
+  /\b(sk|rk|pk)-[A-Za-z0-9_-]{8,}/g, // sk-... / rk-... / pk-... style keys
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi, // Authorization bearer tokens
+  /\b(?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|refresh[_-]?token)["'\s:=]+([A-Za-z0-9._~+/=-]{12,})/gi,
+];
+
+function redactSecretsInText(value: string): string {
+  let result = value;
+  for (const pattern of SECRET_PATTERNS) {
+    result = result.replace(pattern, (match, captured) => {
+      // Pattern 3 has a capture group: keep the key name, mask the value.
+      if (captured && captured !== match) {
+        return match.slice(0, match.indexOf(captured)) + '[REDACTED]';
+      }
+      const keep = Math.min(6, Math.max(0, match.length - 12));
+      return match.slice(0, keep) + '[REDACTED]';
+    });
+  }
+  return result;
+}
+
+/** Test hook: expose the internal redaction pipeline without widening its use. */
+export const redactSecretsForTest = redactSecretsInText;
+
 function normalizeLogValue(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
   if (value instanceof Error) {
     if (seen.has(value)) {
@@ -270,7 +296,7 @@ function normalizeLogValue(value: unknown, seen = new WeakSet<object>(), depth =
   }
 
   if (typeof value === 'string') {
-    return truncateLogText(value);
+    return truncateLogText(redactSecretsInText(value));
   }
 
   if (
