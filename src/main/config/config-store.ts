@@ -19,6 +19,7 @@ import {
   createEncryptedStoreWithKeyRotation,
   getLegacyDerivedKeyHexes,
 } from '../utils/store-encryption';
+import { resolveStoreEncryptionKey } from '../utils/store-key-manager';
 import {
   isOpenAIProvider,
   isOllamaLegacyCustomOpenAIConfig,
@@ -579,10 +580,28 @@ export class ConfigStore {
     // Cast to satisfy the Record<string, unknown> constraint of the encrypted store utility;
     // AppConfig is a structurally compatible object type at runtime.
     type AppConfigRecord = AppConfig & Record<string, unknown>;
+
+    // Security: the stable key is now a per-installation random key protected
+    // by the OS keyring (safeStorage) instead of a scrypt over public source
+    // constants. The old derived keys remain as legacy fallbacks so existing
+    // installs migrate transparently via key rotation.
+    let stableKey = 'open-cowork-config-stable-v1';
+    let keyringLegacyKeys: string[] = [];
+    try {
+      stableKey = resolveStoreEncryptionKey();
+      keyringLegacyKeys = ['open-cowork-config-stable-v1'];
+    } catch (keyError) {
+      logWarn(
+        '[ConfigStore] Falling back to derived store key (keyring unavailable):',
+        keyError instanceof Error ? keyError.message : String(keyError)
+      );
+    }
+
     this.store = createEncryptedStoreWithKeyRotation<AppConfigRecord>({
-      stableKey: 'open-cowork-config-stable-v1',
+      stableKey,
       legacyKeys: [
         'open-cowork-config-v1',
+        ...keyringLegacyKeys,
         ...getLegacyDerivedKeyHexes({
           moduleDirname: __dirname,
           stableSeed: 'open-cowork-config-stable-v1',
