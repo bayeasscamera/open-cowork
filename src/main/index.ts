@@ -81,6 +81,7 @@ import {
 } from '../shared/local-file-path';
 import { eventRequiresSessionManager } from './client-event-utils';
 import { getUnsupportedWorkspacePathReason } from './workspace-path-constraints';
+import { isPathWithinRoot } from './tools/path-containment';
 import {
   log,
   logWarn,
@@ -1978,6 +1979,15 @@ ipcMain.handle('artifacts.readFile', async (_event, filePath: string) => {
   try {
     if (!filePath || !fs.existsSync(filePath)) {
       throw new Error(`File not found: ${filePath}`);
+    }
+    // Security: the renderer may only read files inside the active workspace.
+    // Resolve symlinks first so a link pointing outside the workspace is caught.
+    const allowedRoot = getWorkingDir();
+    if (allowedRoot) {
+      const resolvedPath = fs.realpathSync(filePath);
+      if (!isPathWithinRoot(resolvedPath, fs.realpathSync(allowedRoot))) {
+        throw new Error(`Access denied: path is outside the workspace: ${filePath}`);
+      }
     }
     // Limit to 5MB to avoid freezing UI
     const stat = fs.statSync(filePath);
