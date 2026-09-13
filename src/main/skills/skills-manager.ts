@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import chokidar, { type FSWatcher } from 'chokidar';
-import type { Skill, PluginInstallResult } from '../../renderer/types';
+import type { Skill, PluginInstallResult } from '../../shared/types';
 import type { DatabaseInstance } from '../db/database';
 import { log, logError, logWarn } from '../utils/logger';
 import { isPathWithinRoot } from '../tools/path-containment';

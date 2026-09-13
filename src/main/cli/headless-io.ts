@@ -13,7 +13,7 @@
  */
 
 import * as readline from 'readline';
-import type { ServerEvent, ClientEvent } from '../../renderer/types';
+import type { ServerEvent, ClientEvent } from '../../shared/types';
 
 // ── Headless JSONL event types ──
 

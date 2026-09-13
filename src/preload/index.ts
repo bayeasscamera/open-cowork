@@ -25,8 +25,8 @@ import type {
   MemoryDebugFileInfo,
   MemoryDebugFileContent,
   MemoryInspectSessionResult,
-} from '../renderer/types';
-import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
+} from '../shared/types';
+import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type {
   McpServerConfig,
   McpTool,

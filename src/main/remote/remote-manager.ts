@@ -24,7 +24,7 @@ import type {
   PairingRequest,
   RemoteConfig,
 } from './types';
-import type { Message, ContentBlock, ServerEvent, Session } from '../../renderer/types/index';
+import type { Message, ContentBlock, ServerEvent, Session } from '../../shared/types';
 
 // Agent executor interface - exported for use in main process
 export interface AgentExecutor {

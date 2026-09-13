@@ -57,7 +57,7 @@ import type {
   DiagnosticInput,
   ProviderModelInfo,
   PermissionRule,
-} from '../renderer/types';
+} from '../shared/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
 import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';

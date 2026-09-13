@@ -13,7 +13,7 @@ import type {
   RemoteSessionMapping,
   ChannelType,
 } from './types';
-import type { Message, ContentBlock, TextContent } from '../../renderer/types/index';
+import type { Message, ContentBlock, TextContent } from '../../shared/types';
 
 // Callback type for sending responses back to channels
 type ResponseCallback = (response: RemoteResponse) => Promise<void>;

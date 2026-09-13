@@ -13,7 +13,7 @@
  * unknown / malformed values fall back to `'ask'` so the worst-case is a
  * harmless extra prompt, never an unintended auto-allow.
  */
-import type { PermissionRule } from '../../renderer/types';
+import type { PermissionRule } from '../../shared/types';
 
 // Mirrors the renderer defaults in src/renderer/store/index.ts
 const DEFAULT_RULES: PermissionRule[] = [

@@ -1,6 +1,6 @@
 import { homedir } from 'os';
 import path from 'path';
-import type { Message, Session, TraceStep } from '../../renderer/types';
+import type { Message, Session, TraceStep } from '../../shared/types';
 
 const MAX_DIAGNOSTIC_SESSIONS = 8;
 const MAX_DIAGNOSTIC_ERROR_STEPS = 20;

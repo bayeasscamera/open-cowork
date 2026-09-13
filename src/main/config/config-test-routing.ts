@@ -1,4 +1,4 @@
-import type { ApiTestInput, ApiTestResult } from '../../renderer/types';
+import type { ApiTestInput, ApiTestResult } from '../../shared/types';
 import type { AppConfig } from './config-store';
 import { probeWithSdk } from '../agent/sdk-one-shot';
 

@@ -1,6 +1,6 @@
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import type { TSchema } from '@sinclair/typebox';
-import type { Message, Session } from '../../renderer/types';
+import type { Message, Session } from '../../shared/types';
 
 export type AgentRuntimeCustomTool = ToolDefinition<TSchema, unknown>;
 

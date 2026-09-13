@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { TraceStep } from '../../renderer/types';
+import type { TraceStep } from '../../shared/types';
 
 export type ArtifactInfo = {
   path: string;

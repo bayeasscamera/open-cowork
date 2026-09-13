@@ -1,4 +1,4 @@
-import type { PluginCatalogItem, PluginComponentCounts } from '../../renderer/types';
+import type { PluginCatalogItem, PluginComponentCounts } from '../../shared/types';
 
 interface CachedCatalog {
   expiresAt: number;

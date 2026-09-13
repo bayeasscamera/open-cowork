@@ -11,7 +11,7 @@ import type {
   PluginComponentKind,
   PluginInstallResultV2,
   PluginToggleResult,
-} from '../../renderer/types';
+} from '../../shared/types';
 import { log, logError } from '../utils/logger';
 import { isPathWithinRoot } from '../tools/path-containment';
 import { getDefaultShell } from '../utils/shell-resolver';

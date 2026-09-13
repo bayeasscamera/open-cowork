@@ -23,7 +23,7 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import { Type, type TSchema } from '@sinclair/typebox';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
-import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../renderer/types';
+import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { PathResolver } from '../sandbox/path-resolver';

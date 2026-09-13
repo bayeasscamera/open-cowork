@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Message, MemoryEntry, ContentBlock } from '../../renderer/types';
+import type { Message, MemoryEntry, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { logError, logWarn } from '../utils/logger';
 import type { MemoryLLMClientLike } from './memory-llm-client';

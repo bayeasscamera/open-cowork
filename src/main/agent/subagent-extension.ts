@@ -18,7 +18,7 @@ import { MCPManager } from '../mcp/mcp-manager';
 import { configStore } from '../config/config-store';
 import { log, logError } from '../utils/logger';
 import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resolution';
-import type { ServerEvent } from '../../renderer/types';
+import type { ServerEvent } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
 const MAX_TIMEOUT_MS = 300_000;

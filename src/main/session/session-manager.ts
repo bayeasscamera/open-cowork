@@ -23,7 +23,7 @@ import type {
   TextContent,
   TraceStep,
   FileAttachmentContent,
-} from '../../renderer/types';
+} from '../../shared/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
 import {

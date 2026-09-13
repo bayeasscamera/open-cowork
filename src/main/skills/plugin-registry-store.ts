@@ -2,7 +2,7 @@ import Store from 'electron-store';
 import { app } from 'electron';
 import os from 'node:os';
 import path from 'node:path';
-import type { InstalledPlugin } from '../../renderer/types';
+import type { InstalledPlugin } from '../../shared/types';
 
 interface PluginRegistrySchema {
   plugins: InstalledPlugin[];

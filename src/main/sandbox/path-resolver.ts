@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import type { MountedPath } from '../../renderer/types';
+import type { MountedPath } from '../../shared/types';
 import { logWarn, logError } from '../utils/logger';
 import { isPathWithinRoot } from '../tools/path-containment';
 

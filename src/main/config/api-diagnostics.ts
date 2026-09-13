@@ -29,7 +29,7 @@ import type {
   DiagnosticStepName,
   DiagnosticVerificationLevel,
   LocalOllamaDiscoveryResult,
-} from '../../renderer/types';
+} from '../../shared/types';
 import { log, logWarn } from '../utils/logger';
 import { probeWithSdk } from '../agent/sdk-one-shot';
 import { fetchOllamaModelIndex } from './ollama-api';

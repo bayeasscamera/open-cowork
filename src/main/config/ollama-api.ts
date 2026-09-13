@@ -1,4 +1,4 @@
-import type { ApiTestInput, ApiTestResult, ProviderModelInfo } from '../../renderer/types';
+import type { ApiTestInput, ApiTestResult, ProviderModelInfo } from '../../shared/types';
 import * as crypto from 'crypto';
 import { isLoopbackBaseUrl } from '../../shared/network/loopback';
 import { normalizeOllamaBaseUrl } from './auth-utils';

@@ -1,5 +1,5 @@
 import { completeSimple, type UserMessage as PiUserMessage } from '@mariozechner/pi-ai';
-import type { ApiTestInput, ApiTestResult } from '../../renderer/types';
+import type { ApiTestInput, ApiTestResult } from '../../shared/types';
 import { PROVIDER_PRESETS, type AppConfig, type CustomProtocolType } from '../config/config-store';
 import {
   normalizeAnthropicBaseUrl,
