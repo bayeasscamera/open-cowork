@@ -59,12 +59,12 @@ export class PatchVerifier {
         dryRunPassed: true,
         patchResult,
       };
-    } catch (writeErr: any) {
+    } catch (writeErr: unknown) {
       return {
         canApply: false,
         dryRunPassed: false,
         patchResult,
-        error: `Erreur d'écriture disque: ${writeErr?.message}`,
+        error: `Erreur d'écriture disque: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
       };
     }
   }

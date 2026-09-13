@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
-import type { ContentBlock } from '../types';
+import type { ContentBlock, AppConfig, ProviderProfile, ProviderProfileKey } from '../types';
 import { getInitialSessionTitle } from '../../shared/session-title';
 import {
   FileText,
@@ -16,7 +16,7 @@ import {
   FileSearch,
   ChevronDown,
 } from 'lucide-react';
-import { API_PROVIDER_PRESETS } from '../../shared/api-model-presets';
+import { API_PROVIDER_PRESETS, type SharedProviderPreset } from '../../shared/api-model-presets';
 import { useAppConfig } from '../store/selectors';
 
 type AttachedFile = {
@@ -52,6 +52,42 @@ export function WelcomeView() {
   const [customModelInput, setCustomModelInput] = useState('');
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
+
+  const addCustomModel = useCallback(
+    (newModel: string) => {
+      if (!appConfig || !newModel) return;
+      const currentProvider = appConfig.provider || 'openai';
+      const activeKey: ProviderProfileKey =
+        appConfig.activeProfileKey ||
+        (currentProvider === 'custom'
+          ? `custom:${appConfig.customProtocol || 'openai'}`
+          : currentProvider);
+      const currentProfile: ProviderProfile =
+        appConfig.profiles?.[activeKey] ?? { apiKey: '', model: '' };
+      const currentCustomModels = Array.isArray(currentProfile.customModels)
+        ? currentProfile.customModels
+        : [];
+      const nextCustomModels = Array.from(new Set([...currentCustomModels, newModel]));
+      const updated: AppConfig = {
+        ...appConfig,
+        model: newModel,
+        profiles: {
+          ...appConfig.profiles,
+          [activeKey]: {
+            ...currentProfile,
+            model: newModel,
+            customModels: nextCustomModels,
+          },
+        },
+      };
+      useAppStore.getState().setAppConfig(updated);
+      window.electronAPI?.config?.save?.(updated);
+      setCustomModelInput('');
+      setShowAddCustomModel(false);
+      setShowModelPicker(false);
+    },
+    [appConfig]
+  );
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -674,31 +710,7 @@ export function WelcomeView() {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && customModelInput.trim()) {
                               e.preventDefault();
-                              const newModel = customModelInput.trim();
-                              if (appConfig) {
-                                const currentProvider = appConfig.provider || 'openai';
-                                const activeKey = appConfig.activeProfileKey || (currentProvider === 'custom' ? `custom:${appConfig.customProtocol || 'openai'}` : currentProvider);
-                                const currentProfile = (appConfig.profiles as any)?.[activeKey] || {};
-                                const currentCustomModels = Array.isArray(currentProfile.customModels) ? currentProfile.customModels : [];
-                                const nextCustomModels = Array.from(new Set([...currentCustomModels, newModel]));
-                                const updated = {
-                                  ...appConfig,
-                                  model: newModel,
-                                  profiles: {
-                                    ...appConfig.profiles,
-                                    [activeKey]: {
-                                      ...currentProfile,
-                                      model: newModel,
-                                      customModels: nextCustomModels,
-                                    },
-                                  },
-                                };
-                                useAppStore.getState().setAppConfig(updated as any);
-                                window.electronAPI?.config?.save?.(updated as any);
-                              }
-                              setCustomModelInput('');
-                              setShowAddCustomModel(false);
-                              setShowModelPicker(false);
+                              addCustomModel(customModelInput.trim());
                             }
                           }}
                           className="w-full px-2 py-1 rounded text-xs bg-background border border-border outline-none text-text-primary"
@@ -706,30 +718,8 @@ export function WelcomeView() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (customModelInput.trim() && appConfig) {
-                              const newModel = customModelInput.trim();
-                              const currentProvider = appConfig.provider || 'openai';
-                              const activeKey = appConfig.activeProfileKey || (currentProvider === 'custom' ? `custom:${appConfig.customProtocol || 'openai'}` : currentProvider);
-                              const currentProfile = (appConfig.profiles as any)?.[activeKey] || {};
-                              const currentCustomModels = Array.isArray(currentProfile.customModels) ? currentProfile.customModels : [];
-                              const nextCustomModels = Array.from(new Set([...currentCustomModels, newModel]));
-                              const updated = {
-                                ...appConfig,
-                                model: newModel,
-                                profiles: {
-                                  ...appConfig.profiles,
-                                  [activeKey]: {
-                                    ...currentProfile,
-                                    model: newModel,
-                                    customModels: nextCustomModels,
-                                  },
-                                },
-                              };
-                              useAppStore.getState().setAppConfig(updated as any);
-                              window.electronAPI?.config?.save?.(updated as any);
-                              setCustomModelInput('');
-                              setShowAddCustomModel(false);
-                              setShowModelPicker(false);
+                            if (customModelInput.trim()) {
+                              addCustomModel(customModelInput.trim());
                             }
                           }}
                           className="w-full py-1 text-xs rounded bg-accent text-background font-medium hover:bg-accent-hover transition-colors text-center"
@@ -744,7 +734,7 @@ export function WelcomeView() {
                         const currentProvider = appConfig?.provider || 'openai';
                         const activeProfileKey = appConfig?.activeProfileKey;
                         const activeProfile = activeProfileKey
-                          ? (appConfig?.profiles as any)?.[activeProfileKey]
+                          ? appConfig?.profiles?.[activeProfileKey]
                           : undefined;
 
                         let allModels: Array<{ id: string; name: string }> = [];
@@ -755,7 +745,7 @@ export function WelcomeView() {
                             allModels = configured.map((id: string) => ({ id, name: id }));
                           }
                         } else {
-                          const preset = (API_PROVIDER_PRESETS as Record<string, any>)[currentProvider];
+                          const preset = (API_PROVIDER_PRESETS as unknown as Record<string, SharedProviderPreset>)[currentProvider];
                           allModels = preset?.models || [];
                         }
 

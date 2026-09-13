@@ -1621,7 +1621,6 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     activeProfileKey,
     apiKey,
     baseUrl,
-    presets,
     provider,
     clearError,
     showErrorKey,

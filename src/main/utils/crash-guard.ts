@@ -23,8 +23,9 @@ export class CrashGuard {
     });
 
     // Unhandled Promise Rejections (e.g. timeout on network, failed tool call)
-    process.on('unhandledRejection', (reason: any) => {
-      logWarn('[CrashGuard] Unhandled Promise Rejection trapped:', reason?.stack || reason);
+    process.on('unhandledRejection', (reason: unknown) => {
+      const stack = (reason as { stack?: string })?.stack;
+      logWarn('[CrashGuard] Unhandled Promise Rejection trapped:', stack || reason);
     });
 
     // Monitor renderer crashes

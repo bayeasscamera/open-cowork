@@ -51,9 +51,9 @@ export class BackgroundAutopilotManager {
       task.status = 'completed';
       task.completedAt = Date.now();
       this.sendSystemNotification('Open Cowork Autopilot', `Tâche terminée avec succès: ${task.title}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       task.status = 'failed';
-      task.error = err?.message || String(err);
+      task.error = err instanceof Error ? err.message : String(err);
       this.sendSystemNotification('Open Cowork Autopilot - Erreur', `Échec de la tâche: ${task.title}`);
     }
 

@@ -69,10 +69,10 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
 
           {/* Diff preview for file modifications */}
           {(() => {
-            const input = permission.input as Record<string, any> | undefined;
-            const filePath = input?.path || input?.file_path || input?.filePath;
-            const content = input?.content || input?.new_string || input?.new_str || input?.patch;
-            const oldContent = input?.old_string || input?.old_str;
+            const input = permission.input as Record<string, unknown> | undefined;
+            const filePath = (input?.path || input?.file_path || input?.filePath) as string | undefined;
+            const content = (input?.content || input?.new_string || input?.new_str || input?.patch) as string | undefined;
+            const oldContent = (input?.old_string || input?.old_str) as string | undefined;
 
             if (filePath && (content || oldContent)) {
               return (

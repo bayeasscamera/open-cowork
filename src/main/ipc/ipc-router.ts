@@ -8,7 +8,15 @@
 import { ipcMain } from 'electron';
 import { log, logError } from '../utils/logger';
 
-export type IPCHandlerFn = (event: Electron.IpcMainEvent, ...args: any[]) => Promise<any> | any;
+export type IPCHandlerFn = (
+  event: Electron.IpcMainEvent,
+  ...args: unknown[]
+) => Promise<unknown> | unknown;
+
+export type IPCInvokeHandlerFn = (
+  event: Electron.IpcMainInvokeEvent,
+  ...args: unknown[]
+) => Promise<unknown> | unknown;
 
 export class IPCRouter {
   private static registeredChannels: Set<string> = new Set();
@@ -22,7 +30,7 @@ export class IPCRouter {
     ipcMain.on(channel, async (event, ...args) => {
       try {
         await handler(event, ...args);
-      } catch (err: any) {
+      } catch (err: unknown) {
         logError(`[IPCRouter] Error executing handler on channel '${channel}':`, err);
       }
     });
@@ -30,11 +38,11 @@ export class IPCRouter {
     this.registeredChannels.add(channel);
   }
 
-  public static handle(channel: string, handler: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => Promise<any> | any): void {
+  public static handle(channel: string, handler: IPCInvokeHandlerFn): void {
     ipcMain.handle(channel, async (event, ...args) => {
       try {
         return await handler(event, ...args);
-      } catch (err: any) {
+      } catch (err: unknown) {
         logError(`[IPCRouter] Error in invoke handler for '${channel}':`, err);
         throw err;
       }

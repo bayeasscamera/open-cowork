@@ -15,9 +15,9 @@ import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import { SubagentTracker } from './SubagentTracker';
 import { ContextUsageBar } from './ContextUsageBar';
-import type { Message, ContentBlock } from '../types';
+import type { Message, ContentBlock, AppConfig, ProviderProfile, ProviderProfileKey } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock, ChevronDown, Mic, MicOff, Paperclip, ShieldCheck, ShieldAlert } from 'lucide-react';
-import { API_PROVIDER_PRESETS } from '../../shared/api-model-presets';
+import { API_PROVIDER_PRESETS, type SharedProviderPreset } from '../../shared/api-model-presets';
 import { isScrollNearBottom, resolveSessionScrollTop } from '../utils/chat-scroll-position';
 
 type AttachedFile = {
@@ -27,6 +27,55 @@ type AttachedFile = {
   type: string;
   inlineDataBase64?: string;
 };
+
+// Minimal typings for the experimental Web Speech API (not in lib.dom for
+// all targets used by this app).
+interface SpeechRecognitionAlternative {
+  transcript: string;
+}
+
+interface SpeechRecognitionResult {
+  0: SpeechRecognitionAlternative;
+  isFinal: boolean;
+  length: number;
+}
+
+interface SpeechRecognitionResultLikeList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: SpeechRecognitionResultLikeList;
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error: string;
+}
+
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  const w = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  };
+  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
 
 export function ChatView() {
   const { t } = useTranslation();
@@ -47,7 +96,7 @@ export function ChatView() {
   const [customModelInput, setCustomModelInput] = useState('');
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const autoApproveAll = Boolean(settings.autoApproveAll);
@@ -67,8 +116,7 @@ export function ChatView() {
   }, [showActionMenu]);
 
   const toggleVoiceInput = useCallback(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = getSpeechRecognitionCtor();
 
     if (!SpeechRecognition) {
       setGlobalNotice({
@@ -96,7 +144,7 @@ export function ChatView() {
         setIsListening(true);
       };
 
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
         let transcript = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
@@ -106,7 +154,7 @@ export function ChatView() {
         }
       };
 
-      recognition.onerror = (event: any) => {
+      recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
         console.error('Speech recognition error:', event.error);
         setIsListening(false);
       };
@@ -122,6 +170,42 @@ export function ChatView() {
       setIsListening(false);
     }
   }, [isListening, setGlobalNotice]);
+
+  const addCustomModel = useCallback(
+    (newModel: string) => {
+      if (!appConfig || !newModel) return;
+      const currentProvider = appConfig.provider || 'openai';
+      const activeKey: ProviderProfileKey =
+        appConfig.activeProfileKey ||
+        (currentProvider === 'custom'
+          ? `custom:${appConfig.customProtocol || 'openai'}`
+          : currentProvider);
+      const currentProfile: ProviderProfile =
+        appConfig.profiles?.[activeKey] ?? { apiKey: '', model: '' };
+      const currentCustomModels = Array.isArray(currentProfile.customModels)
+        ? currentProfile.customModels
+        : [];
+      const nextCustomModels = Array.from(new Set([...currentCustomModels, newModel]));
+      const updated: AppConfig = {
+        ...appConfig,
+        model: newModel,
+        profiles: {
+          ...appConfig.profiles,
+          [activeKey]: {
+            ...currentProfile,
+            model: newModel,
+            customModels: nextCustomModels,
+          },
+        },
+      };
+      useAppStore.getState().setAppConfig(updated);
+      window.electronAPI?.config?.save?.(updated);
+      setCustomModelInput('');
+      setShowAddCustomModel(false);
+      setShowModelPicker(false);
+    },
+    [appConfig]
+  );
   const [activeConnectors, setActiveConnectors] = useState<
     { id: string; name: string; connected: boolean; toolCount: number }[]
   >([]);
@@ -345,7 +429,9 @@ export function ChatView() {
 
     prevMessageCountRef.current = messageCount;
     prevPartialLengthRef.current = partialLength;
-  }, [messages.length, partialMessage.length, partialThinking.length]);
+    // scrollToBottom is a stable useRef, listing it keeps the lint honest
+    // without changing the trigger cadence.
+  }, [messages.length, partialMessage.length, partialThinking.length, scrollToBottom]);
 
   // Additional scroll trigger for content height changes (e.g., TodoWrite expand/collapse)
   useEffect(() => {
@@ -366,7 +452,10 @@ export function ChatView() {
     return () => {
       resizeObserver.disconnect();
     };
-  }, []); // ResizeObserver is stable — no need to recreate on message count changes
+    // Mount-once by design: the observer watches DOM size, and scrollToBottom
+    // is a stable useRef — no need to recreate the observer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cleanup scroll timeouts on unmount
   useEffect(() => {
@@ -1071,31 +1160,7 @@ export function ChatView() {
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && customModelInput.trim()) {
                                 e.preventDefault();
-                                const newModel = customModelInput.trim();
-                                if (appConfig) {
-                                  const currentProvider = appConfig.provider || 'openai';
-                                  const activeKey = appConfig.activeProfileKey || (currentProvider === 'custom' ? `custom:${appConfig.customProtocol || 'openai'}` : currentProvider);
-                                  const currentProfile = (appConfig.profiles as any)?.[activeKey] || {};
-                                  const currentCustomModels = Array.isArray(currentProfile.customModels) ? currentProfile.customModels : [];
-                                  const nextCustomModels = Array.from(new Set([...currentCustomModels, newModel]));
-                                  const updated = {
-                                    ...appConfig,
-                                    model: newModel,
-                                    profiles: {
-                                      ...appConfig.profiles,
-                                      [activeKey]: {
-                                        ...currentProfile,
-                                        model: newModel,
-                                        customModels: nextCustomModels,
-                                      },
-                                    },
-                                  };
-                                  useAppStore.getState().setAppConfig(updated as any);
-                                  window.electronAPI?.config?.save?.(updated as any);
-                                }
-                                setCustomModelInput('');
-                                setShowAddCustomModel(false);
-                                setShowModelPicker(false);
+                                addCustomModel(customModelInput.trim());
                               }
                             }}
                             className="w-full px-2 py-1 rounded text-xs bg-background border border-border outline-none text-text-primary"
@@ -1103,30 +1168,8 @@ export function ChatView() {
                           <button
                             type="button"
                             onClick={() => {
-                              if (customModelInput.trim() && appConfig) {
-                                const newModel = customModelInput.trim();
-                                const currentProvider = appConfig.provider || 'openai';
-                                const activeKey = appConfig.activeProfileKey || (currentProvider === 'custom' ? `custom:${appConfig.customProtocol || 'openai'}` : currentProvider);
-                                const currentProfile = (appConfig.profiles as any)?.[activeKey] || {};
-                                const currentCustomModels = Array.isArray(currentProfile.customModels) ? currentProfile.customModels : [];
-                                const nextCustomModels = Array.from(new Set([...currentCustomModels, newModel]));
-                                const updated = {
-                                  ...appConfig,
-                                  model: newModel,
-                                  profiles: {
-                                    ...appConfig.profiles,
-                                    [activeKey]: {
-                                      ...currentProfile,
-                                      model: newModel,
-                                      customModels: nextCustomModels,
-                                    },
-                                  },
-                                };
-                                useAppStore.getState().setAppConfig(updated as any);
-                                window.electronAPI?.config?.save?.(updated as any);
-                                setCustomModelInput('');
-                                setShowAddCustomModel(false);
-                                setShowModelPicker(false);
+                              if (customModelInput.trim()) {
+                                addCustomModel(customModelInput.trim());
                               }
                             }}
                             className="w-full py-1 text-xs rounded bg-accent text-background font-medium hover:bg-accent-hover transition-colors text-center"
@@ -1148,13 +1191,13 @@ export function ChatView() {
 
                           if (currentProvider === 'custom') {
                             // Pour les providers custom : uniquement les modèles configurés par l'utilisateur
-                            const configured = (activeProfile as any)?.customModels as string[] | undefined;
+                            const configured = activeProfile?.customModels;
                             if (configured && configured.length > 0) {
                               allModels = configured.map((id: string) => ({ id, name: id }));
                             }
                           } else {
                             // Pour les autres providers : liste preset
-                            const preset = (API_PROVIDER_PRESETS as Record<string, any>)[currentProvider];
+                            const preset = (API_PROVIDER_PRESETS as unknown as Record<string, SharedProviderPreset>)[currentProvider];
                             allModels = preset?.models || [];
                           }
 

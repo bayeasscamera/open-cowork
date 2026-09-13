@@ -42,16 +42,17 @@ export class SelfHealingRunner {
         exitCode: 0,
         extractedErrors: [],
       };
-    } catch (err: any) {
-      const stdout = err.stdout || '';
-      const stderr = err.stderr || err.message || '';
+    } catch (err: unknown) {
+      const execErr = err as { stdout?: string; stderr?: string; message?: string; code?: number };
+      const stdout = execErr.stdout || '';
+      const stderr = execErr.stderr || execErr.message || '';
       const extractedErrors = this.parseErrors(stdout + '\n' + stderr);
       return {
         passed: false,
         command,
         stdout,
         stderr,
-        exitCode: err.code || 1,
+        exitCode: execErr.code || 1,
         extractedErrors,
       };
     }

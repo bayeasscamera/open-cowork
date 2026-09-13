@@ -285,7 +285,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   removeSession: (sessionId) =>
     set((state) => {
-      const { [sessionId]: _, ...restSessionStates } = state.sessionStates;
+      const { [sessionId]: _removed, ...restSessionStates } = state.sessionStates;
       const restScrollPositions = Object.fromEntries(
         Object.entries(state.sessionScrollPositions).filter(([id]) => id !== sessionId)
       );

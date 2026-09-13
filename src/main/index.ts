@@ -1985,7 +1985,7 @@ ipcMain.handle('artifacts.readFile', async (_event, filePath: string) => {
       return fs.readFileSync(filePath, 'utf-8').slice(0, 100000) + '\n\n[Content truncated: file exceeds 5MB]';
     }
     return fs.readFileSync(filePath, 'utf-8');
-  } catch (err: any) {
+  } catch (err: unknown) {
     logError('[artifacts.readFile] failed:', err);
     throw err;
   }

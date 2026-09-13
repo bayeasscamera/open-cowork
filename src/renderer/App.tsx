@@ -93,7 +93,10 @@ function App() {
     if (isElectron) {
       listSessions();
     }
-  }, []); // Empty deps - run once
+    // Mount-once by design: the initialized ref guards double-invocation in
+    // StrictMode, and isElectron/listSessions cannot change after startup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Apply theme to document root
   useEffect(() => {
@@ -139,6 +142,9 @@ function App() {
         setAppConfig(result.config);
       }
     },
+    // isElectron is a startup constant (presence of the electron preload);
+    // the callback must stay referentially stable for config modal consumers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [setIsConfigured, setAppConfig]
   );
 

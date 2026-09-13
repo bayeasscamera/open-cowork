@@ -35,9 +35,9 @@ export function ArtifactModal({ filePath, onClose, onRevealInFolder }: ArtifactM
         } else {
           throw new Error('Lecture de fichier non disponible');
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (isMounted) {
-          setError(err.message || 'Impossible de charger le fichier');
+          setError(err instanceof Error ? err.message : 'Impossible de charger le fichier');
         }
       } finally {
         if (isMounted) {

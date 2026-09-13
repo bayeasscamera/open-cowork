@@ -32,7 +32,7 @@ export class DynamicModelRouter {
   public async executeWithFallback<T>(
     operation: (endpoint: ModelEndpoint) => Promise<T>
   ): Promise<RouteExecutionResult<T>> {
-    let lastError: Error | null = null;
+    let lastError: unknown = null;
     let attempts = 0;
 
     for (const endpoint of this.endpoints) {
@@ -44,15 +44,18 @@ export class DynamicModelRouter {
           usedEndpoint: endpoint,
           fallbacksAttempted: attempts - 1,
         };
-      } catch (err: any) {
+      } catch (err: unknown) {
         lastError = err;
+        const code = (err as { code?: string })?.code;
+        const status = (err as { status?: number })?.status;
+        const statusCode = (err as { statusCode?: number })?.statusCode;
         const isRateLimitOrServerError =
-          err?.status === 429 ||
-          err?.statusCode === 429 ||
-          (err?.status >= 500 && err?.status < 600) ||
-          (err?.statusCode >= 500 && err?.statusCode < 600) ||
-          err?.code === 'ECONNRESET' ||
-          err?.code === 'ETIMEDOUT';
+          status === 429 ||
+          statusCode === 429 ||
+          (status !== undefined && status >= 500 && status < 600) ||
+          (statusCode !== undefined && statusCode >= 500 && statusCode < 600) ||
+          code === 'ECONNRESET' ||
+          code === 'ETIMEDOUT';
 
         if (!isRateLimitOrServerError && attempts < this.endpoints.length) {
           // If not network or quota failure, rethrow unless backup endpoints exist
@@ -62,7 +65,7 @@ export class DynamicModelRouter {
     }
 
     throw new Error(
-      `Toutes les tentatives d'exécution de modèle ont échoué (${attempts} routes testées). Dernier message: ${lastError?.message}`
+      `Toutes les tentatives d'exécution de modèle ont échoué (${attempts} routes testées). Dernier message: ${lastError instanceof Error ? lastError.message : String(lastError)}`
     );
   }
 }

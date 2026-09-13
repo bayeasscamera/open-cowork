@@ -100,6 +100,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
     if (!viewedTabs.has(activeTab)) {
       setViewedTabs((prev) => new Set([...prev, activeTab]));
     }
+    // Intentionally keyed on activeTab only: setViewedTabs uses the functional
+    // form, so reading viewedTabs here would re-trigger on every set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   const tabs = [
