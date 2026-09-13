@@ -222,18 +222,21 @@ describe('api config state helpers', () => {
   });
 
   it('keeps pristine custom openai profile in manual input mode', () => {
+    // Pristine = no key, preset baseUrl, preset default model (gpt-4o is
+    // openai.models[0] in FALLBACK_PROVIDER_PRESETS) — the profile has been
+    // touched but not configured, so it must land in manual input mode.
     const config = {
       provider: 'custom',
       customProtocol: 'openai',
       activeProfileKey: 'custom:openai',
       apiKey: '',
       baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-5.4',
+      model: 'gpt-4o',
       profiles: {
         'custom:openai': {
           apiKey: '',
           baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5.4',
+          model: 'gpt-4o',
         },
       },
       isConfigured: false,
@@ -242,7 +245,7 @@ describe('api config state helpers', () => {
     const snapshot = buildApiConfigSnapshot(config, FALLBACK_PROVIDER_PRESETS);
     expect(snapshot.profiles['custom:openai'].useCustomModel).toBe(true);
     expect(snapshot.profiles['custom:openai'].customModel).toBe('');
-    expect(snapshot.profiles['custom:openai'].model).toBe('gpt-5.4');
+    expect(snapshot.profiles['custom:openai'].model).toBe('gpt-4o');
   });
 
   it('exposes updated preset lists and custom guidance', () => {
