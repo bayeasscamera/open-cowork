@@ -211,7 +211,6 @@
       "server_error": "服务端错误，请稍后再试",
       "network_error": "网络连接失败，请检查网络或地址",
       "ollama_not_running": "无法连接 Ollama，请确认 Ollama 已启动（ollama serve）",
-      "ollama_loading": "Ollama 正在将模型加载到内存中，大型模型可能需要 30–120 秒，请稍候后重试。",
       "unknown": "连接失败"
     },
     "guidance": {
@@ -276,6 +275,18 @@
         "genericOpenAI": {
           "name": "通用 OpenAI 兼容服务",
           "note": "适用于自定义中继、网关或模拟 OpenAI API 的推理服务。"
+        },
+        "groq": {
+          "name": "Groq Cloud",
+          "note": "通过 OpenAI 兼容端点实现超快推理，支持 Llama 3.3 与 DeepSeek 模型。"
+        },
+        "mistral": {
+          "name": "Mistral AI",
+          "note": "Mistral 官方端点，使用 OpenAI 协议兼容模式。"
+        },
+        "together": {
+          "name": "Together AI",
+          "note": "开源模型云平台，使用标准 OpenAI 兼容补全接口。"
         }
       }
     },
@@ -304,7 +315,6 @@
       "runDiagnostics": "诊断连接",
       "runQuickDiagnostics": "快速诊断",
       "runDeepDiagnostics": "深度验证推理",
-      "running": "诊断中...",
       "step": {
         "dns": "DNS 解析",
         "tcp": "TCP 连接",
@@ -312,20 +322,13 @@
         "auth": "API 认证",
         "model": "模型验证"
       },
-      "status": {
-        "pending": "等待中",
-        "running": "检测中...",
-        "ok": "通过",
-        "fail": "失败",
-        "skip": "跳过"
-      },
+      "status": {},
       "overallSuccess": "所有检查通过 ({{ms}}ms)",
       "overallFail": "诊断在 {{step}} 步骤失败",
       "advisory": {
         "not_deep_verified": "已验证端点可达且当前模型在端点返回列表中，但尚未执行真实推理。",
         "model_loading": "端点可达，但模型可能仍在加载到内存中。"
       },
-      "latency": "{{ms}}ms",
       "fix": {
         "dns_resolve_failed": "无法解析域名 {{host}}，请检查 URL 是否正确",
         "tcp_connect_failed": "无法连接到 {{host}}，请检查网络或防火墙设置",
@@ -583,21 +586,18 @@
     "exportFailed": "导出日志失败",
     "clearFailed": "清除日志失败",
     "helpText1": "导出的诊断包会包含应用日志、脱敏后的运行环境信息，以及最近会话/错误的元数据摘要，不会默认附带消息正文。",
-    "helpText2": "把诊断包发给我们后，通常可以更快定位到是前端异常、工具调用失败，还是配置/环境问题。"
+    "helpText2": "把诊断包发给我们后，通常可以更快定位到是前端异常、工具调用失败，还是配置/环境问题。",
+    "clear": "清除日志",
+    "export": "导出"
   },
   "sidebar": {
-    "recents": "最近",
     "expandToView": "展开查看任务",
     "noTasks": "暂无任务",
     "noTasksHint": "开始一个新对话，继续构建、调研或编辑文件。",
     "search": "搜索对话...",
-    "deleteAll": "删除所有对话",
-    "localTasks": "这些任务在本地运行，不会在设备间同步。",
     "apiConfigured": "API 已配置",
     "apiNotConfigured": "API 未配置",
-    "user": "用户",
     "newTask": "新对话",
-    "newTaskHint": "开启一段全新的对话",
     "today": "今天",
     "yesterday": "昨天",
     "previousWeek": "最近 7 天",
