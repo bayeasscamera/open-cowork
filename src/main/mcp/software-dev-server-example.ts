@@ -20,7 +20,7 @@ import { type CallToolResult, type ListToolsResult, Server } from '@modelcontext
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { exec, execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 // import { start } from 'repl';
 // import { log, logError, logWarn } from '../utils/logger';
@@ -28,6 +28,71 @@ import { promisify } from 'util';
 import { writeMCPLog } from './mcp-logger';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Tokenize a simple command string into argv without invoking a shell.
+ * Supports POSIX single/double quotes. Rejects shell control operators
+ * (`;`, `&&`, `||`, `|`, `&`, redirects, backticks, `$()`), because
+ * executing them would require a shell and reintroduce injection risk.
+ */
+export function tokenizeSimpleCommand(command: string): string[] {
+  const trimmed = command.trim();
+  if (!trimmed) {
+    throw new Error('Empty command');
+  }
+  if (
+    /[;|&<>`]|\$\(|\|\||&&/.test(trimmed)
+  ) {
+    throw new Error(
+      `Command contains shell control operators and is not allowed: ${command.substring(0, 80)}`
+    );
+  }
+
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  let hasToken = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else if (quote === '"' && ch === '\\' && i + 1 < trimmed.length) {
+        current += trimmed[++i];
+      } else {
+        current += ch;
+      }
+      hasToken = true;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      hasToken = true;
+    } else if (/\s/.test(ch)) {
+      if (hasToken) {
+        tokens.push(current);
+        current = '';
+        hasToken = false;
+      }
+    } else if (ch === '\\' && i + 1 < trimmed.length) {
+      current += trimmed[++i];
+      hasToken = true;
+    } else {
+      current += ch;
+      hasToken = true;
+    }
+  }
+
+  if (quote) {
+    throw new Error(`Unterminated quote in command: ${command.substring(0, 80)}`);
+  }
+  if (hasToken) {
+    tokens.push(current);
+  }
+  if (tokens.length === 0) {
+    throw new Error(`Command produced no executable tokens: ${command.substring(0, 80)}`);
+  }
+  return tokens;
+}
 
 // Get workspace directory from environment or use current directory
 const WORKSPACE_DIR = process.env.WORKSPACE_DIR || process.cwd();
@@ -51,7 +116,7 @@ const requirements = new Map<string, Requirement>();
 
 // GUI Application Management
 interface GUIAppInstance {
-  process: ReturnType<typeof exec> | null;
+  process: ReturnType<typeof spawn> | null;
   pid: number;
   appType: string;
   startTime: Date;
@@ -453,9 +518,12 @@ async function startGUIApplication(
 
   writeMCPLog(`[GUI] Starting ${appType} application: ${command}`);
 
-  // Start the process
-  const childProcess = exec(command, {
+  // Start the process without a shell: tokenize into argv so that paths with
+  // metacharacters (`"`, `$()`, `;`) cannot inject additional shell commands.
+  const argv = tokenizeSimpleCommand(command);
+  const childProcess = spawn(argv[0], argv.slice(1), {
     cwd: WORKSPACE_DIR,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
 
   const instance: GUIAppInstance = {

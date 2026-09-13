@@ -3,7 +3,7 @@
  * v3.6+: Autonomous Background Task Worker with State Checkpoints & macOS Notifications
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 
 export interface BackgroundTask {
   id: string;
@@ -70,10 +70,12 @@ export class BackgroundAutopilotManager {
 
   private sendSystemNotification(title: string, message: string) {
     if (process.platform === 'darwin') {
-      const sanitizedTitle = title.replace(/"/g, '\\"');
-      const sanitizedMsg = message.replace(/"/g, '\\"');
+      const sanitizedTitle = title.replace(/["\\]/g, '\\$&');
+      const sanitizedMsg = message.replace(/["\\]/g, '\\$&');
       const script = `display notification "${sanitizedMsg}" with title "${sanitizedTitle}"`;
-      exec(`osascript -e '${script}'`, () => {});
+      // execFile (no shell): the script is passed as a single argv element, so
+      // quotes/backslashes in title/message cannot break out into a shell.
+      execFile('/usr/bin/osascript', ['-e', script], () => {});
     }
   }
 }

@@ -912,12 +912,15 @@ export class MCPManager {
       if (isNpxCommand) {
         try {
           // On Windows, .cmd files (like npx.cmd) cannot be launched with execFile().
-          // Use exec() via shell to handle both .cmd and direct executables.
+          // Use exec() via shell, but quote the command path so spaces and
+          // metacharacters in the configured path cannot inject shell commands.
           const { exec } = await import('child_process');
           const { promisify } = await import('util');
           const execAsync = promisify(exec);
 
-          const quotedCmd = command.includes(' ') ? `"${command}"` : command;
+          const quotedCmd = /^[\w.\-/\\:]+$/.test(command)
+            ? command
+            : `"${command.replace(/"/g, '')}"`;
           log(`[MCPManager] Testing npx execution: ${quotedCmd} --version`);
           const testResult = await execAsync(`${quotedCmd} --version`, {
             timeout: 5000,

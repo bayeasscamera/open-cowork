@@ -59,20 +59,28 @@ const FORBIDDEN_PATTERNS_MAC = [
 const FORBIDDEN_PATTERNS =
   process.platform === 'darwin' ? FORBIDDEN_PATTERNS_MAC : FORBIDDEN_PATTERNS_LINUX;
 
-// Dangerous command patterns
+// Dangerous command patterns.
+// Note: this is defense-in-depth for a bash -c string, not a security boundary
+// by itself — sandbox isolation comes from the path containment above.
+// Patterns are flag-order agnostic (rm -fr, rm -r -f, rm -f -r all match).
 const DANGEROUS_COMMAND_PATTERNS = [
-  /\brm\s+(-rf?|--recursive)\s+\/(?!sandbox)/, // rm -rf / (except /sandbox)
+  // rm with both -r/-R/--recursive AND -f/--force (any order, any combined
+  // flag bundle like -fr or -Fr), targeting root
+  /\brm\s+(?=(?:[^\n]*\s)?(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)\b)(?=(?:[^\n]*\s)?(?:-[a-zA-Z]*f[a-zA-Z]*|--force)\b)[^\n]*\s+\/(?:\s|$)/,
+  /\brm\s+(?=(?:[^\n]*\s)?(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)\b)(?=(?:[^\n]*\s)?(?:-[a-zA-Z]*f[a-zA-Z]*|--force)\b)[^\n]*\s+\/(?:\*|\s|$)/,
   /\bchmod\s+777\s+\//, // chmod 777 /
   /\bchown\s+.*\s+\//, // chown on root paths
   /\bdd\s+.*of=\/dev/, // dd to devices
   /\bmkfs/, // format filesystems
+  /:\(\)\s*\{.*\};\s*:/, // fork bomb
   /\bsudo\s+.*\brm\b/, // sudo rm
-  /\bcurl\s+.*\|\s*(ba)?sh/, // curl | bash
-  /\bwget\s+.*\|\s*(ba)?sh/, // wget | bash
+  /\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z|da|fi)?sh\b/, // curl|sh pipes
   />\s*\/etc\//, // redirect to /etc
   />\s*\/dev\/(?!null)/, // redirect to devices (except /dev/null which is safe)
   /\beval\s/, // eval execution
   /\$'\\x/, // hex escape sequences (obfuscation)
+  /\bbase64\s+(-d|--decode)\b.*\|\s*(ba)?sh/, // base64-decoded pipes to shell
+  /\bchmod\s+\+?x\s+\/(?:etc|usr|bin|sbin|lib)\//, // making system paths executable
 ];
 
 export class PathGuard {
