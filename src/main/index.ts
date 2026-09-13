@@ -1,7 +1,7 @@
 /**
  * @module main/index
  *
- * Electron main-process entry point (2181 lines).
+ * Electron main-process entry point.
  *
  * Responsibilities:
  * - App lifecycle: ready, activate, before-quit, window-will-close
@@ -9,13 +9,15 @@
  *   sandbox.*, logs.*, remote.*, schedule.*, etc.
  * - BrowserWindow creation and deep-link / protocol handling
  *
+ * Renderer event routing lives in events/renderer-sender.ts; file reveal in
+ * utils/reveal-in-folder.ts (both wired here via their context setters).
+ *
  * Dependencies: session-manager, config-store, mcp-manager, sandbox-adapter,
  *               skills-manager, scheduled-task-manager, nav-server, remote-manager
  */
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, globalShortcut } from 'electron';
-import { join, resolve, dirname, isAbsolute, basename } from 'path';
+import { join, resolve, isAbsolute } from 'path';
 import * as fs from 'fs';
-import { execFileSync } from 'child_process';
 import { config } from 'dotenv';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
@@ -73,11 +75,8 @@ import {
   buildScheduledTaskTitle,
 } from '../shared/schedule/task-title';
 import {
-  isUncPath,
-  isWindowsDrivePath,
   localPathFromAppUrlPathname,
   localPathFromFileUrl,
-  decodePathSafely,
 } from '../shared/local-file-path';
 import { eventRequiresSessionManager } from './client-event-utils';
 import { getUnsupportedWorkspacePathReason } from './workspace-path-constraints';
@@ -96,9 +95,15 @@ import {
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { SystemNotifier } from './utils/system-notifier';
+import {
+  sendToRenderer,
+  setRendererSenderContext,
+} from './events/renderer-sender';
+import {
+  revealFileInFolder,
+  setRevealContext,
+} from './utils/reveal-in-folder';
 
-// Tracks session running/idle state transitions for task completion notifications
-const sessionStatusTracker = new Map<string, string>();
 import {
   parseHeadlessArgs,
   redirectConsoleToStderr,
@@ -150,6 +155,16 @@ let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
 let memoryService: MemoryService | null = null;
 let scheduledTaskManager: ScheduledTaskManager | null = null;
+
+// Wire the extracted modules to the mutable app-level singletons above.
+setRendererSenderContext({
+  getMainWindow: () => mainWindow,
+  getEventSender: () => eventSender,
+  getSessionManager: () => sessionManager,
+});
+setRevealContext({
+  getWorkingDir: () => currentWorkingDir,
+});
 
 /**
  * Tool names that a spawned subagent may never invoke, regardless of what
@@ -777,163 +792,6 @@ async function startSandboxBootstrap(): Promise<void> {
 
 // Pluggable event sender — defaults to mainWindow IPC, swapped for JSONL in headless mode
 let eventSender: ((event: ServerEvent) => void) | null = null;
-
-// 发送事件到渲染进程（含远程会话拦截）
-function sendToRenderer(event: ServerEvent) {
-  const payload =
-    'payload' in event
-      ? (event.payload as { sessionId?: string; [key: string]: unknown })
-      : undefined;
-  const sessionId = payload?.sessionId;
-
-  // 判断是否远程会话
-  if (sessionId && remoteManager.isRemoteSession(sessionId)) {
-    // 处理远程会话事件
-
-    // 拦截 stream.message，用于回传到远程通道
-    if (event.type === 'stream.message') {
-      const message = payload.message as {
-        role?: string;
-        content?: Array<{ type: string; text?: string }>;
-      };
-      if (message?.role === 'assistant' && message?.content) {
-        // 提取助手文本内容
-        const textContent = message.content
-          .filter((c) => c.type === 'text' && c.text)
-          .map((c) => c.text)
-          .join('\n');
-
-        if (textContent) {
-          // 发送到远程通道（带缓冲）
-          remoteManager.sendResponseToChannel(sessionId, textContent).catch((err: Error) => {
-            logError('[Remote] Failed to send response to channel:', err);
-          });
-        }
-      }
-    }
-
-    // 拦截 trace.step 作为工具进度
-    if (event.type === 'trace.step') {
-      const step = payload.step as {
-        type?: string;
-        toolName?: string;
-        status?: string;
-        title?: string;
-      };
-      if (step?.type === 'tool_call' && step?.toolName) {
-        remoteManager
-          .sendToolProgress(
-            sessionId,
-            step.toolName,
-            step.status === 'completed'
-              ? 'completed'
-              : step.status === 'error'
-                ? 'error'
-                : 'running'
-          )
-          .catch((err: Error) => {
-            logError('[Remote] Failed to send tool progress:', err);
-          });
-      }
-    }
-
-    // trace.update 预留；当前主要用 trace.step
-
-    // 拦截 session.status 用于清理
-    if (event.type === 'session.status') {
-      const status = payload.status as string;
-      if (status === 'idle' || status === 'error') {
-        // 会话结束，清空缓冲
-        remoteManager.clearSessionBuffer(sessionId).catch((err: Error) => {
-          logError('[Remote] Failed to clear session buffer:', err);
-        });
-      }
-    }
-
-    // 拦截 permission.request
-    if (event.type === 'permission.request' && payload.toolUseId && payload.toolName) {
-      log('[Remote] Intercepting permission for remote session:', sessionId);
-      remoteManager
-        .handlePermissionRequest(
-          sessionId,
-          payload.toolUseId as string,
-          payload.toolName as string,
-          (payload.input as Record<string, unknown> | undefined) ?? {}
-        )
-        .then((result) => {
-          if (result !== null && sessionManager) {
-            let permissionResult: 'allow' | 'deny' | 'allow_always';
-            if (result.allow) {
-              permissionResult = result.remember ? 'allow_always' : 'allow';
-            } else {
-              permissionResult = 'deny';
-            }
-            sessionManager.handlePermissionResponse(payload.toolUseId as string, permissionResult);
-          }
-        })
-        .catch((err) => {
-          logError('[Remote] Failed to handle permission request:', err);
-        });
-      return; // 不发送到本地 UI
-    }
-  }
-
-  // 发送到本地 UI（or headless JSONL sender）
-  if (eventSender) {
-    eventSender(event);
-  } else if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('server-event', event);
-
-    // Native desktop notifications when the app is in the background (user is in another app)
-    try {
-      if (event.type === 'permission.request' && payload?.toolName) {
-        SystemNotifier.notifyPermissionRequired(mainWindow, payload.toolName as string, sessionId);
-      } else if (event.type === 'sudo.password.request') {
-        SystemNotifier.notifySudoRequired(mainWindow, (payload?.command as string) || '', sessionId);
-      } else if (event.type === 'session.status') {
-        const status = payload?.status as string | undefined;
-        const sId = sessionId || 'default';
-        const prevStatus = sessionStatusTracker.get(sId);
-        sessionStatusTracker.set(sId, status || '');
-
-        if (prevStatus === 'running' && status === 'idle') {
-          let sessionTitle: string | undefined;
-          if (sessionId && sessionManager) {
-            try {
-              const s = sessionManager.loadSession(sessionId);
-              sessionTitle = s?.title;
-            } catch {
-              /* best-effort session lookup */
-            }
-          }
-          SystemNotifier.notifyTaskCompleted(mainWindow, sessionTitle, sessionId);
-        }
-      } else if (event.type === 'trace.step') {
-        const step = payload?.step as { type?: string; toolName?: string; title?: string } | undefined;
-        if (step?.type === 'tool_call' && step.toolName?.toLowerCase().includes('ask')) {
-          SystemNotifier.notifyQuestionAsked(mainWindow, step.title, sessionId);
-        }
-      } else if (event.type === 'stream.message') {
-        const message = payload?.message as {
-          role?: string;
-          content?: Array<{ type: string; name?: string; input?: Record<string, unknown> }>;
-        } | undefined;
-        if (message?.role === 'assistant' && Array.isArray(message.content)) {
-          const askBlock = message.content.find(
-            (c) => c.type === 'tool_use' && c.name?.toLowerCase().includes('ask')
-          );
-          if (askBlock) {
-            const q = (askBlock.input?.questions as Array<{ question?: string }>) || [];
-            const questionText = q[0]?.question || (askBlock.input?.question as string) || undefined;
-            SystemNotifier.notifyQuestionAsked(mainWindow, questionText, sessionId);
-          }
-        }
-      }
-    } catch (notifErr) {
-      logWarn('[App] Error dispatching system notification:', notifErr);
-    }
-  }
-}
 
 // Initialize app
 app
@@ -1800,166 +1658,6 @@ ipcMain.handle('shell.openExternal', async (_event, url: string) => {
 
   return shell.openExternal(url);
 });
-
-async function revealFileInFolder(filePath: string, cwd?: string): Promise<boolean> {
-  if (!filePath) {
-    return false;
-  }
-
-  const trimInput = filePath.trim();
-  if (!trimInput) {
-    return false;
-  }
-
-  let normalizedPath = decodePathSafely(trimInput);
-
-  if (normalizedPath.startsWith('file://')) {
-    const localPath = localPathFromFileUrl(normalizedPath);
-    if (!localPath) {
-      logWarn('[shell.showItemInFolder] could not parse file URL:', normalizedPath);
-      return false;
-    }
-    normalizedPath = localPath;
-  }
-
-  const baseDir = cwd && isAbsolute(cwd) ? cwd : getWorkingDir() || app.getPath('home');
-  if (
-    !isAbsolute(normalizedPath) &&
-    !isWindowsDrivePath(normalizedPath) &&
-    !isUncPath(normalizedPath)
-  ) {
-    normalizedPath = resolve(baseDir, normalizedPath);
-  }
-
-  if (
-    normalizedPath.startsWith('/workspace/') ||
-    /^[A-Za-z]:[/\\]workspace[/\\]/i.test(normalizedPath)
-  ) {
-    const relativePart = normalizedPath.startsWith('/workspace/')
-      ? normalizedPath.slice('/workspace/'.length)
-      : normalizedPath.replace(/^[A-Za-z]:[/\\]workspace[/\\]/i, '');
-    normalizedPath = resolve(baseDir, relativePart);
-  }
-
-  if (!isUncPath(normalizedPath)) {
-    normalizedPath = resolve(normalizedPath);
-  }
-  log('[shell.showItemInFolder] request:', { filePath, cwd, resolved: normalizedPath });
-
-  const findFileByName = (fileName: string, roots: string[]): string | null => {
-    if (!fileName) {
-      return null;
-    }
-
-    const visited = new Set<string>();
-    const queue = roots
-      .map((root) => resolve(root))
-      .filter((root) => !!root && fs.existsSync(root) && fs.statSync(root).isDirectory());
-
-    let scannedDirs = 0;
-    const MAX_DIRS = 2000;
-
-    while (queue.length > 0 && scannedDirs < MAX_DIRS) {
-      const dir = queue.shift()!;
-      if (visited.has(dir)) {
-        continue;
-      }
-      visited.add(dir);
-      scannedDirs += 1;
-
-      let entries: fs.Dirent[] = [];
-      try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-
-      for (const entry of entries) {
-        const fullPath = join(dir, entry.name);
-        if (entry.isFile() && entry.name === fileName) {
-          return fullPath;
-        }
-        if (entry.isDirectory()) {
-          queue.push(fullPath);
-        }
-      }
-    }
-
-    return null;
-  };
-
-  try {
-    if (fs.existsSync(normalizedPath)) {
-      const stat = fs.statSync(normalizedPath);
-      if (stat.isDirectory()) {
-        const openDirResult = await shell.openPath(normalizedPath);
-        if (openDirResult) {
-          logWarn('[shell.showItemInFolder] openPath returned warning:', openDirResult);
-        }
-      } else {
-        if (process.platform === 'darwin') {
-          try {
-            execFileSync('open', ['-R', normalizedPath]);
-          } catch (error) {
-            logWarn(
-              '[shell.showItemInFolder] open -R failed, fallback to shell.showItemInFolder:',
-              error
-            );
-            shell.showItemInFolder(normalizedPath);
-          }
-        } else {
-          shell.showItemInFolder(normalizedPath);
-        }
-      }
-      return true;
-    }
-
-    const fileName = basename(normalizedPath);
-    const defaultWorkingDir = getWorkingDir() || '';
-    const discoveredPath = findFileByName(fileName, [
-      cwd || '',
-      defaultWorkingDir,
-      join(app.getPath('userData'), 'default_working_dir'),
-    ]);
-
-    if (discoveredPath) {
-      logWarn('[shell.showItemInFolder] resolved path not found, discovered by filename:', {
-        requested: normalizedPath,
-        discoveredPath,
-      });
-      if (process.platform === 'darwin') {
-        try {
-          execFileSync('open', ['-R', discoveredPath]);
-        } catch (error) {
-          logWarn(
-            '[shell.showItemInFolder] open -R discovered file failed, fallback to shell.showItemInFolder:',
-            error
-          );
-          shell.showItemInFolder(discoveredPath);
-        }
-      } else {
-        shell.showItemInFolder(discoveredPath);
-      }
-      return true;
-    }
-
-    const parentDir = dirname(normalizedPath);
-    if (parentDir && fs.existsSync(parentDir)) {
-      logWarn('[shell.showItemInFolder] file not found, opening parent directory:', parentDir);
-      const openParentResult = await shell.openPath(parentDir);
-      if (openParentResult) {
-        logWarn('[shell.showItemInFolder] openPath parent returned warning:', openParentResult);
-      }
-      return true;
-    }
-
-    logWarn('[shell.showItemInFolder] path and parent directory do not exist:', normalizedPath);
-    return false;
-  } catch (error) {
-    logError('[shell.showItemInFolder] failed:', error);
-    return false;
-  }
-}
 
 ipcMain.handle('shell.showItemInFolder', async (_event, filePath: string, cwd?: string) => {
   return revealFileInFolder(filePath, cwd);
