@@ -53,6 +53,10 @@ export function WelcomeView() {
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
 
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
   const handleSelectFolder = async () => {
     try {
       const result = await changeWorkingDir(undefined, workingDir || undefined);

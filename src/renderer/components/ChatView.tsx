@@ -916,25 +916,21 @@ export function ChatView() {
             )}
 
             <div
-              className={`flex items-end gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
+              className={`flex items-end gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-[1.25rem] sm:rounded-[1.5rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
               }`}
             >
               {/* Plus Button & Actions / Permissions Menu */}
-              <div ref={actionMenuRef} className="relative">
+              <div ref={actionMenuRef} className="relative flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowActionMenu(!showActionMenu)}
-                  className={`relative w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${
-                    autoApproveAll
-                      ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 ring-1 ring-emerald-500/30'
-                      : 'text-text-muted hover:text-text-primary hover:bg-surface-hover'
-                  }`}
+                  className="relative w-8 h-8 rounded-xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
                   title={autoApproveAll ? t('permission.autoApproveAllEnabled') : t('permission.actions')}
                 >
-                  <Plus className={`w-5 h-5 transition-transform duration-200 ${showActionMenu ? 'rotate-45' : ''}`} />
+                  <Plus className={`w-4 h-4 transition-transform duration-200 ${showActionMenu ? 'rotate-45' : ''}`} />
                   {autoApproveAll && (
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full ring-2 ring-background animate-pulse" />
+                    <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-emerald-500 rounded-full ring-2 ring-background" />
                   )}
                 </button>
 
@@ -1036,33 +1032,20 @@ export function ChatView() {
                 placeholder={t('chat.typeMessage')}
                 disabled={isSubmitting}
                 rows={1}
-                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-2"
+                className="flex-1 min-w-0 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[14px] sm:text-[15px] py-1.5 px-2 leading-relaxed"
               />
 
-              <div className="flex items-center gap-2">
-                {/* Full Access Status Badge (Auto-approve all) */}
-                {autoApproveAll && (
-                  <button
-                    type="button"
-                    onClick={() => updateSettings({ autoApproveAll: false })}
-                    className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/25 text-xs font-medium transition-colors"
-                    title={`${t('permission.autoApproveAllDesc')} — Cliquez pour désactiver`}
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span className="truncate max-w-[120px]">{t('permission.autoApproveAllEnabled')}</span>
-                  </button>
-                )}
-
+              <div className="flex items-center gap-1.5 flex-shrink-0">
                 {/* Interactive Model Selector & Custom Model Addition */}
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setShowModelPicker(!showModelPicker)}
-                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-border-subtle bg-surface-muted hover:bg-surface-hover text-xs font-medium text-text-primary transition-colors"
+                    className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-border-subtle bg-surface-muted hover:bg-surface-hover text-[11px] font-medium text-text-primary transition-colors"
                     title="Changer le modèle actif pour ce provider"
                   >
-                    <span className="truncate max-w-[130px]">{appConfig?.model || t('chat.noModel')}</span>
-                    <ChevronDown className="w-3 h-3 text-text-muted" />
+                    <span className="truncate max-w-[100px]">{appConfig?.model || t('chat.noModel')}</span>
+                    <ChevronDown className="w-2.5 h-2.5 text-text-muted flex-shrink-0" />
                   </button>
 
                   {showModelPicker && (
@@ -1226,21 +1209,21 @@ export function ChatView() {
                     className="w-9 h-9 rounded-2xl flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
                     title={t('chat.stop')}
                   >
-                    <Square className="w-4 h-4" />
+                    <Square className="w-3.5 h-3.5" />
                   </button>
                 )}
                 {/* Voice Input Button */}
                 <button
                   type="button"
                   onClick={toggleVoiceInput}
-                  className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${
                     isListening
                       ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/20'
                       : 'border border-border-subtle bg-surface-muted hover:bg-surface-hover text-text-secondary hover:text-text-primary'
                   }`}
                   title={isListening ? 'Arrêter la dictée vocale' : 'Activer la dictée vocale'}
                 >
-                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                 </button>
                 <button
                   type="submit"
@@ -1251,10 +1234,10 @@ export function ChatView() {
                       attachedFiles.length === 0) ||
                     isSubmitting
                   }
-                  className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
+                  className="w-8 h-8 rounded-xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
                   title={t('chat.sendMessage')}
                 >
-                  <Send className="w-4 h-4" />
+                  <Send className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
