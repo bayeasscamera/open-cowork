@@ -345,7 +345,7 @@ export class SessionManager {
   }
 
   // Load session from database
-  private loadSession(sessionId: string): Session | null {
+  public loadSession(sessionId: string): Session | null {
     const row = this.db.sessions.get(sessionId);
     if (!row) return null;
 

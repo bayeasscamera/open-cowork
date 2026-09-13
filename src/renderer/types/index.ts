@@ -604,6 +604,7 @@ export interface Settings {
   defaultTools: string[];
   permissionRules: PermissionRule[];
   autoApproveAll?: boolean;
+  systemNotifications?: boolean;
   globalSkillsPath: string;
   memoryStrategy: 'auto' | 'manual' | 'rolling';
   maxContextTokens: number;

@@ -233,6 +233,7 @@ const defaultSettings: Settings = {
     { tool: 'bash', action: 'ask' },
   ],
   autoApproveAll: false,
+  systemNotifications: true,
   globalSkillsPath: '',
   memoryStrategy: 'auto',
   maxContextTokens: 180000,

@@ -376,6 +376,7 @@ export function useIPC() {
             payload: {
               permissionRules: latest.settings.permissionRules,
               autoApproveAll: Boolean(latest.settings.autoApproveAll),
+              systemNotifications: latest.settings.systemNotifications !== false,
             } as Record<string, unknown>,
           });
         } catch (syncErr) {

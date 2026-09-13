@@ -94,6 +94,10 @@ import {
 } from './utils/logger';
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
+import { SystemNotifier } from './utils/system-notifier';
+
+// Tracks session running/idle state transitions for task completion notifications
+const sessionStatusTracker = new Map<string, string>();
 import {
   parseHeadlessArgs,
   redirectConsoleToStderr,
@@ -878,6 +882,55 @@ function sendToRenderer(event: ServerEvent) {
     eventSender(event);
   } else if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('server-event', event);
+
+    // Native desktop notifications when the app is in the background (user is in another app)
+    try {
+      if (event.type === 'permission.request' && payload?.toolName) {
+        SystemNotifier.notifyPermissionRequired(mainWindow, payload.toolName as string, sessionId);
+      } else if (event.type === 'sudo.password.request') {
+        SystemNotifier.notifySudoRequired(mainWindow, (payload?.command as string) || '', sessionId);
+      } else if (event.type === 'session.status') {
+        const status = payload?.status as string | undefined;
+        const sId = sessionId || 'default';
+        const prevStatus = sessionStatusTracker.get(sId);
+        sessionStatusTracker.set(sId, status || '');
+
+        if (prevStatus === 'running' && status === 'idle') {
+          let sessionTitle: string | undefined;
+          if (sessionId && sessionManager) {
+            try {
+              const s = sessionManager.loadSession(sessionId);
+              sessionTitle = s?.title;
+            } catch {
+              /* best-effort session lookup */
+            }
+          }
+          SystemNotifier.notifyTaskCompleted(mainWindow, sessionTitle, sessionId);
+        }
+      } else if (event.type === 'trace.step') {
+        const step = payload?.step as { type?: string; toolName?: string; title?: string } | undefined;
+        if (step?.type === 'tool_call' && step.toolName?.toLowerCase().includes('ask')) {
+          SystemNotifier.notifyQuestionAsked(mainWindow, step.title, sessionId);
+        }
+      } else if (event.type === 'stream.message') {
+        const message = payload?.message as {
+          role?: string;
+          content?: Array<{ type: string; name?: string; input?: Record<string, unknown> }>;
+        } | undefined;
+        if (message?.role === 'assistant' && Array.isArray(message.content)) {
+          const askBlock = message.content.find(
+            (c) => c.type === 'tool_use' && c.name?.toLowerCase().includes('ask')
+          );
+          if (askBlock) {
+            const q = (askBlock.input?.questions as Array<{ question?: string }>) || [];
+            const questionText = q[0]?.question || (askBlock.input?.question as string) || undefined;
+            SystemNotifier.notifyQuestionAsked(mainWindow, questionText, sessionId);
+          }
+        }
+      }
+    } catch (notifErr) {
+      logWarn('[App] Error dispatching system notification:', notifErr);
+    }
   }
 }
 
@@ -3407,6 +3460,10 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
 
       if (typeof (event.payload as { autoApproveAll?: unknown }).autoApproveAll === 'boolean') {
         setAutoApproveAll((event.payload as { autoApproveAll: boolean }).autoApproveAll);
+      }
+
+      if (typeof (event.payload as { systemNotifications?: unknown }).systemNotifications === 'boolean') {
+        SystemNotifier.setEnabled((event.payload as { systemNotifications: boolean }).systemNotifications);
       }
       return null;
 
