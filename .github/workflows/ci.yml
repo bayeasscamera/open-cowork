@@ -12,8 +12,12 @@ concurrency:
 
 jobs:
   lint-and-test:
-    name: Lint & Test
-    runs-on: ubuntu-latest
+    name: Lint & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -29,7 +33,7 @@ jobs:
         run: npx patch-package
 
       - name: Audit dependencies
-        run: npm audit --audit-level=critical --omit=dev || true
+        run: npm audit --audit-level=high --omit=dev
 
       - name: Build native modules for tests
         run: npm rebuild better-sqlite3
@@ -40,13 +44,19 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
 
-      # Runs tests and enforces coverage thresholds defined in vitest.config.mts.
-      # If coverage drops below the thresholds, vitest exits non-zero and this step fails.
+      # Coverage thresholds (vitest.config.mts) are enforced on the ubuntu run,
+      # which aggregates across the suite. Windows/macOS runs validate
+      # platform-specific behavior (WSL paths, Lima/WSL bridges, shell resolvers).
       - name: Test with Coverage
+        if: runner.os == 'Linux'
         run: npm run test:coverage
 
+      - name: Test (platform)
+        if: runner.os != 'Linux'
+        run: npx vitest run
+
       - name: Upload coverage report
-        if: always()
+        if: always() && runner.os == 'Linux'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-report
