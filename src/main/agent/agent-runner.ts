@@ -89,6 +89,7 @@ import { createCompactionExtensionFactory } from './compaction-extension';
 import { EliteCodingIntelligence } from './elite-coding-intelligence';
 import { SkillSynthesizer } from '../skills/skill-synthesizer';
 import type { MemoryManager } from '../memory/memory-manager';
+import { DynamicToolRegistry, buildAgentMetaTools } from '../tools/dynamic-tool-creator';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -2149,15 +2150,17 @@ Tool routing:
       logTiming('before agent session creation', runStartTime);
 
       // Create or reuse agent session
-      // Bridge MCP tools as customTools for the agent SDK.
-      // Re-read every query so newly added/removed MCP servers take effect immediately.
+      // Bridge MCP tools, agent meta-tools (dynamic tool creation + DeepSeek eval harness),
+      // and dynamically created tools into the agent SDK.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
       const extensionCustomTools = extensionResult.customTools || [];
-      const customTools = [...mcpCustomTools, ...extensionCustomTools];
-      if (mcpCustomTools.length > 0) {
+      const metaTools = buildAgentMetaTools();
+      const dynamicTools = DynamicToolRegistry.getInstance().getPiToolDefinitions();
+      const customTools = [...mcpCustomTools, ...extensionCustomTools, ...metaTools, ...dynamicTools];
+      if (mcpCustomTools.length > 0 || dynamicTools.length > 0) {
         log(
-          `[CoworkAgentRunner] Registered ${mcpCustomTools.length} MCP tools as customTools:`,
-          mcpCustomTools.map((t) => t.name).join(', ')
+          `[CoworkAgentRunner] Registered ${customTools.length} total customTools (MCP: ${mcpCustomTools.length}, Dynamic: ${dynamicTools.length}):`,
+          customTools.map((t) => t.name).join(', ')
         );
       }
       if (extensionCustomTools.length > 0) {
