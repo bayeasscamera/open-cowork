@@ -415,6 +415,7 @@ export class SessionManager {
         allowedTools,
         memoryEnabled: row.memory_enabled === 1,
         model: row.model || undefined,
+        isPinned: row.is_pinned === 1,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -1045,17 +1046,41 @@ export class SessionManager {
     });
   }
 
-  private updateSessionTitle(sessionId: string, title: string): boolean {
+  updateSessionTitle(sessionId: string, title: string): boolean {
     const existing = this.db.sessions.get(sessionId);
     if (!existing) {
       log('[SessionTitle] Skip title update for deleted session:', sessionId);
       return false;
     }
-    this.db.sessions.update(sessionId, { title });
+    const sanitizedTitle = title.trim() || 'Untitled Session';
+    this.db.sessions.update(sessionId, { title: sanitizedTitle, updated_at: Date.now() });
     this.sendToRenderer({
       type: 'session.update',
-      payload: { sessionId, updates: { title } },
+      payload: { sessionId, updates: { title: sanitizedTitle } },
     });
+    return true;
+  }
+
+  renameSession(sessionId: string, title: string): boolean {
+    log('[SessionManager] Renaming session:', sessionId, 'to:', title);
+    return this.updateSessionTitle(sessionId, title);
+  }
+
+  togglePinSession(sessionId: string, isPinned: boolean): boolean {
+    const existing = this.db.sessions.get(sessionId);
+    if (!existing) {
+      logWarn('[SessionManager] Cannot pin/unpin non-existent session:', sessionId);
+      return false;
+    }
+    this.db.sessions.update(sessionId, {
+      is_pinned: isPinned ? 1 : 0,
+      updated_at: Date.now(),
+    });
+    this.sendToRenderer({
+      type: 'session.update',
+      payload: { sessionId, updates: { isPinned } },
+    });
+    log(`[SessionManager] Session ${sessionId} pinned status set to: ${isPinned}`);
     return true;
   }
 

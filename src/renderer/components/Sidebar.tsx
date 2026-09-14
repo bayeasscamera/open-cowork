@@ -14,6 +14,8 @@ import {
   Plus,
   ListChecks,
   Check,
+  Pin,
+  Pencil,
 } from 'lucide-react';
 import type { Session } from '../types';
 
@@ -41,6 +43,8 @@ export function Sidebar() {
   const {
     deleteSession,
     batchDeleteSessions,
+    renameSession,
+    togglePinSession,
     getSessionMessages,
     getSessionTraceSteps,
     isElectron,
@@ -50,6 +54,8 @@ export function Sidebar() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editTitleValue, setEditTitleValue] = useState('');
 
   const normalizedQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
   const filteredSessions = useMemo(() => {
@@ -206,6 +212,29 @@ export function Sidebar() {
     deleteSession(sessionId);
   };
 
+  const handleStartRename = (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    setEditingSessionId(session.id);
+    setEditTitleValue(session.title);
+  };
+
+  const handleSaveRename = (sessionId: string) => {
+    const trimmed = editTitleValue.trim();
+    if (trimmed) {
+      renameSession(sessionId, trimmed);
+    }
+    setEditingSessionId(null);
+  };
+
+  const handleCancelRename = () => {
+    setEditingSessionId(null);
+  };
+
+  const handleTogglePin = (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    togglePinSession(session.id, !session.isPinned);
+  };
+
   const toggleTheme = () => {
     const next =
       settings.theme === 'dark' ? 'light' : settings.theme === 'light' ? 'system' : 'dark';
@@ -357,10 +386,13 @@ export function Sidebar() {
                   {group.sessions.map((session) => {
                     const isActive = activeSessionId === session.id;
                     const isSelected = selectedIds.has(session.id);
+                    const isEditing = editingSessionId === session.id;
+
                     return (
                       <div
                         key={session.id}
                         onClick={() => {
+                          if (isEditing) return;
                           if (isSelectMode) {
                             toggleSelectSession(session.id);
                           } else {
@@ -377,7 +409,7 @@ export function Sidebar() {
                               : 'hover:bg-surface-hover/60'
                         }`}
                       >
-                        <div className={`flex items-center gap-2 ${!isSelectMode ? 'pr-6' : ''}`}>
+                        <div className={`flex items-center gap-2 ${!isSelectMode && !isEditing ? 'pr-16' : ''}`}>
                           {isSelectMode && (
                             <div
                               className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -389,21 +421,72 @@ export function Sidebar() {
                               {isSelected && <Check className="w-2.5 h-2.5" />}
                             </div>
                           )}
+
+                          {session.isPinned && !isSelectMode && !isEditing && (
+                            <Pin className="w-3 h-3 text-accent flex-shrink-0 -rotate-45" />
+                          )}
+
                           <div className="min-w-0 flex-1">
-                            <div className="text-[13px] font-medium leading-5 text-text-primary truncate">
-                              {session.title}
-                            </div>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                autoFocus
+                                value={editTitleValue}
+                                onChange={(e) => setEditTitleValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleSaveRename(session.id);
+                                  } else if (e.key === 'Escape') {
+                                    handleCancelRename();
+                                  }
+                                }}
+                                onBlur={() => handleSaveRename(session.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full bg-background border border-accent rounded px-1.5 py-0.5 text-[13px] font-medium text-text-primary focus:outline-none"
+                                placeholder={t('sidebar.renamePlaceholder')}
+                              />
+                            ) : (
+                              <div
+                                onDoubleClick={(e) => {
+                                  if (!isSelectMode) handleStartRename(e, session);
+                                }}
+                                className="text-[13px] font-medium leading-5 text-text-primary truncate"
+                                title={session.title}
+                              >
+                                {session.title}
+                              </div>
+                            )}
                           </div>
                         </div>
 
-                        {!isSelectMode && hoveredSession === session.id && (
-                          <button
-                            onClick={(e) => handleDeleteSession(e, session.id)}
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-error hover:bg-surface-active transition-colors"
-                            title={t('common.delete')}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                        {!isSelectMode && !isEditing && hoveredSession === session.id && (
+                          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                            <button
+                              onClick={(e) => handleTogglePin(e, session)}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                                session.isPinned
+                                  ? 'text-accent hover:bg-surface-active'
+                                  : 'text-text-muted hover:text-text-primary hover:bg-surface-active'
+                              }`}
+                              title={session.isPinned ? t('sidebar.unpin') : t('sidebar.pin')}
+                            >
+                              <Pin className={`w-3 h-3 ${session.isPinned ? '-rotate-45' : ''}`} />
+                            </button>
+                            <button
+                              onClick={(e) => handleStartRename(e, session)}
+                              className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                              title={t('sidebar.rename')}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteSession(e, session.id)}
+                              className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-error hover:bg-surface-active transition-colors"
+                              title={t('common.delete')}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
@@ -507,6 +590,7 @@ function groupSessionsByDate(sessions: Session[], t: (key: string) => string): S
   const startOfYesterday = startOfToday - 86_400_000;
   const startOfPreviousWeek = startOfToday - 7 * 86_400_000;
 
+  const pinnedBucket: SessionGroup = { key: 'pinned', label: t('sidebar.pinned'), sessions: [] };
   const buckets: SessionGroup[] = [
     { key: 'today', label: t('sidebar.today'), sessions: [] },
     { key: 'yesterday', label: t('sidebar.yesterday'), sessions: [] },
@@ -518,6 +602,11 @@ function groupSessionsByDate(sessions: Session[], t: (key: string) => string): S
     (a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)
   );
   for (const session of sortedSessions) {
+    if (session.isPinned) {
+      pinnedBucket.sessions.push(session);
+      continue;
+    }
+
     const timestamp = session.updatedAt || session.createdAt;
     if (timestamp >= startOfToday) {
       buckets[0].sessions.push(session);
@@ -530,5 +619,14 @@ function groupSessionsByDate(sessions: Session[], t: (key: string) => string): S
     }
   }
 
-  return buckets.filter((bucket) => bucket.sessions.length > 0);
+  const result: SessionGroup[] = [];
+  if (pinnedBucket.sessions.length > 0) {
+    result.push(pinnedBucket);
+  }
+  for (const b of buckets) {
+    if (b.sessions.length > 0) {
+      result.push(b);
+    }
+  }
+  return result;
 }

@@ -64,6 +64,7 @@ export interface SessionRow {
   allowed_tools: string; // JSON string
   memory_enabled: number;
   model: string | null;
+  is_pinned?: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -243,6 +244,7 @@ function initializeSchema(database: Database.Database): void {
 
     ensureColumn(database, 'sessions', 'openai_thread_id', 'openai_thread_id TEXT');
     ensureColumn(database, 'sessions', 'model', 'model TEXT');
+    ensureColumn(database, 'sessions', 'is_pinned', 'is_pinned INTEGER NOT NULL DEFAULT 0');
 
     // Create messages table
     database.exec(`
@@ -449,7 +451,7 @@ export function initDatabase(): DatabaseInstance {
   `);
 
   const getAllSessionsStmt = rawDb.prepare(`
-    SELECT * FROM sessions ORDER BY updated_at DESC
+    SELECT * FROM sessions ORDER BY is_pinned DESC, updated_at DESC
   `);
 
   const deleteSessionStmt = rawDb.prepare(`

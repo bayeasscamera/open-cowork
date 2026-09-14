@@ -610,7 +610,12 @@
     "nSelected": "{{count}} selected",
     "batchDeleteConfirm": "Delete {{count}} conversations? This cannot be undone.",
     "cancel": "Cancel",
-    "confirmDelete": "Delete"
+    "confirmDelete": "Delete",
+    "pinned": "Pinned",
+    "pin": "Pin conversation",
+    "unpin": "Unpin conversation",
+    "rename": "Rename",
+    "renamePlaceholder": "Conversation title"
   },
   "chat": {
     "sendMessage": "Send message",

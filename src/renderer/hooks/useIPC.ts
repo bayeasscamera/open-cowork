@@ -716,6 +716,26 @@ export function useIPC() {
     [send]
   );
 
+  const renameSession = useCallback(
+    (sessionId: string, title: string) => {
+      useAppStore.getState().updateSession(sessionId, { title });
+      if (isElectron) {
+        send({ type: 'session.rename', payload: { sessionId, title } });
+      }
+    },
+    [send]
+  );
+
+  const togglePinSession = useCallback(
+    (sessionId: string, isPinned: boolean) => {
+      useAppStore.getState().updateSession(sessionId, { isPinned });
+      if (isElectron) {
+        send({ type: 'session.togglePin', payload: { sessionId, isPinned } });
+      }
+    },
+    [send]
+  );
+
   const listSessions = useCallback(() => {
     if (!isElectron) return;
     send({ type: 'session.list', payload: {} });
@@ -821,6 +841,8 @@ export function useIPC() {
     stopSession,
     deleteSession,
     batchDeleteSessions,
+    renameSession,
+    togglePinSession,
     listSessions,
     getSessionMessages,
     getSessionTraceSteps,

@@ -3077,6 +3077,12 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     case 'session.batchDelete':
       return sm.batchDeleteSessions(event.payload.sessionIds);
 
+    case 'session.rename':
+      return sm.renameSession(event.payload.sessionId, event.payload.title);
+
+    case 'session.togglePin':
+      return sm.togglePinSession(event.payload.sessionId, event.payload.isPinned);
+
     case 'session.list': {
       const sessions = sm.listSessions();
       sendToRenderer({ type: 'session.list', payload: { sessions } });

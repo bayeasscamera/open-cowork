@@ -213,7 +213,12 @@
     "previousWeek": "7 derniers jours",
     "search": "Rechercher des conversations...",
     "selectAll": "Tout sélectionner",
-    "themeToggle": "Changer de thème"
+    "themeToggle": "Changer de thème",
+    "pinned": "Épinglées",
+    "pin": "Épingler la conversation",
+    "unpin": "Désépingler la conversation",
+    "rename": "Renommer",
+    "renamePlaceholder": "Titre de la conversation"
   },
   "logs": {
     "title": "Journaux",

@@ -195,10 +195,12 @@ export class DynamicToolRegistry {
 
       this.registeredTools.set(sanitizedName, def);
 
-      // Persist to disk
+      // Persist to disk atomically to prevent partial writes
       const filePath = path.join(this.toolsDir, `${sanitizedName}.json`);
-      fs.writeFileSync(filePath, JSON.stringify(def, null, 2), 'utf-8');
-      log(`[DynamicToolRegistry] Registered new dynamic tool: ${sanitizedName}`);
+      const tempPath = `${filePath}.tmp.${Date.now()}`;
+      fs.writeFileSync(tempPath, JSON.stringify(def, null, 2), 'utf-8');
+      fs.renameSync(tempPath, filePath);
+      log(`[DynamicToolRegistry] Registered and persisted dynamic tool: ${sanitizedName}`);
       return true;
     } catch (err) {
       logError('[DynamicToolRegistry] Failed to register tool:', err);
