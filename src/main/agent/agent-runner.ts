@@ -87,6 +87,7 @@ import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
 import { EliteCodingIntelligence } from './elite-coding-intelligence';
+import { SkillSynthesizer } from '../skills/skill-synthesizer';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -579,6 +580,7 @@ export class CoworkAgentRunner {
   // Per-instance caches — invalidated when the underlying config changes.
   private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
   private _skillsSetupDone = false;
+  private skillSynthesizer?: SkillSynthesizer;
 
   /**
    * Clear SDK session cache for a session
@@ -2978,6 +2980,35 @@ Tool routing:
         status: terminalErrorText ? 'error' : 'completed',
         title: terminalErrorText ? 'Request failed' : 'Task completed',
       });
+
+      // Closed Learning Loop (Hermes-inspired):
+      // On successful task completion, trigger autonomous skill evaluation in background.
+      if (!terminalErrorText && !controller.signal.aborted) {
+        const globalSkillsDir = this.getConfiguredGlobalSkillsDir();
+        if (!this.skillSynthesizer) {
+          this.skillSynthesizer = new SkillSynthesizer(globalSkillsDir);
+        } else {
+          this.skillSynthesizer.setBaseSkillsDir(globalSkillsDir);
+        }
+        // Non-blocking background evaluation
+        this.skillSynthesizer
+          .evaluateAndSynthesize(prompt, existingMessages, false)
+          .then((res) => {
+            if (res?.created) {
+              this.invalidateSkillsSetup();
+              this.sendTraceStep(session.id, {
+                id: uuidv4(),
+                type: 'thinking',
+                status: 'completed',
+                title: `✨ Learned new skill: ${res.name}`,
+                timestamp: Date.now(),
+              });
+            }
+          })
+          .catch((err) => {
+            logWarn('[CoworkAgentRunner] Background skill synthesis error:', err);
+          });
+      }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         const abortDisposition = resolveAbortDisposition({
