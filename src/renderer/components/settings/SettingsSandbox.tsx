@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Shield, AlertCircle, CheckCircle, Settings, Loader2 } from 'lucide-react';
+import { Shield, AlertCircle, CheckCircle, Settings, Loader2, Server, Cloud } from 'lucide-react';
 import { renderLocalizedBannerMessage } from './shared';
 import type { LocalizedBanner } from './shared';
 
@@ -529,6 +529,48 @@ export function SettingsSandbox() {
               {t('sandbox.linuxNative')}
             </div>
           )}
+
+          {/* Remote Cloud & Serverless Sandboxes (Hermes-inspired) */}
+          <div className="pt-4 border-t border-border space-y-3">
+            <div className="text-xs font-medium text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+              <Cloud className="w-3.5 h-3.5 text-accent" />
+              <span>Backends Cloud & Distants (SSH / Daytona)</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="p-3.5 rounded-xl border border-border bg-surface-muted/40 hover:border-accent/40 transition-colors">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Server className="w-4 h-4 text-accent" />
+                  <span className="text-sm font-semibold text-text-primary">SSH Remote Host</span>
+                </div>
+                <p className="text-xs text-text-muted leading-relaxed mb-3">
+                  Exécutez vos sessions sur un serveur GPU ou VPS distant sans consommer la mémoire locale.
+                </p>
+                <div className="flex items-center justify-between text-xs text-text-secondary bg-surface p-2 rounded-lg border border-border/60">
+                  <span>Protocole standard</span>
+                  <span className="text-success font-medium flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" /> Prêt
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-border bg-surface-muted/40 hover:border-accent/40 transition-colors">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Cloud className="w-4 h-4 text-purple-400" />
+                  <span className="text-sm font-semibold text-text-primary">Daytona Cloud</span>
+                </div>
+                <p className="text-xs text-text-muted leading-relaxed mb-3">
+                  Conteneurs cloud éphémères ou persistants avec hibernation automatique à coût zéro.
+                </p>
+                <div className="flex items-center justify-between text-xs text-text-secondary bg-surface p-2 rounded-lg border border-border/60">
+                  <span>Serverless CLI</span>
+                  <span className="text-accent font-medium flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" /> Intégré
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

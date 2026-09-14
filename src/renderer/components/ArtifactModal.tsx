@@ -19,6 +19,8 @@ export function ArtifactModal({ filePath, onClose, onRevealInFolder }: ArtifactM
 
   const isHtml = ext === 'html' || ext === 'htm';
   const isSvg = ext === 'svg';
+  const isMarkdown = ext === 'md' || ext === 'markdown';
+  const isPreviewable = isHtml || isSvg || isMarkdown;
 
   useEffect(() => {
     let isMounted = true;
@@ -79,7 +81,7 @@ export function ArtifactModal({ filePath, onClose, onRevealInFolder }: ArtifactM
           </div>
 
           <div className="flex items-center gap-2">
-            {(isHtml || isSvg) && (
+            {isPreviewable && (
               <div className="flex bg-surface-muted p-0.5 rounded-lg border border-border text-xs">
                 <button
                   onClick={() => setMode('preview')}
@@ -157,6 +159,10 @@ export function ArtifactModal({ filePath, onClose, onRevealInFolder }: ArtifactM
               sandbox="allow-scripts allow-same-origin"
               className="w-full h-full border-0 rounded-lg bg-white shadow-inner"
             />
+          ) : isMarkdown && mode === 'preview' ? (
+            <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed p-4 bg-surface rounded-lg border border-border">
+              <pre className="whitespace-pre-wrap font-sans text-text-primary">{content}</pre>
+            </div>
           ) : (
             <pre className="text-xs font-mono text-text-primary whitespace-pre-wrap leading-relaxed select-text">
               {content}
