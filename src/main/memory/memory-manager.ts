@@ -22,6 +22,16 @@ export interface ErrorPattern {
   createdAt: number;
 }
 
+/** User preference and dialectic knowledge entry (Honcho / Hermes-inspired) */
+export interface UserPreference {
+  id: string;
+  key: string;           // Normalized preference key, e.g. "lang", "workflow", "coding_style"
+  value: string;         // Observation or preference details
+  confidence: number;    // 0.0 - 1.0 confidence score
+  updatedAt: number;
+  createdAt: number;
+}
+
 /**
  * MemoryManager - Handles message history, intelligent context management,
  * and causal error-pattern learning for self-improvement.
@@ -63,10 +73,74 @@ export class MemoryManager {
         );
         CREATE INDEX IF NOT EXISTS idx_error_patterns_pattern
           ON error_patterns(pattern);
+
+        CREATE TABLE IF NOT EXISTS user_preferences (
+          id TEXT PRIMARY KEY,
+          key TEXT NOT NULL UNIQUE,
+          value TEXT NOT NULL,
+          confidence REAL NOT NULL DEFAULT 1.0,
+          updated_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_preferences_key
+          ON user_preferences(key);
       `);
     } catch (error) {
-      logError('[MemoryManager] Failed to create error_patterns table:', error);
+      logError('[MemoryManager] Failed to create error_patterns / user_preferences tables:', error);
     }
+  }
+
+  /** Record or update a dialectic user preference / habit observation */
+  recordUserPreference(key: string, value: string, confidence = 1.0): void {
+    try {
+      const now = Date.now();
+      const existing = this.db
+        .prepare('SELECT id FROM user_preferences WHERE key = ?')
+        .get(key) as { id: string } | undefined;
+
+      if (existing) {
+        this.db
+          .prepare(
+            'UPDATE user_preferences SET value = ?, confidence = ?, updated_at = ? WHERE key = ?'
+          )
+          .run(value, confidence, now, key);
+      } else {
+        this.db
+          .prepare(
+            'INSERT INTO user_preferences (id, key, value, confidence, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+          )
+          .run(uuidv4(), key, value, confidence, now, now);
+      }
+    } catch (error) {
+      logError('[MemoryManager] Failed to record user preference:', error);
+    }
+  }
+
+  /** Retrieve all persisted user preferences */
+  getAllUserPreferences(): UserPreference[] {
+    try {
+      const rows = this.db
+        .prepare('SELECT * FROM user_preferences ORDER BY updated_at DESC')
+        .all() as Record<string, unknown>[];
+      return rows.map((r) => ({
+        id: r.id as string,
+        key: r.key as string,
+        value: r.value as string,
+        confidence: Number(r.confidence || 1.0),
+        updatedAt: r.updated_at as number,
+        createdAt: r.created_at as number,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Format user preferences into a system prompt section */
+  formatUserPreferencesForContext(): string {
+    const prefs = this.getAllUserPreferences();
+    if (prefs.length === 0) return '';
+    const lines = prefs.map((p) => `- ${p.key}: ${p.value}`);
+    return `\n\n<user_preferences>\nLearned habits, preferences, and workflows for this user:\n${lines.join('\n')}\n</user_preferences>`;
   }
 
   /**

@@ -28,7 +28,7 @@ import type {
   PathConverter,
 } from './types';
 
-export type SandboxMode = 'wsl' | 'lima' | 'native' | 'none';
+export type SandboxMode = 'wsl' | 'lima' | 'native' | 'ssh' | 'daytona' | 'none';
 
 export interface SandboxAdapterConfig extends SandboxConfig {
   /** Force native execution even on Windows (not recommended) */
