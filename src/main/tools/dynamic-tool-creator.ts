@@ -1,12 +1,13 @@
 /**
  * @module main/tools/dynamic-tool-creator
  *
- * Autonomous Tool Creator & DeepSeek Evaluation Harness.
+ * Autonomous Tool Creator, Skill Creator & DeepSeek Evaluation Harness.
  *
  * Allows the agent to:
  * 1. Define and hot-load new custom tools on the fly (`create_dynamic_tool`).
- * 2. Execute a DeepSeek-style evaluation harness (`deepseek_eval_harness`) to
- *    test and verify skills, tools, and code changes with pass@k & deterministic scoring.
+ * 2. Create and persist SKILL.md files on demand (`create_dynamic_skill`).
+ * 3. List all known tools and skills (`list_agent_capabilities`).
+ * 4. Execute a DeepSeek-style evaluation harness (`deepseek_eval_harness`).
  */
 
 import * as fs from 'fs';
@@ -15,6 +16,108 @@ import { app } from 'electron';
 import { Type } from '@sinclair/typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import { log, logError } from '../utils/logger';
+
+// ---------------------------------------------------------------------------
+// Dynamic Skill Registry
+// ---------------------------------------------------------------------------
+
+export interface DynamicSkillDefinition {
+  slug: string;
+  name: string;
+  description: string;
+  content: string;
+  createdAt: number;
+  version: number;
+}
+
+export class DynamicSkillRegistry {
+  private static instance: DynamicSkillRegistry;
+  private skillsDir: string;
+  private registry: Map<string, DynamicSkillDefinition> = new Map();
+
+  private constructor() {
+    const userData = app?.getPath ? app.getPath('userData') : '/tmp';
+    this.skillsDir = path.join(userData, 'dynamic_skills');
+    if (!fs.existsSync(this.skillsDir)) {
+      try { fs.mkdirSync(this.skillsDir, { recursive: true }); } catch (e) {
+        logError('[DynamicSkillRegistry] Failed to create skills dir:', e);
+      }
+    }
+    this.loadPersistedSkills();
+  }
+
+  public static getInstance(): DynamicSkillRegistry {
+    if (!DynamicSkillRegistry.instance) {
+      DynamicSkillRegistry.instance = new DynamicSkillRegistry();
+    }
+    return DynamicSkillRegistry.instance;
+  }
+
+  private loadPersistedSkills(): void {
+    try {
+      if (!fs.existsSync(this.skillsDir)) return;
+      const entries = fs.readdirSync(this.skillsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const metaPath = path.join(this.skillsDir, entry.name, 'meta.json');
+        const skillPath = path.join(this.skillsDir, entry.name, 'SKILL.md');
+        if (!fs.existsSync(metaPath) || !fs.existsSync(skillPath)) continue;
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as Omit<DynamicSkillDefinition, 'content'>;
+          const content = fs.readFileSync(skillPath, 'utf-8');
+          this.registry.set(meta.slug, { ...meta, content });
+        } catch { /* ignore corrupted */ }
+      }
+      log(`[DynamicSkillRegistry] Loaded ${this.registry.size} persisted skills`);
+    } catch (e) {
+      logError('[DynamicSkillRegistry] Error loading persisted skills:', e);
+    }
+  }
+
+  public createSkill(params: { name: string; description: string; content: string }): DynamicSkillDefinition {
+    const slug = params.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').slice(0, 64);
+    const existing = this.registry.get(slug);
+    const version = existing ? existing.version + 1 : 1;
+
+    let content = params.content.trim();
+    if (!content.startsWith('---')) {
+      content = `---\nname: ${slug}\ndescription: ${params.description}\n---\n\n${content}`;
+    }
+
+    const skillDir = path.join(this.skillsDir, slug);
+    if (!fs.existsSync(skillDir)) fs.mkdirSync(skillDir, { recursive: true });
+
+    const skillFile = path.join(skillDir, 'SKILL.md');
+    const tempFile = `${skillFile}.tmp.${Date.now()}`;
+    fs.writeFileSync(tempFile, content, 'utf-8');
+    fs.renameSync(tempFile, skillFile);
+
+    const def: DynamicSkillDefinition = {
+      slug,
+      name: params.name,
+      description: params.description,
+      content,
+      createdAt: existing?.createdAt ?? Date.now(),
+      version,
+    };
+
+    const { content: _c, ...meta } = def;
+    void _c;
+    fs.writeFileSync(path.join(skillDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf-8');
+    this.registry.set(slug, def);
+
+    log(`[DynamicSkillRegistry] 🎓 Skill ${existing ? 'updated' : 'created'} (v${version}): ${slug}`);
+    return def;
+  }
+
+  public getAllSkills(): DynamicSkillDefinition[] {
+    return Array.from(this.registry.values());
+  }
+
+  public getSkillsDir(): string {
+    return this.skillsDir;
+  }
+}
 
 export interface DynamicToolDefinition {
   name: string;
@@ -138,15 +241,18 @@ export class DynamicToolRegistry {
 }
 
 /**
- * Built-in Agent Tools for:
- * 1. `create_dynamic_tool` (Self-Tool Generation)
- * 2. `deepseek_eval_harness` (Evaluation Driven Development & Benchmarking)
+ * Built-in Agent Meta-Tools:
+ * 1. `create_dynamic_tool`       — Self-Tool Generation
+ * 2. `create_dynamic_skill`      — Self-Skill Creation (SKILL.md)
+ * 3. `list_agent_capabilities`   — Discover existing tools + skills
+ * 4. `deepseek_eval_harness`     — Evaluation Driven Development & Benchmarking
  */
 export function buildAgentMetaTools(): ToolDefinition[] {
-  const registry = DynamicToolRegistry.getInstance();
+  const toolRegistry = DynamicToolRegistry.getInstance();
+  const skillRegistry = DynamicSkillRegistry.getInstance();
 
   return [
-    // 1. Tool Creation Tool
+    // 1. Tool Creation
     {
       name: 'create_dynamic_tool',
       label: 'Agent Tool Creator',
@@ -163,7 +269,7 @@ export function buildAgentMetaTools(): ToolDefinition[] {
       execute: async (_toolCallId, params) => {
         const args = params as { name: string; description: string; implementationCode: string };
         try {
-          registry.registerTool({
+          toolRegistry.registerTool({
             name: args.name,
             description: args.description,
             parameters: {},
@@ -182,7 +288,81 @@ export function buildAgentMetaTools(): ToolDefinition[] {
       },
     },
 
-    // 2. DeepSeek-Style Evaluation Harness Tool
+    // 2. Skill Creation
+    {
+      name: 'create_dynamic_skill',
+      label: 'Agent Skill Creator',
+      description:
+        'Create a new reusable SKILL.md for Open Cowork. Use this when you discover a novel workflow, best practice, or multi-step pattern that should be codified for future sessions. The skill is persisted to disk and auto-loaded on next startup.',
+      parameters: Type.Object({
+        name: Type.String({ description: 'Human-readable skill name (e.g. "TypeScript Strict Refactor" or "SQLite Migration Pattern")' }),
+        description: Type.String({ description: 'Trigger conditions — when should this skill be activated in future sessions?' }),
+        content: Type.String({
+          description:
+            'Full SKILL.md markdown content. Include a YAML frontmatter block (--- name: ... description: ... ---), an Overview section, a Workflow/Best Practices section with step-by-step instructions, command templates, and pitfalls. You may omit the frontmatter if you want it auto-generated.',
+        }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { name: string; description: string; content: string };
+        try {
+          const def = skillRegistry.createSkill({
+            name: args.name,
+            description: args.description,
+            content: args.content,
+          });
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `✅ Skill created (v${def.version}): "${def.slug}"\nPath: ${skillRegistry.getSkillsDir()}/${def.slug}/SKILL.md\nThis skill will be auto-discovered in future sessions.`,
+            }],
+            details: { slug: def.slug, version: def.version, path: `${skillRegistry.getSkillsDir()}/${def.slug}/SKILL.md` },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text' as const, text: `Failed to create skill: ${err instanceof Error ? err.message : String(err)}` }],
+            details: {},
+          };
+        }
+      },
+    },
+
+    // 3. Capability Introspection
+    {
+      name: 'list_agent_capabilities',
+      label: 'List Agent Capabilities',
+      description:
+        'List all dynamically created tools and skills available to the agent. Use this to avoid creating duplicates and to discover existing custom capabilities before building new ones.',
+      parameters: Type.Object({}),
+      execute: async (_toolCallId, _params) => {
+        const tools = toolRegistry.getAllTools();
+        const skills = skillRegistry.getAllSkills();
+
+        const toolLines = tools.length === 0
+          ? ['  (none yet)']
+          : tools.map((t) => `  • custom_${t.name} — ${t.description.slice(0, 80)}`);
+
+        const skillLines = skills.length === 0
+          ? ['  (none yet)']
+          : skills.map((s) => `  • ${s.slug} (v${s.version}) — ${s.description.slice(0, 80)}`);
+
+        const text = [
+          `=== Agent Capabilities ===`,
+          ``,
+          `Dynamic Tools (${tools.length}):`,
+          ...toolLines,
+          ``,
+          `Dynamic Skills (${skills.length}):`,
+          ...skillLines,
+        ].join('\n');
+
+        return {
+          content: [{ type: 'text' as const, text }],
+          details: { toolCount: tools.length, skillCount: skills.length },
+        };
+      },
+    },
+
+    // 4. DeepSeek-Style Evaluation Harness
     {
       name: 'deepseek_eval_harness',
       label: 'DeepSeek Eval Benchmark',
@@ -214,7 +394,6 @@ export function buildAgentMetaTools(): ToolDefinition[] {
         let totalScore = 0;
 
         for (const tc of args.testCases) {
-          // DeepSeek Eval scoring: check coverage of expected hits vs forbidden hits
           const hits = tc.expectedOutputs.length;
           const score = hits > 0 ? 100 : 0;
           totalScore += score;
@@ -242,3 +421,4 @@ export function buildAgentMetaTools(): ToolDefinition[] {
     },
   ];
 }
+
