@@ -88,6 +88,7 @@ import { createWindowsBashOperations } from './windows-bash-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
 import { EliteCodingIntelligence } from './elite-coding-intelligence';
 import { SkillSynthesizer } from '../skills/skill-synthesizer';
+import type { MemoryManager } from '../memory/memory-manager';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -581,6 +582,7 @@ export class CoworkAgentRunner {
   private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
   private _skillsSetupDone = false;
   private skillSynthesizer?: SkillSynthesizer;
+  private memoryManager?: MemoryManager;
 
   /**
    * Clear SDK session cache for a session
@@ -889,7 +891,8 @@ ${hints.join('\n')}
     mcpManager?: MCPManager,
     pluginRuntimeService?: PluginRuntimeService,
     skillsAdapter?: SkillsAdapter,
-    extensionManager?: AgentRuntimeExtensionManager
+    extensionManager?: AgentRuntimeExtensionManager,
+    memoryManager?: MemoryManager
   ) {
     this.sendToRenderer = options.sendToRenderer;
     this.saveMessage = options.saveMessage;
@@ -900,6 +903,7 @@ ${hints.join('\n')}
     this._pluginRuntimeService = pluginRuntimeService;
     this._skillsAdapter = skillsAdapter;
     this.extensionManager = extensionManager;
+    this.memoryManager = memoryManager;
 
     log('[CoworkAgentRunner] Initialized with Open Cowork agent SDK');
     log('[CoworkAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
@@ -2136,6 +2140,8 @@ Tool routing:
 </tool_behavior>`,
         EliteCodingIntelligence.getElitePrompt(),
         this.getBundledPathHints(),
+        this.memoryManager?.formatUserPreferencesForContext() || '',
+        this.memoryManager?.formatErrorPatternsForContext(prompt) || '',
       ]
         .filter((section): section is string => Boolean(section && section.trim()))
         .join('\n\n');
@@ -2985,10 +2991,12 @@ Tool routing:
       // On successful task completion, trigger autonomous skill evaluation in background.
       if (!terminalErrorText && !controller.signal.aborted) {
         const globalSkillsDir = this.getConfiguredGlobalSkillsDir();
+        const rawDb = (this.memoryManager as unknown as { db?: import('better-sqlite3').Database })?.db;
         if (!this.skillSynthesizer) {
-          this.skillSynthesizer = new SkillSynthesizer(globalSkillsDir);
+          this.skillSynthesizer = new SkillSynthesizer(globalSkillsDir, rawDb);
         } else {
           this.skillSynthesizer.setBaseSkillsDir(globalSkillsDir);
+          if (rawDb) this.skillSynthesizer.setDatabase(rawDb);
         }
         // Non-blocking background evaluation
         this.skillSynthesizer
@@ -3000,7 +3008,7 @@ Tool routing:
                 id: uuidv4(),
                 type: 'thinking',
                 status: 'completed',
-                title: `✨ Learned new skill: ${res.name}`,
+                title: `✨ Learned new skill: ${res.name} (v${res.version || 1})`,
                 timestamp: Date.now(),
               });
             }

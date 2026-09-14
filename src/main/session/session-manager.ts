@@ -39,6 +39,7 @@ import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { AgentRuntimeExtensionManager } from '../extensions/agent-runtime-extension-manager';
+import { MemoryManager } from '../memory/memory-manager';
 import { forgetSessionPermissions } from '../config/permission-rules-store';
 import {
   log,
@@ -161,7 +162,8 @@ export class SessionManager {
       this.mcpManager,
       this.pluginRuntimeService,
       undefined,
-      this.extensionManager
+      this.extensionManager,
+      new MemoryManager(this.db.raw)
     );
   }
 
