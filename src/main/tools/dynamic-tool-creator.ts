@@ -19,6 +19,7 @@ import { log, logError } from '../utils/logger';
 import { AutoVerificationLoop } from '../agent/auto-verification-loop';
 import { TddOrchestrator } from '../agent/tdd-orchestrator';
 import { AstCodeIntelligence } from '../agent/ast-code-intelligence';
+import { SystemController } from '../system/system-controller';
 
 
 // ---------------------------------------------------------------------------
@@ -622,6 +623,142 @@ export function buildAgentMetaTools(): ToolDefinition[] {
         }
       },
     },
+
+    // =========================================================================
+    // PILIER 1 — OMNIPOTENCE SYSTÈME (OPENCLAW STYLE)
+    // =========================================================================
+
+    // 10. System App Control
+    {
+      name: 'system_app_control',
+      label: 'Control OS Application',
+      description:
+        'Launch, switch to, or close any application installed on the host machine (e.g. "Safari", "Terminal", "Visual Studio Code", "Slack", "Notes").',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('launch'), Type.Literal('quit'), Type.Literal('force_quit')], {
+          description: 'Action to perform on the target application',
+        }),
+        appName: Type.String({ description: 'Name of the application on the system (e.g. "Safari", "Slack")' }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { action: 'launch' | 'quit' | 'force_quit'; appName: string };
+        const sys = SystemController.getInstance();
+        if (args.action === 'launch') {
+          const res = await sys.launchApp(args.appName);
+          return { content: [{ type: 'text' as const, text: res.output }], details: res };
+        } else {
+          const res = await sys.quitApp(args.appName, args.action === 'force_quit');
+          return { content: [{ type: 'text' as const, text: res.output }], details: res };
+        }
+      },
+    },
+
+    // 11. Clipboard Manipulation
+    {
+      name: 'system_clipboard',
+      label: 'Read/Write System Clipboard',
+      description:
+        'Access the host OS clipboard. Read the currently copied content or write new text/code into the user clipboard.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('read'), Type.Literal('write')], {
+          description: 'Whether to read from or write to the clipboard',
+        }),
+        text: Type.Optional(Type.String({ description: 'Text to copy into clipboard (required when action is write)' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { action: 'read' | 'write'; text?: string };
+        const sys = SystemController.getInstance();
+        if (args.action === 'read') {
+          const content = sys.readClipboard();
+          return {
+            content: [{ type: 'text' as const, text: content ? `Clipboard Content:\n${content}` : 'Clipboard is empty.' }],
+            details: { hasContent: Boolean(content) },
+          };
+        } else {
+          const success = sys.writeClipboard(args.text || '');
+          return {
+            content: [{ type: 'text' as const, text: success ? 'Text copied to clipboard successfully.' : 'Failed to write to clipboard.' }],
+            details: { success },
+          };
+        }
+      },
+    },
+
+    // 12. Native System Notifications
+    {
+      name: 'system_notify',
+      label: 'Send Native OS Notification',
+      description:
+        'Trigger a native desktop notification banner on macOS or Windows. Use to alert the user when an important background task completes.',
+      parameters: Type.Object({
+        title: Type.String({ description: 'Notification title' }),
+        message: Type.String({ description: 'Notification body message' }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { title: string; message: string };
+        const sys = SystemController.getInstance();
+        const sent = sys.notify(args.title, args.message);
+        return {
+          content: [{ type: 'text' as const, text: sent ? `Notification sent: "${args.title}"` : 'Failed to dispatch notification.' }],
+          details: { sent },
+        };
+      },
+    },
+
+    // 13. Process Manager
+    {
+      name: 'system_process_manager',
+      label: 'Inspect & Manage Processes',
+      description:
+        'List active system processes or terminate a process by its PID. Useful for checking resource usage or killing stuck servers/ports.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('list'), Type.Literal('kill')], {
+          description: 'List active processes or kill a specific process',
+        }),
+        filter: Type.Optional(Type.String({ description: 'Process name filter when listing (e.g. "node", "python")' })),
+        pid: Type.Optional(Type.Number({ description: 'PID to terminate when action is kill' })),
+        force: Type.Optional(Type.Boolean({ description: 'Force kill (SIGKILL) when action is kill' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { action: 'list' | 'kill'; filter?: string; pid?: number; force?: boolean };
+        const sys = SystemController.getInstance();
+        if (args.action === 'list') {
+          const procs = await sys.listProcesses(args.filter);
+          const lines = procs.slice(0, 25).map((p) => `PID ${p.pid} | CPU ${p.cpu || 'N/A'} | MEM ${p.mem || 'N/A'} | ${p.name}`);
+          return {
+            content: [{ type: 'text' as const, text: `Active Processes (${procs.length}):\n${lines.join('\n')}` }],
+            details: { count: procs.length },
+          };
+        } else {
+          if (!args.pid) {
+            return { content: [{ type: 'text' as const, text: 'PID is required for action kill' }], details: {} };
+          }
+          const res = await sys.killProcess(args.pid, args.force);
+          return { content: [{ type: 'text' as const, text: res.output }], details: res };
+        }
+      },
+    },
+
+    // 14. Native AppleScript Runner (macOS automation)
+    {
+      name: 'system_run_script',
+      label: 'Execute AppleScript / JXA (macOS)',
+      description:
+        'Run custom AppleScript directly on macOS to automate UI actions, control Finder, query window states, or interact with native apps (Safari, Mail, Calendar, etc.).',
+      parameters: Type.Object({
+        script: Type.String({ description: 'AppleScript code to execute (e.g. tell application "Finder" to get name of every window)' }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { script: string };
+        const sys = SystemController.getInstance();
+        const res = await sys.runAppleScript(args.script);
+        return {
+          content: [{ type: 'text' as const, text: res.output }],
+          details: res,
+        };
+      },
+    },
   ];
 }
+
 

@@ -90,6 +90,8 @@ import { EliteCodingIntelligence } from './elite-coding-intelligence';
 import { SkillSynthesizer } from '../skills/skill-synthesizer';
 import type { MemoryManager } from '../memory/memory-manager';
 import { DynamicToolRegistry, buildAgentMetaTools } from '../tools/dynamic-tool-creator';
+import { AdaptiveStrategyEngine } from './adaptive-strategy-engine';
+import { ActivePreferenceLearner } from '../memory/active-preference-learner';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -2140,6 +2142,7 @@ Tool routing:
 - Use WebSearch/WebFetch only when Chrome MCP is unavailable or the user explicitly asks for generic web search.
 </tool_behavior>`,
         EliteCodingIntelligence.getElitePrompt(),
+        AdaptiveStrategyEngine.getStrategicPrompt(),
         this.getBundledPathHints(),
         this.memoryManager?.formatUserPreferencesForContext() || '',
         this.memoryManager?.formatErrorPatternsForContext(prompt) || '',
@@ -3019,6 +3022,28 @@ Tool routing:
           .catch((err) => {
             logWarn('[CoworkAgentRunner] Background skill synthesis error:', err);
           });
+
+        // Active Dialectic Learning (Hermes / Honcho inspired):
+        // Automatically extract habits, preferences, and style conventions from the turn.
+        if (this.memoryManager) {
+          const learner = new ActivePreferenceLearner(this.memoryManager);
+          learner
+            .extractAndRecord(existingMessages)
+            .then((count) => {
+              if (count > 0) {
+                this.sendTraceStep(session.id, {
+                  id: uuidv4(),
+                  type: 'thinking',
+                  status: 'completed',
+                  title: `🧠 Memorized ${count} user preference(s)`,
+                  timestamp: Date.now(),
+                });
+              }
+            })
+            .catch((err) => {
+              logWarn('[CoworkAgentRunner] Background preference learning error:', err);
+            });
+        }
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
