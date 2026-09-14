@@ -10,7 +10,7 @@ describe('DynamicToolCreator & DeepSeek Eval Harness', () => {
     skillRegistry = DynamicSkillRegistry.getInstance();
   });
 
-  it('provides all 4 meta tools', () => {
+  it('provides all 9 meta tools including coding intelligence', () => {
     const metaTools = buildAgentMetaTools();
     const names = metaTools.map((t) => t.name);
 
@@ -18,6 +18,11 @@ describe('DynamicToolCreator & DeepSeek Eval Harness', () => {
     expect(names).toContain('create_dynamic_skill');
     expect(names).toContain('list_agent_capabilities');
     expect(names).toContain('deepseek_eval_harness');
+    expect(names).toContain('auto_verify_edits');
+    expect(names).toContain('search_codebase');
+    expect(names).toContain('run_tdd_cycle');
+    expect(names).toContain('find_symbol_usages');
+    expect(names).toContain('ast_safe_rename');
   });
 
   it('allows agent to create a new dynamic tool on the fly and execute it', async () => {
@@ -112,6 +117,19 @@ Use this when adding new tables to the database.
     expect(report.testCount).toBe(2);
     expect(report.passRate).toBe('100.0%');
     expect(report.results.length).toBe(2);
+  });
+
+  it('find_symbol_usages locates usages via AST', async () => {
+    const metaTools = buildAgentMetaTools();
+    const findTool = metaTools.find((t) => t.name === 'find_symbol_usages')!;
+
+    const result = await (findTool as any).execute('call_ast_1', {
+      symbolName: 'DynamicToolRegistry',
+    });
+
+    expect(result.content[0].text).toContain('Found');
+    expect(result.content[0].text).toContain('usages of "DynamicToolRegistry"');
+    expect(result.details.count).toBeGreaterThan(0);
   });
 });
 

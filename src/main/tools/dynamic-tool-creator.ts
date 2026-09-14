@@ -16,6 +16,10 @@ import { app } from 'electron';
 import { Type } from '@sinclair/typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import { log, logError } from '../utils/logger';
+import { AutoVerificationLoop } from '../agent/auto-verification-loop';
+import { TddOrchestrator } from '../agent/tdd-orchestrator';
+import { AstCodeIntelligence } from '../agent/ast-code-intelligence';
+
 
 // ---------------------------------------------------------------------------
 // Dynamic Skill Registry
@@ -417,6 +421,205 @@ export function buildAgentMetaTools(): ToolDefinition[] {
           content: [{ type: 'text' as const, text: JSON.stringify(report, null, 2) }],
           details: {},
         };
+      },
+    },
+
+    // 5. Self-Verification Loop
+    {
+      name: 'auto_verify_edits',
+      label: 'Auto-Verify Code Edits',
+      description:
+        'Run typecheck → targeted vitest tests → eslint on recently touched files. Use after modifying code to verify correctness before proceeding.',
+      parameters: Type.Object({
+        touchedFiles: Type.Array(Type.String(), {
+          description: 'Paths to files modified.',
+        }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { touchedFiles: string[] };
+        try {
+          const loop = new AutoVerificationLoop(process.cwd());
+          const summary = await loop.verify(args.touchedFiles);
+          const report = AutoVerificationLoop.formatSummary(summary);
+          return {
+            content: [{ type: 'text' as const, text: report }],
+            details: summary,
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text' as const, text: `Verification error: ${err instanceof Error ? err.message : String(err)}` }],
+            details: {},
+          };
+        }
+      },
+    },
+
+    // 6. Code Search
+    {
+      name: 'search_codebase',
+      label: 'Semantic Codebase Search',
+      description:
+        'Search codebase for patterns, functions, or concepts. Returns relevant code snippets and files to prevent duplicate implementations.',
+      parameters: Type.Object({
+        query: Type.String({ description: 'Description of what to look for in codebase.' }),
+        topK: Type.Optional(Type.Number({ description: 'Max results to return.' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { query: string; topK?: number };
+        try {
+          const { exec } = await import('child_process');
+          const { promisify } = await import('util');
+          const execAsync = promisify(exec);
+
+          const keywords = args.query
+            .replace(/['"]/g, '')
+            .split(/\s+/)
+            .filter((w) => w.length > 3)
+            .slice(0, 3)
+            .join('|');
+
+          try {
+            const { stdout } = await execAsync(
+              `grep -rn --include="*.ts" --include="*.tsx" -l "${keywords}" src/ 2>/dev/null | head -10`,
+              { cwd: process.cwd(), timeout: 10_000 }
+            );
+            const files = stdout.trim().split('\n').filter(Boolean);
+            if (files.length === 0) {
+              return { content: [{ type: 'text' as const, text: `No results found for: "${args.query}"` }], details: {} };
+            }
+
+            const results: string[] = [`Found in ${files.length} file(s) for query: "${args.query}"`, ''];
+            for (const file of files.slice(0, args.topK ?? 5)) {
+              const { stdout: lines } = await execAsync(
+                `grep -n "${keywords.split('|')[0]}" "${file}" 2>/dev/null | head -5`,
+                { cwd: process.cwd(), timeout: 5_000 }
+              ).catch(() => ({ stdout: '' }));
+              results.push(`📄 ${file}`);
+              if (lines) results.push(lines.trim());
+              results.push('');
+            }
+
+            return {
+              content: [{ type: 'text' as const, text: results.join('\n') }],
+              details: { fileCount: files.length },
+            };
+          } catch {
+            return { content: [{ type: 'text' as const, text: `Search failed for: "${args.query}"` }], details: {} };
+          }
+        } catch (err) {
+          return {
+            content: [{ type: 'text' as const, text: `Search error: ${err instanceof Error ? err.message : String(err)}` }],
+            details: {},
+          };
+        }
+      },
+    },
+
+    // 7. TDD Loop
+    {
+      name: 'run_tdd_cycle',
+      label: 'TDD Red-Green-Refactor Cycle',
+      description:
+        'Run full Test-Driven Development cycle: generate failing tests (RED), write implementation (GREEN), and suggest refactoring.',
+      parameters: Type.Object({
+        featureDescription: Type.String({ description: 'Clear specification of the feature to develop.' }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { featureDescription: string };
+        try {
+          const orchestrator = new TddOrchestrator(process.cwd());
+          const result = await orchestrator.runCycle(args.featureDescription);
+          const text = [
+            `=== TDD Cycle Result ===`,
+            `Feature  : ${result.feature}`,
+            `Phase    : ${result.phase.toUpperCase()}`,
+            `Test file: ${result.testFilePath}`,
+            `Impl file: ${result.implFilePath}`,
+            `Duration : ${result.durationMs}ms`,
+            result.suggestion ? `\nSuggestion:\n${result.suggestion}` : '',
+            `\nTest output (tail):\n${result.testOutput.split('\n').slice(-15).join('\n')}`,
+          ].join('\n');
+          return {
+            content: [{ type: 'text' as const, text }],
+            details: { phase: result.phase, testFilePath: result.testFilePath, implFilePath: result.implFilePath },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text' as const, text: `TDD cycle error: ${err instanceof Error ? err.message : String(err)}` }],
+            details: {},
+          };
+        }
+      },
+    },
+
+    // 8. AST Symbol Usages
+    {
+      name: 'find_symbol_usages',
+      label: 'Find Symbol Usages (AST)',
+      description:
+        'Locate references and imports for a TypeScript symbol across the codebase using AST parser.',
+      parameters: Type.Object({
+        symbolName: Type.String({ description: 'Symbol name to search across project.' }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { symbolName: string };
+        try {
+          const ast = new AstCodeIntelligence(process.cwd());
+          const usages = ast.findSymbolUsages(args.symbolName);
+          if (usages.length === 0) {
+            return {
+              content: [{ type: 'text' as const, text: `No usages found for symbol: "${args.symbolName}"` }],
+              details: { count: 0 },
+            };
+          }
+          const lines = usages.slice(0, 25).map(
+            (u) => `${u.filePath}:${u.line} [${u.kind}]\n  ${u.context.trim()}`
+          );
+          return {
+            content: [{ type: 'text' as const, text: `Found ${usages.length} usages of "${args.symbolName}":\n\n${lines.join('\n\n')}` }],
+            details: { count: usages.length },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text' as const, text: `AST search error: ${err instanceof Error ? err.message : String(err)}` }],
+            details: {},
+          };
+        }
+      },
+    },
+
+    // 9. AST Safe Rename
+    {
+      name: 'ast_safe_rename',
+      label: 'Safe Symbol Rename (AST)',
+      description:
+        'Rename TypeScript symbol across project files with word-boundary safety.',
+      parameters: Type.Object({
+        oldName: Type.String({ description: 'Existing symbol name' }),
+        newName: Type.String({ description: 'Replacement symbol name' }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { oldName: string; newName: string };
+        try {
+          const ast = new AstCodeIntelligence(process.cwd());
+          const result = ast.safeRename(args.oldName, args.newName);
+          const text = [
+            `Renamed "${args.oldName}" → "${args.newName}"`,
+            `Files modified : ${result.filesModified.length}`,
+            `Total replacements: ${result.totalReplacements}`,
+            result.errors.length > 0 ? `Errors:\n${result.errors.join('\n')}` : '',
+            result.filesModified.length > 0 ? `\nModified files:\n${result.filesModified.join('\n')}` : '',
+          ].filter(Boolean).join('\n');
+          return {
+            content: [{ type: 'text' as const, text }],
+            details: result,
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text' as const, text: `Rename error: ${err instanceof Error ? err.message : String(err)}` }],
+            details: {},
+          };
+        }
       },
     },
   ];
