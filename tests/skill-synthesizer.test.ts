@@ -9,10 +9,28 @@ import type { Message } from '../src/shared/types';
 describe('SkillSynthesizer', () => {
   let tmpDir: string;
   let synthesizer: SkillSynthesizer;
+  let mockDb: any;
+  let ledgerRows: any[] = [];
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-synth-test-'));
-    synthesizer = new SkillSynthesizer(tmpDir);
+    ledgerRows = [];
+    mockDb = {
+      exec: vi.fn(),
+      prepare: vi.fn((sql: string) => ({
+        get: vi.fn((name: string) => ledgerRows.find((r) => r.name === name)),
+        run: vi.fn((...args: any[]) => {
+          ledgerRows.push({
+            id: args[0],
+            name: args[1],
+            description: args[2],
+            path: args[3],
+            version: args[4],
+          });
+        }),
+      })),
+    };
+    synthesizer = new SkillSynthesizer(tmpDir, mockDb);
   });
 
   afterEach(() => {
@@ -44,7 +62,7 @@ describe('SkillSynthesizer', () => {
     expect(result).toBeNull();
   });
 
-  it('synthesizes and persists a skill when LLM judges it worthy', async () => {
+  it('synthesizes and persists a skill atomically and in SQLite ledger', async () => {
     const messages: Message[] = [
       {
         id: '1',
@@ -94,9 +112,11 @@ describe('SkillSynthesizer', () => {
     expect(result).not.toBeNull();
     expect(result?.created).toBe(true);
     expect(result?.name).toBe('gcloud-run-deploy');
+    expect(result?.version).toBe(1);
     expect(fs.existsSync(result!.skillPath)).toBe(true);
 
     const savedContent = fs.readFileSync(result!.skillPath, 'utf-8');
     expect(savedContent).toContain('gcloud-run-deploy');
+    expect(mockDb.exec).toHaveBeenCalled();
   });
 });

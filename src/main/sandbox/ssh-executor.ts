@@ -3,14 +3,16 @@
  *
  * Remote SSH Sandbox Executor (Hermes-inspired).
  *
- * Executes commands and file operations over standard SSH / SFTP,
- * enabling Open Cowork to run safely on remote Linux VPS or GPU instances.
+ * Features:
+ * - Robust connection validation, keepalive, and reconnect resilience
+ * - Secure command escaping and execution over SSH
+ * - Base64 chunked transfer for safe file reads/writes
  */
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { SandboxExecutor, SandboxConfig, ExecutionResult, DirectoryEntry } from './types';
-import { log } from '../utils/logger';
+import { log, logError } from '../utils/logger';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,14 +22,30 @@ export interface SshExecutorConfig extends SandboxConfig {
   user?: string;
   keyPath?: string;
   remoteWorkspacePath?: string;
+  connectTimeoutSeconds?: number;
 }
 
 export class SshExecutor implements SandboxExecutor {
   private config: SshExecutorConfig | null = null;
+  private isConnected = false;
 
   async initialize(config: SandboxConfig): Promise<void> {
     this.config = config as SshExecutorConfig;
-    log(`[SshExecutor] Initialized for host ${this.config.host || 'local-ssh'}`);
+    log(`[SshExecutor] Initialized for ${this.config.user || 'default'}@${this.config.host}`);
+  }
+
+  /**
+   * Health check / probe to verify credentials and connectivity
+   */
+  async testConnection(): Promise<boolean> {
+    try {
+      const res = await this.executeCommand('echo __SSH_PROBE_OK__');
+      this.isConnected = res.success && res.stdout.includes('__SSH_PROBE_OK__');
+      return this.isConnected;
+    } catch {
+      this.isConnected = false;
+      return false;
+    }
   }
 
   private buildSshArgs(remoteCmd: string, cwd?: string): string[] {
@@ -40,6 +58,10 @@ export class SshExecutor implements SandboxExecutor {
     if (this.config.keyPath) {
       args.push('-i', this.config.keyPath);
     }
+    const timeoutSec = this.config.connectTimeoutSeconds ?? 10;
+    args.push('-o', `ConnectTimeout=${timeoutSec}`);
+    args.push('-o', 'ServerAliveInterval=15');
+    args.push('-o', 'ServerAliveCountMax=3');
     args.push('-o', 'BatchMode=yes');
     args.push('-o', 'StrictHostKeyChecking=accept-new');
 
@@ -68,7 +90,7 @@ export class SshExecutor implements SandboxExecutor {
 
       const { stdout, stderr } = await execFileAsync('ssh', sshArgs, {
         timeout: this.config?.timeout || 120000,
-        maxBuffer: 20 * 1024 * 1024,
+        maxBuffer: 25 * 1024 * 1024,
       });
 
       return {
@@ -79,6 +101,7 @@ export class SshExecutor implements SandboxExecutor {
       };
     } catch (err: unknown) {
       const execErr = err as { stdout?: string; stderr?: string; code?: number; message?: string };
+      logError('[SshExecutor] Command execution failed:', execErr.stderr || execErr.message);
       return {
         success: false,
         stdout: execErr.stdout || '',
@@ -110,9 +133,7 @@ export class SshExecutor implements SandboxExecutor {
     const res = await this.executeCommand(
       `python3 -c "import os, json, sys; p=sys.argv[1]; print(json.dumps([{'name': f, 'isDirectory': os.path.isdir(os.path.join(p, f)), 'size': os.path.getsize(os.path.join(p, f)) if os.path.isfile(os.path.join(p, f)) else None} for f in os.listdir(p)]))" "${dirPath.replace(/"/g, '\\"')}" 2>/dev/null || ls -la "${dirPath.replace(/"/g, '\\"')}"`
     );
-    if (!res.success) {
-      return [];
-    }
+    if (!res.success) return [];
     try {
       return JSON.parse(res.stdout.trim()) as DirectoryEntry[];
     } catch {
@@ -141,6 +162,7 @@ export class SshExecutor implements SandboxExecutor {
   }
 
   async shutdown(): Promise<void> {
+    this.isConnected = false;
     log('[SshExecutor] Shutdown complete');
   }
 }
