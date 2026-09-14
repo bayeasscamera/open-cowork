@@ -1228,6 +1228,9 @@ ${hints.join('\n')}
     // The catch block consults this flag to avoid overwriting the published
     // 'Request failed' trace state with a generic 'Cancelled' update.
     let abortedByStreamError = false;
+    // Hoisted to run() scope so the finally block can evict the SDK session
+    // after any terminal error (400, stream error, empty response, etc.).
+    let terminalErrorText: string | undefined;
 
     try {
       this.pathResolver.registerSession(session.id, session.mountedPaths);
@@ -2376,7 +2379,6 @@ Tool routing:
       let streamedText = '';
       let compactionStepId: string | undefined;
       let hasEmittedError = false;
-      let terminalErrorText: string | undefined;
       const promptStartedAt = Date.now();
       const streamEventCounts = new Map<string, number>();
 
@@ -3006,6 +3008,15 @@ Tool routing:
           // Stream-error handling already published the user-facing assistant
           // message and the 'Request failed' trace state. Preserve them.
           logCtx('[CoworkAgentRunner] Aborted by stream error');
+          // Invalidate the cached SDK session so the next retry does a clean
+          // cold start. Reusing a session whose AbortController is already
+          // triggered causes the upstream to reject the next request with 400.
+          const errCached = this.piSessions.get(session.id);
+          if (errCached) {
+            try { errCached.session.dispose(); } catch { /* ignore dispose errors */ }
+            this.piSessions.delete(session.id);
+            logCtx('[CoworkAgentRunner] Evicted corrupted pi session after stream error:', session.id);
+          }
         } else {
           logCtx('[CoworkAgentRunner] Aborted by user');
           this.sendTraceUpdate(session.id, thinkingStepId, {
@@ -3042,6 +3053,20 @@ Tool routing:
     } finally {
       this.activeControllers.delete(session.id);
       this.pathResolver.unregisterSession(session.id);
+
+      // If a terminal error was emitted (400, timeout, stream error) AND the SDK
+      // session wasn't already evicted in the catch block above, evict it now.
+      // A session that has seen a fatal error may have an inconsistent internal
+      // state (message history partially written, abort signal fired, etc.).
+      // Forcing a cold start on the next retry is safer than reusing it.
+      if (terminalErrorText) {
+        const finalCached = this.piSessions.get(session.id);
+        if (finalCached) {
+          try { finalCached.session.dispose(); } catch { /* ignore */ }
+          this.piSessions.delete(session.id);
+          logCtx('[CoworkAgentRunner] Evicted pi session after terminal error (finally):', session.id);
+        }
+      }
 
       // Sync changes from sandbox back to host OS (but don't cleanup - sandbox persists)
       if (useSandboxIsolation && sandboxPath) {
