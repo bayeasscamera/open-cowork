@@ -3083,9 +3083,23 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     case 'session.togglePin':
       return sm.togglePinSession(event.payload.sessionId, event.payload.isPinned);
 
+    case 'session.activate': {
+      const { sessionId, cwd } = event.payload;
+      if (sessionId) {
+        configStore.set('lastActiveSessionId', sessionId);
+        configStore.set('lastActiveSessionUpdatedAt', Date.now());
+        if (cwd) configStore.set('lastActiveCwd', cwd);
+      } else {
+        // Session deselected — keep the last known session for resumption
+      }
+      return { ok: true };
+    }
+
     case 'session.list': {
       const sessions = sm.listSessions();
-      sendToRenderer({ type: 'session.list', payload: { sessions } });
+      const lastActiveSessionId = configStore.get('lastActiveSessionId') as string | undefined;
+      const lastActiveCwd = configStore.get('lastActiveCwd') as string | undefined;
+      sendToRenderer({ type: 'session.list', payload: { sessions, lastActiveSessionId, lastActiveCwd } });
       return sessions;
     }
 

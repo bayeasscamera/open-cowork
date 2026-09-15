@@ -470,6 +470,7 @@ export type ClientEvent =
   | { type: 'session.batchDelete'; payload: { sessionIds: string[] } }
   | { type: 'session.rename'; payload: { sessionId: string; title: string } }
   | { type: 'session.togglePin'; payload: { sessionId: string; isPinned: boolean } }
+  | { type: 'session.activate'; payload: { sessionId: string | null; cwd?: string } }
   | { type: 'session.list'; payload: Record<string, never> }
   | { type: 'session.getMessages'; payload: { sessionId: string } }
   | { type: 'session.getTraceSteps'; payload: { sessionId: string } }
@@ -537,7 +538,7 @@ export type ServerEvent =
       payload: { sessionId: string; status: SessionStatus; error?: string };
     }
   | { type: 'session.update'; payload: { sessionId: string; updates: Partial<Session> } }
-  | { type: 'session.list'; payload: { sessions: Session[] } }
+  | { type: 'session.list'; payload: { sessions: Session[]; lastActiveSessionId?: string; lastActiveCwd?: string } }
   | { type: 'permission.request'; payload: PermissionRequest }
   | { type: 'permission.dismiss'; payload: { toolUseId: string } }
   | { type: 'sudo.password.request'; payload: SudoPasswordRequest }

@@ -130,6 +130,11 @@ export interface AppConfig {
 
   // First run flag
   isConfigured: boolean;
+
+  // Session resumption — persisted across restarts (months-long projects)
+  lastActiveSessionId?: string;
+  lastActiveCwd?: string;
+  lastActiveSessionUpdatedAt?: number; // epoch ms — used to show "last seen X days ago"
 }
 
 export interface MemoryModelRuntimeConfig {

@@ -11,7 +11,7 @@
  * - Safe AppleScript & JXA execution on macOS
  */
 
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import { clipboard, Notification } from 'electron';
 import { logError } from '../utils/logger';
@@ -106,10 +106,8 @@ export class SystemController {
 
     try {
       if (process.platform === 'darwin') {
-        const { execSync } = require('child_process');
         return execSync('pbpaste', { encoding: 'utf-8', timeout: 3000 });
       } else if (process.platform === 'win32') {
-        const { execSync } = require('child_process');
         return execSync('powershell -Command "Get-Clipboard"', { encoding: 'utf-8', timeout: 3000 });
       }
     } catch {
@@ -133,11 +131,9 @@ export class SystemController {
 
     try {
       if (process.platform === 'darwin') {
-        const { execSync } = require('child_process');
         execSync('pbcopy', { input: text, encoding: 'utf-8', timeout: 3000 });
         return true;
       } else if (process.platform === 'win32') {
-        const { execSync } = require('child_process');
         execSync(`powershell -Command "Set-Clipboard -Value '${text.replace(/'/g, "''")}'"`, { timeout: 3000 });
         return true;
       }

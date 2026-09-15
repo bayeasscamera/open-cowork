@@ -84,6 +84,18 @@ export class MemoryManager {
         );
         CREATE INDEX IF NOT EXISTS idx_user_preferences_key
           ON user_preferences(key);
+
+        CREATE TABLE IF NOT EXISTS project_context (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL UNIQUE,
+          cwd TEXT NOT NULL DEFAULT '',
+          summary TEXT NOT NULL,
+          message_count INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_context_session
+          ON project_context(session_id);
       `);
     } catch (error) {
       logError('[MemoryManager] Failed to create error_patterns / user_preferences tables:', error);
@@ -141,6 +153,106 @@ export class MemoryManager {
     if (prefs.length === 0) return '';
     const lines = prefs.map((p) => `- ${p.key}: ${p.value}`);
     return `\n\n<user_preferences>\nLearned habits, preferences, and workflows for this user:\n${lines.join('\n')}\n</user_preferences>`;
+  }
+
+  /** Persist an LLM-generated project context summary for a session */
+  saveProjectContext(sessionId: string, summary: string, cwd: string, messageCount: number): void {
+    try {
+      const now = Date.now();
+      const existing = this.db
+        .prepare('SELECT id FROM project_context WHERE session_id = ?')
+        .get(sessionId) as { id: string } | undefined;
+      if (existing) {
+        this.db
+          .prepare(
+            'UPDATE project_context SET summary = ?, cwd = ?, message_count = ?, updated_at = ? WHERE session_id = ?'
+          )
+          .run(summary, cwd, messageCount, now, sessionId);
+      } else {
+        this.db
+          .prepare(
+            'INSERT INTO project_context (id, session_id, cwd, summary, message_count, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          )
+          .run(uuidv4(), sessionId, cwd, summary, messageCount, now, now);
+      }
+    } catch (error) {
+      logWarn('[MemoryManager] Failed to save project context:', error);
+    }
+  }
+
+  /** Retrieve persisted project context for a session */
+  getProjectContext(
+    sessionId: string
+  ): { summary: string; cwd: string; messageCount: number; updatedAt: number } | null {
+    try {
+      const row = this.db
+        .prepare('SELECT summary, cwd, message_count, updated_at FROM project_context WHERE session_id = ?')
+        .get(sessionId) as
+        | { summary: string; cwd: string; message_count: number; updated_at: number }
+        | undefined;
+      if (!row) return null;
+      return {
+        summary: row.summary,
+        cwd: row.cwd,
+        messageCount: row.message_count,
+        updatedAt: row.updated_at,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Format a project resumption block for injection into the system prompt.
+   * Tells the agent how long ago the session was last active and what was being done.
+   */
+  formatProjectResumptionContext(sessionId: string): string {
+    const ctx = this.getProjectContext(sessionId);
+    if (!ctx) return '';
+
+    const now = Date.now();
+    const elapsedMs = now - ctx.updatedAt;
+    const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
+    const elapsedHours = Math.floor(elapsedMs / (1000 * 60 * 60));
+
+    let timeAgo: string;
+    if (elapsedDays >= 30) {
+      timeAgo = `${Math.floor(elapsedDays / 30)} month(s) ago`;
+    } else if (elapsedDays >= 1) {
+      timeAgo = `${elapsedDays} day(s) ago`;
+    } else if (elapsedHours >= 1) {
+      timeAgo = `${elapsedHours} hour(s) ago`;
+    } else {
+      timeAgo = 'less than an hour ago';
+    }
+
+    return `\n\n<project_resumption_context>
+SESSION RESUMED — Last active: ${timeAgo}
+Workspace: ${ctx.cwd || 'unknown'}
+Messages in history: ${ctx.messageCount}
+What was being worked on:
+${ctx.summary}
+NOTE: The full message history is available. Review the last few exchanges to quickly re-establish context before responding.
+</project_resumption_context>`;
+  }
+
+  /**
+   * Auto-generate and persist project context summary for a session
+   * using the LLM. Should be called asynchronously in the background
+   * after each agent turn completes, for sessions with significant history.
+   */
+  async autoUpdateProjectContextAsync(
+    sessionId: string,
+    messages: Message[],
+    cwd: string
+  ): Promise<void> {
+    if (messages.length < 4) return; // Not enough history yet
+    try {
+      const summary = await this.generateSummaryAsync(messages.slice(-30));
+      this.saveProjectContext(sessionId, summary, cwd, messages.length);
+    } catch (error) {
+      logWarn('[MemoryManager] Failed to auto-update project context:', error);
+    }
   }
 
   /**

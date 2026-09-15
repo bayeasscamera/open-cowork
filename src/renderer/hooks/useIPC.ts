@@ -133,9 +133,45 @@ export function useIPC() {
 
       try {
         switch (event.type) {
-          case 'session.list':
+          case 'session.list': {
             store.setSessions(event.payload.sessions);
+            // Auto-restore last active session after restart (long-term context persistence)
+            const { lastActiveSessionId, lastActiveCwd } = event.payload;
+            if (lastActiveSessionId && !store.activeSessionId) {
+              const exists = event.payload.sessions.find((s) => s.id === lastActiveSessionId);
+              if (exists) {
+                store.setActiveSession(lastActiveSessionId);
+                // Load persisted messages + trace steps asynchronously
+                Promise.all([
+                  window.electronAPI.invoke({
+                    type: 'session.getMessages',
+                    payload: { sessionId: lastActiveSessionId },
+                  }),
+                  window.electronAPI.invoke({
+                    type: 'session.getTraceSteps',
+                    payload: { sessionId: lastActiveSessionId },
+                  }),
+                ])
+                  .then(([messages, traceSteps]) => {
+                    const s = useAppStore.getState();
+                    if (Array.isArray(messages)) {
+                      s.setMessages(lastActiveSessionId, messages as Message[]);
+                    }
+                    if (Array.isArray(traceSteps)) {
+                      s.setTraceSteps(lastActiveSessionId, traceSteps as TraceStep[]);
+                    }
+                    // Restore working directory if persisted
+                    if (lastActiveCwd) {
+                      s.setWorkingDir(lastActiveCwd);
+                    }
+                  })
+                  .catch((err: unknown) => {
+                    console.warn('[useIPC] Failed to restore session messages:', err);
+                  });
+              }
+            }
             break;
+          }
 
           case 'session.status':
             store.updateSession(event.payload.sessionId, {
@@ -833,6 +869,27 @@ export function useIPC() {
     return window.electronAPI.mcp.getServerStatus();
   }, []);
 
+  /**
+   * Selects a session as active — updates local store + persists to main process
+   * so lastActiveSessionId survives restarts (long-term context).
+   */
+  const selectSession = useCallback(
+    async (sessionId: string, cwd?: string) => {
+      const store = useAppStore.getState();
+      store.setActiveSession(sessionId);
+      if (isElectron) {
+        // Fire-and-forget — persistence is best-effort
+        invoke<{ ok: boolean }>({
+          type: 'session.activate',
+          payload: { sessionId, cwd },
+        }).catch((err: unknown) => {
+          console.warn('[useIPC] session.activate failed:', err);
+        });
+      }
+    },
+    [invoke]
+  );
+
   return {
     send,
     invoke,
@@ -852,6 +909,7 @@ export function useIPC() {
     getWorkingDir,
     changeWorkingDir,
     getMCPServers,
+    selectSession,
     isElectron,
   };
 }

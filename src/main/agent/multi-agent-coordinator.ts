@@ -115,6 +115,7 @@ export class MultiAgentCoordinator extends EventEmitter {
 
     let hadFailure = false;
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       // Find all pending tasks whose dependencies are satisfied
       const readyTasks = plan.tasks.filter((task) => {

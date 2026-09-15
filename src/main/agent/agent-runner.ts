@@ -2146,6 +2146,7 @@ Tool routing:
         this.getBundledPathHints(),
         this.memoryManager?.formatUserPreferencesForContext() || '',
         this.memoryManager?.formatErrorPatternsForContext(prompt) || '',
+        this.memoryManager?.formatProjectResumptionContext(session.id) || '',
       ]
         .filter((section): section is string => Boolean(section && section.trim()))
         .join('\n\n');
@@ -3042,6 +3043,13 @@ Tool routing:
             })
             .catch((err) => {
               logWarn('[CoworkAgentRunner] Background preference learning error:', err);
+            });
+
+          // Long-term project context: update the LLM summary after each turn (background)
+          this.memoryManager
+            .autoUpdateProjectContextAsync(session.id, existingMessages, session.cwd || '')
+            .catch((err) => {
+              logWarn('[CoworkAgentRunner] Background project context update error:', err);
             });
         }
       }

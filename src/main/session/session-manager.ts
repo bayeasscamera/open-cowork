@@ -378,6 +378,7 @@ export class SessionManager {
       allowedTools,
       memoryEnabled: row.memory_enabled === 1,
       model: row.model || undefined,
+      isPinned: row.is_pinned === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
