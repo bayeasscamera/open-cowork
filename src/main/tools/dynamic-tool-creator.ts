@@ -991,7 +991,19 @@ export function buildAgentMetaTools(): ToolDefinition[] {
 
 export class BackgroundJobRegistry {
   private static instance: BackgroundJobRegistry;
-  private jobs: Map<string, { pid?: number; process?: ChildProcess; output: string[]; status: 'running' | 'stopped' | 'failed'; command: string; startedAt: number }> = new Map();
+  private jobs: Map<string, { pid?: number; process?: ChildProcess; output: string[]; status: 'running' | 'stopped' | 'failed'; command: string; startedAt: number; logPath?: string }> = new Map();
+  private stateFilePath: string;
+  private logsDir: string;
+
+  private constructor() {
+    const userData = app?.getPath ? app.getPath('userData') : path.join(process.cwd(), '.cowork');
+    this.logsDir = path.join(userData, 'job_logs');
+    this.stateFilePath = path.join(userData, 'background_jobs.json');
+    if (!fs.existsSync(this.logsDir)) {
+      fs.mkdirSync(this.logsDir, { recursive: true });
+    }
+    this.loadState();
+  }
 
   public static getInstance(): BackgroundJobRegistry {
     if (!BackgroundJobRegistry.instance) {
@@ -1000,9 +1012,57 @@ export class BackgroundJobRegistry {
     return BackgroundJobRegistry.instance;
   }
 
+  private loadState(): void {
+    try {
+      if (!fs.existsSync(this.stateFilePath)) return;
+      const raw = fs.readFileSync(this.stateFilePath, 'utf-8');
+      const data = JSON.parse(raw) as Array<{ id: string; command: string; status: 'running' | 'stopped' | 'failed'; pid?: number; startedAt: number; logPath?: string }>;
+      for (const item of data) {
+        // Any previously "running" job on startup is marked as "stopped" because process died with app restart
+        const status = item.status === 'running' ? 'stopped' : item.status;
+        let output: string[] = [];
+        if (item.logPath && fs.existsSync(item.logPath)) {
+          const content = fs.readFileSync(item.logPath, 'utf-8');
+          output = content.split('\n').slice(-50);
+        }
+        this.jobs.set(item.id, {
+          command: item.command,
+          status,
+          pid: item.pid,
+          startedAt: item.startedAt,
+          logPath: item.logPath,
+          output,
+        });
+      }
+    } catch (err) {
+      logError('[BackgroundJobRegistry] Failed to load persisted state:', err);
+    }
+  }
+
+  private saveState(): void {
+    try {
+      const serialized = Array.from(this.jobs.entries()).map(([id, j]) => ({
+        id,
+        command: j.command,
+        status: j.status,
+        pid: j.pid,
+        startedAt: j.startedAt,
+        logPath: j.logPath,
+      }));
+      const tmp = `${this.stateFilePath}.tmp.${Date.now()}`;
+      fs.writeFileSync(tmp, JSON.stringify(serialized, null, 2), 'utf-8');
+      fs.renameSync(tmp, this.stateFilePath);
+    } catch {
+      // Best-effort save
+    }
+  }
+
   public startJob(id: string, command: string, cwd: string): { success: boolean; message: string; jobId: string } {
     try {
       const child = spawn(command, { shell: true, cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+      const logPath = path.join(this.logsDir, `${id}.log`);
+      const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+
       const jobRecord: {
         pid?: number;
         process?: ChildProcess;
@@ -1010,6 +1070,7 @@ export class BackgroundJobRegistry {
         status: 'running' | 'stopped' | 'failed';
         command: string;
         startedAt: number;
+        logPath: string;
       } = {
         pid: child.pid,
         process: child,
@@ -1017,36 +1078,45 @@ export class BackgroundJobRegistry {
         status: 'running',
         command,
         startedAt: Date.now(),
+        logPath,
       };
 
       child.stdout?.on('data', (data) => {
-        jobRecord.output.push(data.toString());
+        const text = data.toString();
+        logStream.write(text);
+        jobRecord.output.push(text);
         if (jobRecord.output.length > 100) jobRecord.output.shift();
       });
 
       child.stderr?.on('data', (data) => {
-        jobRecord.output.push(`[stderr] ${data.toString()}`);
+        const text = `[stderr] ${data.toString()}`;
+        logStream.write(text);
+        jobRecord.output.push(text);
         if (jobRecord.output.length > 100) jobRecord.output.shift();
       });
 
       child.on('exit', (code) => {
         jobRecord.status = code === 0 ? 'stopped' : 'failed';
+        logStream.end();
+        this.saveState();
       });
 
       this.jobs.set(id, jobRecord);
+      this.saveState();
       return { success: true, message: `Background job "${id}" started with PID ${child.pid}`, jobId: id };
     } catch (err) {
       return { success: false, message: `Failed to start job: ${err instanceof Error ? err.message : String(err)}`, jobId: id };
     }
   }
 
-  public getJobStatus(id: string): { status: string; command?: string; pid?: number; outputTail: string } {
+  public getJobStatus(id: string): { status: string; command?: string; pid?: number; outputTail: string; logPath?: string } {
     const job = this.jobs.get(id);
     if (!job) return { status: 'not_found', outputTail: '' };
     return {
       status: job.status,
       command: job.command,
       pid: job.pid,
+      logPath: job.logPath,
       outputTail: job.output.slice(-15).join(''),
     };
   }
@@ -1059,19 +1129,35 @@ export class BackgroundJobRegistry {
         job.process.kill('SIGTERM');
         job.status = 'stopped';
       }
+      this.saveState();
       return { success: true, message: `Job ${id} stopped.` };
     } catch (err) {
       return { success: false, message: `Error stopping job: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
 
-  public listJobs(): Array<{ id: string; command: string; status: string; pid?: number; startedAt: number }> {
+  public stopAllJobs(): void {
+    for (const job of this.jobs.values()) {
+      if (job.process && job.status === 'running') {
+        try {
+          job.process.kill('SIGTERM');
+          job.status = 'stopped';
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    this.saveState();
+  }
+
+  public listJobs(): Array<{ id: string; command: string; status: string; pid?: number; startedAt: number; logPath?: string }> {
     return Array.from(this.jobs.entries()).map(([id, j]) => ({
       id,
       command: j.command,
       status: j.status,
       pid: j.pid,
       startedAt: j.startedAt,
+      logPath: j.logPath,
     }));
   }
 }

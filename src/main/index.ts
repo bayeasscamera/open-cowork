@@ -115,6 +115,7 @@ import {
   startRpcLoop,
 } from './cli/headless-io';
 import { CrashGuard } from './utils/crash-guard';
+import { BackgroundJobRegistry } from './tools/dynamic-tool-creator';
 
 // Initialize Global Crash & Robustness Guardian
 CrashGuard.initialize();
@@ -1491,6 +1492,11 @@ async function cleanupSandboxResources(): Promise<void> {
   stopConfigFileWatcher();
   skillsManager?.stopStorageMonitoring();
   scheduledTaskManager?.stop();
+  try {
+    BackgroundJobRegistry.getInstance().stopAllJobs();
+  } catch (err) {
+    logError('[App] Error stopping background jobs:', err);
+  }
   tray?.destroy();
   tray = null;
 

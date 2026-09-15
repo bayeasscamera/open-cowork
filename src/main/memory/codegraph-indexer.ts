@@ -22,36 +22,110 @@ export interface CodeGraphIndex {
 export class CodeGraphIndexer {
   private index: Map<string, CodeSymbol[]> = new Map();
   private isScanning: boolean = false;
+  private cacheDir: string;
+
+  constructor(customCacheDir?: string) {
+    this.cacheDir = customCacheDir || path.join(process.cwd(), '.cowork', 'cache');
+  }
 
   public isCurrentlyScanning(): boolean {
     return this.isScanning;
   }
 
-  public async scanDirectory(dirPath: string, extensions: string[] = ['.ts', '.tsx', '.js', '.jsx', '.py']): Promise<CodeGraphIndex> {
+  private getCachePath(dirPath: string): string {
+    const hash = Buffer.from(dirPath).toString('base64url');
+    return path.join(this.cacheDir, `codegraph-${hash}.json`);
+  }
+
+  private loadPersistentIndex(dirPath: string): CodeGraphIndex | null {
+    try {
+      const cacheFile = this.getCachePath(dirPath);
+      if (!fs.existsSync(cacheFile)) return null;
+
+      const raw = fs.readFileSync(cacheFile, 'utf-8');
+      const data = JSON.parse(raw) as CodeGraphIndex;
+
+      // Cache validity: 1 hour
+      if (Date.now() - data.lastIndexed > 3600 * 1000) {
+        return null;
+      }
+
+      this.index.clear();
+      for (const sym of data.symbols) {
+        const key = sym.name.toLowerCase();
+        if (!this.index.has(key)) {
+          this.index.set(key, []);
+        }
+        this.index.get(key)!.push(sym);
+      }
+
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  private savePersistentIndex(dirPath: string, data: CodeGraphIndex): void {
+    try {
+      if (!fs.existsSync(this.cacheDir)) {
+        fs.mkdirSync(this.cacheDir, { recursive: true });
+      }
+      const cacheFile = this.getCachePath(dirPath);
+      const tmpFile = `${cacheFile}.tmp.${Date.now()}`;
+      fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
+      fs.renameSync(tmpFile, cacheFile);
+    } catch {
+      // Best-effort cache save
+    }
+  }
+
+  public async scanDirectory(
+    dirPath: string,
+    extensions: string[] = ['.ts', '.tsx', '.js', '.jsx', '.py'],
+    forceReindex: boolean = false
+  ): Promise<CodeGraphIndex> {
+    if (!forceReindex) {
+      const cached = this.loadPersistentIndex(dirPath);
+      if (cached) {
+        return cached;
+      }
+    }
+
     this.isScanning = true;
     const allSymbols: CodeSymbol[] = [];
     let filesCount = 0;
 
     const traverse = (currentDir: string) => {
-      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'release') {
-          continue;
-        }
+      try {
+        const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (
+            entry.name.startsWith('.') ||
+            entry.name === 'node_modules' ||
+            entry.name === 'dist' ||
+            entry.name === 'release' ||
+            entry.name === 'build'
+          ) {
+            continue;
+          }
 
-        const fullPath = path.join(currentDir, entry.name);
-        if (entry.isDirectory()) {
-          traverse(fullPath);
-        } else if (entry.isFile() && extensions.some((ext) => entry.name.endsWith(ext))) {
-          filesCount++;
-          const fileSymbols = this.extractSymbolsFromFile(fullPath);
-          allSymbols.push(...fileSymbols);
+          const fullPath = path.join(currentDir, entry.name);
+          if (entry.isDirectory()) {
+            traverse(fullPath);
+          } else if (entry.isFile() && extensions.some((ext) => entry.name.endsWith(ext))) {
+            filesCount++;
+            const fileSymbols = this.extractSymbolsFromFile(fullPath);
+            allSymbols.push(...fileSymbols);
+          }
         }
+      } catch {
+        // Skip unreadable directories
       }
     };
 
     traverse(dirPath);
 
+    this.index.clear();
     for (const sym of allSymbols) {
       const key = sym.name.toLowerCase();
       if (!this.index.has(key)) {
@@ -61,11 +135,14 @@ export class CodeGraphIndexer {
     }
 
     this.isScanning = false;
-    return {
+    const result: CodeGraphIndex = {
       symbols: allSymbols,
       filesCount,
       lastIndexed: Date.now(),
     };
+
+    this.savePersistentIndex(dirPath, result);
+    return result;
   }
 
   public searchSymbol(query: string): CodeSymbol[] {
