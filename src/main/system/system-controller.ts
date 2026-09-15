@@ -13,6 +13,9 @@
 
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { clipboard, Notification } from 'electron';
 import { logError } from '../utils/logger';
 
@@ -233,6 +236,82 @@ export class SystemController {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, output: `AppleScript execution failed: ${msg}` };
+    }
+  }
+
+  /**
+   * Pilier 2: Capture screen or active window (native macOS screencapture or Windows PowerShell)
+   */
+  async takeScreenshot(targetPath?: string): Promise<{ success: boolean; filePath: string; base64?: string; error?: string }> {
+    const isMac = process.platform === 'darwin';
+    const isWin = process.platform === 'win32';
+    const destPath = targetPath || path.join(os.tmpdir(), `cowork-screen-${Date.now()}.png`);
+
+    try {
+      if (isMac) {
+        // -x = silent, -C = capture cursor
+        await execAsync(`screencapture -x "${destPath}"`);
+      } else if (isWin) {
+        const psScript = `
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+$graphics = [System.Drawing.Graphics]::FromImage($bmp)
+$graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+$bmp.Save('${destPath.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png)
+$graphics.Dispose()
+$bmp.Dispose()
+        `.trim().replace(/\n/g, '; ');
+        await execAsync(`powershell -Command "${psScript}"`);
+      } else {
+        // Linux fallback (import / scrot)
+        await execAsync(`scrot "${destPath}" 2>/dev/null || import -window root "${destPath}"`);
+      }
+
+      if (!fs.existsSync(destPath)) {
+        return { success: false, filePath: destPath, error: 'Screenshot file was not generated.' };
+      }
+
+      const fileBuffer = fs.readFileSync(destPath);
+      const base64 = fileBuffer.toString('base64');
+      return { success: true, filePath: destPath, base64 };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('[SystemController] Screenshot failed:', err);
+      return { success: false, filePath: destPath, error: msg };
+    }
+  }
+
+  /**
+   * Pilier 2: Simulate GUI Input (Click / Keypress) via AppleScript on macOS
+   */
+  async simulateGuiAction(action: 'click' | 'type' | 'key_combo', options: { x?: number; y?: number; text?: string; key?: string; modifiers?: string[] }): Promise<{ success: boolean; output: string }> {
+    if (process.platform !== 'darwin') {
+      return { success: false, output: 'GUI simulation is currently implemented for macOS via System Events.' };
+    }
+
+    try {
+      let script = '';
+      if (action === 'type' && options.text) {
+        const safeText = options.text.replace(/"/g, '\\"');
+        script = `tell application "System Events" to keystroke "${safeText}"`;
+      } else if (action === 'key_combo' && options.key) {
+        const mods = options.modifiers?.map((m) => `${m} down`).join(', ') || '';
+        const modClause = mods ? ` using {${mods}}` : '';
+        script = `tell application "System Events" to keystroke "${options.key}"${modClause}`;
+      } else if (action === 'click' && options.x !== undefined && options.y !== undefined) {
+        // Requires cliclick if installed or CoreGraphics fallback via osascript
+        script = `
+do shell script "cliclick c:${options.x},${options.y} 2>/dev/null || osascript -e 'tell application \\"System Events\\" to click at {${options.x}, ${options.y}}'"
+        `.trim();
+      } else {
+        return { success: false, output: 'Invalid GUI action parameters.' };
+      }
+
+      return await this.runAppleScript(script);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, output: `GUI interaction failed: ${msg}` };
     }
   }
 }

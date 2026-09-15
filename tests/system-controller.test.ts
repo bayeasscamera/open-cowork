@@ -28,15 +28,26 @@ describe('SystemController & Omnipotent OS Control (OpenClaw style)', () => {
     expect(procs[0]).toHaveProperty('name');
   });
 
-  it('exposes all 14 meta tools including system control tools', () => {
+  it('exposes all 20 meta tools including the 5 advanced pillars', () => {
     const tools = buildAgentMetaTools();
     const names = tools.map((t) => t.name);
 
+    expect(tools.length).toBe(20);
     expect(names).toContain('system_app_control');
     expect(names).toContain('system_clipboard');
     expect(names).toContain('system_notify');
     expect(names).toContain('system_process_manager');
     expect(names).toContain('system_run_script');
+    // Pilier 1 & 4
+    expect(names).toContain('auto_test_and_heal');
+    expect(names).toContain('query_codebase_graph');
+    // Pilier 2
+    expect(names).toContain('screen_capture');
+    expect(names).toContain('gui_interact');
+    // Pilier 3
+    expect(names).toContain('background_job_manager');
+    // Pilier 5
+    expect(names).toContain('orchestrate_multi_agent_plan');
   });
 });
 

@@ -20,6 +20,10 @@ import { AutoVerificationLoop } from '../agent/auto-verification-loop';
 import { TddOrchestrator } from '../agent/tdd-orchestrator';
 import { AstCodeIntelligence } from '../agent/ast-code-intelligence';
 import { SystemController } from '../system/system-controller';
+import { SelfHealingRunner } from '../agent/self-healing-runner';
+import { CodeGraphIndexer } from '../memory/codegraph-indexer';
+import { MultiAgentCoordinator } from '../agent/multi-agent-coordinator';
+import { spawn, type ChildProcess } from 'child_process';
 
 
 // ---------------------------------------------------------------------------
@@ -760,7 +764,316 @@ export function buildAgentMetaTools(): ToolDefinition[] {
         };
       },
     },
+
+    // =========================================================================
+    // PILIER 2 — VISION GUI & CONTRÔLE ÉCRAN (COMPUTER USE)
+    // =========================================================================
+
+    // 15. Screen Capture (Vision GUI)
+    {
+      name: 'screen_capture',
+      label: 'Capture Screen / Window',
+      description:
+        'Capture a screenshot of the entire screen or desktop display. Returns file path and base64 image data for visual inspection.',
+      parameters: Type.Object({
+        targetPath: Type.Optional(Type.String({ description: 'Optional destination file path for screenshot (.png)' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { targetPath?: string };
+        const sys = SystemController.getInstance();
+        const res = await sys.takeScreenshot(args.targetPath);
+        if (res.success) {
+          return {
+            content: [
+              { type: 'text' as const, text: `Screenshot successfully captured: ${res.filePath}` },
+              ...(res.base64 ? [{
+                type: 'image' as const,
+                data: res.base64,
+                mimeType: 'image/png',
+              }] : []),
+            ],
+            details: { filePath: res.filePath },
+          };
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Screenshot failed: ${res.error || 'Unknown error'}` }],
+            details: { error: res.error },
+          };
+        }
+      },
+    },
+
+    // 16. Simulate GUI Action (Click / Keystroke)
+    {
+      name: 'gui_interact',
+      label: 'Simulate GUI Interaction',
+      description:
+        'Simulate mouse click at coordinates or send keystrokes/shortcuts to active desktop applications.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('click'), Type.Literal('type'), Type.Literal('key_combo')]),
+        x: Type.Optional(Type.Number({ description: 'X screen coordinate for click' })),
+        y: Type.Optional(Type.Number({ description: 'Y screen coordinate for click' })),
+        text: Type.Optional(Type.String({ description: 'Text to type into focused window' })),
+        key: Type.Optional(Type.String({ description: 'Key name for shortcut (e.g. "c", "v", "return", "tab")' })),
+        modifiers: Type.Optional(Type.Array(Type.String(), { description: 'Modifiers: command, option, control, shift' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as {
+          action: 'click' | 'type' | 'key_combo';
+          x?: number;
+          y?: number;
+          text?: string;
+          key?: string;
+          modifiers?: string[];
+        };
+        const sys = SystemController.getInstance();
+        const res = await sys.simulateGuiAction(args.action, args);
+        return {
+          content: [{ type: 'text' as const, text: res.output }],
+          details: res,
+        };
+      },
+    },
+
+    // =========================================================================
+    // PILIER 1 & 4 — SELF-HEALING & CODE GRAPH AST
+    // =========================================================================
+
+    // 17. Self-Healing Test Runner
+    {
+      name: 'auto_test_and_heal',
+      label: 'Autonomous Self-Healing Loop',
+      description:
+        'Run verification tests or linter in a closed-loop. If failure occurs, extracts root errors to provide instant diagnostics for immediate self-correction.',
+      parameters: Type.Object({
+        command: Type.String({ description: 'Test command to run (e.g. "npm test", "npm run lint", "npm run typecheck")' }),
+        cwd: Type.Optional(Type.String({ description: 'Working directory' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { command: string; cwd?: string };
+        const workDir = args.cwd || process.cwd();
+        const runner = new SelfHealingRunner(3);
+        const res = await runner.runTestCommand(args.command, workDir);
+
+        if (res.passed) {
+          return {
+            content: [{ type: 'text' as const, text: `✅ Command "${args.command}" PASSED without errors.\n\n${res.stdout}` }],
+            details: res,
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `❌ Command "${args.command}" FAILED (exit code ${res.exitCode}).\n\nExtracted Errors:\n${res.extractedErrors.join('\n')}\n\nStderr snippet:\n${res.stderr.slice(0, 1500)}`,
+              },
+            ],
+            details: res,
+          };
+        }
+      },
+    },
+
+    // 18. Codebase Symbol & Graph Explorer (AST In-Memory)
+    {
+      name: 'query_codebase_graph',
+      label: 'Query Codebase Graph & Symbols',
+      description:
+        'Scan workspace codebase and query symbols (functions, classes, types, interfaces) with fast in-memory AST lookup without scanning files sequentially.',
+      parameters: Type.Object({
+        query: Type.String({ description: 'Symbol name or keyword to look for' }),
+        dirPath: Type.Optional(Type.String({ description: 'Root directory to index if not yet scanned' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { query: string; dirPath?: string };
+        const rootDir = args.dirPath || process.cwd();
+        const indexer = new CodeGraphIndexer();
+        await indexer.scanDirectory(rootDir);
+        const matches = indexer.searchSymbol(args.query);
+
+        if (matches.length === 0) {
+          return {
+            content: [{ type: 'text' as const, text: `No symbols matching "${args.query}" found in ${rootDir}.` }],
+            details: { count: 0 },
+          };
+        }
+
+        const lines = matches.slice(0, 30).map((m) => `[${m.kind.toUpperCase()}] ${m.name} -> ${m.filePath}:${m.line}`);
+        return {
+          content: [{ type: 'text' as const, text: `Found ${matches.length} symbol match(es) for "${args.query}":\n\n${lines.join('\n')}` }],
+          details: { matches },
+        };
+      },
+    },
+
+    // =========================================================================
+    // PILIER 3 — BACKGROUND DAEMONS & ASYNC JOBS
+    // =========================================================================
+
+    // 19. Background Daemon / Job Manager
+    {
+      name: 'background_job_manager',
+      label: 'Manage Background Jobs & Daemons',
+      description:
+        'Launch long-running commands in background (dev servers, log watchers, long builds), poll their stdout/stderr, or terminate them cleanly.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('start'), Type.Literal('status'), Type.Literal('stop'), Type.Literal('list')]),
+        jobId: Type.Optional(Type.String({ description: 'Unique ID of the job' })),
+        command: Type.Optional(Type.String({ description: 'Command to run (e.g. "npm run dev")' })),
+        cwd: Type.Optional(Type.String({ description: 'Working directory' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { action: 'start' | 'status' | 'stop' | 'list'; jobId?: string; command?: string; cwd?: string };
+        const mgr = BackgroundJobRegistry.getInstance();
+
+        if (args.action === 'start') {
+          if (!args.command) {
+            return { content: [{ type: 'text' as const, text: 'Command is required to start a background job.' }], details: {} };
+          }
+          const id = args.jobId || `job-${Date.now()}`;
+          const res = mgr.startJob(id, args.command, args.cwd || process.cwd());
+          return { content: [{ type: 'text' as const, text: res.message }], details: res };
+        } else if (args.action === 'status') {
+          if (!args.jobId) {
+            return { content: [{ type: 'text' as const, text: 'jobId is required to query status.' }], details: {} };
+          }
+          const st = mgr.getJobStatus(args.jobId);
+          return { content: [{ type: 'text' as const, text: JSON.stringify(st, null, 2) }], details: st };
+        } else if (args.action === 'stop') {
+          if (!args.jobId) {
+            return { content: [{ type: 'text' as const, text: 'jobId is required to stop a job.' }], details: {} };
+          }
+          const res = mgr.stopJob(args.jobId);
+          return { content: [{ type: 'text' as const, text: res.message }], details: res };
+        } else {
+          const list = mgr.listJobs();
+          return { content: [{ type: 'text' as const, text: `Active background jobs (${list.length}):\n${JSON.stringify(list, null, 2)}` }], details: list };
+        }
+      },
+    },
+
+    // =========================================================================
+    // PILIER 5 — MULTI-AGENT SWARM ORCHESTRATION
+    // =========================================================================
+
+    // 20. Multi-Agent Swarm Coordinator
+    {
+      name: 'orchestrate_multi_agent_plan',
+      label: 'Multi-Agent Swarm Coordinator',
+      description:
+        'Decompose complex multi-step tasks into specialized autonomous sub-agents (Architect, Developer, Reviewer, Security) organized in a collaborative DAG.',
+      parameters: Type.Object({
+        goal: Type.String({ description: 'Overall project or engineering goal to plan and coordinate' }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { goal: string };
+        const coordinator = new MultiAgentCoordinator();
+        const plan = coordinator.createCollaborativePlan(args.goal);
+        const taskSummary = plan.tasks.map((t) => `• [${t.role.toUpperCase()}] ${t.title} (depends on: ${t.dependsOn?.join(', ') || 'none'})`).join('\n');
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `🚀 Multi-Agent Swarm Plan created (ID: ${plan.id})\nGoal: "${plan.goal}"\nStatus: ${plan.status}\n\nTask Pipeline:\n${taskSummary}`,
+            },
+          ],
+          details: plan,
+        };
+      },
+    },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Background Job Manager Singleton
+// ---------------------------------------------------------------------------
+
+export class BackgroundJobRegistry {
+  private static instance: BackgroundJobRegistry;
+  private jobs: Map<string, { pid?: number; process?: ChildProcess; output: string[]; status: 'running' | 'stopped' | 'failed'; command: string; startedAt: number }> = new Map();
+
+  public static getInstance(): BackgroundJobRegistry {
+    if (!BackgroundJobRegistry.instance) {
+      BackgroundJobRegistry.instance = new BackgroundJobRegistry();
+    }
+    return BackgroundJobRegistry.instance;
+  }
+
+  public startJob(id: string, command: string, cwd: string): { success: boolean; message: string; jobId: string } {
+    try {
+      const child = spawn(command, { shell: true, cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+      const jobRecord: {
+        pid?: number;
+        process?: ChildProcess;
+        output: string[];
+        status: 'running' | 'stopped' | 'failed';
+        command: string;
+        startedAt: number;
+      } = {
+        pid: child.pid,
+        process: child,
+        output: [] as string[],
+        status: 'running',
+        command,
+        startedAt: Date.now(),
+      };
+
+      child.stdout?.on('data', (data) => {
+        jobRecord.output.push(data.toString());
+        if (jobRecord.output.length > 100) jobRecord.output.shift();
+      });
+
+      child.stderr?.on('data', (data) => {
+        jobRecord.output.push(`[stderr] ${data.toString()}`);
+        if (jobRecord.output.length > 100) jobRecord.output.shift();
+      });
+
+      child.on('exit', (code) => {
+        jobRecord.status = code === 0 ? 'stopped' : 'failed';
+      });
+
+      this.jobs.set(id, jobRecord);
+      return { success: true, message: `Background job "${id}" started with PID ${child.pid}`, jobId: id };
+    } catch (err) {
+      return { success: false, message: `Failed to start job: ${err instanceof Error ? err.message : String(err)}`, jobId: id };
+    }
+  }
+
+  public getJobStatus(id: string): { status: string; command?: string; pid?: number; outputTail: string } {
+    const job = this.jobs.get(id);
+    if (!job) return { status: 'not_found', outputTail: '' };
+    return {
+      status: job.status,
+      command: job.command,
+      pid: job.pid,
+      outputTail: job.output.slice(-15).join(''),
+    };
+  }
+
+  public stopJob(id: string): { success: boolean; message: string } {
+    const job = this.jobs.get(id);
+    if (!job) return { success: false, message: `Job ${id} not found.` };
+    try {
+      if (job.process && job.status === 'running') {
+        job.process.kill('SIGTERM');
+        job.status = 'stopped';
+      }
+      return { success: true, message: `Job ${id} stopped.` };
+    } catch (err) {
+      return { success: false, message: `Error stopping job: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
+  public listJobs(): Array<{ id: string; command: string; status: string; pid?: number; startedAt: number }> {
+    return Array.from(this.jobs.entries()).map(([id, j]) => ({
+      id,
+      command: j.command,
+      status: j.status,
+      pid: j.pid,
+      startedAt: j.startedAt,
+    }));
+  }
 }
 
 
