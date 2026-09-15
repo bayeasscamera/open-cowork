@@ -842,6 +842,43 @@ export function ChatView() {
     }
   };
 
+  const handleEditMessage = useCallback(
+    (messageId: string, newContent: string) => {
+      if (!activeSessionId) return;
+      const store = useAppStore.getState();
+      const msgs = store.sessionStates[activeSessionId]?.messages ?? [];
+      const msgIndex = msgs.findIndex((m) => m.id === messageId);
+      if (msgIndex === -1) return;
+      // Tronquer tout ce qui vient après ce message (exclu)
+      const trimmed = msgs.slice(0, msgIndex);
+      store.setMessages(activeSessionId, trimmed);
+      // Relancer avec le nouveau contenu
+      void continueSession(activeSessionId, [{ type: 'text', text: newContent }]);
+    },
+    [activeSessionId, continueSession]
+  );
+
+  const handleRetryResponse = useCallback(
+    (messageId: string) => {
+      if (!activeSessionId) return;
+      const store = useAppStore.getState();
+      const msgs = store.sessionStates[activeSessionId]?.messages ?? [];
+      const msgIndex = msgs.findIndex((m) => m.id === messageId);
+      if (msgIndex === -1) return;
+      // Trouver le dernier message user avant ce message assistant
+      const prevMsgs = msgs.slice(0, msgIndex);
+      const lastUser = [...prevMsgs].reverse().find((m) => m.role === 'user');
+      if (!lastUser) return;
+      const lastUserIndex = prevMsgs.lastIndexOf(lastUser);
+      // Tronquer jusqu'au message utilisateur (exclu)
+      const trimmed = msgs.slice(0, lastUserIndex);
+      store.setMessages(activeSessionId, trimmed);
+      void continueSession(activeSessionId, lastUser.content as ContentBlock[]);
+    },
+    [activeSessionId, continueSession]
+  );
+
+
   if (!activeSession) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted">
@@ -914,7 +951,12 @@ export function ChatView() {
                 typeof message.id === 'string' && message.id.startsWith('partial-');
               return (
                 <div key={message.id}>
-                  <MessageCard message={message} isStreaming={isStreaming} />
+                  <MessageCard
+                    message={message}
+                    isStreaming={isStreaming}
+                    onEdit={message.role === 'user' ? handleEditMessage : undefined}
+                    onRetry={message.role === 'assistant' ? handleRetryResponse : undefined}
+                  />
                 </div>
               );
             })
