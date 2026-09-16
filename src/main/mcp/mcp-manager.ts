@@ -26,6 +26,7 @@ import path from 'path';
 import { connectWithOAuthRetry, OpenCoworkMcpOAuthProvider } from './mcp-oauth';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
+import { listDescendantPids, reapPids } from '../utils/process-tree';
 
 const MCP_LIST_TOOLS_TIMEOUT_MS = 5 * 60 * 1000;
 const MCP_TOOL_CALL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -1432,6 +1433,18 @@ export class MCPManager {
   }
 
   /**
+   * StdioClientTransport keeps the spawned child in an internal '_process'
+   * field and exposes no public pid getter. This narrow, type-guarded accessor
+   * lets us record the child pid (and its descendants) before transport.close()
+   * nullifies the handle.
+   */
+  private getStdioTransportPid(transport: MCPTransport): number | undefined {
+    if (!(transport instanceof StdioClientTransport)) return undefined;
+    const child = (transport as unknown as { _process?: { pid?: number } | undefined })._process;
+    return typeof child?.pid === 'number' ? child.pid : undefined;
+  }
+
+  /**
    * Disconnect from a specific server
    */
   async disconnectServer(serverId: string): Promise<void> {
@@ -1448,12 +1461,27 @@ export class MCPManager {
     }
 
     if (transport) {
+      // Record the stdio child and its descendants BEFORE close(): once the
+      // direct child exits, grandchildren are reparented to launchd/services
+      // and become invisible to a process-table walk.
+      const stdioPid = this.getStdioTransportPid(transport);
+      const descendants = stdioPid ? await listDescendantPids(stdioPid) : [];
       try {
         await transport.close();
       } catch (error) {
         logError(`[MCPManager] Error closing transport for ${serverId}:`, error);
       }
       this.transports.delete(serverId);
+
+      // transport.close() kills the direct child, but wrappers (npx/bunx/sh)
+      // can leave the real server behind — reap the recorded subtree.
+      const candidates = stdioPid ? [stdioPid, ...descendants] : descendants;
+      if (candidates.length > 0) {
+        const reaped = await reapPids(candidates);
+        if (reaped > 0) {
+          log(`[MCPManager] Reaped ${reaped} leftover process(es) for server ${serverId}`);
+        }
+      }
     }
 
     // Remove tools from this server
