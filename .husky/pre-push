@@ -13,8 +13,11 @@ npx tsc --noEmit || {
   exit 1
 }
 
-echo "🧪 Pre-push: running tests..."
-npx vitest run --reporter=verbose 2>&1 | tail -30 || {
+echo "🧪 Pre-push: running tests (ABI-safe)..."
+# NOTE: no `| tail` here — pipelines swallow the exit code and used to let
+# failing tests pass this gate. The wrapper switches better-sqlite3 to the
+# Node ABI when needed and restores the Electron ABI afterwards.
+node scripts/ensure-native-abi.js run --reporter=dot || {
   echo ""
   echo "=========================================="
   echo "  BLOCKED: Tests failed"
