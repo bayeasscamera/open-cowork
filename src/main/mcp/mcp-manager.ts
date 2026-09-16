@@ -18,6 +18,7 @@ import {
   type Tool,
 } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import type { ChildProcess } from 'child_process';
 import { createHash } from 'crypto';
 import { app, BrowserWindow, shell } from 'electron';
 
@@ -240,6 +241,9 @@ export class MCPManager {
   private reconnectingServers: Set<string> = new Set();
   // Tracks per-server connection status for UI display
   private connectionStatus = new Map<string, 'connecting' | 'connected' | 'failed'>();
+  // Debug Chrome started by the browser connector. Spawned detached (it would
+  // otherwise outlive the app), so we keep the handle to terminate it on shutdown.
+  private debugChromeProcess: ChildProcess | null = null;
 
   /**
    * Get bundled Node.js path
@@ -1403,6 +1407,7 @@ export class MCPManager {
         stdio: 'ignore',
       });
       chromeProcess.unref();
+      this.debugChromeProcess = chromeProcess;
 
       log(`[MCPManager] Chrome spawned successfully`);
     } catch (error: unknown) {
@@ -1818,6 +1823,21 @@ export class MCPManager {
    */
   async shutdown(): Promise<void> {
     await this.disconnectAll();
+
+    // The debug Chrome runs detached with its own user-data-dir; terminating
+    // the direct child we spawned is safe (it never touches the user's
+    // regular Chrome sessions). Skip it if the process already exited (e.g.
+    // it handed off to an existing debug-profile instance).
+    const chrome = this.debugChromeProcess;
+    this.debugChromeProcess = null;
+    if (chrome && chrome.exitCode === null && !chrome.killed) {
+      try {
+        chrome.kill('SIGTERM');
+        log('[MCPManager] Terminated debug Chrome process');
+      } catch (error) {
+        logWarn('[MCPManager] Failed to terminate debug Chrome:', error);
+      }
+    }
   }
 }
 

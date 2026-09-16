@@ -1500,50 +1500,74 @@ async function cleanupSandboxResources(): Promise<void> {
   tray?.destroy();
   tray = null;
 
-  // 停止远程控制
-  try {
-    log('[App] Stopping remote control...');
-    await withTimeout(remoteManager.stop(), 5000, 'Remote control shutdown');
-    log('[App] Remote control stopped');
-  } catch (error) {
-    logError('[App] Error stopping remote control:', error);
-  }
+  // Independent shutdown steps run in parallel so the worst case is bounded
+  // by the slowest pipeline (~7s: session sync-back 5s + adapter 3s) instead
+  // of the sum of sequential timeouts (previously up to 23s — far beyond the
+  // old 3s failsafe, which hard-killed the process mid-cleanup and orphaned
+  // MCP/VM child processes). Each step keeps its own withTimeout per policy.
+  const cleanupTasks: Promise<void>[] = [
+    // 停止远程控制
+    (async () => {
+      try {
+        log('[App] Stopping remote control...');
+        await withTimeout(remoteManager.stop(), 5000, 'Remote control shutdown');
+        log('[App] Remote control stopped');
+      } catch (error) {
+        logError('[App] Error stopping remote control:', error);
+      }
+    })(),
 
-  // Cleanup all sandbox sessions (sync changes back to host OS first)
-  try {
-    log('[App] Cleaning up all sandbox sessions...');
+    // Cleanup all sandbox sessions (sync changes back to host OS first),
+    // then tear down the adapter — the adapter must outlive the sync-back.
+    (async () => {
+      try {
+        log('[App] Cleaning up all sandbox sessions...');
+        await Promise.all([
+          (async () => {
+            try {
+              await withTimeout(SandboxSync.cleanupAllSessions(), 4000, 'WSL session cleanup');
+            } catch (error) {
+              logError('[App] Error cleaning up WSL sessions:', error);
+            }
+          })(),
+          (async () => {
+            try {
+              const { LimaSync } = await import('./sandbox/lima-sync');
+              await withTimeout(LimaSync.cleanupAllSessions(), 4000, 'Lima session cleanup');
+            } catch (error) {
+              logError('[App] Error cleaning up Lima sessions:', error);
+            }
+          })(),
+        ]);
+        log('[App] Sandbox sessions cleanup complete');
+      } catch (error) {
+        logError('[App] Error cleaning up sandbox sessions:', error);
+      }
 
-    // Cleanup WSL sessions
-    await withTimeout(SandboxSync.cleanupAllSessions(), 5000, 'WSL session cleanup');
+      try {
+        await withTimeout(shutdownSandbox(), 3000, 'Sandbox shutdown');
+        log('[App] Sandbox shutdown complete');
+      } catch (error) {
+        logError('[App] Error shutting down sandbox:', error);
+      }
+    })(),
 
-    // Cleanup Lima sessions
-    const { LimaSync } = await import('./sandbox/lima-sync');
-    await withTimeout(LimaSync.cleanupAllSessions(), 5000, 'Lima session cleanup');
+    // Shutdown MCP servers (kills stdio child processes)
+    (async () => {
+      try {
+        const mcpManager = sessionManager?.getMCPManager();
+        if (mcpManager) {
+          log('[App] Shutting down MCP servers...');
+          await withTimeout(mcpManager.shutdown(), 5000, 'MCP shutdown');
+          log('[App] MCP servers shutdown complete');
+        }
+      } catch (error) {
+        logError('[App] Error shutting down MCP servers:', error);
+      }
+    })(),
+  ];
 
-    log('[App] Sandbox sessions cleanup complete');
-  } catch (error) {
-    logError('[App] Error cleaning up sandbox sessions:', error);
-  }
-
-  // Shutdown sandbox adapter
-  try {
-    await withTimeout(shutdownSandbox(), 3000, 'Sandbox shutdown');
-    log('[App] Sandbox shutdown complete');
-  } catch (error) {
-    logError('[App] Error shutting down sandbox:', error);
-  }
-
-  // Shutdown MCP servers
-  try {
-    const mcpManager = sessionManager?.getMCPManager();
-    if (mcpManager) {
-      log('[App] Shutting down MCP servers...');
-      await withTimeout(mcpManager.shutdown(), 5000, 'MCP shutdown');
-      log('[App] MCP servers shutdown complete');
-    }
-  } catch (error) {
-    logError('[App] Error shutting down MCP servers:', error);
-  }
+  await Promise.all(cleanupTasks);
 
   try {
     closeDatabase();
@@ -1562,6 +1586,12 @@ app.on('window-all-closed', () => {
   // The headless path manages its own lifecycle — skip cleanup here.
   if (process.argv.includes('--headless')) return;
 
+  // If before-quit cleanup is already running, it owns the exit path
+  // (app.exit(0) + failsafe). A second quit here (e.g. user clicks the
+  // close button again while cleanup is in flight) would let Electron
+  // terminate mid-cleanup and orphan MCP/VM child processes.
+  if (isCleaningUp) return;
+
   // cleanup is handled by before-quit; just trigger quit
   app.quit();
 });
@@ -1574,6 +1604,13 @@ for (const sig of ['SIGTERM', 'SIGINT'] as const) {
 // Handle app quit - before-quit (for macOS Cmd+Q and other quit methods)
 app.on('before-quit', async (event) => {
   if (!isCleaningUp) {
+    // Set the flag immediately — before any early return or await — so the
+    // window 'close' interceptor can never re-enter and cancel quit forever.
+    // Without this, the dev-mode early return left isCleaningUp=false, every
+    // close was preventDefault()'d, and app.quit() could never complete —
+    // the app "hid" instead of exiting (and pkill/SIGTERM hit the same loop).
+    isCleaningUp = true;
+
     // In dev mode, exit quickly — no need for async sandbox cleanup
     if (process.env.VITE_DEV_SERVER_URL) {
       stopNavServer();
@@ -1587,15 +1624,17 @@ app.on('before-quit', async (event) => {
       tray = null;
       return;
     }
-    // Set the flag immediately before any await to prevent re-entrant cleanup
-    isCleaningUp = true;
     event.preventDefault();
 
-    // Hard failsafe: if cleanup takes >3s, force exit to avoid zombie process
+    // Hard failsafe: cleanup steps run in parallel with per-step timeouts
+    // capped at 5000ms (worst case ~7s for the sandbox pipeline), so 9s is
+    // enough for a healthy shutdown to finish while still guaranteeing the
+    // process cannot linger as a zombie. The old 3s cut cleanup short and
+    // orphaned MCP/VM child processes.
     const failsafeTimer = setTimeout(() => {
       logError('[App] Cleanup timed out — forcing exit');
       process.exit(0);
-    }, 3000);
+    }, 9000);
 
     try {
       await cleanupSandboxResources();
