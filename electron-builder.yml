@@ -81,6 +81,9 @@ win:
       to: wsl-agent
     - from: .claude/skills
       to: skills
+    # Tray icons — setupTray() looks for these in the Resources root
+    - from: resources/tray-icon.png
+      to: tray-icon.png
 
 mac:
   icon: resources/icon.icns
@@ -115,6 +118,11 @@ mac:
       to: lima-agent
     - from: .claude/skills
       to: skills
+    # Tray icons — setupTray() looks for these in the Resources root
+    - from: resources/tray-iconTemplate.png
+      to: tray-iconTemplate.png
+    - from: resources/tray-icon.png
+      to: tray-icon.png
 
 linux:
   icon: resources/icon.png
@@ -134,6 +142,9 @@ linux:
       to: python
     - from: .claude/skills
       to: skills
+    # Tray icons — setupTray() looks for these in the Resources root
+    - from: resources/tray-icon.png
+      to: tray-icon.png
 
 nsis:
   oneClick: false

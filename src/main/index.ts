@@ -1631,7 +1631,9 @@ app.on('window-all-closed', () => {
 
 // Handle SIGTERM/SIGINT (e.g. pkill) — route through app.quit() for clean shutdown
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
-  process.on(sig, () => app.quit());
+  process.on(sig, () => {
+    app.quit();
+  });
 }
 
 // Handle app quit - before-quit (for macOS Cmd+Q and other quit methods)
