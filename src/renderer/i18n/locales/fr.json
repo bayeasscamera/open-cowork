@@ -27,7 +27,9 @@
     "themeLight": "Clair",
     "themeDark": "Sombre",
     "themeSystem": "Système",
-    "language": "Langue"
+    "language": "Langue",
+    "backgroundAccess": "Accès rapide en arrière-plan",
+    "backgroundAccessDesc": "Garde une icône dans la barre des menus et associe Alt+Espace pour masquer ou afficher la fenêtre. Désactivez pour quitter complètement dès la fermeture de la fenêtre."
   },
   "language": {
     "english": "Anglais",

@@ -8,6 +8,44 @@ export function SettingsGeneral() {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const currentLang = i18n.language.startsWith('zh') ? 'zh' : i18n.language.startsWith('fr') ? 'fr' : 'en';
   const [appVer, setAppVer] = useState('');
+  const [trayEnabled, setTrayEnabled] = useState(true);
+  const [trayBusy, setTrayBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const cfg = window.electronAPI?.config?.get?.();
+      if (cfg) {
+        cfg
+          .then((c) => {
+            if (!cancelled && typeof c?.trayEnabled === 'boolean') setTrayEnabled(c.trayEnabled);
+          })
+          .catch(() => {
+            /* keep default */
+          });
+      }
+    } catch {
+      /* browser mode / older bridge */
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleToggleTray() {
+    if (trayBusy) return;
+    setTrayBusy(true);
+    try {
+      const next = !trayEnabled;
+      await window.electronAPI?.config?.save?.({ trayEnabled: next });
+      setTrayEnabled(next);
+    } catch {
+      /* switch stays unchanged on failure */
+    } finally {
+      setTrayBusy(false);
+    }
+  }
+
   useEffect(() => {
     try {
       const v = window.electronAPI?.getVersion?.();
@@ -69,6 +107,29 @@ export function SettingsGeneral() {
               {lang.nativeName}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Background quick access: tray icon + Alt+Space global toggle */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">{t('general.backgroundAccess')}</h4>
+        <div className="flex items-center justify-between gap-4 p-3 rounded-lg border border-border bg-surface">
+          <p className="min-w-0 text-xs leading-5 text-text-muted">{t('general.backgroundAccessDesc')}</p>
+          <button
+            type="button"
+            onClick={handleToggleTray}
+            disabled={trayBusy}
+            aria-pressed={trayEnabled}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 flex-shrink-0 ${
+              trayEnabled ? 'bg-accent' : 'bg-surface-muted'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-text-primary transition-transform ${
+                trayEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
         </div>
       </div>
 

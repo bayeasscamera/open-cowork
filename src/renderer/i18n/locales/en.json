@@ -76,7 +76,9 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "themeSystem": "System",
-    "language": "Language"
+    "language": "Language",
+    "backgroundAccess": "Background quick access",
+    "backgroundAccessDesc": "Keeps a menu-bar tray icon and registers Alt+Space to hide or show the window. Disable to fully quit whenever the window is closed."
   },
   "memory": {
     "title": "Memory",

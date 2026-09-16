@@ -122,6 +122,9 @@ export interface AppConfig {
   // Global memory toggle
   memoryEnabled: boolean;
 
+  // Tray icon + global Alt+Space toggle (background quick access)
+  trayEnabled: boolean;
+
   // Dedicated memory runtime config
   memoryRuntime: MemoryRuntimeConfig;
 
@@ -194,6 +197,7 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
   'sandboxEnabled',
   'enableThinking',
   'memoryEnabled',
+  'trayEnabled',
   'model',
   'provider',
   'contextWindow',
@@ -212,6 +216,7 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   sandboxEnabled: (v) => typeof v === 'boolean',
   enableThinking: (v) => typeof v === 'boolean',
   memoryEnabled: (v) => typeof v === 'boolean',
+  trayEnabled: (v) => typeof v === 'boolean',
   model: (v) => typeof v === 'string',
   provider: (v) =>
     typeof v === 'string' &&
@@ -308,6 +313,7 @@ const defaultConfig: AppConfig = {
   theme: 'light',
   sandboxEnabled: false,
   memoryEnabled: true,
+  trayEnabled: true,
   memoryRuntime: {
     llm: {
       inheritFromActive: true,
@@ -1061,6 +1067,7 @@ export class ConfigStore {
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
+      trayEnabled: toBoolean(raw.trayEnabled, defaultConfig.trayEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
@@ -1202,6 +1209,7 @@ export class ConfigStore {
           (key === 'enableDevLogs' ||
             key === 'sandboxEnabled' ||
             key === 'memoryEnabled' ||
+            key === 'trayEnabled' ||
             key === 'enableThinking' ||
             key === 'isConfigured') &&
           typeof rawValue !== 'boolean'

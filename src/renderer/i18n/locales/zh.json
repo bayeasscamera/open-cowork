@@ -76,7 +76,9 @@
     "themeLight": "浅色",
     "themeDark": "深色",
     "themeSystem": "跟随系统",
-    "language": "语言"
+    "language": "语言",
+    "backgroundAccess": "后台快速访问",
+    "backgroundAccessDesc": "在菜单栏保留托盘图标，并注册 Alt+空格 隐藏/显示窗口。关闭后，窗口关闭即完全退出应用。"
   },
   "memory": {
     "title": "Memory 机制",

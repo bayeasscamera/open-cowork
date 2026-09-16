@@ -386,6 +386,7 @@ function buildMacMenu() {
 }
 
 function setupTray() {
+  if (!configStore.get('trayEnabled')) return;
   if (tray) return;
 
   // Use .ico on Windows for proper multi-resolution tray support; fall back to .png if absent
@@ -466,6 +467,63 @@ function setupTray() {
       mainWindow.focus();
     }
   });
+}
+
+// Global window-toggle shortcut (Alt+Space, Spotlight/Raycast style) — part of the
+// "background quick access" bundle with the tray, so it is gated by the same
+// setting: without a tray icon, a hidden window would be unreachable on
+// platforms without a persistent Dock.
+let windowToggleAccelerator: string | null = null;
+
+function registerWindowToggleShortcut(): void {
+  if (windowToggleAccelerator) return;
+  try {
+    const toggleWindow = () => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        createWindow();
+      } else if (mainWindow.isVisible() && mainWindow.isFocused()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    };
+
+    // Try Alt+Space first (Spotlight/Raycast style), then fallback
+    if (globalShortcut.register('Alt+Space', toggleWindow)) {
+      windowToggleAccelerator = 'Alt+Space';
+      log('[Shortcut] Registered Alt+Space global toggle shortcut');
+    } else {
+      logWarn('[Shortcut] Alt+Space occupied, trying CommandOrControl+Shift+Space');
+      if (globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow)) {
+        windowToggleAccelerator = 'CommandOrControl+Shift+Space';
+      }
+    }
+  } catch (shortcutErr) {
+    logWarn('[Shortcut] Failed to register global shortcut:', shortcutErr);
+  }
+}
+
+function unregisterWindowToggleShortcut(): void {
+  if (!windowToggleAccelerator) return;
+  try {
+    globalShortcut.unregister(windowToggleAccelerator);
+  } catch (error) {
+    logWarn('[Shortcut] Failed to unregister global shortcut:', error);
+  }
+  windowToggleAccelerator = null;
+}
+
+/** Apply the trayEnabled setting at startup or on config change. */
+function applyBackgroundAccessSetting(enabled: boolean): void {
+  if (enabled) {
+    setupTray();
+    registerWindowToggleShortcut();
+  } else {
+    tray?.destroy();
+    tray = null;
+    unregisterWindowToggleShortcut();
+  }
 }
 
 function getSavedThemePreference(): AppTheme {
@@ -1281,9 +1339,9 @@ app
     });
     // pi-ai handles model routing natively — no proxy warmup needed
 
-    // macOS: application menu, dock menu, tray icon
+    // macOS: application menu, dock menu, tray icon + global toggle shortcut
     buildMacMenu();
-    setupTray();
+    applyBackgroundAccessSetting(configStore.get('trayEnabled'));
 
     // Show window after core managers are ready so first-load actions can be handled.
     createWindow();
@@ -1302,31 +1360,6 @@ app
         },
       ]);
       app.dock?.setMenu(dockMenu);
-    }
-
-    // Register global toggle shortcut (Alt+Space or CommandOrControl+Shift+Space)
-    try {
-      const toggleWindow = () => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-          createWindow();
-        } else if (mainWindow.isVisible() && mainWindow.isFocused()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      };
-
-      // Try Alt+Space first (Spotlight/Raycast style), then fallback
-      const registeredAltSpace = globalShortcut.register('Alt+Space', toggleWindow);
-      if (!registeredAltSpace) {
-        logWarn('[Shortcut] Alt+Space occupied, trying CommandOrControl+Shift+Space');
-        globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);
-      } else {
-        log('[Shortcut] Registered Alt+Space global toggle shortcut');
-      }
-    } catch (shortcutErr) {
-      logWarn('[Shortcut] Failed to register global shortcut:', shortcutErr);
     }
 
     // macOS: send initial system theme to renderer
@@ -1861,6 +1894,11 @@ ipcMain.handle('config.save', async (_event, newConfig: Partial<AppConfig>) => {
   // Update config
   configStore.update(newConfig);
   const updatedConfig = await syncConfigAfterMutation(previousConfig);
+
+  // Apply tray / global-shortcut background access immediately when toggled
+  if (typeof newConfig.trayEnabled === 'boolean') {
+    applyBackgroundAccessSetting(newConfig.trayEnabled);
+  }
 
   return { success: true, config: updatedConfig };
 });
