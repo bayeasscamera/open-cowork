@@ -17,6 +17,17 @@ describe('memory integration wiring', () => {
     expect(mainIndex).toContain("ipcMain.handle('memory.setEnabled'");
   });
 
+  it('provides the local owner in headless mode without automatic deletion consent', () => {
+    const mainIndex = readProjectFile('src/main/index.ts');
+    const start = mainIndex.indexOf('memoryService = new MemoryService(db');
+    const end = mainIndex.indexOf('const headlessExtensionManager', start);
+    const initialization = mainIndex.slice(start, end);
+    expect(initialization).toContain("owner: 'local-installation'");
+    expect(initialization).toContain('!remoteManager.isRemoteSession(sessionId)');
+    expect(initialization).toContain('db.sessions.get(sessionId)?.memory_enabled === 1');
+    expect(initialization).not.toMatch(/confirmDelete\s*:/);
+  });
+
   it('injects runtime plugin skill paths and extension hooks into the agent runner', () => {
     const runner = readProjectFile('src/main/agent/agent-runner.ts');
     const memoryExtension = readProjectFile('src/main/memory/memory-extension.ts');

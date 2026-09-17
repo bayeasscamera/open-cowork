@@ -918,7 +918,18 @@ app
       const db = initDatabase();
 
       pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
-      memoryService = new MemoryService(db);
+      memoryService = new MemoryService(db, {
+        personalHost: {
+          // Same trusted local account as the desktop path; headless runs on
+          // this machine share the installation's memory store.
+          owner: 'local-installation',
+          isSessionEnabled: (sessionId) =>
+            !remoteManager.isRemoteSession(sessionId) &&
+            db.sessions.get(sessionId)?.memory_enabled === 1,
+          // No confirmDelete in headless: deletions fail closed with
+          // confirmation_required instead of being auto-approved.
+        },
+      });
       const headlessExtensionManager = new AgentRuntimeExtensionManager([
         new MemoryExtension(memoryService),
         new ConfigExtension(configStore),
