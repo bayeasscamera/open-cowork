@@ -145,48 +145,12 @@ fi
 
 - Suggested tests or "Not run (automation)"
 
-## Post Response to Github
+## Return analysis only
 
-Submit exactly one review for this run. Use a single atomic `create review` API call so summary and inline comments stay attached to the same `CURRENT_HEAD_SHA`.
-
-This review is advisory. Keep `event: "COMMENT"`; findings do not change the workflow conclusion. The check reflects automation health/completion only; it does not approve the PR or resolve findings.
-
-```bash
-live_head_sha=$(gh pr view "$pr_number" -R "$repo" --json headRefOid -q .headRefOid)
-if [ "$live_head_sha" != "$current_head_sha" ]; then
-  echo "PR head moved from $current_head_sha to $live_head_sha; skip stale review."
-  exit 0
-fi
-```
-
-- If there are findings, build one review payload with:
-  - `event: "COMMENT"`
-  - `commit_id: "$current_head_sha"`
-  - `body: "{SUMMARY}"`
-  - `comments: [...]` containing every inline finding comment
-- If there are no findings, submit a summary-only review with the same `event`, `commit_id`, and `body`.
-- Prefer writing the JSON payload to a temporary file and posting it with `gh api --input`.
-
-Example shape:
-
-```json
-{
-  "event": "COMMENT",
-  "commit_id": "CURRENT_HEAD_SHA",
-  "body": "FULL_SUMMARY",
-  "comments": [
-    {
-      "path": "path/to/file.ts",
-      "line": 123,
-      "side": "RIGHT",
-      "body": "**[MAJOR]** ..."
-    }
-  ]
-}
-```
-
-```bash
-gh api "repos/$repo/pulls/$pr_number/reviews" \
-  --method POST \
-  --input /tmp/pr-review.json
-```
+Return ONLY valid JSON with exactly one field: {"body":"FULL_MARKDOWN_REVIEW_BODY"}.
+Put all findings and file/line citations in the body (summary-only review).
+Do not post reviews, comments, approvals, or execute write operations with `gh`.
+Do not execute PR code, install dependencies, or run tests. Read files and diffs only.
+The separate trusted publisher validates this output and checks the live head SHA.
+Keep `event: "COMMENT"` in the publisher: this review remains advisory, not approval.
+An analysis failure or invalid output must fail the automation without posting a review.

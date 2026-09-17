@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { validateReview } from './pr-review-output.cjs';
 import {
   assertNonEmptyParsedString,
   callDeepSeekJsonWithRetries,
@@ -12,7 +14,6 @@ import {
   requireEnv,
   runGh,
   truncate,
-  writeTempJson,
 } from './deepseek-common.mjs';
 
 function buildSystemPrompt(basePrompt) {
@@ -205,29 +206,10 @@ async function main() {
   });
 
   const body = ensureBotSignature(assertNonEmptyParsedString(parsed, 'body'));
-  const liveHeadSha = runGh([
-    'pr',
-    'view',
-    prNumber,
-    '-R',
-    repo,
-    '--json',
-    'headRefOid',
-    '-q',
-    '.headRefOid',
-  ]);
-  if (liveHeadSha !== currentHeadSha) {
-    console.log(`PR head moved from ${currentHeadSha} to ${liveHeadSha}; skipping stale review.`);
-    return;
-  }
+  const output = JSON.stringify({ body });
+  validateReview(output);
+  writeFileSync(requireEnv('REVIEW_OUTPUT_PATH'), output, { flag: 'wx' });
 
-  const reviewPayload = writeTempJson('deepseek-pr-review', {
-    event: 'COMMENT',
-    commit_id: currentHeadSha,
-    body,
-  });
-
-  runGh(['api', `repos/${repo}/pulls/${prNumber}/reviews`, '--method', 'POST', '--input', reviewPayload]);
   printUsage('DeepSeek PR review', usage);
 }
 

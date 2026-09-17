@@ -4,6 +4,8 @@ on:
   pull_request_target:
     types: [opened, reopened, ready_for_review, synchronize, labeled]
 
+permissions: {}
+
 concurrency:
   group: codex-pr-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -14,12 +16,13 @@ jobs:
       github.event.pull_request.draft == false &&
       !endsWith(github.actor, '[bot]') &&
       !contains(github.event.pull_request.labels.*.name, 'bot-skip')
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     outputs:
-      review_result: ${{ steps.run_codex.outputs.final-message }}
+      should_publish: ${{ steps.validate_review.outputs.should_publish }}
 
     steps:
       - name: Check bot review state
@@ -136,15 +139,18 @@ jobs:
         if: steps.check_bot.outputs.has_review_for_current_head != 'true'
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
           fetch-depth: 0
 
-      - name: Pre-fetch base and head refs
+      - name: Pre-fetch PR head without persisting credentials
         if: steps.check_bot.outputs.has_review_for_current_head != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          git fetch --no-tags origin \
-            ${{ github.event.pull_request.base.ref }} \
-            +refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/pull/${{ github.event.pull_request.number }}/head
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch --no-tags origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/${PR_NUMBER}/head"
 
       - name: Resolve review provider config
         if: steps.check_bot.outputs.has_review_for_current_head != 'true'
@@ -199,12 +205,12 @@ jobs:
         if: steps.check_bot.outputs.has_review_for_current_head != 'true' && steps.review_config.outputs.is_deepseek == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          GITHUB_TOKEN: ${{ github.token }}
           CURRENT_HEAD_SHA: ${{ steps.check_bot.outputs.current_head_sha }}
           LATEST_BOT_REVIEW_ID: ${{ steps.check_bot.outputs.latest_bot_review_id }}
           LATEST_BOT_REVIEW_COMMIT: ${{ steps.check_bot.outputs.latest_bot_review_commit }}
           IS_FOLLOW_UP_REVIEW: ${{ steps.check_bot.outputs.is_follow_up_review }}
           PRIOR_CONTEXT_DISCARDED: ${{ steps.check_bot.outputs.prior_context_discarded }}
+          REVIEW_OUTPUT_PATH: ${{ runner.temp }}/pr-review.json
           DEEPSEEK_API_KEY: ${{ steps.review_config.outputs.api_key }}
           DEEPSEEK_BASE_URL: ${{ steps.review_config.outputs.base_url }}
           DEEPSEEK_MODEL: ${{ steps.review_config.outputs.model }}
@@ -217,7 +223,6 @@ jobs:
         uses: openai/codex-action@v1
         env:
           GH_TOKEN: ${{ github.token }}
-          GITHUB_TOKEN: ${{ github.token }}
           CURRENT_HEAD_SHA: ${{ steps.check_bot.outputs.current_head_sha }}
           LATEST_BOT_REVIEW_ID: ${{ steps.check_bot.outputs.latest_bot_review_id }}
           LATEST_BOT_REVIEW_COMMIT: ${{ steps.check_bot.outputs.latest_bot_review_commit }}
@@ -228,8 +233,63 @@ jobs:
           responses-api-endpoint: ${{ steps.review_config.outputs.base_url }}
           model: ${{ steps.review_config.outputs.model }}
           effort: ${{ steps.review_config.outputs.effort }}
-          sandbox: danger-full-access
+          sandbox: read-only
+          output-file: ${{ runner.temp }}/pr-review.json
           safety-strategy: drop-sudo
           prompt-file: .github/prompts/codex-pr-review.md
           allow-bots: true
           allow-users: '*'
+
+      - name: Validate analysis output
+        id: validate_review
+        if: success() && steps.check_bot.outputs.has_review_for_current_head != 'true'
+        env:
+          REVIEW_OUTPUT_PATH: ${{ runner.temp }}/pr-review.json
+        run: |
+          node -e 'const fs = require("node:fs"); const { validateReview } = require("./.github/scripts/pr-review-output.cjs"); validateReview(fs.readFileSync(process.env.REVIEW_OUTPUT_PATH, "utf8"));'
+          printf 'should_publish=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Upload validated analysis
+        if: success() && steps.validate_review.outputs.should_publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr-review.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-review:
+    needs: pr-review
+    if: needs.pr-review.result == 'success' && needs.pr-review.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout trusted publisher
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Download analysis from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/review-output
+
+      - name: Publish advisory review
+        uses: actions/github-script@v9
+        env:
+          REVIEW_OUTPUT_PATH: ${{ runner.temp }}/review-output/pr-review.json
+          ANALYSIS_RESULT: ${{ needs.pr-review.result }}
+          SHOULD_PUBLISH: ${{ needs.pr-review.outputs.should_publish }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const { publishReview } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/pr-review-output.cjs`);
+            const raw = fs.readFileSync(process.env.REVIEW_OUTPUT_PATH, 'utf8');
+            await publishReview({ github, context, raw,
+              analysisResult: process.env.ANALYSIS_RESULT,
+              shouldPublish: process.env.SHOULD_PUBLISH });
