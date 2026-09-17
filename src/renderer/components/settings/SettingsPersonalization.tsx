@@ -5,6 +5,15 @@ import { useAppStore } from '../../store';
 import type { MemoryOverview } from '../../types';
 import { SettingsContentSection } from './shared';
 
+const INSTRUCTION_PRESETS = [
+  { key: 'concise' },
+  { key: 'stepByStep' },
+  { key: 'professional' },
+  { key: 'codeComments' },
+] as const;
+
+type InstructionPresetKey = (typeof INSTRUCTION_PRESETS)[number]['key'];
+
 export function SettingsPersonalization() {
   const { t } = useTranslation();
   const appConfig = useAppStore((state) => state.appConfig);
@@ -36,6 +45,15 @@ export function SettingsPersonalization() {
       cancelled = true;
     };
   }, []);
+
+  const applyPreset = (preset: { key: InstructionPresetKey }) => {
+    const text = t(`personalization.presetText_${preset.key}`);
+    setInstructionsDraft((prev) => {
+      if (prev.includes(text)) return prev;
+      const trimmed = prev.trimEnd();
+      return trimmed ? `${trimmed}\n${text}` : text;
+    });
+  };
 
   const handleToggleMemory = async () => {
     const next = !memoryEnabled;
@@ -118,6 +136,19 @@ export function SettingsPersonalization() {
         description={t('personalization.instructionsDesc')}
       >
         <div className="space-y-3 rounded-xl border border-border-muted bg-background-secondary/60 p-4">
+          <div className="flex flex-wrap gap-2">
+            {INSTRUCTION_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                onClick={() => applyPreset(preset)}
+                disabled={isBusy}
+                title={t(`personalization.presetText_${preset.key}`)}
+                className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {t(`personalization.preset_${preset.key}`)}
+              </button>
+            ))}
+          </div>
           <textarea
             value={instructionsDraft}
             onChange={(event) => setInstructionsDraft(event.target.value)}

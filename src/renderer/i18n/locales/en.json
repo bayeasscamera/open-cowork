@@ -965,6 +965,14 @@
     "instructionsDesc": "Describe how you want Cowork to respond — context about you, your team, your projects, or the tone to adopt. These instructions are injected into every conversation.",
     "instructionsPlaceholder": "Example: I am a freelance developer. Answer in French, favor concise answers with concrete code examples, and always mention potential side effects before modifying a configuration file.",
     "instructionsHint": "Saved instructions apply to new conversations.",
+    "preset_concise": "Concise answers",
+    "presetText_concise": "Give concise answers; skip preamble and restating the question.",
+    "preset_stepByStep": "Step by step",
+    "presetText_stepByStep": "Explain complex tasks step by step, with the reasoning behind each step.",
+    "preset_professional": "Professional tone",
+    "presetText_professional": "Use a professional, direct tone; avoid filler and emojis.",
+    "preset_codeComments": "Commented code",
+    "presetText_codeComments": "When writing code, add brief comments explaining non-obvious decisions.",
     "instructionsSave": "Save instructions"
   }
 }

@@ -84,6 +84,14 @@
     "instructionsDesc": "描述你希望 Cowork 如何回答——关于你、团队、项目的背景，或采用的语气。这些指令会注入到每次对话中。",
     "instructionsPlaceholder": "示例：我是自由开发者。请用中文回答，优先给出简洁但带具体代码示例的答案，并在修改配置文件前先说明可能的副作用。",
     "instructionsHint": "保存后的指令会应用到新的对话。",
+    "preset_concise": "简洁回答",
+    "presetText_concise": "给出简洁的回答；省略开场白，不要复述问题。",
+    "preset_stepByStep": "逐步讲解",
+    "presetText_stepByStep": "分步骤解释复杂任务，并说明每一步的理由。",
+    "preset_professional": "专业语气",
+    "presetText_professional": "使用专业、直接的语气；避免废话和表情符号。",
+    "preset_codeComments": "代码注释",
+    "presetText_codeComments": "写代码时，为不明显的决策添加简短注释。",
     "instructionsSave": "保存指令"
   },
   "general": {

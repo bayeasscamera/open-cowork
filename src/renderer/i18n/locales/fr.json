@@ -964,6 +964,14 @@
     "instructionsDesc": "Décrivez comment vous souhaitez que Cowork réponde — contexte sur vous, votre équipe, vos projets, ou le ton à adopter. Ces instructions sont injectées dans chaque conversation.",
     "instructionsPlaceholder": "Exemple : Je suis développeur freelance. Réponds en français, privilégie des réponses concises avec des exemples de code concrets, et signale toujours les effets de bord avant de modifier un fichier de configuration.",
     "instructionsHint": "Les instructions enregistrées s’appliquent aux nouvelles conversations.",
+    "preset_concise": "Réponses concises",
+    "presetText_concise": "Donne des réponses concises ; évite les préambules et la répétition de la question.",
+    "preset_stepByStep": "Étape par étape",
+    "presetText_stepByStep": "Explique les tâches complexes étape par étape, avec le raisonnement de chaque étape.",
+    "preset_professional": "Ton professionnel",
+    "presetText_professional": "Adopte un ton professionnel et direct ; évite le remplissage et les emojis.",
+    "preset_codeComments": "Code commenté",
+    "presetText_codeComments": "Quand tu écris du code, ajoute des commentaires brefs sur les décisions non évidentes.",
     "instructionsSave": "Enregistrer les instructions"
   }
 }
