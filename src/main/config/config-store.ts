@@ -122,6 +122,9 @@ export interface AppConfig {
   // Global memory toggle
   memoryEnabled: boolean;
 
+  // Personalization: free-form user instructions injected into agent system prompts
+  coworkInstructions: string;
+
   // Tray icon + global Alt+Space toggle (background quick access)
   trayEnabled: boolean;
 
@@ -181,6 +184,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'theme',
   'sandboxEnabled',
   'memoryEnabled',
+  'coworkInstructions',
   'enableThinking',
   'isConfigured',
 ]);
@@ -197,6 +201,7 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
   'sandboxEnabled',
   'enableThinking',
   'memoryEnabled',
+  'coworkInstructions',
   'trayEnabled',
   'model',
   'provider',
@@ -216,6 +221,7 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   sandboxEnabled: (v) => typeof v === 'boolean',
   enableThinking: (v) => typeof v === 'boolean',
   memoryEnabled: (v) => typeof v === 'boolean',
+  coworkInstructions: (v) => typeof v === 'string',
   trayEnabled: (v) => typeof v === 'boolean',
   model: (v) => typeof v === 'string',
   provider: (v) =>
@@ -313,6 +319,7 @@ const defaultConfig: AppConfig = {
   theme: 'light',
   sandboxEnabled: false,
   memoryEnabled: true,
+  coworkInstructions: '',
   trayEnabled: true,
   memoryRuntime: {
     llm: {
@@ -1067,6 +1074,10 @@ export class ConfigStore {
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
+      coworkInstructions:
+        typeof raw.coworkInstructions === 'string'
+          ? raw.coworkInstructions
+          : defaultConfig.coworkInstructions,
       trayEnabled: toBoolean(raw.trayEnabled, defaultConfig.trayEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       enableThinking: projected.enableThinking,
@@ -1485,6 +1496,10 @@ export class ConfigStore {
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:
         updates.memoryEnabled !== undefined ? updates.memoryEnabled : current.memoryEnabled,
+      coworkInstructions:
+        updates.coworkInstructions !== undefined
+          ? updates.coworkInstructions
+          : current.coworkInstructions,
       memoryRuntime:
         updates.memoryRuntime !== undefined
           ? normalizeMemoryRuntimeConfig(updates.memoryRuntime)

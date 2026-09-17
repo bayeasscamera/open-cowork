@@ -160,6 +160,8 @@
     "connectorsDesc": "Intégrations navigateur et outils",
     "skills": "Compétences (Skills)",
     "skillsDesc": "Gérer les compétences personnalisées",
+    "personalization": "Intelligence personnalisée",
+    "personalizationDesc": "Obtenez des réponses et recommandations plus utiles en fonction d’infos sur vous et votre univers",
     "memory": "Mémoire",
     "memoryDesc": "Gérer la mémoire à long terme et l’expérience du workspace",
     "schedule": "Planifications",
@@ -949,5 +951,19 @@
     "userRemoved": "User removed",
     "revokeFailed": "Failed to remove user",
     "copied": "Copied"
+  },
+  "personalization": {
+    "memorySectionTitle": "Mémoire",
+    "memorySectionDesc": "Permettez à Cowork de retenir des faits et préférences sur vous et vos projets afin de personnaliser les réponses futures.",
+    "memoryToggleLabel": "Activer la mémoire",
+    "memoryToggleHint": "Cowork retiendra ce qui compte d’une session à l’autre. Souvenirs principaux enregistrés : {{count}}.",
+    "manageMemory": "Gérer la mémoire",
+    "memoryEnabledStatus": "Mémoire activée.",
+    "memoryDisabledStatus": "Mémoire désactivée. Les enregistrements existants sont conservés.",
+    "instructionsTitle": "Instructions pour Cowork",
+    "instructionsDesc": "Décrivez comment vous souhaitez que Cowork réponde — contexte sur vous, votre équipe, vos projets, ou le ton à adopter. Ces instructions sont injectées dans chaque conversation.",
+    "instructionsPlaceholder": "Exemple : Je suis développeur freelance. Réponds en français, privilégie des réponses concises avec des exemples de code concrets, et signale toujours les effets de bord avant de modifier un fichier de configuration.",
+    "instructionsHint": "Les instructions enregistrées s’appliquent aux nouvelles conversations.",
+    "instructionsSave": "Enregistrer les instructions"
   }
 }

@@ -9,6 +9,7 @@ import {
   Wifi,
   AlertCircle,
   Globe,
+  Sparkles,
   ChevronRight,
   BrainCircuit,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ import { SettingsSchedule } from './settings/SettingsSchedule';
 import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
+import { SettingsPersonalization } from './settings/SettingsPersonalization';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -32,6 +34,7 @@ interface SettingsPanelProps {
     | 'sandbox'
     | 'connectors'
     | 'skills'
+    | 'personalization'
     | 'memory'
     | 'schedule'
     | 'remote'
@@ -44,6 +47,7 @@ type TabId =
   | 'sandbox'
   | 'connectors'
   | 'skills'
+  | 'personalization'
   | 'memory'
   | 'schedule'
   | 'remote'
@@ -55,6 +59,7 @@ const VALID_TABS = new Set<TabId>([
   'sandbox',
   'connectors',
   'skills',
+  'personalization',
   'memory',
   'schedule',
   'remote',
@@ -129,6 +134,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.skills'),
       icon: Package,
       description: t('settings.skillsDesc'),
+    },
+    {
+      id: 'personalization' as TabId,
+      label: t('settings.personalization'),
+      icon: Sparkles,
+      description: t('settings.personalizationDesc'),
     },
     {
       id: 'memory' as TabId,
@@ -266,6 +277,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'skills' ? '' : 'hidden'}>
                 {viewedTabs.has('skills') && <SettingsSkills isActive={activeTab === 'skills'} />}
+              </div>
+              <div className={activeTab === 'personalization' ? '' : 'hidden'}>
+                {viewedTabs.has('personalization') && <SettingsPersonalization />}
               </div>
               <div className={activeTab === 'memory' ? '' : 'hidden'}>
                 {viewedTabs.has('memory') && <SettingsMemory />}

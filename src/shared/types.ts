@@ -723,6 +723,8 @@ export interface AppConfig {
   theme?: AppTheme;
   sandboxEnabled?: boolean;
   memoryEnabled?: boolean;
+  /** Personalization: free-form instructions injected into agent system prompts. */
+  coworkInstructions?: string;
   /** Menu-bar tray icon + Alt+Space global toggle (background quick access). */
   trayEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;

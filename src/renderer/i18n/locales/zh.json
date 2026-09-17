@@ -58,6 +58,8 @@
     "connectorsDesc": "浏览器和工具集成",
     "skills": "技能",
     "skillsDesc": "管理自定义技能",
+    "personalization": "个性化智能",
+    "personalizationDesc": "根据关于你和你的工作环境的信息，获得更有用的回答和推荐",
     "memory": "记忆",
     "memoryDesc": "管理长期记忆与工作区经验",
     "schedule": "定时任务",
@@ -69,6 +71,20 @@
     "panelDesc": "配置工作区、工具以及账号相关行为。",
     "general": "通用",
     "generalDesc": "外观、语言等通用偏好"
+  },
+  "personalization": {
+    "memorySectionTitle": "记忆",
+    "memorySectionDesc": "让 Cowork 记住关于你和项目的信息与偏好，从而个性化后续回答。",
+    "memoryToggleLabel": "启用记忆",
+    "memoryToggleHint": "Cowork 将在会话之间记住重要信息。已保存核心记忆：{{count}} 条。",
+    "manageMemory": "管理记忆",
+    "memoryEnabledStatus": "记忆已启用。",
+    "memoryDisabledStatus": "记忆已停用。现有记录会保留。",
+    "instructionsTitle": "Cowork 指令",
+    "instructionsDesc": "描述你希望 Cowork 如何回答——关于你、团队、项目的背景，或采用的语气。这些指令会注入到每次对话中。",
+    "instructionsPlaceholder": "示例：我是自由开发者。请用中文回答，优先给出简洁但带具体代码示例的答案，并在修改配置文件前先说明可能的副作用。",
+    "instructionsHint": "保存后的指令会应用到新的对话。",
+    "instructionsSave": "保存指令"
   },
   "general": {
     "appearance": "外观",

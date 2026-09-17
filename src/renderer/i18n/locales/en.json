@@ -58,6 +58,8 @@
     "connectorsDesc": "Browser & tool integrations",
     "skills": "Skills",
     "skillsDesc": "Manage custom skills",
+    "personalization": "Personalized intelligence",
+    "personalizationDesc": "Get more useful answers and recommendations based on info about you and your work",
     "memory": "Memory",
     "memoryDesc": "Manage long-term memory and workspace experience",
     "schedule": "Schedules",
@@ -950,5 +952,19 @@
     "completed": "Completed",
     "inDuration": "in {{duration}}",
     "showResult": "Show result"
+  },
+  "personalization": {
+    "memorySectionTitle": "Memory",
+    "memorySectionDesc": "Let Cowork remember facts and preferences about you and your projects to personalize future answers.",
+    "memoryToggleLabel": "Enable memory",
+    "memoryToggleHint": "Cowork will recall what matters across sessions. Core memories saved: {{count}}.",
+    "manageMemory": "Manage memory",
+    "memoryEnabledStatus": "Memory enabled.",
+    "memoryDisabledStatus": "Memory disabled. Existing records are kept.",
+    "instructionsTitle": "Instructions for Cowork",
+    "instructionsDesc": "Describe how you want Cowork to respond — context about you, your team, your projects, or the tone to adopt. These instructions are injected into every conversation.",
+    "instructionsPlaceholder": "Example: I am a freelance developer. Answer in French, favor concise answers with concrete code examples, and always mention potential side effects before modifying a configuration file.",
+    "instructionsHint": "Saved instructions apply to new conversations.",
+    "instructionsSave": "Save instructions"
   }
 }

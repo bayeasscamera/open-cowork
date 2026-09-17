@@ -2123,6 +2123,15 @@ This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the ro
 - Memory: ${runtimeConfig.memoryEnabled ? 'enabled' : 'disabled'}
 </your_configuration>`;
 
+      const userInstructionsPrompt =
+        typeof runtimeConfig.coworkInstructions === 'string' &&
+        runtimeConfig.coworkInstructions.trim()
+          ? `<user_instructions>
+The user has provided the following personal instructions. Follow them consistently across the conversation:
+${runtimeConfig.coworkInstructions.trim()}
+</user_instructions>`
+          : '';
+
       const coworkAppendPrompt = [
         'You are an Open Cowork assistant. Be concise, accurate, and tool-capable.',
         `CRITICAL BEHAVIORAL RULES:
@@ -2133,6 +2142,7 @@ This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the ro
 5. When given a task, START DOING IT. Do not restate the task, do not list what you will do, do not ask for confirmation. Just execute.`,
         configSummaryPrompt,
         workspaceInfoPrompt,
+        userInstructionsPrompt,
         `<citation_requirements>
 If your answer uses linkable content from MCP tools, include a "Sources:" section and otherwise use standard Markdown links: [Title](https://claude.ai/chat/URL).
 </citation_requirements>`,
