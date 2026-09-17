@@ -134,6 +134,19 @@
     "currentLanguage": "Current language"
   },
   "api": {
+    "webSearch": {
+      "title": "Web search",
+      "description": "Optional search keys, shared across all model config sets and saved separately. Provider priority: Tavily > Brave > DuckDuckGo (no key required). A search error does not automatically switch providers.",
+      "environmentHint": "For each provider, a saved key takes precedence over TAVILY_API_KEY or BRAVE_API_KEY. Clear a field and save to remove its saved key; environment keys still apply. DuckDuckGo is used only when neither provider has a key.",
+      "tavilyApiKey": "Tavily API key (optional)",
+      "braveApiKey": "Brave API key (optional)",
+      "showKey": "Show {{provider}} API key",
+      "hideKey": "Hide {{provider}} API key",
+      "save": "Save web search settings",
+      "saving": "Saving web search settings…",
+      "saved": "Web search settings saved.",
+      "saveFailed": "Could not save web search settings. Your edits have been kept; please try again."
+    },
     "firstRunTitle": "Set Up API",
     "firstRunSubtitle": "Configure a provider to start using Open Cowork",
     "settingsTitle": "API Settings",

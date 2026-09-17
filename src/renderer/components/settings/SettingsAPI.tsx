@@ -19,6 +19,7 @@ import { useApiConfigState } from '../../hooks/useApiConfigState';
 import { ApiConfigSetManager } from '../ApiConfigSetManager';
 import { CommonProviderSetupsCard, GuidanceInlineHint } from '../ProviderGuidance';
 import ApiDiagnosticsPanel from '../ApiDiagnosticsPanel';
+import { SettingsWebSearch } from './SettingsWebSearch';
 
 interface ModelOptionItem {
   id: string;
@@ -588,6 +589,7 @@ export function SettingsAPI() {
           </button>
         </div>
       </div>
+      <SettingsWebSearch />
     </div>
   );
 }

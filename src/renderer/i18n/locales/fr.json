@@ -430,6 +430,19 @@
     "clearCoreSuccess": "Mémoire centrale effacée"
   },
   "api": {
+    "webSearch": {
+      "title": "Recherche Web",
+      "description": "Clés de recherche facultatives, communes à tous les jeux de configuration des modèles et enregistrées séparément. Priorité : Tavily > Brave > DuckDuckGo (sans clé). Une erreur de recherche ne déclenche pas de changement automatique de fournisseur.",
+      "environmentHint": "Pour chaque fournisseur, la clé enregistrée est prioritaire sur TAVILY_API_KEY ou BRAVE_API_KEY. Videz un champ et enregistrez pour supprimer sa clé ; les variables d’environnement restent prises en compte. DuckDuckGo est utilisé uniquement si aucun fournisseur ne dispose d’une clé.",
+      "tavilyApiKey": "Clé API Tavily (facultative)",
+      "braveApiKey": "Clé API Brave (facultative)",
+      "showKey": "Afficher la clé API {{provider}}",
+      "hideKey": "Masquer la clé API {{provider}}",
+      "save": "Enregistrer les paramètres de recherche Web",
+      "saving": "Enregistrement des paramètres de recherche Web…",
+      "saved": "Paramètres de recherche Web enregistrés.",
+      "saveFailed": "Impossible d’enregistrer les paramètres de recherche Web. Vos modifications sont conservées ; veuillez réessayer."
+    },
     "firstRunTitle": "Bienvenue dans Open Cowork",
     "firstRunSubtitle": "Configurez votre fournisseur d’API pour commencer.",
     "settingsTitle": "Paramètres API",

@@ -156,6 +156,19 @@
     "currentLanguage": "当前语言"
   },
   "api": {
+    "webSearch": {
+      "title": "网页搜索",
+      "description": "搜索密钥为可选项，在所有模型配置方案之间共享，并单独保存。提供商优先级：Tavily > Brave > DuckDuckGo（无需密钥）。搜索出错时不会自动切换提供商。",
+      "environmentHint": "对于每个提供商，已保存的密钥优先于 TAVILY_API_KEY 或 BRAVE_API_KEY。清空字段并保存即可删除已保存的密钥，但环境变量中的密钥仍然有效。仅当两个提供商都没有密钥时才使用 DuckDuckGo。",
+      "tavilyApiKey": "Tavily API 密钥（可选）",
+      "braveApiKey": "Brave API 密钥（可选）",
+      "showKey": "显示 {{provider}} API 密钥",
+      "hideKey": "隐藏 {{provider}} API 密钥",
+      "save": "保存网页搜索设置",
+      "saving": "正在保存网页搜索设置…",
+      "saved": "网页搜索设置已保存。",
+      "saveFailed": "无法保存网页搜索设置。您的修改已保留，请重试。"
+    },
     "firstRunTitle": "配置 API",
     "firstRunSubtitle": "设置 API 提供商后即可开始使用",
     "settingsTitle": "API 设置",
