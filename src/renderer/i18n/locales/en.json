@@ -1,4 +1,30 @@
 {
+  "personalFiles": {
+    "title": "Personal memory files",
+    "description": "View /profile.md and other virtual memory files stored in local SQLite. These are not files on your disk.",
+    "retention": "Only retained revisions are shown. Restore saves a new version; deleted files cannot be recreated here.",
+    "refresh": "Refresh",
+    "loading": "Loading memory files…",
+    "empty": "No personal memory files yet.",
+    "list": "Personal memory file list",
+    "current": "Current version",
+    "emptyContent": "Empty content",
+    "history": "Revision history",
+    "noHistory": "No retained revisions.",
+    "revision": "Generation {{generation}}, revision {{revision}}",
+    "deleted": "Deletion marker (not restorable)",
+    "restore": "Restore this revision",
+    "confirm": "Restore {{path}} to generation {{generation}}, revision {{revision}}? This replaces the current content and saves a new version in retained history.",
+    "restored": "Revision restored as a new version.",
+    "errors": {
+      "forbidden": "This window cannot access personal memory files.",
+      "unavailable": "Local personal memory is not available.",
+      "invalid_input": "Invalid memory file or revision. Refresh and try again.",
+      "not_found": "The file or revision is no longer available. Refresh to continue.",
+      "version_conflict": "The file changed since it was loaded. Refresh and review the current version before restoring again.",
+      "failed": "Could not load or restore memory files. Refresh and try again."
+    }
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

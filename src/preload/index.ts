@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { PersonalFilesAPI } from '../shared/personal-files';
 import type {
   ClientEvent,
   ServerEvent,
@@ -451,6 +452,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     runNow: (id: string): Promise<ScheduleTask | null> => ipcRenderer.invoke('schedule.runNow', id),
   },
 
+  personalFiles: {
+    list: () => ipcRenderer.invoke('personalFiles.list'),
+    read: (path) => ipcRenderer.invoke('personalFiles.read', path),
+    history: (path) => ipcRenderer.invoke('personalFiles.history', path),
+    restore: (request) => ipcRenderer.invoke('personalFiles.restore', request),
+  } satisfies PersonalFilesAPI,
+
   memory: {
     getOverview: (cwd?: string): Promise<MemoryOverview> =>
       ipcRenderer.invoke('memory.getOverview', cwd),
@@ -712,6 +720,7 @@ declare global {
         toggle: (id: string, enabled: boolean) => Promise<ScheduleTask | null>;
         runNow: (id: string) => Promise<ScheduleTask | null>;
       };
+      personalFiles: PersonalFilesAPI;
       memory: {
         getOverview: (cwd?: string) => Promise<MemoryOverview>;
         search: (payload: {

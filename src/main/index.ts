@@ -25,6 +25,7 @@ import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { MemoryService } from './memory/memory-service';
+import { personalFilesHandler } from './memory/personal-files-manager';
 import { MemoryExtension } from './memory/memory-extension';
 import { ConfigExtension } from './config/config-extension';
 import { SubagentExtension } from './agent/subagent-extension';
@@ -3025,6 +3026,19 @@ ipcMain.handle('memory.rebuildAll', async () => {
   }
   return memoryService.rebuildAll();
 });
+
+ipcMain.handle('personalFiles.list', personalFilesHandler(() => mainWindow, () =>
+  memoryService?.personalFiles.list() ?? { success: false, error: 'unavailable' }
+));
+ipcMain.handle('personalFiles.read', personalFilesHandler(() => mainWindow, (input) =>
+  memoryService?.personalFiles.read(input) ?? { success: false, error: 'unavailable' }
+));
+ipcMain.handle('personalFiles.history', personalFilesHandler(() => mainWindow, (input) =>
+  memoryService?.personalFiles.history(input) ?? { success: false, error: 'unavailable' }
+));
+ipcMain.handle('personalFiles.restore', personalFilesHandler(() => mainWindow, (input) =>
+  memoryService?.personalFiles.restore(input) ?? { success: false, error: 'unavailable' }
+));
 
 ipcMain.handle('memory.listFiles', () => {
   if (!memoryService) {

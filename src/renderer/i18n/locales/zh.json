@@ -1,4 +1,30 @@
 {
+  "personalFiles": {
+    "title": "个人记忆文件",
+    "description": "查看保存在本地 SQLite 中的 /profile.md 和其他虚拟记忆文件。这些不是磁盘上的文件。",
+    "retention": "仅显示保留的修订。恢复会保存为新版本；此处不能重新创建已删除的文件。",
+    "refresh": "刷新",
+    "loading": "正在加载记忆文件…",
+    "empty": "暂无个人记忆文件。",
+    "list": "个人记忆文件列表",
+    "current": "当前版本",
+    "emptyContent": "内容为空",
+    "history": "修订历史",
+    "noHistory": "没有保留的修订。",
+    "revision": "第 {{generation}} 代，修订 {{revision}}",
+    "deleted": "删除标记（不可恢复）",
+    "restore": "恢复此修订",
+    "confirm": "将 {{path}} 恢复到第 {{generation}} 代、修订 {{revision}}？这将替换当前内容，并在保留的历史中保存一个新版本。",
+    "restored": "已将修订恢复为新版本。",
+    "errors": {
+      "forbidden": "此窗口无法访问个人记忆文件。",
+      "unavailable": "本地个人记忆不可用。",
+      "invalid_input": "文件或修订无效。请刷新后重试。",
+      "not_found": "文件或修订已不可用。请刷新后继续。",
+      "version_conflict": "文件在加载后已更改。请刷新并检查当前版本后再恢复。",
+      "failed": "无法加载或恢复记忆文件。请刷新后重试。"
+    }
+  },
   "common": {
     "save": "保存",
     "cancel": "取消",

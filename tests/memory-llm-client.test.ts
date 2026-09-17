@@ -192,14 +192,14 @@ describe('MemoryLLMClient', () => {
     });
     const complete = () => client.complete({ systemPrompt: 's', userPrompt: 'u' });
 
-    const first = complete();
+    const first = expect(complete()).rejects.toThrow('429');
     await vi.advanceTimersByTimeAsync(2000);
-    await expect(first).rejects.toThrow('429');
+    await first;
     expect(runPiAiOneShotMock).toHaveBeenCalledTimes(2);
 
-    const second = complete();
+    const second = expect(complete()).rejects.toThrow('429');
     await vi.advanceTimersByTimeAsync(2000);
-    await expect(second).rejects.toThrow('429');
+    await second;
     expect(runPiAiOneShotMock).toHaveBeenCalledTimes(4);
     // Rate limiting is transient: the override model is retried, not bypassed.
     expect(configAt(2)?.model).toBe('blocked-model');

@@ -4,6 +4,7 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { useAppStore } from '../../store';
 import type { MemoryOverview } from '../../types';
 import { SettingsContentSection } from './shared';
+import { SettingsPersonalFiles } from './SettingsPersonalFiles';
 
 const INSTRUCTION_PRESETS = [
   { key: 'concise' },
@@ -130,6 +131,8 @@ export function SettingsPersonalization() {
           </div>
         </div>
       </SettingsContentSection>
+
+      <SettingsPersonalFiles />
 
       <SettingsContentSection
         title={t('personalization.instructionsTitle')}

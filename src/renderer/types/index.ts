@@ -7,3 +7,4 @@
  * renderer imports (`../types`) working unchanged.
  */
 export type * from '../../shared/types';
+export type * from '../../shared/personal-files';

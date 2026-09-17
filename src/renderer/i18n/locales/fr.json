@@ -1,4 +1,30 @@
 {
+  "personalFiles": {
+    "title": "Fichiers de mémoire personnelle",
+    "description": "Consultez /profile.md et les autres fichiers virtuels stockés dans SQLite en local. Ce ne sont pas des fichiers sur votre disque.",
+    "retention": "Seules les révisions conservées sont affichées. Une restauration crée une nouvelle version ; les fichiers supprimés ne peuvent pas être recréés ici.",
+    "refresh": "Actualiser",
+    "loading": "Chargement des fichiers mémoire…",
+    "empty": "Aucun fichier de mémoire personnelle pour le moment.",
+    "list": "Liste des fichiers de mémoire personnelle",
+    "current": "Version actuelle",
+    "emptyContent": "Contenu vide",
+    "history": "Historique des révisions",
+    "noHistory": "Aucune révision conservée.",
+    "revision": "Génération {{generation}}, révision {{revision}}",
+    "deleted": "Marqueur de suppression (non restaurable)",
+    "restore": "Restaurer cette révision",
+    "confirm": "Restaurer {{path}} à la génération {{generation}}, révision {{revision}} ? Le contenu actuel sera remplacé et une nouvelle version sera enregistrée dans l’historique conservé.",
+    "restored": "Révision restaurée en tant que nouvelle version.",
+    "errors": {
+      "forbidden": "Cette fenêtre ne peut pas accéder à la mémoire personnelle.",
+      "unavailable": "La mémoire personnelle locale n’est pas disponible.",
+      "invalid_input": "Fichier ou révision invalide. Actualisez puis réessayez.",
+      "not_found": "Le fichier ou la révision n’est plus disponible. Actualisez pour continuer.",
+      "version_conflict": "Le fichier a changé depuis son chargement. Actualisez et vérifiez la version actuelle avant de restaurer à nouveau.",
+      "failed": "Impossible de charger ou de restaurer les fichiers mémoire. Actualisez puis réessayez."
+    }
+  },
   "common": {
     "save": "Enregistrer",
     "cancel": "Annuler",

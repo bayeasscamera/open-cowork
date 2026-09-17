@@ -45,6 +45,7 @@ import {
 import { createMemoryTools } from './memory-tools';
 import type { Session } from '../../shared/types';
 import { MemoryFilesStore } from './memory-files-store';
+import { PersonalFilesManager } from './personal-files-manager';
 import { createMemoryFileTools, memoryFileError } from './memory-files-tools';
 
 export interface PersonalMemoryHost {
@@ -223,6 +224,12 @@ export class MemoryService {
       return false;
     }
   }
+
+  /** Settings access remains available when automatic memory is disabled. Owner is main-only. */
+  readonly personalFiles = new PersonalFilesManager(
+    () => this.getFilesStore(),
+    () => this.personalHost?.owner
+  );
 
   private getFilesStore(): MemoryFilesStore {
     // Existing raw SQLite connection; no new lifecycle resource or legacy migration.
