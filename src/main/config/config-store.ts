@@ -348,7 +348,9 @@ const defaultConfig: AppConfig = {
     },
     useEmbedding: false,
     maxNavSteps: 2,
-    ingestionConcurrency: 4,
+    // Sequential by default: memory summarization shares the provider rate
+    // limit with live conversations, so parallel extraction causes 429s.
+    ingestionConcurrency: 1,
     storageRoot: '',
     evalEnabled: false,
     evalWorkspaces: [],

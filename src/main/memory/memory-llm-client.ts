@@ -47,9 +47,15 @@ interface ResolvedMemoryModelConfig {
 export interface MemoryLLMClientOptions {
   /** How long a denied memory model is bypassed before being retried. */
   cooldownMs?: number;
+  /** How many times a rate-limited (429) memory call is retried with backoff. */
+  rateLimitRetries?: number;
+  /** Base delay in ms for the exponential 429 backoff (delay doubles per retry). */
+  rateLimitBackoffMs?: number;
 }
 
 const DEFAULT_BREAKER_COOLDOWN_MS = 10 * 60_000;
+const DEFAULT_RATE_LIMIT_RETRIES = 2;
+const DEFAULT_RATE_LIMIT_BACKOFF_MS = 5_000;
 
 /**
  * Access rejections (HTTP 401/403, or explicit model-unavailable wording) that a
@@ -62,6 +68,19 @@ function isAccessDeniedError(error: unknown): boolean {
     /\b(?:401|403)\b/.test(message) ||
     /no access to model|model .*not (?:found|available)|invalid model/i.test(message)
   );
+}
+
+/** Rate-limit rejections worth retrying patiently: memory calls are background work. */
+function isRateLimitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b429\b/.test(message) || /rate limit|too many requests/i.test(message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
 }
 
 function normalizeModelConfig(
@@ -107,12 +126,19 @@ function buildAppConfig(base: AppConfig, resolved: ResolvedMemoryModelConfig): A
 export class MemoryLLMClient implements MemoryLLMClientLike {
   private readonly brokenModels = new Map<string, number>();
   private readonly cooldownMs: number;
+  private readonly rateLimitRetries: number;
+  private readonly rateLimitBackoffMs: number;
 
   constructor(
     private readonly getConfig: () => AppConfig = () => configStore.getAll(),
     options?: MemoryLLMClientOptions
   ) {
     this.cooldownMs = Math.max(0, options?.cooldownMs ?? DEFAULT_BREAKER_COOLDOWN_MS);
+    this.rateLimitRetries = Math.max(0, options?.rateLimitRetries ?? DEFAULT_RATE_LIMIT_RETRIES);
+    this.rateLimitBackoffMs = Math.max(
+      0,
+      options?.rateLimitBackoffMs ?? DEFAULT_RATE_LIMIT_BACKOFF_MS
+    );
   }
 
   async complete(request: MemoryCompletionRequest): Promise<MemoryCompletionResponse> {
@@ -149,6 +175,30 @@ export class MemoryLLMClient implements MemoryLLMClientLike {
   }
 
   private async completeWithConfig(
+    appConfig: AppConfig,
+    llmConfig: ResolvedMemoryModelConfig,
+    request: MemoryCompletionRequest
+  ): Promise<MemoryCompletionResponse> {
+    let attempt = 0;
+    for (;;) {
+      try {
+        return await this.attemptCompletion(appConfig, llmConfig, request);
+      } catch (error) {
+        if (attempt >= this.rateLimitRetries || !isRateLimitError(error)) {
+          throw error;
+        }
+        const delayMs = this.rateLimitBackoffMs * 2 ** attempt;
+        attempt += 1;
+        logWarn(
+          `[MemoryLLMClient] Memory LLM rate limited (429); ` +
+            `retry ${attempt}/${this.rateLimitRetries} in ${delayMs / 1000}s.`
+        );
+        await sleep(delayMs);
+      }
+    }
+  }
+
+  private async attemptCompletion(
     appConfig: AppConfig,
     llmConfig: ResolvedMemoryModelConfig,
     request: MemoryCompletionRequest

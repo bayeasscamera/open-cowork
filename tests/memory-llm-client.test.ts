@@ -142,12 +142,12 @@ describe('MemoryLLMClient', () => {
   });
 
   it('propagates transient provider errors without falling back', async () => {
-    runPiAiOneShotMock.mockRejectedValueOnce(
-      new Error('429 You have reached the request limit: Maximum 5 requests within 1 minutes.')
-    );
+    runPiAiOneShotMock.mockRejectedValueOnce(new Error('fetch failed: ECONNRESET'));
     const client = new MemoryLLMClient(() => withMemoryModel(makeConfig(5000), 'blocked-model'));
 
-    await expect(client.complete({ systemPrompt: 's', userPrompt: 'u' })).rejects.toThrow('429');
+    await expect(client.complete({ systemPrompt: 's', userPrompt: 'u' })).rejects.toThrow(
+      'ECONNRESET'
+    );
     expect(runPiAiOneShotMock).toHaveBeenCalledTimes(1);
   });
 
@@ -159,5 +159,50 @@ describe('MemoryLLMClient', () => {
 
     await expect(client.complete({ systemPrompt: 's', userPrompt: 'u' })).rejects.toThrow('403');
     expect(runPiAiOneShotMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries rate-limited memory calls with exponential backoff', async () => {
+    const rateLimitError = new Error(
+      '429 You have reached the request limit: Maximum 5 requests within 1 minutes.'
+    );
+    runPiAiOneShotMock
+      .mockRejectedValueOnce(rateLimitError)
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValueOnce({ text: 'ok', hasThinking: false, durationMs: 1 });
+    const client = new MemoryLLMClient(() => makeConfig(5000), {
+      rateLimitRetries: 2,
+      rateLimitBackoffMs: 5000,
+    });
+    const pending = client.complete({ systemPrompt: 's', userPrompt: 'u' });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(pending).resolves.toEqual({ text: 'ok' });
+    expect(runPiAiOneShotMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('propagates rate-limit errors after exhausting retries without tripping the breaker', async () => {
+    const rateLimitError = new Error(
+      '429 You have reached the request limit: Maximum 5 requests within 1 minutes.'
+    );
+    runPiAiOneShotMock.mockRejectedValue(rateLimitError);
+    const client = new MemoryLLMClient(() => withMemoryModel(makeConfig(5000), 'blocked-model'), {
+      rateLimitRetries: 1,
+      rateLimitBackoffMs: 1000,
+    });
+    const complete = () => client.complete({ systemPrompt: 's', userPrompt: 'u' });
+
+    const first = complete();
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(first).rejects.toThrow('429');
+    expect(runPiAiOneShotMock).toHaveBeenCalledTimes(2);
+
+    const second = complete();
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(second).rejects.toThrow('429');
+    expect(runPiAiOneShotMock).toHaveBeenCalledTimes(4);
+    // Rate limiting is transient: the override model is retried, not bypassed.
+    expect(configAt(2)?.model).toBe('blocked-model');
+    expect(configAt(3)?.model).toBe('blocked-model');
   });
 });
