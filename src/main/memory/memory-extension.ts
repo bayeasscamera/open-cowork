@@ -17,7 +17,12 @@ export class MemoryExtension implements AgentRuntimeExtension {
   >[0]): Promise<BeforeSessionRunResult> {
     try {
       if (!this.memoryService.isSessionEnabled(session)) return { memoryEnabled: false };
-      const promptPrefix = await this.memoryService.buildPromptPrefix(session, prompt);
+      let promptPrefix = '';
+      try {
+        promptPrefix = await this.memoryService.buildPromptPrefix(session, prompt);
+      } catch {
+        // Auxiliary retrieval must not disable the independent local file store.
+      }
       if (!this.memoryService.isSessionEnabled(session)) return { memoryEnabled: false };
       return {
         promptPrefix,

@@ -76,6 +76,37 @@ describe('versioned memory service and extension integration', () => {
     expect(result.refreshSession).toBe(true);
   });
 
+  it('retains local memory tools and profile when auxiliary retrieval fails', async () => {
+    const { service, extension, raw } = setup();
+    vi.mocked(service.buildPromptPrefix).mockRejectedValue(new Error('403 auxiliary model denied'));
+    const store = new MemoryFilesStore(raw);
+    store.write('local-installation', '/profile.md', 'durable preference', 'new');
+    const result = await extension.beforeSessionRun(context());
+    expect(result.memoryEnabled).toBe(true);
+    expect(result.systemContext).toContain('durable preference');
+    expect(result.customTools?.map((tool) => tool.name)).toContain('memory_append');
+    const read = result.customTools?.find((tool) => tool.name === 'memory_read');
+    const output = await read?.execute(
+      'read-test',
+      { path: '/profile.md' },
+      undefined,
+      undefined,
+      {} as never
+    );
+    expect(output?.content[0]).toMatchObject({
+      text: expect.stringContaining('durable preference'),
+    });
+  });
+
+  it('still disables local memory when toggled off during failed retrieval', async () => {
+    const { service, extension } = setup();
+    vi.mocked(service.buildPromptPrefix).mockImplementation(async () => {
+      state.enabled = false;
+      throw new Error('403 auxiliary model denied');
+    });
+    expect(await extension.beforeSessionRun(context())).toEqual({ memoryEnabled: false });
+  });
+
   it('injects FULL escaped profile and version while bounding metadata and treating data as untrusted', () => {
     const { service, raw } = setup();
     const store = new MemoryFilesStore(raw);
