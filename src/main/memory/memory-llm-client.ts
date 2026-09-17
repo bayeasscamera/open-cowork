@@ -44,6 +44,26 @@ interface ResolvedMemoryModelConfig {
   timeoutMs: number;
 }
 
+export interface MemoryLLMClientOptions {
+  /** How long a denied memory model is bypassed before being retried. */
+  cooldownMs?: number;
+}
+
+const DEFAULT_BREAKER_COOLDOWN_MS = 10 * 60_000;
+
+/**
+ * Access rejections (HTTP 401/403, or explicit model-unavailable wording) that a
+ * model swap can actually fix — unlike timeouts, rate limits (429) or network
+ * failures, which stay transient and propagate untouched.
+ */
+function isAccessDeniedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /\b(?:401|403)\b/.test(message) ||
+    /no access to model|model .*not (?:found|available)|invalid model/i.test(message)
+  );
+}
+
 function normalizeModelConfig(
   appConfig: AppConfig,
   input: MemoryModelConfig | undefined,
@@ -85,7 +105,15 @@ function buildAppConfig(base: AppConfig, resolved: ResolvedMemoryModelConfig): A
 }
 
 export class MemoryLLMClient implements MemoryLLMClientLike {
-  constructor(private readonly getConfig: () => AppConfig = () => configStore.getAll()) {}
+  private readonly brokenModels = new Map<string, number>();
+  private readonly cooldownMs: number;
+
+  constructor(
+    private readonly getConfig: () => AppConfig = () => configStore.getAll(),
+    options?: MemoryLLMClientOptions
+  ) {
+    this.cooldownMs = Math.max(0, options?.cooldownMs ?? DEFAULT_BREAKER_COOLDOWN_MS);
+  }
 
   async complete(request: MemoryCompletionRequest): Promise<MemoryCompletionResponse> {
     const appConfig = this.getConfig();
@@ -94,6 +122,37 @@ export class MemoryLLMClient implements MemoryLLMClientLike {
       appConfig.memoryRuntime?.llm,
       appConfig.model
     );
+    const activeConfig = normalizeModelConfig(
+      appConfig,
+      { inheritFromActive: true },
+      appConfig.model
+    );
+
+    // A memory model previously denied access is bypassed until its cooldown
+    // expires, so every auxiliary call does not hammer a doomed endpoint.
+    if (this.isBreakerOpen(llmConfig) && !this.isSameResolvedConfig(llmConfig, activeConfig)) {
+      return this.completeWithConfig(appConfig, activeConfig, request);
+    }
+
+    try {
+      return await this.completeWithConfig(appConfig, llmConfig, request);
+    } catch (error) {
+      if (
+        !isAccessDeniedError(error) ||
+        this.isSameResolvedConfig(llmConfig, activeConfig)
+      ) {
+        throw error;
+      }
+      this.tripBreaker(llmConfig, error, activeConfig.model);
+      return this.completeWithConfig(appConfig, activeConfig, request);
+    }
+  }
+
+  private async completeWithConfig(
+    appConfig: AppConfig,
+    llmConfig: ResolvedMemoryModelConfig,
+    request: MemoryCompletionRequest
+  ): Promise<MemoryCompletionResponse> {
     const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -124,6 +183,45 @@ export class MemoryLLMClient implements MemoryLLMClientLike {
         clearTimeout(timeout);
       }
     }
+  }
+
+  private breakerKey(config: ResolvedMemoryModelConfig): string {
+    return [config.provider, config.customProtocol ?? '', config.baseUrl ?? '', config.model].join(
+      '|'
+    );
+  }
+
+  private isSameResolvedConfig(a: ResolvedMemoryModelConfig, b: ResolvedMemoryModelConfig): boolean {
+    return (
+      a.provider === b.provider &&
+      a.customProtocol === b.customProtocol &&
+      a.apiKey === b.apiKey &&
+      a.baseUrl === b.baseUrl &&
+      a.model === b.model
+    );
+  }
+
+  private isBreakerOpen(config: ResolvedMemoryModelConfig): boolean {
+    const until = this.brokenModels.get(this.breakerKey(config));
+    return until !== undefined && until > Date.now();
+  }
+
+  private tripBreaker(
+    config: ResolvedMemoryModelConfig,
+    error: unknown,
+    activeModel: string
+  ): void {
+    if (this.cooldownMs <= 0) {
+      return;
+    }
+    this.brokenModels.set(this.breakerKey(config), Date.now() + this.cooldownMs);
+    // Log the status only — provider error text can echo credentials fragments.
+    const message = error instanceof Error ? error.message : String(error);
+    const status = /\b(?:401|403|404)\b/.exec(message)?.[0] ?? 'access-denied';
+    logWarn(
+      `[MemoryLLMClient] Memory model "${config.model}" rejected (HTTP ${status}); ` +
+        `using active model "${activeModel}" for ${Math.round(this.cooldownMs / 60_000)} min.`
+    );
   }
 
   async embed(text: string): Promise<number[]> {
