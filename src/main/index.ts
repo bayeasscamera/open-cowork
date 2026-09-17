@@ -1309,7 +1309,20 @@ app
     const db = initDatabase();
 
     pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
-    memoryService = new MemoryService(db);
+    memoryService = new MemoryService(db, {
+      personalHost: {
+        // Stable account within this installation's userData DB, not remote authentication.
+        owner: 'local-installation',
+        isSessionEnabled: (sessionId) => !remoteManager.isRemoteSession(sessionId) &&
+          db.sessions.get(sessionId)?.memory_enabled === 1,
+        confirmDelete: async (sessionId, toolUseId, path, version) => {
+          try {
+            if (!mainWindow || mainWindow.isDestroyed() || remoteManager.isRemoteSession(sessionId) || !sessionManager) return false;
+            return (await sessionManager.requestPermission(sessionId, toolUseId, 'memory_delete', { path, if_version: version })) === 'allow';
+          } catch { return false; }
+        },
+      },
+    });
     const extensionManager = new AgentRuntimeExtensionManager([
       new MemoryExtension(memoryService),
       new ConfigExtension(configStore),

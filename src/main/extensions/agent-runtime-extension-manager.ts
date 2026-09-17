@@ -36,6 +36,9 @@ export class AgentRuntimeExtensionManager {
   async beforeSessionRun(context: BeforeSessionRunContext): Promise<BeforeSessionRunResult> {
     const promptPrefixes: string[] = [];
     const customTools: AgentRuntimeCustomTool[] = [];
+    const systemContexts: string[] = [];
+    let refreshSession = false;
+    let memoryEnabled: boolean | undefined = undefined;
 
     for (const extension of this.extensions) {
       if (!extension.beforeSessionRun) {
@@ -49,6 +52,9 @@ export class AgentRuntimeExtensionManager {
         if (result.promptPrefix?.trim()) {
           promptPrefixes.push(result.promptPrefix.trim());
         }
+        if (result.systemContext) systemContexts.push(result.systemContext);
+        refreshSession ||= result.refreshSession === true;
+        if (result.memoryEnabled !== undefined) memoryEnabled = result.memoryEnabled;
         if (result.customTools?.length) {
           customTools.push(...result.customTools);
         }
@@ -63,6 +69,9 @@ export class AgentRuntimeExtensionManager {
     return {
       promptPrefix: promptPrefixes.join('\n\n').trim() || undefined,
       customTools: mergeCustomTools(customTools),
+      systemContext: systemContexts.join('\n\n') || undefined,
+      refreshSession,
+      memoryEnabled,
     };
   }
 

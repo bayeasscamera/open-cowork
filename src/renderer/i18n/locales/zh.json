@@ -953,6 +953,7 @@
     "actions": "操作与权限",
     "useTool": "使用 {{toolName}} 工具",
     "toolDescriptions": {
+      "memory_delete": "删除此记忆文件？每次删除都需要您确认，即使已开启完全访问。",
       "write": "写入系统文件",
       "edit": "编辑系统上的现有文件",
       "bash": "执行 shell 命令",

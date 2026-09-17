@@ -115,6 +115,7 @@
     "actions": "Actions et autorisations",
     "useTool": "Utiliser l’outil {{toolName}}",
     "toolDescriptions": {
+      "memory_delete": "Supprimer ce fichier mémoire ? Votre confirmation est requise à chaque fois, même en accès total.",
       "write": "Écrire des fichiers sur votre système",
       "edit": "Modifier des fichiers existants sur votre système",
       "bash": "Exécuter des commandes shell",

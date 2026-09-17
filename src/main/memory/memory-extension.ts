@@ -12,14 +12,23 @@ export class MemoryExtension implements AgentRuntimeExtension {
   async beforeSessionRun({
     session,
     prompt,
-  }: Parameters<NonNullable<AgentRuntimeExtension['beforeSessionRun']>>[0]): Promise<BeforeSessionRunResult | void> {
-    if (!this.memoryService.isEnabled() || !session.memoryEnabled) {
-      return;
+  }: Parameters<
+    NonNullable<AgentRuntimeExtension['beforeSessionRun']>
+  >[0]): Promise<BeforeSessionRunResult> {
+    try {
+      if (!this.memoryService.isSessionEnabled(session)) return { memoryEnabled: false };
+      const promptPrefix = await this.memoryService.buildPromptPrefix(session, prompt);
+      if (!this.memoryService.isSessionEnabled(session)) return { memoryEnabled: false };
+      return {
+        promptPrefix,
+        systemContext: this.memoryService.buildFileSystemContext(session),
+        customTools: this.memoryService.getTools(session),
+        memoryEnabled: true,
+        refreshSession: true,
+      };
+    } catch {
+      return { memoryEnabled: false, refreshSession: true };
     }
-
-    return {
-      promptPrefix: await this.memoryService.buildPromptPrefix(session, prompt),
-    };
   }
 
   async afterSessionRun({
@@ -27,19 +36,21 @@ export class MemoryExtension implements AgentRuntimeExtension {
     prompt,
     messages,
   }: Parameters<NonNullable<AgentRuntimeExtension['afterSessionRun']>>[0]): Promise<void> {
-    if (!this.memoryService.isEnabled() || !session.memoryEnabled) {
-      return;
+    try {
+      if (!this.memoryService.isSessionEnabled(session)) return;
+      await this.memoryService.enqueueIngestion({ session, prompt, messages });
+    } catch {
+      /* Memory failures must not fail a conversation or expose its content. */
     }
-    await this.memoryService.enqueueIngestion({
-      session,
-      prompt,
-      messages,
-    });
   }
 
   async onSessionDeleted({
     sessionId,
   }: Parameters<NonNullable<AgentRuntimeExtension['onSessionDeleted']>>[0]): Promise<void> {
-    await this.memoryService.deleteSession(sessionId);
+    try {
+      await this.memoryService.deleteSession(sessionId);
+    } catch {
+      /* Best effort legacy cleanup. */
+    }
   }
 }

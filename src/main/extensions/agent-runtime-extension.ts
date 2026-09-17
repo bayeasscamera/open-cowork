@@ -14,6 +14,10 @@ export interface BeforeSessionRunContext {
 export interface BeforeSessionRunResult {
   promptPrefix?: string;
   customTools?: AgentRuntimeCustomTool[];
+  systemContext?: string;
+  // Recreate SDK state rather than retaining memory context/tools between turns.
+  refreshSession?: boolean;
+  memoryEnabled?: boolean;
 }
 
 export interface AfterSessionRunContext {

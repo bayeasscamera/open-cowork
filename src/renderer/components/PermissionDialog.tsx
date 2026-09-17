@@ -140,7 +140,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
         </div>
 
         {/* Always Allow option */}
-        {!pendingAlwaysAllow ? (
+        {permission.toolName !== 'memory_delete' && (!pendingAlwaysAllow ? (
           <button
             onClick={() => {
               const dangerousTools = ['bash', 'write', 'edit', 'execute_command'];
@@ -180,7 +180,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
               </button>
             </div>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );

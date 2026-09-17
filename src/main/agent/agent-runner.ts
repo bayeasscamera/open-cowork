@@ -547,6 +547,7 @@ interface CachedPiSession {
   thinkingLevel: string;
   runtimeSignature: string;
   skillsSignature?: string;
+  refreshMemoryContext?: boolean;
   ollamaNumCtx?: { value: number };
 }
 
@@ -1874,7 +1875,19 @@ ${hints.join('\n')}
             existingMessages,
             isColdStart: !cachedSession,
           })
-        : { promptPrefix: undefined, customTools: [] };
+        : { promptPrefix: undefined, customTools: [], memoryEnabled: false, refreshSession: false, systemContext: undefined };
+      const memoryEnabled = extensionResult.memoryEnabled === true;
+      // SDK tools/system prompt are creation-time state. Rebuild before history
+      // reconstruction, including the first disabled turn after an enabled run.
+      if (cachedSession && (extensionResult.refreshSession || cachedSession.refreshMemoryContext)) {
+        try {
+          cachedSession.session.dispose();
+        } catch {
+          logWarn('[CoworkAgentRunner] Could not dispose memory session cache');
+        }
+        this.piSessions.delete(session.id);
+        cachedSession = undefined;
+      }
 
       let contextualPrompt = prompt;
       if (!cachedSession) {
@@ -2155,9 +2168,10 @@ Tool routing:
         EliteCodingIntelligence.getElitePrompt(),
         AdaptiveStrategyEngine.getStrategicPrompt(),
         this.getBundledPathHints(),
-        this.memoryManager?.formatUserPreferencesForContext() || '',
-        this.memoryManager?.formatErrorPatternsForContext(prompt) || '',
-        this.memoryManager?.formatProjectResumptionContext(session.id) || '',
+        extensionResult.systemContext || '',
+        memoryEnabled ? this.memoryManager?.formatUserPreferencesForContext() || '' : '',
+        memoryEnabled ? this.memoryManager?.formatErrorPatternsForContext(prompt) || '' : '',
+        memoryEnabled ? this.memoryManager?.formatProjectResumptionContext(session.id) || '' : '',
       ]
         .filter((section): section is string => Boolean(section && section.trim()))
         .join('\n\n');
@@ -2370,6 +2384,7 @@ Tool routing:
           thinkingLevel,
           runtimeSignature: sessionRuntimeSignature,
           skillsSignature,
+          refreshMemoryContext: extensionResult.refreshSession,
         });
 
         // Ollama: wrap _onPayload to inject num_ctx into every request
@@ -3047,10 +3062,16 @@ Tool routing:
 
         // Active Dialectic Learning (Hermes / Honcho inspired):
         // Automatically extract habits, preferences, and style conventions from the turn.
-        if (this.memoryManager) {
+        // Only when memory is enabled at global AND session level — mirrors MemoryExtension gates.
+        if (
+          this.memoryManager &&
+          memoryEnabled &&
+          configStore.get('memoryEnabled') !== false &&
+          session.memoryEnabled
+        ) {
           const learner = new ActivePreferenceLearner(this.memoryManager);
           learner
-            .extractAndRecord(existingMessages)
+            .extractAndRecord(existingMessages, () => configStore.get('memoryEnabled') !== false && session.memoryEnabled)
             .then((count) => {
               if (count > 0) {
                 this.sendTraceStep(session.id, {

@@ -931,6 +931,7 @@
     "actions": "Actions & permissions",
     "useTool": "Use the {{toolName}} tool",
     "toolDescriptions": {
+      "memory_delete": "Delete this memory file? This requires your confirmation every time, including in full access mode.",
       "write": "Write to files on your system",
       "edit": "Edit existing files on your system",
       "bash": "Execute shell commands",

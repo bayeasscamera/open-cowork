@@ -41,8 +41,8 @@ export class ActivePreferenceLearner {
   /**
    * Run background non-blocking preference extraction on turn completion
    */
-  async extractAndRecord(messages: Message[]): Promise<number> {
-    if (messages.length < 2) return 0;
+  async extractAndRecord(messages: Message[], isEnabled: () => boolean = () => configStore.get('memoryEnabled') !== false): Promise<number> {
+    if (!isEnabled() || messages.length < 2) return 0;
 
     const userMessages = messages
       .filter((m) => m.role === 'user')
@@ -71,6 +71,7 @@ export class ActivePreferenceLearner {
         { temperature: 0.1 }
       );
 
+      if (!isEnabled()) return 0; // A toggle while the LLM was running revokes persistence.
       const cleaned = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
       const list = JSON.parse(cleaned) as Array<{ key: string; value: string; confidence?: number }>;
 
