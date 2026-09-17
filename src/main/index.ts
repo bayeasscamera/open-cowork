@@ -1873,6 +1873,8 @@ ipcMain.handle('config.save', async (_event, newConfig: Partial<AppConfig>) => {
   log('[Config] Saving config:', {
     ...newConfig,
     apiKey: newConfig.apiKey ? '***' : '',
+    tavilyApiKey: newConfig.tavilyApiKey ? '***' : undefined,
+    braveApiKey: newConfig.braveApiKey ? '***' : undefined,
     memoryRuntime: newConfig.memoryRuntime
       ? {
           ...newConfig.memoryRuntime,

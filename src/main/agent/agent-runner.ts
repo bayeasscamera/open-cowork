@@ -90,6 +90,7 @@ import { EliteCodingIntelligence } from './elite-coding-intelligence';
 import { SkillSynthesizer } from '../skills/skill-synthesizer';
 import type { MemoryManager } from '../memory/memory-manager';
 import { DynamicToolRegistry, buildAgentMetaTools } from '../tools/dynamic-tool-creator';
+import { buildWebTools } from './web-tools';
 import { AdaptiveStrategyEngine } from './adaptive-strategy-engine';
 import { ActivePreferenceLearner } from '../memory/active-preference-learner';
 
@@ -2148,8 +2149,8 @@ If your answer uses linkable content from MCP tools, include a "Sources:" sectio
 </citation_requirements>`,
         `<tool_behavior>
 Tool routing:
-- If user explicitly asks to use Chrome/browser/web navigation, prioritize Chrome MCP tools (mcp__Chrome__*) over generic WebSearch/WebFetch.
-- Use WebSearch/WebFetch only when Chrome MCP is unavailable or the user explicitly asks for generic web search.
+- web_search and web_fetch are NATIVE built-in tools, always available. Use web_search for general lookups, then web_fetch to read a result in full.
+- If user explicitly asks to use Chrome/browser/web navigation, prioritize Chrome MCP tools (mcp__Chrome__*) over the native web tools.
 </tool_behavior>`,
         EliteCodingIntelligence.getElitePrompt(),
         AdaptiveStrategyEngine.getStrategicPrompt(),
@@ -2169,8 +2170,18 @@ Tool routing:
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
       const extensionCustomTools = extensionResult.customTools || [];
       const metaTools = buildAgentMetaTools();
+      const webTools = buildWebTools({
+        tavilyApiKey: runtimeConfig.tavilyApiKey || process.env.TAVILY_API_KEY || '',
+        braveApiKey: runtimeConfig.braveApiKey || process.env.BRAVE_API_KEY || '',
+      });
       const dynamicTools = DynamicToolRegistry.getInstance().getPiToolDefinitions();
-      const customTools = [...mcpCustomTools, ...extensionCustomTools, ...metaTools, ...dynamicTools];
+      const customTools = [
+        ...mcpCustomTools,
+        ...extensionCustomTools,
+        ...metaTools,
+        ...webTools,
+        ...dynamicTools,
+      ];
       if (mcpCustomTools.length > 0 || dynamicTools.length > 0) {
         log(
           `[CoworkAgentRunner] Registered ${customTools.length} total customTools (MCP: ${mcpCustomTools.length}, Dynamic: ${dynamicTools.length}):`,

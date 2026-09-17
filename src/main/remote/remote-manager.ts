@@ -660,6 +660,8 @@ export class RemoteManager extends EventEmitter {
         'LS',
         'WebFetch',
         'WebSearch',
+        'web_fetch',
+        'web_search',
         // MCP Chrome tools (for browsing)
         'mcp__Chrome__navigate_page',
         'mcp__Chrome__take_screenshot',
@@ -1034,7 +1036,16 @@ export class RemoteManager extends EventEmitter {
     if (!channelInfo || !this.gateway) return;
 
     // Only send notifications for interesting tools
-    const notifyTools = ['Bash', 'Write', 'Edit', 'WebSearch', 'WebFetch', 'mcp__Chrome__'];
+    const notifyTools = [
+      'Bash',
+      'Write',
+      'Edit',
+      'WebSearch',
+      'WebFetch',
+      'web_search',
+      'web_fetch',
+      'mcp__Chrome__',
+    ];
     const shouldNotify = notifyTools.some((t) => toolName.includes(t));
 
     if (!shouldNotify) return;

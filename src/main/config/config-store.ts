@@ -125,6 +125,10 @@ export interface AppConfig {
   // Personalization: free-form user instructions injected into agent system prompts
   coworkInstructions: string;
 
+  // Optional native web_search provider keys (empty = DuckDuckGo fallback, no key needed)
+  tavilyApiKey: string;
+  braveApiKey: string;
+
   // Tray icon + global Alt+Space toggle (background quick access)
   trayEnabled: boolean;
 
@@ -320,6 +324,8 @@ const defaultConfig: AppConfig = {
   sandboxEnabled: false,
   memoryEnabled: true,
   coworkInstructions: '',
+  tavilyApiKey: '',
+  braveApiKey: '',
   trayEnabled: true,
   memoryRuntime: {
     llm: {
@@ -1078,6 +1084,10 @@ export class ConfigStore {
         typeof raw.coworkInstructions === 'string'
           ? raw.coworkInstructions
           : defaultConfig.coworkInstructions,
+      tavilyApiKey:
+        typeof raw.tavilyApiKey === 'string' ? raw.tavilyApiKey : defaultConfig.tavilyApiKey,
+      braveApiKey:
+        typeof raw.braveApiKey === 'string' ? raw.braveApiKey : defaultConfig.braveApiKey,
       trayEnabled: toBoolean(raw.trayEnabled, defaultConfig.trayEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       enableThinking: projected.enableThinking,
@@ -1500,6 +1510,10 @@ export class ConfigStore {
         updates.coworkInstructions !== undefined
           ? updates.coworkInstructions
           : current.coworkInstructions,
+      tavilyApiKey:
+        updates.tavilyApiKey !== undefined ? updates.tavilyApiKey : current.tavilyApiKey,
+      braveApiKey:
+        updates.braveApiKey !== undefined ? updates.braveApiKey : current.braveApiKey,
       memoryRuntime:
         updates.memoryRuntime !== undefined
           ? normalizeMemoryRuntimeConfig(updates.memoryRuntime)

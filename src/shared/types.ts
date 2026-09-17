@@ -725,6 +725,9 @@ export interface AppConfig {
   memoryEnabled?: boolean;
   /** Personalization: free-form instructions injected into agent system prompts. */
   coworkInstructions?: string;
+  /** Optional native web_search provider keys (empty = DuckDuckGo fallback). */
+  tavilyApiKey?: string;
+  braveApiKey?: string;
   /** Menu-bar tray icon + Alt+Space global toggle (background quick access). */
   trayEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;
