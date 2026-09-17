@@ -20,7 +20,8 @@ import {
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import type { ChildProcess } from 'child_process';
 import { createHash } from 'crypto';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow } from 'electron';
+import { safeOpenExternal } from '../utils/safe-open-external';
 
 import path from 'path';
 import { connectWithOAuthRetry, OpenCoworkMcpOAuthProvider } from './mcp-oauth';
@@ -1158,15 +1159,13 @@ export class MCPManager {
   }
 
   private async openMcpAuthorizationUrl(serverName: string, url: string): Promise<void> {
-    const parsedUrl = new URL(url);
-    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-      throw new Error(
-        `MCP OAuth authorization URL for ${serverName} uses unsupported protocol: ${parsedUrl.protocol}`
-      );
+    try {
+      if (!(await safeOpenExternal(url, false))) {
+        throw new Error('Unable to open MCP OAuth authorization URL');
+      }
+    } catch {
+      throw new Error(`Unable to open MCP OAuth authorization for ${serverName}`);
     }
-
-    log(`[MCPManager] Opening MCP OAuth authorization for ${serverName}: ${parsedUrl.origin}`);
-    await shell.openExternal(parsedUrl.toString());
   }
 
   /**

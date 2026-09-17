@@ -139,6 +139,26 @@ describe('MCPManager streamable HTTP OAuth', () => {
     });
   });
 
+  it('reports an OAuth browser failure without leaking authorization details', async () => {
+    mockState.mockOpenExternal.mockRejectedValue(
+      new Error('https://auth.example.com/?token=secret')
+    );
+    const manager = new MCPManager();
+    await manager.initializeServers([
+      {
+        enabled: true,
+        id: 'oauth-server',
+        name: 'OAuth MCP',
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/v1/mcp',
+      },
+    ]);
+    const statuses = manager.getServerStatus();
+    expect(statuses).toEqual([expect.objectContaining({ connected: false, id: 'oauth-server' })]);
+    expect(JSON.stringify(statuses)).not.toContain('token=secret');
+    expect(mockState.mockClientConnect).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the browser, completes OAuth, and reconnects the streamable HTTP client', async () => {
     const manager = new MCPManager();
     const config: MCPServerConfig = {

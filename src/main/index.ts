@@ -93,6 +93,7 @@ import {
   setDevLogsEnabled,
   isDevLogsEnabled,
 } from './utils/logger';
+import { safeOpenExternal } from './utils/safe-open-external';
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { SystemNotifier } from './utils/system-notifier';
@@ -655,7 +656,7 @@ function createWindow() {
       return { action: 'deny' };
     }
     if (isExternalUrl(url)) {
-      void shell.openExternal(url);
+      void safeOpenExternal(url);
       return { action: 'deny' };
     }
     return { action: 'allow' };
@@ -670,7 +671,7 @@ function createWindow() {
     }
     if (isExternalUrl(url)) {
       event.preventDefault();
-      void shell.openExternal(url);
+      void safeOpenExternal(url);
     }
   });
 
@@ -1745,24 +1746,7 @@ ipcMain.handle('system.getTheme', () => {
   }
 });
 
-ipcMain.handle('shell.openExternal', async (_event, url: string) => {
-  if (!url) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
-      logWarn('[shell.openExternal] Blocked URL with disallowed protocol:', parsed.protocol);
-      return false;
-    }
-  } catch {
-    logWarn('[shell.openExternal] Blocked invalid URL:', url);
-    return false;
-  }
-
-  return shell.openExternal(url);
-});
+ipcMain.handle('shell.openExternal', (_event, url: unknown) => safeOpenExternal(url));
 
 ipcMain.handle('shell.showItemInFolder', async (_event, filePath: string, cwd?: string) => {
   return revealFileInFolder(filePath, cwd);
