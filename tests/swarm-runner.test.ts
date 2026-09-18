@@ -54,9 +54,11 @@ import {
   resolveSubAgentProfile,
   SubAgentTaskTimeoutError,
   TaskSlotLimiter,
+  withConfinement,
   withTaskTimeout,
   type SubAgentSessionArgs,
 } from '../src/main/agent/swarm-runner';
+import type { AgentTool } from '@mariozechner/pi-agent-core';
 
 function makeConfig(subAgents: Partial<AppConfig['subAgents']>): AppConfig {
   const profile = (apiKey: string, baseUrl: string, model: string) => ({
@@ -283,6 +285,39 @@ describe('TaskSlotLimiter', () => {
     limiter.release();
     limiter.release();
     expect(limiter.activeCount).toBe(0);
+  });
+});
+
+describe('withConfinement', () => {
+  const root = '/workspace';
+
+  function fakeWriteTool(): { tool: AgentTool; execute: ReturnType<typeof vi.fn> } {
+    const execute = vi.fn(async () => ({ content: [{ type: 'text', text: 'written' }], details: undefined }));
+    const tool = {
+      name: 'write',
+      label: 'write',
+      execute,
+    } as unknown as AgentTool;
+    return { tool, execute };
+  }
+
+  it('refuses calls escaping the workspace without invoking the real tool', async () => {
+    const { tool, execute } = fakeWriteTool();
+    const confined = withConfinement(tool, root);
+    const result = await confined.execute('call-1', { path: '../escape.md' }, undefined, undefined);
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.content[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('Blocked'),
+    });
+  });
+
+  it('lets confined calls reach the real tool', async () => {
+    const { tool, execute } = fakeWriteTool();
+    const confined = withConfinement(tool, root);
+    const result = await confined.execute('call-2', { path: 'inside.md' }, undefined, undefined);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(result.content[0]).toMatchObject({ type: 'text', text: 'written' });
   });
 });
 

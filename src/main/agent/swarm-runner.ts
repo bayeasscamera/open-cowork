@@ -28,6 +28,7 @@ import {
   SettingsManager as PiSettingsManager,
 } from '@mariozechner/pi-coding-agent';
 import type { Model, Api } from '@mariozechner/pi-ai';
+import type { AgentTool, AgentToolUpdateCallback } from '@mariozechner/pi-agent-core';
 import { AuthStorage, ModelRegistry } from './shared-auth';
 import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import {
@@ -251,6 +252,50 @@ export function collectModifiedPath(
   return target.resolved;
 }
 
+/**
+ * Wrap a coding tool so any path-bearing call escaping the workspace is
+ * refused by the tool itself — independent of session-level hooks, which
+ * the child session may not support (setBeforeToolCall is absent in this
+ * SDK version, as the real headless run proved).
+ */
+// `any` mirrors the SDK's own alias: createAgentSession takes tools as
+// `type Tool = AgentTool<any>`, and only that variance accepts the concrete
+// per-tool parameter schemas.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyTool = AgentTool<any>;
+
+export function withConfinement(tool: AnyTool, root: string): AnyTool {
+  const hook = buildConfinementHook(root);
+  return {
+    ...tool,
+    execute: async (
+      toolCallId: string,
+      // Mirrors the SDK alias (params: any) — see AnyTool above.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      params: any,
+      signal?: AbortSignal,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onUpdate?: AgentToolUpdateCallback<any>
+    ) => {
+      const decision = await hook({ toolName: tool.name, args: params });
+      if (decision?.block) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                decision.reason ||
+                'Blocked: this path escapes the sub-agent workspace. Work inside the workspace only.',
+            },
+          ],
+          details: undefined,
+        };
+      }
+      return tool.execute(toolCallId, params, signal, onUpdate);
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Guardrails: bounded concurrency + per-task timeout
 // ---------------------------------------------------------------------------
@@ -383,6 +428,8 @@ async function launchSubAgentSession(
 
   // No bash tool: a free-form shell cannot be reliably confined without an
   // OS sandbox, and the swarm requires writes to stay inside the workspace.
+  // Every tool is additionally confined by a wrapper refusing paths that
+  // escape the workspace.
   const tools = [
     createReadTool(args.cwd),
     createWriteTool(args.cwd),
@@ -390,7 +437,7 @@ async function launchSubAgentSession(
     createFindTool(args.cwd),
     createGrepTool(args.cwd),
     createLsTool(args.cwd),
-  ];
+  ].map((tool) => withConfinement(tool, args.cwd));
 
   const childSystemPrompt = buildChildSystemPrompt(args.task);
   const resourceLoader = new DefaultResourceLoader({
@@ -561,6 +608,7 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
         };
       } catch (error) {
         if (profile.source === 'inherited') {
+          logError(`[SwarmRunner] Task ${task.role} failed on model "${profile.label}":`, error);
           throw error;
         }
         // Exactly one fallback attempt — never a retry loop.
