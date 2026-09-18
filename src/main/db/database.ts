@@ -3,6 +3,7 @@
  * Provides persistent storage for sessions, messages, and other data
  */
 
+import './native-module-guard';
 import Database from 'better-sqlite3';
 import { app } from 'electron';
 import { join } from 'path';
