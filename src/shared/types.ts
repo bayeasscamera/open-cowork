@@ -482,6 +482,10 @@ export type ClientEvent =
   | { type: 'permission.response'; payload: { toolUseId: string; result: PermissionResult } }
   | { type: 'sudo.password.response'; payload: { toolUseId: string; password: string | null } }
   | { type: 'settings.update'; payload: Record<string, unknown> }
+  | {
+      type: 'config.createSet';
+      payload: { name: string; mode?: 'blank' | 'clone'; fromSetId?: string };
+    }
   | { type: 'folder.select'; payload: Record<string, never> }
   | { type: 'workdir.get'; payload: Record<string, never> }
   | { type: 'workdir.set'; payload: { path: string; sessionId?: string } }

@@ -3104,7 +3104,37 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       return { success: false, path: '', error: 'User cancelled' };
     }
 
-    case 'settings.update':
+    case 'config.createSet': {
+      const payload = event.payload as { name?: unknown; mode?: unknown; fromSetId?: unknown };
+      if (typeof payload.name !== 'string' || !payload.name.trim()) {
+        return { success: false, error: 'name is required' };
+      }
+      try {
+        const previousActiveId = configStore.getAll().activeConfigSetId;
+        configStore.createSet({
+          name: payload.name.trim(),
+          mode: payload.mode === 'blank' ? 'blank' : 'clone',
+          fromSetId: typeof payload.fromSetId === 'string' ? payload.fromSetId : undefined,
+        });
+        // createSet activates the new set: restore the user's previous active
+        // set so creating one from RPC never changes the running profile.
+        if (previousActiveId && configStore.getAll().activeConfigSetId !== previousActiveId) {
+          configStore.switchSet({ id: previousActiveId });
+        }
+        // NEVER return credentials: only the id and display name of each set.
+        const sets = configStore
+          .getAll()
+          .configSets.map((set) => ({ id: set.id, name: set.name }));
+        return { success: true, sets };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'createSet failed',
+        };
+      }
+    }
+
+    case 'settings.update': {
       if (
         event.payload.theme === 'dark' ||
         event.payload.theme === 'light' ||
@@ -3139,7 +3169,22 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       if (typeof (event.payload as { systemNotifications?: unknown }).systemNotifications === 'boolean') {
         SystemNotifier.setEnabled((event.payload as { systemNotifications: boolean }).systemNotifications);
       }
+
+      // Sub-agent swarm settings: non-sensitive (configSet ids, timeouts,
+      // concurrency) and normalized by configStore.update.
+      const subAgents = (event.payload as { subAgents?: unknown }).subAgents;
+      if (typeof subAgents === 'object' && subAgents !== null) {
+        configStore.update({ subAgents: subAgents as Partial<AppConfig>['subAgents'] });
+        sendToRenderer({
+          type: 'config.status',
+          payload: {
+            isConfigured: configStore.isConfigured(),
+            config: configStore.getAll(),
+          },
+        });
+      }
       return null;
+    }
 
     default:
       logWarn('Unknown event type:', event);
