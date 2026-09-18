@@ -47,28 +47,33 @@ describe('settings sub-agents UI → persisted config', () => {
   it('normalizes a UI draft with the same clamps as the store', () => {
     const update = buildSubAgentsUpdate({
       configSetId: '  cheap  ',
+      modelId: ' qwen3.8-flash ',
       perRole: {
-        reviewer: ' set-2 ',
-        developer: '   ',
-        bogus: 'x',
+        reviewer: { configSetId: ' set-2 ', modelId: ' gpt-5.4 ' },
+        developer: { configSetId: '   ' },
       } as Parameters<typeof buildSubAgentsUpdate>[0]['perRole'],
       timeoutMs: 5,
       maxConcurrent: 99,
     });
     expect(update).toEqual({
       configSetId: 'cheap',
-      perRole: { reviewer: 'set-2' },
+      modelId: 'qwen3.8-flash',
+      perRole: { reviewer: { configSetId: 'set-2', modelId: 'gpt-5.4' } },
       timeoutMs: 10_000,
       maxConcurrent: 8,
     });
-    expect(buildSubAgentsUpdate({ configSetId: '', perRole: {}, timeoutMs: 120_000, maxConcurrent: 2 }).configSetId).toBe('');
+    expect(
+      buildSubAgentsUpdate({ configSetId: '', modelId: undefined, perRole: {}, timeoutMs: 120_000, maxConcurrent: 2 })
+        .configSetId
+    ).toBe('');
   });
 
   it('persists a UI save and keeps the value across a re-read (app reload)', () => {
     const store = new ConfigStore();
     const payload = buildSubAgentsUpdate({
       configSetId: 'cheap',
-      perRole: { reviewer: 'set-2' },
+      modelId: 'qwen3.8-flash',
+      perRole: { reviewer: { configSetId: 'set-2', modelId: 'gpt-5.4' } },
       timeoutMs: 90_000,
       maxConcurrent: 4,
     });
@@ -81,6 +86,15 @@ describe('settings sub-agents UI → persisted config', () => {
 
     store.update({ subAgents: { configSetId: '', perRole: {}, timeoutMs: 120_000, maxConcurrent: 2 } });
     expect(store.getAll().subAgents?.configSetId).toBe('');
+  });
+
+  it('migrates a legacy per-role string config on read', () => {
+    const store = new ConfigStore();
+    // Simulate a config saved before the { configSetId, modelId } format.
+    store.update({ subAgents: { configSetId: 'cheap', perRole: { reviewer: 'set-2' } } as unknown as Parameters<typeof store.update>[0]['subAgents'] });
+    expect(store.getAll().subAgents?.perRole).toEqual({
+      reviewer: { configSetId: 'set-2', modelId: undefined },
+    });
   });
 
   it('the component saves through the existing config.save IPC with a normalized payload', () => {

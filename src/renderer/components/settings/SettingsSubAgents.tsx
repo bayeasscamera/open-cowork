@@ -12,7 +12,9 @@ export const SUB_AGENT_ROLES: SubAgentRoleKey[] = [
 
 export interface SubAgentsDraft {
   configSetId: string;
-  perRole: Partial<Record<SubAgentRoleKey, string>>;
+  /** Model pinned inside the selected configSet (empty = its active model). */
+  modelId?: string;
+  perRole: Partial<Record<SubAgentRoleKey, { configSetId: string; modelId?: string }>>;
   timeoutMs: number;
   maxConcurrent: number;
 }
@@ -20,6 +22,10 @@ export interface SubAgentsDraft {
 interface ConfigSetLite {
   id: string;
   name: string;
+  /** The set's currently active model. */
+  activeModel: string;
+  /** Every model configured in the set (active + customModels), deduplicated. */
+  models: string[];
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -38,15 +44,19 @@ function clamp(value: number, min: number, max: number): number {
  * the store would silently rewrite.
  */
 export function buildSubAgentsUpdate(draft: SubAgentsDraft): SubAgentsDraft {
-  const perRole: Partial<Record<SubAgentRoleKey, string>> = {};
+  const perRole: Partial<Record<SubAgentRoleKey, { configSetId: string; modelId?: string }>> = {};
   for (const role of SUB_AGENT_ROLES) {
-    const id = draft.perRole?.[role];
-    if (typeof id === 'string' && id.trim()) {
-      perRole[role] = id.trim();
+    const selection = draft.perRole?.[role];
+    if (typeof selection?.configSetId === 'string' && selection.configSetId.trim()) {
+      perRole[role] = {
+        configSetId: selection.configSetId.trim(),
+        modelId: typeof selection.modelId === 'string' && selection.modelId.trim() ? selection.modelId.trim() : undefined,
+      };
     }
   }
   return {
     configSetId: typeof draft.configSetId === 'string' ? draft.configSetId.trim() : '',
+    modelId: typeof draft.modelId === 'string' && draft.modelId.trim() ? draft.modelId.trim() : undefined,
     perRole,
     timeoutMs: clamp(
       Math.round(Number(draft.timeoutMs) || DEFAULT_TIMEOUT_MS),
@@ -87,20 +97,38 @@ export function SettingsSubAgents() {
     try {
       const config = await window.electronAPI.config.get();
       if (id !== requestId.current) return;
-      const sub = (config as { subAgents?: Partial<SubAgentsDraft> }).subAgents;
+      const raw = config as {
+        subAgents?: Partial<SubAgentsDraft>;
+        configSets?: Array<{
+          id: string;
+          name: string;
+          activeProfileKey?: string;
+          profiles?: Record<string, { model?: string; customModels?: string[] }>;
+        }>;
+      };
+      const sub = raw.subAgents;
       setDraft(
         buildSubAgentsUpdate({
           configSetId: sub?.configSetId ?? '',
+          modelId: sub?.modelId,
           perRole: sub?.perRole ?? {},
           timeoutMs: sub?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           maxConcurrent: sub?.maxConcurrent ?? DEFAULT_MAX_CONCURRENT,
         })
       );
       setSets(
-        (config as { configSets?: ConfigSetLite[] }).configSets?.map((s) => ({
-          id: s.id,
-          name: s.name,
-        })) ?? []
+        raw.configSets?.map((s) => {
+          const profile = (s.activeProfileKey && s.profiles?.[s.activeProfileKey]) ||
+            Object.values(s.profiles ?? {})[0];
+          const models = [
+            ...new Set(
+              [profile?.model, ...(profile?.customModels ?? [])].filter(
+                (m): m is string => typeof m === 'string' && m.trim().length > 0
+              )
+            ),
+          ];
+          return { id: s.id, name: s.name, activeModel: profile?.model ?? '', models };
+        }) ?? []
       );
     } catch {
       if (id === requestId.current) setError('failed');
@@ -133,6 +161,7 @@ export function SettingsSubAgents() {
       setDraft(
         buildSubAgentsUpdate({
           configSetId: sub?.configSetId ?? '',
+          modelId: sub?.modelId,
           perRole: sub?.perRole ?? {},
           timeoutMs: sub?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           maxConcurrent: sub?.maxConcurrent ?? DEFAULT_MAX_CONCURRENT,
@@ -165,49 +194,125 @@ export function SettingsSubAgents() {
         </label>
 
         {draft.configSetId !== '' && (
-          <select
-            className={`${inputClass} w-64`}
-            disabled={busy}
-            value={draft.configSetId}
-            aria-label={t('subAgents.configSet')}
-            onChange={(e) => setDraft((prev) => ({ ...prev, configSetId: e.target.value }))}
-          >
-            {sets.map((set) => (
-              <option key={set.id} value={set.id}>
-                {set.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-col gap-2">
+            <select
+              className={`${inputClass} w-64`}
+              disabled={busy}
+              value={draft.configSetId}
+              aria-label={t('subAgents.configSet')}
+              onChange={(e) =>
+                setDraft((prev) => ({ ...prev, configSetId: e.target.value, modelId: undefined }))
+              }
+            >
+              {sets.map((set) => (
+                <option key={set.id} value={set.id}>
+                  {set.name}
+                </option>
+              ))}
+            </select>
+            {(() => {
+              const chosen = sets.find((set) => set.id === draft.configSetId);
+              if (!chosen || chosen.models.length === 0) return null;
+              return (
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  <span className="w-24 text-xs text-text-muted">{t('subAgents.model')}</span>
+                  <select
+                    className={`${inputClass} flex-1 max-w-96`}
+                    disabled={busy}
+                    value={draft.modelId ?? chosen.activeModel}
+                    aria-label={t('subAgents.model')}
+                    onChange={(e) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        modelId: e.target.value === chosen.activeModel ? undefined : e.target.value,
+                      }))
+                    }
+                  >
+                    {chosen.models.map((model) => (
+                      <option key={model} value={model}>
+                        {model === chosen.activeModel ? `${model} (${t('subAgents.activeModel')})` : model}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            })()}
+          </div>
         )}
 
         <details className="text-sm text-text-secondary">
           <summary className="cursor-pointer select-none text-xs text-text-muted">
             {t('subAgents.roleOverrides')}
           </summary>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {SUB_AGENT_ROLES.map((role) => (
-              <label key={role} className="flex items-center gap-2">
-                <span className="w-20 text-xs text-text-muted">{t(`subAgents.role.${role}`)}</span>
-                <select
-                  className={`${inputClass} flex-1`}
-                  disabled={busy}
-                  value={draft.perRole[role] ?? ''}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      perRole: { ...prev.perRole, [role]: e.target.value },
-                    }))
-                  }
-                >
-                  <option value="">{t('subAgents.defaultProfile')}</option>
-                  {sets.map((set) => (
-                    <option key={set.id} value={set.id}>
-                      {set.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {SUB_AGENT_ROLES.map((role) => {
+              const selection = draft.perRole[role];
+              const chosenSet = sets.find((set) => set.id === selection?.configSetId);
+              return (
+                <div key={role} className="flex flex-col gap-1">
+                  <label className="flex items-center gap-2">
+                    <span className="w-20 text-xs text-text-muted">{t(`subAgents.role.${role}`)}</span>
+                    <select
+                      className={`${inputClass} flex-1`}
+                      disabled={busy}
+                      value={selection?.configSetId ?? ''}
+                      onChange={(e) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          perRole: {
+                            ...prev.perRole,
+                            [role]: e.target.value
+                              ? { configSetId: e.target.value }
+                              : undefined,
+                          },
+                        }))
+                      }
+                    >
+                      <option value="">{t('subAgents.defaultProfile')}</option>
+                      {sets.map((set) => (
+                        <option key={set.id} value={set.id}>
+                          {set.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {chosenSet && chosenSet.models.length > 0 && (
+                    <label className="flex items-center gap-2 pl-22">
+                      <span className="w-20 text-xs text-text-muted">{t('subAgents.model')}</span>
+                      <select
+                        className={`${inputClass} flex-1`}
+                        disabled={busy}
+                        value={selection?.modelId ?? chosenSet.activeModel}
+                        aria-label={`${t('subAgents.model')} — ${t(`subAgents.role.${role}`)}`}
+                        onChange={(e) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            perRole: {
+                              ...prev.perRole,
+                              [role]: {
+                                configSetId: chosenSet.id,
+                                modelId:
+                                  e.target.value === chosenSet.activeModel
+                                    ? undefined
+                                    : e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      >
+                        {chosenSet.models.map((model) => (
+                          <option key={model} value={model}>
+                            {model === chosenSet.activeModel
+                              ? `${model} (${t('subAgents.activeModel')})`
+                              : model}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </details>
 

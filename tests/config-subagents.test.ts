@@ -65,12 +65,29 @@ describe('sub-agents config normalization', () => {
     const normalized = normalizeSubAgentsConfig({
       configSetId: '  cheap  ',
       perRole: {
-        reviewer: ' role-set ',
-        developer: '   ',
+        reviewer: { configSetId: ' role-set ', modelId: ' m2 ' },
+        developer: { configSetId: '   ' },
         bogus: 'whatever',
       } as unknown as Parameters<typeof normalizeSubAgentsConfig>[0],
     });
     expect(normalized.configSetId).toBe('cheap');
-    expect(normalized.perRole).toEqual({ reviewer: 'role-set' });
+    expect(normalized.perRole).toEqual({
+      reviewer: { configSetId: 'role-set', modelId: 'm2' },
+    });
+  });
+
+  it('migrates the legacy per-role string format to a selection object', () => {
+    const normalized = normalizeSubAgentsConfig({
+      configSetId: 'cheap',
+      perRole: { reviewer: 'role-set' },
+    } as unknown as Parameters<typeof normalizeSubAgentsConfig>[0]);
+    expect(normalized.perRole).toEqual({
+      reviewer: { configSetId: 'role-set', modelId: undefined },
+    });
+  });
+
+  it('keeps the global modelId when provided', () => {
+    expect(normalizeSubAgentsConfig({ modelId: '  free-model  ' }).modelId).toBe('free-model');
+    expect(normalizeSubAgentsConfig({}).modelId).toBeUndefined();
   });
 });

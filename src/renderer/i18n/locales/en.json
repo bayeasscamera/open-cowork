@@ -45,7 +45,9 @@
     "save": "Save",
     "saved": "Saved",
     "saveFailed": "Save failed",
-    "failed": "Failed to load configuration"
+    "failed": "Failed to load configuration",
+    "model": "Model",
+    "activeModel": "active"
   },
   "common": {
     "save": "Save",

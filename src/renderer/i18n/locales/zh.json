@@ -45,7 +45,9 @@
     "save": "保存",
     "saved": "已保存",
     "saveFailed": "保存失败",
-    "failed": "加载配置失败"
+    "failed": "加载配置失败",
+    "model": "模型",
+    "activeModel": "当前"
   },
   "common": {
     "save": "保存",

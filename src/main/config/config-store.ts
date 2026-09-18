@@ -176,11 +176,22 @@ export interface MemoryRuntimeConfig {
 
 export type SubAgentRoleKey = 'architect' | 'developer' | 'reviewer' | 'security';
 
+export interface SubAgentProfileSelection {
+  configSetId: string;
+  /** Model id inside the configSet; empty/undefined = the set's active model. */
+  modelId?: string;
+}
+
 export interface SubAgentsConfig {
   /** ConfigSet used for sub-agents; empty string inherits the active profile. */
   configSetId: string;
-  /** Per-role configSet overrides; missing/empty falls back to configSetId. */
-  perRole: Partial<Record<SubAgentRoleKey, string>>;
+  /** Model id inside the selected configSet; empty/undefined = its active model. */
+  modelId?: string;
+  /**
+   * Per-role overrides. Legacy configs store a bare configSet id string —
+   * normalizeSubAgentsConfig migrates it to { configSetId } on read.
+   */
+  perRole: Partial<Record<SubAgentRoleKey, SubAgentProfileSelection>>;
   /** Per-sub-agent execution timeout in ms (default 120s, capped at 300s). */
   timeoutMs: number;
   /** Maximum sub-agents running at once (default 2, capped at 8). */
@@ -551,12 +562,24 @@ function normalizeMemoryRuntimeConfig(raw: unknown): MemoryRuntimeConfig {
 export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
   const value =
     typeof raw === 'object' && raw !== null ? (raw as Partial<SubAgentsConfig>) : {};
-  const perRole: Partial<Record<SubAgentRoleKey, string>> = {};
+  const perRole: Partial<Record<SubAgentRoleKey, SubAgentProfileSelection>> = {};
   if (typeof value.perRole === 'object' && value.perRole !== null) {
     for (const key of SUB_AGENT_ROLE_KEYS) {
-      const entry = value.perRole[key];
+      // Legacy format: perRole[role] was a bare configSet id string.
+      const entry = (value.perRole as Record<string, unknown>)[key];
       if (typeof entry === 'string' && entry.trim()) {
-        perRole[key] = entry.trim();
+        perRole[key] = { configSetId: entry.trim() };
+      } else if (typeof entry === 'object' && entry !== null) {
+        const selection = entry as { configSetId?: unknown; modelId?: unknown };
+        if (typeof selection.configSetId === 'string' && selection.configSetId.trim()) {
+          perRole[key] = {
+            configSetId: selection.configSetId.trim(),
+            modelId:
+              typeof selection.modelId === 'string' && selection.modelId.trim()
+                ? selection.modelId.trim()
+                : undefined,
+          };
+        }
       }
     }
   }
@@ -565,6 +588,8 @@ export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
       typeof value.configSetId === 'string'
         ? value.configSetId.trim()
         : DEFAULT_SUB_AGENTS.configSetId,
+    modelId:
+      typeof value.modelId === 'string' && value.modelId.trim() ? value.modelId.trim() : undefined,
     perRole,
     timeoutMs:
       typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs)

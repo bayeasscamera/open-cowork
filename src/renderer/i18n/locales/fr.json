@@ -45,7 +45,9 @@
     "save": "Enregistrer",
     "saved": "Enregistré",
     "saveFailed": "Échec de l'enregistrement",
-    "failed": "Échec du chargement de la configuration"
+    "failed": "Échec du chargement de la configuration",
+    "model": "Modèle",
+    "activeModel": "actif"
   },
   "common": {
     "save": "Enregistrer",

@@ -140,7 +140,7 @@ function makeConfig(subAgents: Partial<AppConfig['subAgents']>): AppConfig {
     isConfigured: true,
     subAgents: {
       configSetId: 'cheap',
-      perRole: { reviewer: 'role-set' },
+      perRole: { reviewer: { configSetId: 'role-set' } },
       timeoutMs: 120_000,
       maxConcurrent: 2,
       ...subAgents,
@@ -174,6 +174,30 @@ describe('resolveSubAgentProfile', () => {
     expect(profile.source).toBe('inherited');
     expect(profile.config).toBe(config);
     expect(profile.label).toBe('active/main-model');
+  });
+
+  it('pins the exact model selected inside a configSet', () => {
+    const config = makeConfig({
+      configSetId: 'cheap',
+      perRole: { developer: { configSetId: 'role-set', modelId: 'qwen3.6-35b-a3b:free' } },
+    });
+    const profile = resolveSubAgentProfile('developer', config);
+    expect(profile.source).toBe('role');
+    expect(profile.label).toBe('role-set/qwen3.6-35b-a3b:free');
+    expect(profile.config.model).toBe('qwen3.6-35b-a3b:free');
+    // Without a modelId the set's active model is used.
+    expect(resolveSubAgentProfile('architect', config).label).toBe('cheap/cheap-model');
+  });
+
+  it('migrates legacy per-role string selections on read', () => {
+    // The normalize step converts bare configSet ids to selections.
+    const migrated = JSON.parse(
+      JSON.stringify(makeConfig({ perRole: { reviewer: { configSetId: 'role-set' } } }))
+    );
+    expect(migrated.subAgents.perRole.reviewer).toEqual({
+      configSetId: 'role-set',
+      modelId: undefined,
+    });
   });
 
   it('degrades to inheritance when configured ids do not exist', () => {
@@ -429,6 +453,29 @@ describe('createSwarmRunner', () => {
     expect(result.usedFallback).toBe(true);
     expect(result.modelUsed).toBe('active/main-model');
     expect(result.output).toBe('slow recovered');
+  });
+
+  it('routes a per-role modelId to the exact sub-agent session config', async () => {
+    const launchSession = vi.fn(
+      async (args: SubAgentSessionArgs) => ({ output: `done:${args.config.model}`, modifiedFiles: [] })
+    );
+    const runner = createSwarmRunner({
+      cwd,
+      getConfig: () =>
+        makeConfig({
+          perRole: { developer: { configSetId: 'role-set', modelId: 'qwen3.6-35b-a3b:free' } },
+        }),
+      launchSession,
+    });
+
+    const result = await runner(makeTask('developer'), '');
+
+    expect(launchSession.mock.calls[0][0].config.model).toBe('qwen3.6-35b-a3b:free');
+    expect(result).toMatchObject({
+      output: 'done:qwen3.6-35b-a3b:free',
+      usedFallback: false,
+      modelUsed: 'role-set/qwen3.6-35b-a3b:free',
+    });
   });
 
   it('caps concurrent sub-agents at maxConcurrent', async () => {

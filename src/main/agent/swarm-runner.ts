@@ -66,26 +66,30 @@ export interface ResolvedSubAgentProfile {
   label: string;
 }
 
-function profileFromConfigSet(
+function profileFromSelection(
   appConfig: AppConfig,
   set: ApiConfigSet,
+  modelId: string | undefined,
   source: SubAgentProfileSource
 ): ResolvedSubAgentProfile {
   const profile = set.profiles[set.activeProfileKey];
+  // The selection may pin a specific model inside the set; without one the
+  // set's active model is used.
+  const effectiveModel = (modelId?.trim() || profile?.model || '').trim();
   const derived: AppConfig = {
     ...appConfig,
     provider: set.provider,
     customProtocol: set.customProtocol,
     apiKey: profile?.apiKey ?? '',
     baseUrl: profile?.baseUrl,
-    model: profile?.model ?? '',
+    model: effectiveModel,
     contextWindow: profile?.contextWindow,
     maxTokens: profile?.maxTokens,
   };
   return {
     config: derived,
     source,
-    label: `${set.id}/${profile?.model ?? set.provider}`,
+    label: `${set.id}/${effectiveModel || set.provider}`,
   };
 }
 
@@ -100,21 +104,31 @@ export function resolveSubAgentProfile(
 ): ResolvedSubAgentProfile {
   const subAgents = appConfig.subAgents ?? normalizeSubAgentsConfig(undefined);
 
-  const roleSetId = subAgents.perRole[role as SubAgentRoleKey];
-  if (roleSetId) {
-    const set = appConfig.configSets.find((s) => s.id === roleSetId);
+  const roleSelection = subAgents.perRole[role as SubAgentRoleKey];
+  if (roleSelection?.configSetId) {
+    const set = appConfig.configSets.find((s) => s.id === roleSelection.configSetId);
     if (set) {
-      return profileFromConfigSet(appConfig, set, 'role');
+      return profileFromSelection(appConfig, set, roleSelection.modelId, 'role');
     }
-    logWarn(`[SwarmRunner] Per-role configSet "${roleSetId}" not found; falling back`);
+    logWarn(`[SwarmRunner] Per-role configSet "${roleSelection.configSetId}" not found; falling back`);
   }
 
   if (subAgents.configSetId) {
     const set = appConfig.configSets.find((s) => s.id === subAgents.configSetId);
     if (set) {
-      return profileFromConfigSet(appConfig, set, 'configSet');
+      return profileFromSelection(appConfig, set, subAgents.modelId, 'configSet');
     }
     logWarn(`[SwarmRunner] Sub-agent configSet "${subAgents.configSetId}" not found; inheriting`);
+  }
+
+  // Inherited profile: a global modelId may still pin a different model on it.
+  if (subAgents.modelId?.trim()) {
+    const modelId = subAgents.modelId.trim();
+    return {
+      config: { ...appConfig, model: modelId },
+      source: 'inherited',
+      label: `active/${modelId}`,
+    };
   }
 
   return {
