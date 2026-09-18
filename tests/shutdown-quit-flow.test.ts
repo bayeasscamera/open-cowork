@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+const root = resolve(__dirname, '..');
 const indexPath = resolve(__dirname, '../src/main/index.ts');
 const mcpPath = resolve(__dirname, '../src/main/mcp/mcp-manager.ts');
 
@@ -52,15 +53,32 @@ describe('shutdown quit flow', () => {
     expect(quitIndex).toBeGreaterThan(guardIndex);
   });
 
-  it('window close interceptor remains gated by the cleanup flag', () => {
+  it('window close quits for real with an independent hard failsafe', () => {
     const closeBlock = block(
       source(indexPath),
       /mainWindow\.on\('close'[\s\S]*?\n  \}\);/,
       "mainWindow 'close' interceptor"
     );
+    // The close button no longer suspends quit: the window closes and
+    // window-all-closed triggers app.quit() on the natural path.
     expect(closeBlock).toContain('if (!isCleaningUp)');
-    expect(closeBlock).toContain('event.preventDefault()');
-    expect(closeBlock).toContain('app.quit()');
+    expect(closeBlock).not.toContain('event.preventDefault()');
+    // Independent hard failsafe: the process must die within 9s of a close
+    // request even if the before-quit handler never runs.
+    expect(closeBlock).toContain('process.exit(0)');
+    expect(closeBlock).toContain('9000');
+    expect(closeBlock).toContain('app.once(\'will-quit\', () => clearTimeout(hardKillTimer))');
+  });
+
+  it('global window toggle never binds plain Alt+Space', () => {
+    const main = source(indexPath);
+    expect(main).toContain("globalShortcut.register('CommandOrControl+Alt+Space', toggleWindow)");
+    expect(main).not.toContain("globalShortcut.register('Alt+Space'");
+  });
+
+  it('trayEnabled defaults to false so close always quits for new installs', () => {
+    const pkgDefaults = source(resolve(root, 'src/main/config/config-store.ts'));
+    expect(pkgDefaults).toContain('trayEnabled: false');
   });
 
   it('cleanup steps run in parallel with per-step timeouts capped at 5000ms', () => {

@@ -152,7 +152,7 @@
     "themeSystem": "跟随系统",
     "language": "语言",
     "backgroundAccess": "后台快速访问",
-    "backgroundAccessDesc": "在菜单栏保留托盘图标，并注册 Alt+空格 隐藏/显示窗口。关闭后，窗口关闭即完全退出应用。"
+    "backgroundAccessDesc": "显示菜单栏托盘图标并注册 Command+Alt+Space 切换窗口。关闭按钮始终退出应用。"
   },
   "memory": {
     "title": "Memory 机制",

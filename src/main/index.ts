@@ -488,12 +488,14 @@ function registerWindowToggleShortcut(): void {
       }
     };
 
-    // Try Alt+Space first (Spotlight/Raycast style), then fallback
-    if (globalShortcut.register('Alt+Space', toggleWindow)) {
-      windowToggleAccelerator = 'Alt+Space';
-      log('[Shortcut] Registered Alt+Space global toggle shortcut');
+    // Never plain Alt+Space: on French keyboards Alt+Espace is the
+    // non-breaking-space keystroke, and a global shortcut on it hides the
+    // window while the user is typing (reported as "the app hides itself").
+    if (globalShortcut.register('CommandOrControl+Alt+Space', toggleWindow)) {
+      windowToggleAccelerator = 'CommandOrControl+Alt+Space';
+      log('[Shortcut] Registered CommandOrControl+Alt+Space global toggle shortcut');
     } else {
-      logWarn('[Shortcut] Alt+Space occupied, trying CommandOrControl+Shift+Space');
+      logWarn('[Shortcut] CommandOrControl+Alt+Space occupied, trying CommandOrControl+Shift+Space');
       if (globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow)) {
         windowToggleAccelerator = 'CommandOrControl+Shift+Space';
       }
@@ -654,10 +656,21 @@ function createWindow() {
 
   // macOS: intercept the close button — call app.quit() instead of hiding
   // This prevents the app from lingering as a zombie process after the window is closed
-  mainWindow.on('close', (event) => {
+  mainWindow.on('close', () => {
     if (!isCleaningUp) {
-      event.preventDefault();
+      log('[App] Window close requested — starting quit sequence');
+      // Independent hard failsafe: whatever happens inside before-quit or the
+      // cleanup chain, the process must die within 9s of a close request.
+      // (The before-quit failsafe only exists if that handler actually runs.)
+      const hardKillTimer = setTimeout(() => {
+        logError('[App] Quit sequence did not finish — forcing exit');
+        process.exit(0);
+      }, 9000);
+      hardKillTimer.unref?.();
+      app.once('will-quit', () => clearTimeout(hardKillTimer));
       app.quit();
+    } else {
+      log('[App] Window close ignored: cleanup already in progress');
     }
   });
 
@@ -1634,6 +1647,7 @@ for (const sig of ['SIGTERM', 'SIGINT'] as const) {
 
 // Handle app quit - before-quit (for macOS Cmd+Q and other quit methods)
 app.on('before-quit', async (event) => {
+  log('[App] before-quit received (isCleaningUp:', isCleaningUp, ')');
   if (!isCleaningUp) {
     // Set the flag immediately — before any early return or await — so the
     // window 'close' interceptor can never re-enter and cancel quit forever.

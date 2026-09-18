@@ -6,9 +6,9 @@ const root = resolve(__dirname, '..');
 const read = (rel: string): string => readFileSync(resolve(root, rel), 'utf8');
 
 describe('background quick-access setting (trayEnabled)', () => {
-  it('defaults to enabled and is validated as boolean in the config store', () => {
+  it('defaults to disabled (close button quits for real) and is validated as boolean', () => {
     const store = read('src/main/config/config-store.ts');
-    expect(store).toContain('trayEnabled: true');
+    expect(store).toContain('trayEnabled: false');
     expect(store).toContain("trayEnabled: (v) => typeof v === 'boolean'");
     expect(store).toContain('toBoolean(raw.trayEnabled, defaultConfig.trayEnabled)');
     // importable via the plaintext config file, never secrets

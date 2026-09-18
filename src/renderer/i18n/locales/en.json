@@ -130,7 +130,7 @@
     "themeSystem": "System",
     "language": "Language",
     "backgroundAccess": "Background quick access",
-    "backgroundAccessDesc": "Keeps a menu-bar tray icon and registers Alt+Space to hide or show the window. Disable to fully quit whenever the window is closed."
+    "backgroundAccessDesc": "Shows a menu-bar tray icon and registers Command+Alt+Space to toggle the window. The close button always quits the app."
   },
   "memory": {
     "title": "Memory",

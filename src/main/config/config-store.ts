@@ -362,7 +362,8 @@ const defaultConfig: AppConfig = {
   coworkInstructions: '',
   tavilyApiKey: '',
   braveApiKey: '',
-  trayEnabled: true,
+  // Close button quits for real by default; the tray is an explicit opt-in.
+  trayEnabled: false,
   memoryRuntime: {
     llm: {
       inheritFromActive: true,

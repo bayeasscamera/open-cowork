@@ -79,7 +79,7 @@
     "themeSystem": "Système",
     "language": "Langue",
     "backgroundAccess": "Accès rapide en arrière-plan",
-    "backgroundAccessDesc": "Garde une icône dans la barre des menus et associe Alt+Espace pour masquer ou afficher la fenêtre. Désactivez pour quitter complètement dès la fermeture de la fenêtre."
+    "backgroundAccessDesc": "Affiche une icône dans la barre des menus et enregistre Cmd+Alt+Espace pour afficher/masquer la fenêtre. Le bouton de fermeture quitte toujours l'application."
   },
   "language": {
     "english": "Anglais",
