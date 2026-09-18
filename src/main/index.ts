@@ -83,7 +83,6 @@ import {
   log,
   logWarn,
   logError,
-  getLogFilePath,
   getLogsDirectory,
   getAllLogFiles,
   closeLogFile,
@@ -92,6 +91,7 @@ import {
 } from './utils/logger';
 import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
+import { registerLogsIpcHandlers } from './ipc/logs-handlers';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { SystemNotifier } from './utils/system-notifier';
 import {
@@ -2408,33 +2408,8 @@ ipcMain.handle('sandbox.installPythonInLima', async () => {
   }
 });
 
-// Logs IPC handlers
-ipcMain.handle('logs.getPath', () => {
-  try {
-    return getLogFilePath();
-  } catch (error) {
-    logError('[Logs] Error getting log path:', error);
-    return null;
-  }
-});
-
-ipcMain.handle('logs.getDirectory', () => {
-  try {
-    return getLogsDirectory();
-  } catch (error) {
-    logError('[Logs] Error getting logs directory:', error);
-    return null;
-  }
-});
-
-ipcMain.handle('logs.getAll', () => {
-  try {
-    return getAllLogFiles();
-  } catch (error) {
-    logError('[Logs] Error getting all log files:', error);
-    return [];
-  }
-});
+// Logs IPC handlers (logs.export stays here: it needs app-wide runtime state)
+registerLogsIpcHandlers();
 
 ipcMain.handle('logs.export', async () => {
   try {
@@ -2580,65 +2555,6 @@ ipcMain.handle('logs.export', async () => {
     });
   } catch (error) {
     logError('[Logs] Error exporting logs:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('logs.open', async () => {
-  try {
-    const logsDir = getLogsDirectory();
-    await shell.openPath(logsDir);
-    return { success: true };
-  } catch (error) {
-    logError('[Logs] Error opening logs directory:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('logs.clear', async () => {
-  try {
-    const logFiles = getAllLogFiles();
-
-    // Close current log file
-    closeLogFile();
-
-    // Delete all log files
-    for (const logFile of logFiles) {
-      try {
-        fs.unlinkSync(logFile.path);
-        log('[Logs] Deleted log file:', logFile.name);
-      } catch (err) {
-        logError('[Logs] Failed to delete log file:', logFile.name, err);
-      }
-    }
-
-    // Log will automatically reinitialize on next log call
-    log('[Logs] Log files cleared and reinitialized');
-
-    return { success: true, deletedCount: logFiles.length };
-  } catch (error) {
-    logError('[Logs] Error clearing logs:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('logs.setEnabled', async (_event, enabled: boolean) => {
-  try {
-    setDevLogsEnabled(enabled);
-    configStore.set('enableDevLogs', enabled);
-    log('[Logs] Developer logs', enabled ? 'enabled' : 'disabled');
-    return { success: true, enabled };
-  } catch (error) {
-    logError('[Logs] Error setting dev logs enabled:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('logs.isEnabled', () => {
-  try {
-    return { success: true, enabled: isDevLogsEnabled() };
-  } catch (error) {
-    logError('[Logs] Error getting dev logs enabled:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
@@ -2986,25 +2902,6 @@ ipcMain.handle('memory.setEnabled', (_event, enabled: boolean) => {
   return result;
 });
 
-ipcMain.handle('logs.write', (_event, level: unknown, ...rest: unknown[]) => {
-  try {
-    // Contract: preload sends (level, args[]). Legacy callers may still spread
-    // the arguments, so accept both shapes instead of crashing on either.
-    const entries =
-      rest.length === 1 && Array.isArray(rest[0]) ? (rest[0] as unknown[]) : rest;
-    if (level === 'warn') {
-      logWarn(...entries);
-    } else if (level === 'error') {
-      logError(...entries);
-    } else {
-      log(...entries);
-    }
-    return { success: true };
-  } catch (error) {
-    console.error('[Logs] Error writing log:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
 
 ipcMain.handle('sandbox.retryLimaSetup', async () => {
   if (process.platform !== 'darwin') {

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const preloadPath = path.resolve(process.cwd(), 'src/preload/index.ts');
-const mainPath = path.resolve(process.cwd(), 'src/main/index.ts');
+const mainPath = path.resolve(process.cwd(), 'src/main/ipc/logs-handlers.ts');
 
 describe('logs.write IPC contract', () => {
   it('preload sends the arguments as a single array, not spread IPC params', () => {
