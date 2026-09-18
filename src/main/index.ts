@@ -3061,14 +3061,18 @@ ipcMain.handle('memory.setEnabled', (_event, enabled: boolean) => {
   return result;
 });
 
-ipcMain.handle('logs.write', (_event, level: 'info' | 'warn' | 'error', args: unknown[]) => {
+ipcMain.handle('logs.write', (_event, level: unknown, ...rest: unknown[]) => {
   try {
+    // Contract: preload sends (level, args[]). Legacy callers may still spread
+    // the arguments, so accept both shapes instead of crashing on either.
+    const entries =
+      rest.length === 1 && Array.isArray(rest[0]) ? (rest[0] as unknown[]) : rest;
     if (level === 'warn') {
-      logWarn(...args);
+      logWarn(...entries);
     } else if (level === 'error') {
-      logError(...args);
+      logError(...entries);
     } else {
-      log(...args);
+      log(...entries);
     }
     return { success: true };
   } catch (error) {

@@ -382,7 +382,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       level: 'info' | 'warn' | 'error',
       ...args: unknown[]
     ): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke('logs.write', level, ...args),
+      // The handler expects a single args array, not spread IPC arguments.
+      ipcRenderer.invoke('logs.write', level, args),
   },
 
   // Remote control methods
