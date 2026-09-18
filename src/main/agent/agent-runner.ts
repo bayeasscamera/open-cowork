@@ -2562,6 +2562,23 @@ Tool routing:
       const emitTerminalError = (errorText: string, options: { abort?: boolean } = {}): void => {
         terminalErrorText = errorText;
 
+        // Causal memory: record the terminal failure pattern so future
+        // sessions with a matching problem receive it as known-error context.
+        try {
+          const normalized = errorText.replace(/\s+/g, ' ').trim().slice(0, 300);
+          if (normalized.length >= 8) {
+            this.memoryManager?.recordErrorPattern(
+              normalized,
+              'session-terminal-error',
+              '',
+              session.id
+            );
+          }
+        } catch (memoryErr) {
+          // Memory must never break the run
+          logWarn('[CoworkAgentRunner] Failed to record error pattern:', memoryErr);
+        }
+
         const emission = buildTerminalErrorEmissionDetails({
           errorText,
           streamedText,
