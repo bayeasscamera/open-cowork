@@ -18,6 +18,7 @@ import { useWindowSize } from '../hooks/useWindowSize';
 import { RemoteControlPanel } from './RemoteControlPanel';
 import { useAppStore } from '../store';
 import { SettingsAPI } from './settings/SettingsAPI';
+import { SettingsSubAgents } from './settings/SettingsSubAgents';
 import { SettingsSandbox } from './settings/SettingsSandbox';
 import { SettingsConnectors } from './settings/SettingsConnectors';
 import { SettingsSkills } from './settings/SettingsSkills';
@@ -264,6 +265,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
                 {viewedTabs.has('api') && (
                   <>
                     <SettingsAPI />
+                    <SettingsSubAgents />
                   </>
                 )}
               </div>

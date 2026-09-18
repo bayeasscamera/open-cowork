@@ -25,6 +25,28 @@
       "failed": "Impossible de charger ou de restaurer les fichiers mémoire. Actualisez puis réessayez."
     }
   },
+  "subAgents": {
+    "title": "Sous-agents",
+    "description": "Choisissez le profil de modèle utilisé par les sous-agents du swarm, et réglez les garde-fous d'exécution.",
+    "distinct": "Utiliser un profil distinct pour les sous-agents (sinon ils héritent du profil actif)",
+    "configSet": "Profil des sous-agents",
+    "roleOverrides": "Overrides par rôle (avancé)",
+    "defaultProfile": "Profil par défaut",
+    "role": {
+      "architect": "Architecte",
+      "developer": "Développeur",
+      "reviewer": "Relecteur",
+      "security": "Sécurité"
+    },
+    "timeout": "Délai par tâche (secondes)",
+    "timeoutHint": "Entre {{min}} et {{max}} secondes",
+    "maxConcurrent": "Sous-agents simultanés max",
+    "maxConcurrentHint": "Entre 1 et {{max}}",
+    "save": "Enregistrer",
+    "saved": "Enregistré",
+    "saveFailed": "Échec de l'enregistrement",
+    "failed": "Échec du chargement de la configuration"
+  },
   "common": {
     "save": "Enregistrer",
     "cancel": "Annuler",

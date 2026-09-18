@@ -25,6 +25,28 @@
       "failed": "Could not load or restore memory files. Refresh and try again."
     }
   },
+  "subAgents": {
+    "title": "Sub-agents",
+    "description": "Choose which model profile the multi-agent swarm uses for its sub-agents, and tune execution guardrails.",
+    "distinct": "Use a distinct model profile for sub-agents (otherwise they inherit the active profile)",
+    "configSet": "Sub-agent profile",
+    "roleOverrides": "Per-role overrides (advanced)",
+    "defaultProfile": "Default profile",
+    "role": {
+      "architect": "Architect",
+      "developer": "Developer",
+      "reviewer": "Reviewer",
+      "security": "Security"
+    },
+    "timeout": "Timeout per task (seconds)",
+    "timeoutHint": "Between {{min}} and {{max}} seconds",
+    "maxConcurrent": "Max concurrent sub-agents",
+    "maxConcurrentHint": "Between 1 and {{max}}",
+    "save": "Save",
+    "saved": "Saved",
+    "saveFailed": "Save failed",
+    "failed": "Failed to load configuration"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
