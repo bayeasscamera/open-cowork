@@ -474,7 +474,9 @@ async function launchSubAgentSession(
   if (typeof piSession.setBeforeToolCall === 'function') {
     piSession.setBeforeToolCall(buildConfinementHook(args.cwd));
   } else {
-    logError('[SwarmRunner] Child session does not support setBeforeToolCall — confinement disabled');
+    // Tool-level confinement (withConfinement) remains active regardless —
+    // this hook would only be an additional, session-level layer.
+    logWarn('[SwarmRunner] Session-level confinement hook unavailable — tool-level confinement active');
   }
 
   const modifiedFiles = new Set<string>();
