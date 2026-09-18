@@ -25,11 +25,47 @@ export interface HeadlessEvent {
 // ── stdout JSONL writer ──
 
 /**
+// ── stdout JSONL writer ──
+
+/** Keys whose values must never leave the process via stdout. */
+const REDACTED_KEYS = new Set([
+  'apiKey',
+  'api_key',
+  'tavilyApiKey',
+  'braveApiKey',
+  'password',
+  'token',
+]);
+
+/**
+ * Recursively replace credential values with a placeholder. Headless stdout
+ * can be captured by any parent process, so no event (config.status, RPC
+ * results, passthrough payloads) may ever carry a real credential.
+ */
+export function redactSensitiveValues<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(redactSensitiveValues) as unknown as T;
+  }
+  if (value && typeof value === 'object') {
+    const source = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(source)) {
+      out[key] =
+        REDACTED_KEYS.has(key) && typeof child === 'string' && child
+          ? '[REDACTED]'
+          : redactSensitiveValues(child);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+/**
  * Write a single JSONL event to stdout.
  * All headless output goes through this function to keep the format consistent.
  */
 function writeJsonl(event: HeadlessEvent): void {
-  const line = JSON.stringify(event);
+  const line = JSON.stringify(redactSensitiveValues(event));
   process.stdout.write(line + '\n');
 }
 
