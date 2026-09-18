@@ -78,7 +78,7 @@ import {
 import { NavigationUrlPolicy } from './utils/navigation-url-policy';
 import { eventRequiresSessionManager } from './client-event-utils';
 import { getUnsupportedWorkspacePathReason } from './workspace-path-constraints';
-import { isPathWithinRoot } from './tools/path-containment';
+
 import {
   log,
   logWarn,
@@ -91,7 +91,7 @@ import {
   isDevLogsEnabled,
 } from './utils/logger';
 import { safeOpenExternal } from './utils/safe-open-external';
-import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
+import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { SystemNotifier } from './utils/system-notifier';
 import {
@@ -1711,41 +1711,7 @@ ipcMain.handle('shell.showItemInFolder', async (_event, filePath: string, cwd?: 
   return revealFileInFolder(filePath, cwd);
 });
 
-ipcMain.handle(
-  'artifacts.listRecentFiles',
-  async (_event, cwd: string, sinceMs: number, limit: number = 50) => {
-    if (!cwd || !isAbsolute(cwd)) {
-      return [];
-    }
-    return listRecentWorkspaceFiles(cwd, sinceMs, limit);
-  }
-);
-
-ipcMain.handle('artifacts.readFile', async (_event, filePath: string) => {
-  try {
-    if (!filePath || !fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`);
-    }
-    // Security: the renderer may only read files inside the active workspace.
-    // Resolve symlinks first so a link pointing outside the workspace is caught.
-    const allowedRoot = getWorkingDir();
-    if (allowedRoot) {
-      const resolvedPath = fs.realpathSync(filePath);
-      if (!isPathWithinRoot(resolvedPath, fs.realpathSync(allowedRoot))) {
-        throw new Error(`Access denied: path is outside the workspace: ${filePath}`);
-      }
-    }
-    // Limit to 5MB to avoid freezing UI
-    const stat = fs.statSync(filePath);
-    if (stat.size > 5 * 1024 * 1024) {
-      return fs.readFileSync(filePath, 'utf-8').slice(0, 100000) + '\n\n[Content truncated: file exceeds 5MB]';
-    }
-    return fs.readFileSync(filePath, 'utf-8');
-  } catch (err: unknown) {
-    logError('[artifacts.readFile] failed:', err);
-    throw err;
-  }
-});
+registerArtifactsIpcHandlers({ getWorkingDir });
 
 ipcMain.handle('dialog.selectFiles', async () => {
   const result = await dialog.showOpenDialog({
