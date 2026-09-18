@@ -8,6 +8,7 @@
 
 import { EventEmitter } from 'events';
 import { logError } from '../utils/logger';
+import { getCodeGraphIndexer } from '../memory/codegraph-indexer';
 
 export type AgentRole = 'architect' | 'developer' | 'reviewer' | 'security';
 
@@ -34,7 +35,16 @@ export interface MultiAgentPlan {
   updatedAt: number;
 }
 
-export type SubAgentRunnerFn = (task: AgentTask, context: string) => Promise<string>;
+export type SubAgentRunnerFn = (
+  task: AgentTask,
+  context: string
+) => Promise<SubAgentRunResult>;
+
+/** Result of a sub-agent run: free text plus the files the agent modified. */
+export interface SubAgentRunResult {
+  output: string;
+  modifiedFiles?: string[];
+}
 
 export class MultiAgentCoordinator extends EventEmitter {
   private activePlans: Map<string, MultiAgentPlan> = new Map();
@@ -156,8 +166,11 @@ export class MultiAgentCoordinator extends EventEmitter {
               .join('\n\n');
 
             let result = '';
+            let modifiedFiles: string[] = [];
             if (this.runnerFn) {
-              result = await this.runnerFn(task, depContext);
+              const run = await this.runnerFn(task, depContext);
+              result = run.output;
+              modifiedFiles = run.modifiedFiles ?? [];
             } else {
               // Simulated execution for testing / fallback
               result = `Output for ${task.title} verified.`;
@@ -166,7 +179,18 @@ export class MultiAgentCoordinator extends EventEmitter {
             task.status = 'completed';
             task.result = result;
             task.completedAt = Date.now();
-            this.emit('task:completed', { planId, task });
+            this.emit('task:completed', { planId, task, modifiedFiles });
+
+            // Files a sub-agent changed are no longer fresh in the codegraph
+            // index: invalidate exactly those entries instead of waiting for
+            // the TTL or rescanning the whole workspace.
+            for (const file of modifiedFiles) {
+              try {
+                getCodeGraphIndexer().invalidateFile(file);
+              } catch (err) {
+                logError('[MultiAgentCoordinator] Failed to invalidate codegraph file:', file, err);
+              }
+            }
           } catch (err) {
             hadFailure = true;
             task.status = 'failed';
