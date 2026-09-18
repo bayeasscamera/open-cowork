@@ -15,6 +15,18 @@ describe('ensure-native-abi test wrapper', () => {
     expect(pkg.scripts['test:raw']).toBe('vitest');
   });
 
+  it('rebuild script drives node-gyp directly instead of npm flags npm rejects', () => {
+    // npm >= 12 rejects --runtime/--target/--disturl on `npm rebuild`
+    // (EUNKNOWNCONFIG) and blocks install scripts (EALLOWSCRIPTS).
+    expect(pkg.scripts.rebuild).toBe('node scripts/rebuild-native.js');
+    const rebuild = readFileSync(resolve(root, 'scripts/rebuild-native.js'), 'utf8');
+    expect(rebuild).toContain('prebuild-install');
+    expect(rebuild).toContain('--runtime=electron');
+    expect(rebuild).toContain('--dist-url=https://electronjs.org/headers');
+    // Never shells out to `npm rebuild` — npm >= 12 blocks it.
+    expect(rebuild).not.toContain("execSync('npm rebuild");
+  });
+
   it('is a no-op pass-through when Node can already load the binary', () => {
     const main = wrapper.match(/function main\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
     expect(main).toContain('if (initial.loadOk)');
