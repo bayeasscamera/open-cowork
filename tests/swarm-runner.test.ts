@@ -398,6 +398,7 @@ describe('createSwarmRunner', () => {
         modifiedFiles: [join(args.cwd, 'a.ts')],
       })
     );
+    writeFileSync(join(cwd, 'a.ts'), 'export const a = 1;\n');
     const runner = createSwarmRunner({
       cwd,
       getConfig: () => makeConfig({}),
@@ -436,6 +437,7 @@ describe('createSwarmRunner', () => {
       }
       return { output: 'recovered', modifiedFiles: [join(args.cwd, 'b.ts')] };
     });
+    writeFileSync(join(cwd, 'b.ts'), 'export const b = 1;\n');
     const runner = createSwarmRunner({
       cwd,
       getConfig: () => makeConfig({}),
@@ -477,6 +479,7 @@ describe('createSwarmRunner', () => {
       }
       return { output: 'slow recovered', modifiedFiles: [] };
     });
+    writeFileSync(join(cwd, 'slow.ts'), 'export const slow = 1;\n');
     const runner = createSwarmRunner({
       cwd,
       getConfig: () => makeConfig({ timeoutMs: 50 }),

@@ -28,6 +28,8 @@ export interface AgentTask {
   modifiedFiles?: string[];
   /** Model label the task actually ran on. */
   modelUsed?: string;
+  /** Syntax issues found in the task's modified files (post-task verification). */
+  syntaxIssues?: string[];
   /** True when the task fell back to the active profile after a model failure. */
   usedFallback?: boolean;
 }
@@ -54,6 +56,8 @@ export interface SubAgentRunResult {
   usedFallback?: boolean;
   /** Model label actually used — post-run visibility of what each task ran on. */
   modelUsed?: string;
+  /** Syntax diagnostics from post-task verification, if any survived. */
+  syntaxIssues?: string[];
 }
 
 export class MultiAgentCoordinator extends EventEmitter {
@@ -179,12 +183,14 @@ export class MultiAgentCoordinator extends EventEmitter {
             let modifiedFiles: string[] = [];
             let usedFallback: boolean | undefined;
             let modelUsed: string | undefined;
+            let syntaxIssues: string[] | undefined;
             if (this.runnerFn) {
               const run = await this.runnerFn(task, depContext);
               result = run.output;
               modifiedFiles = run.modifiedFiles ?? [];
               usedFallback = run.usedFallback;
               modelUsed = run.modelUsed;
+              syntaxIssues = run.syntaxIssues;
             } else {
               // Simulated execution for testing / fallback
               result = `Output for ${task.title} verified.`;
@@ -196,13 +202,14 @@ export class MultiAgentCoordinator extends EventEmitter {
             task.modifiedFiles = modifiedFiles;
             task.modelUsed = modelUsed;
             task.usedFallback = usedFallback;
+            task.syntaxIssues = syntaxIssues;
             if (modelUsed) {
               log(
                 `[MultiAgentCoordinator] Task ${task.role} (${task.id}) completed on model "${modelUsed}"` +
                   (usedFallback ? ' — via fallback' : '')
               );
             }
-            this.emit('task:completed', { planId, task, modifiedFiles, usedFallback, modelUsed });
+            this.emit('task:completed', { planId, task, modifiedFiles, usedFallback, modelUsed, syntaxIssues });
 
             // Files a sub-agent changed are no longer fresh in the codegraph
             // index: invalidate exactly those entries instead of waiting for

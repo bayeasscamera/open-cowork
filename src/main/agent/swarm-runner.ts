@@ -15,6 +15,8 @@
  */
 
 import * as fs from 'fs';
+// Type-only: erased at compile time; the runtime value is loaded lazily.
+import type * as ts from 'typescript';
 import * as path from 'path';
 import {
   createAgentSession,
@@ -351,6 +353,65 @@ export function withConfinement(tool: AnyTool, cwd: string): AnyTool {
 }
 
 // ---------------------------------------------------------------------------
+// Post-task syntax verification
+// ---------------------------------------------------------------------------
+
+export interface SyntaxIssue {
+  file: string;
+  line: number;
+  message: string;
+}
+
+let tsModulePromise: Promise<typeof import('typescript')> | null = null;
+function getTypescript(): Promise<typeof import('typescript')> {
+  if (!tsModulePromise) {
+    tsModulePromise = import('typescript');
+  }
+  return tsModulePromise;
+}
+
+/**
+ * Parse every modified TS/JS file and report SYNTAX-level diagnostics only
+ * (confined, no execution, no bash). Non-TS files are skipped.
+ */
+export async function checkModifiedFilesSyntax(
+  modifiedFiles: string[],
+  getTs: () => Promise<typeof import('typescript')> = getTypescript
+): Promise<SyntaxIssue[]> {
+  const issues: SyntaxIssue[] = [];
+  for (const file of modifiedFiles) {
+    if (!/\.(ts|tsx|js|jsx)$/i.test(file)) continue;
+    try {
+      if (!fs.existsSync(file)) {
+        issues.push({ file, line: 0, message: 'File missing after task' });
+        continue;
+      }
+      const ts = await getTs();
+      const content = fs.readFileSync(file, 'utf-8');
+      const ext = path.extname(file).toLowerCase();
+      const kind =
+        ext === '.tsx' ? ts.ScriptKind.TSX : ext === '.jsx' ? ts.ScriptKind.JSX : ext === '.js' ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+      const sourceFile = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, kind);
+      // parseDiagnostics is an internal but stable SourceFile property; the
+      // public checker API would require a full Program for syntax-only checks.
+      const parseDiagnostics = (sourceFile as unknown as { parseDiagnostics: readonly ts.Diagnostic[] })
+        .parseDiagnostics;
+      for (const diag of parseDiagnostics.slice(0, 5)) {
+        if (diag.start === undefined) continue;
+        issues.push({
+          file,
+          line: sourceFile.getLineAndCharacterOfPosition(diag.start).line + 1,
+          message: ts.flattenDiagnosticMessageText(diag.messageText, ' '),
+        });
+      }
+    } catch (error) {
+      issues.push({ file, line: 0, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
 // Guardrails: bounded concurrency + per-task timeout
 // ---------------------------------------------------------------------------
 
@@ -623,6 +684,61 @@ function resolveGuardrails(config: AppConfig): TaskGuardrails {
 }
 
 /**
+ * After a successful task with modified files, verify the syntax of every
+ * changed TS/JS file and allow ONE corrective re-run with the same profile.
+ */
+async function finalizeTaskResult(
+  task: AgentTask,
+  context: string,
+  result: SubAgentSessionResult,
+  modelLabel: string,
+  usedFallback: boolean,
+  usedConfig: AppConfig,
+  launchSession: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>,
+  cwd: string,
+  timeoutMs: number
+): Promise<SubAgentRunResult> {
+  let output = result.output;
+  let modifiedFiles = result.modifiedFiles;
+  let syntaxIssues = await checkModifiedFilesSyntax(modifiedFiles);
+
+  if (syntaxIssues.length > 0) {
+    const listed = syntaxIssues.map((i) => `${i.file}:${i.line} — ${i.message}`).join('\n');
+    logWarn(`[SwarmRunner] ${task.role} introduced syntax errors; one corrective re-run`);
+    const retry = await withTaskTimeout(
+      (signal) =>
+        launchSession({
+          task,
+          context:
+            `${context}\n\n## Your previous changes introduced syntax errors — fix them\n${listed}\n\n` +
+            'Re-apply the changes correctly using write/edit inside the workspace.',
+          config: usedConfig,
+          cwd,
+          label: modelLabel,
+          signal,
+        }) as unknown as Promise<SubAgentSessionResult>,
+      timeoutMs,
+      `${task.role}:${task.id}:syntax-fix`
+    );
+    // The retry receives the same profile; restore it from the label owner by
+    // re-running with the original config through a fresh launcher call.
+    output = retry.output;
+    modifiedFiles = retry.modifiedFiles;
+    syntaxIssues = await checkModifiedFilesSyntax(modifiedFiles);
+  }
+
+  return {
+    output,
+    modifiedFiles,
+    usedFallback,
+    modelUsed: modelLabel,
+    syntaxIssues: syntaxIssues.length
+      ? syntaxIssues.map((i) => `${i.file}:${i.line} ${i.message}`)
+      : undefined,
+  };
+}
+
+/**
  * Build the real SubAgentRunnerFn wired into the coordinator. Each task:
  * resolves its profile, acquires a concurrency slot, runs its own agent
  * session under a per-task timeout, and falls back exactly once to the
@@ -655,13 +771,7 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           timeoutMs,
           `${task.role}:${task.id}`
         );
-        log(`[SwarmRunner] ${task.role} completed with model "${profile.label}"`);
-        return {
-          output: result.output,
-          modifiedFiles: result.modifiedFiles,
-          usedFallback: false,
-          modelUsed: profile.label,
-        };
+        return await finalizeTaskResult(task, context, result, profile.label, false, profile.config, launchSession, options.cwd, timeoutMs);
       } catch (error) {
         if (profile.source === 'inherited') {
           logError(`[SwarmRunner] Task ${task.role} failed on model "${profile.label}":`, error);
@@ -687,12 +797,7 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           timeoutMs,
           `${task.role}:${task.id}:fallback`
         );
-        return {
-          output: result.output,
-          modifiedFiles: result.modifiedFiles,
-          usedFallback: true,
-          modelUsed: activeLabel,
-        };
+        return await finalizeTaskResult(task, context, result, activeLabel, true, appConfig, launchSession, options.cwd, timeoutMs);
       }
     } finally {
       limiter.release();

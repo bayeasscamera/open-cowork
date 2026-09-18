@@ -987,7 +987,10 @@ export function buildAgentMetaTools(): ToolDefinition[] {
                 ? `\n   modified: ${t.modifiedFiles.join(', ')}`
                 : '';
             const failure = t.status === 'failed' ? `\n   error: ${t.error || 'unknown'}` : '';
-            return `• [${t.role.toUpperCase()}] ${t.title} — ${t.status}${model}${fallback}${files}${failure}`;
+            const syntax = t.syntaxIssues?.length
+              ? `\n   SYNTAX ISSUES (not fully resolved):\n   ${t.syntaxIssues.join('\n   ')}`
+              : '';
+            return `• [${t.role.toUpperCase()}] ${t.title} — ${t.status}${model}${fallback}${files}${failure}${syntax}`;
           })
           .join('\n');
 
