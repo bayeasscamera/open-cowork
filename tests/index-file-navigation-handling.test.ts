@@ -14,11 +14,18 @@ describe('Main process file navigation handling', () => {
     expect(source).not.toContain('shell.openExternal(url)');
   });
 
-  it('treats raw file:// links as local reveal targets in window navigation hooks', () => {
+  it('delegates navigation URL classification to the shared policy module', () => {
     const source = fs.readFileSync(indexPath, 'utf8');
-
-    expect(source).toContain("if (parsed.protocol === 'file:') {");
-    expect(source).toContain('return localPathFromFileUrl(url);');
+    expect(source).toContain(
+      "import { NavigationUrlPolicy } from './utils/navigation-url-policy';"
+    );
+    expect(source).toContain('new NavigationUrlPolicy(process.env.VITE_DEV_SERVER_URL)');
+    expect(source.match(/navigationPolicy\.isExternalUrl\(url\)/g)).toHaveLength(2);
+    expect(source.match(/navigationPolicy\.extractLocalPath\(url\)/g)).toHaveLength(3);
+    // The classification logic must not be duplicated inline anymore.
+    expect(source).not.toContain('const isExternalUrl =');
+    expect(source).not.toContain('const extractLocalPathFromNavigationUrl =');
+    // Local reveal targets still go through the folder reveal helper.
     expect(source).toContain('void revealNavigationTarget(url);');
     expect(source).toContain('return revealFileInFolder(localPath);');
   });

@@ -75,10 +75,7 @@ import {
   buildScheduledTaskFallbackTitle,
   buildScheduledTaskTitle,
 } from '../shared/schedule/task-title';
-import {
-  localPathFromAppUrlPathname,
-  localPathFromFileUrl,
-} from '../shared/local-file-path';
+import { NavigationUrlPolicy } from './utils/navigation-url-policy';
 import { eventRequiresSessionManager } from './client-event-utils';
 import { getUnsupportedWorkspacePathReason } from './workspace-path-constraints';
 import { isPathWithinRoot } from './tools/path-containment';
@@ -601,48 +598,10 @@ function createWindow() {
 
   mainWindow = new BrowserWindow(windowOptions);
 
-  const allowedOrigins = new Set<string>();
-  if (process.env.VITE_DEV_SERVER_URL) {
-    try {
-      allowedOrigins.add(new URL(process.env.VITE_DEV_SERVER_URL).origin);
-    } catch {
-      // 忽略无效的开发服务地址
-    }
-  }
-  const allowedProtocols = new Set<string>(['file:', 'devtools:']);
-
-  const isExternalUrl = (url: string) => {
-    try {
-      const parsed = new URL(url);
-      if (allowedProtocols.has(parsed.protocol)) {
-        return false;
-      }
-      if (allowedOrigins.has(parsed.origin)) {
-        return false;
-      }
-      return true;
-    } catch {
-      return true;
-    }
-  };
-
-  const extractLocalPathFromNavigationUrl = (url: string): string | null => {
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol === 'file:') {
-        return localPathFromFileUrl(url);
-      }
-      if (!allowedOrigins.has(parsed.origin)) {
-        return null;
-      }
-      return localPathFromAppUrlPathname(parsed.pathname || '');
-    } catch {
-      return null;
-    }
-  };
+  const navigationPolicy = new NavigationUrlPolicy(process.env.VITE_DEV_SERVER_URL);
 
   async function revealNavigationTarget(url: string): Promise<boolean> {
-    const localPath = extractLocalPathFromNavigationUrl(url);
+    const localPath = navigationPolicy.extractLocalPath(url);
     if (!localPath) {
       return false;
     }
@@ -650,12 +609,12 @@ function createWindow() {
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    const localPath = extractLocalPathFromNavigationUrl(url);
+    const localPath = navigationPolicy.extractLocalPath(url);
     if (localPath) {
       void revealNavigationTarget(url);
       return { action: 'deny' };
     }
-    if (isExternalUrl(url)) {
+    if (navigationPolicy.isExternalUrl(url)) {
       void safeOpenExternal(url);
       return { action: 'deny' };
     }
@@ -663,13 +622,13 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const localPath = extractLocalPathFromNavigationUrl(url);
+    const localPath = navigationPolicy.extractLocalPath(url);
     if (localPath) {
       event.preventDefault();
       void revealNavigationTarget(url);
       return;
     }
-    if (isExternalUrl(url)) {
+    if (navigationPolicy.isExternalUrl(url)) {
       event.preventDefault();
       void safeOpenExternal(url);
     }
