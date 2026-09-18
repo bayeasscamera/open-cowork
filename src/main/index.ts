@@ -1036,7 +1036,18 @@ app
       const waitForSessionCompletion = (sessionId: string): Promise<void> =>
         new Promise((resolve) => {
           const checkInterval = setInterval(() => {
-            const sessions = sessionManager!.listSessions();
+            let sessions: ReturnType<NonNullable<typeof sessionManager>['listSessions']>;
+            try {
+              sessions = sessionManager!.listSessions();
+            } catch {
+              // The database may already be closed by a parallel shutdown
+              // (e.g. app.quit() during a long-running tool): stop polling
+              // instead of crashing the timer (observed: "database connection
+              // is not open" uncaught exception during headless runs).
+              clearInterval(checkInterval);
+              resolve();
+              return;
+            }
             const current = sessions.find((s) => s.id === sessionId);
             if (!current || current.status === 'idle' || current.status === 'error') {
               clearInterval(checkInterval);
