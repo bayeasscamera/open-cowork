@@ -23,6 +23,8 @@ import { SystemController } from '../system/system-controller';
 import { SelfHealingRunner } from '../agent/self-healing-runner';
 import { CodeGraphIndexer } from '../memory/codegraph-indexer';
 import { MultiAgentCoordinator } from '../agent/multi-agent-coordinator';
+import { createSwarmRunner } from '../agent/swarm-runner';
+import { configStore } from '../config/config-store';
 import { spawn, type ChildProcess } from 'child_process';
 
 
@@ -967,18 +969,40 @@ export function buildAgentMetaTools(): ToolDefinition[] {
       }),
       execute: async (_toolCallId, params) => {
         const args = params as { goal: string };
+        const config = configStore.getAll();
+        // Every sub-agent is confined to the default workspace.
+        const swarmCwd = config.defaultWorkdir?.trim() || process.cwd();
+
         const coordinator = new MultiAgentCoordinator();
+        coordinator.setRunner(createSwarmRunner({ cwd: swarmCwd }));
         const plan = coordinator.createCollaborativePlan(args.goal);
-        const taskSummary = plan.tasks.map((t) => `• [${t.role.toUpperCase()}] ${t.title} (depends on: ${t.dependsOn?.join(', ') || 'none'})`).join('\n');
+        const executed = await coordinator.executePlan(plan.id);
+
+        const taskSummary = executed.tasks
+          .map((t) => {
+            const model = t.modelUsed ? ` on "${t.modelUsed}"` : '';
+            const fallback = t.usedFallback ? ' — via fallback to active profile' : '';
+            const files =
+              t.modifiedFiles && t.modifiedFiles.length > 0
+                ? `\n   modified: ${t.modifiedFiles.join(', ')}`
+                : '';
+            const failure = t.status === 'failed' ? `\n   error: ${t.error || 'unknown'}` : '';
+            return `• [${t.role.toUpperCase()}] ${t.title} — ${t.status}${model}${fallback}${files}${failure}`;
+          })
+          .join('\n');
 
         return {
           content: [
             {
               type: 'text' as const,
-              text: `🚀 Multi-Agent Swarm Plan created (ID: ${plan.id})\nGoal: "${plan.goal}"\nStatus: ${plan.status}\n\nTask Pipeline:\n${taskSummary}`,
+              text:
+                `🚀 Multi-Agent Swarm executed (ID: ${executed.id})\n` +
+                `Goal: "${executed.goal}"\n` +
+                `Status: ${executed.status}\n\n` +
+                `Task Results:\n${taskSummary}`,
             },
           ],
-          details: plan,
+          details: executed,
         };
       },
     },

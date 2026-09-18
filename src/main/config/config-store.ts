@@ -135,6 +135,9 @@ export interface AppConfig {
   // Dedicated memory runtime config
   memoryRuntime: MemoryRuntimeConfig;
 
+  // Sub-agent swarm settings (profile resolution + guardrails)
+  subAgents?: SubAgentsConfig;
+
   // Enable thinking mode (show thinking steps)
   enableThinking: boolean;
 
@@ -169,6 +172,19 @@ export interface MemoryRuntimeConfig {
   evalMaxRounds?: number;
   evalArtifactsRoot?: string;
   promptIterationRounds?: number;
+}
+
+export type SubAgentRoleKey = 'architect' | 'developer' | 'reviewer' | 'security';
+
+export interface SubAgentsConfig {
+  /** ConfigSet used for sub-agents; empty string inherits the active profile. */
+  configSetId: string;
+  /** Per-role configSet overrides; missing/empty falls back to configSetId. */
+  perRole: Partial<Record<SubAgentRoleKey, string>>;
+  /** Per-sub-agent execution timeout in ms (default 120s, capped at 300s). */
+  timeoutMs: number;
+  /** Maximum sub-agents running at once (default 2, capped at 8). */
+  maxConcurrent: number;
 }
 
 const DEFAULT_CONFIG_SET_ID = 'default';
@@ -306,6 +322,15 @@ const defaultConfigSet: ApiConfigSet = {
   updatedAt: '1970-01-01T00:00:00.000Z',
 };
 
+// Sub-agents inherit the active profile by default — zero surprise for a
+// user who never touches this section.
+const DEFAULT_SUB_AGENTS: SubAgentsConfig = {
+  configSetId: '',
+  perRole: {},
+  timeoutMs: 120_000,
+  maxConcurrent: 2,
+};
+
 const defaultConfig: AppConfig = {
   provider: defaultConfigSet.provider,
   apiKey: defaultProfiles.openrouter.apiKey,
@@ -358,6 +383,7 @@ const defaultConfig: AppConfig = {
     evalArtifactsRoot: '',
     promptIterationRounds: 2,
   },
+  subAgents: DEFAULT_SUB_AGENTS,
   enableThinking: false,
   isConfigured: false,
 };
@@ -423,6 +449,12 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:anthropic',
   'custom:openai',
   'custom:gemini',
+];
+const SUB_AGENT_ROLE_KEYS: SubAgentRoleKey[] = [
+  'architect',
+  'developer',
+  'reviewer',
+  'security',
 ];
 const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
 
@@ -513,6 +545,35 @@ function normalizeMemoryRuntimeConfig(raw: unknown): MemoryRuntimeConfig {
       Number.isFinite(value.promptIterationRounds)
         ? Math.max(0, Math.min(10, Math.round(value.promptIterationRounds)))
         : defaultConfig.memoryRuntime.promptIterationRounds,
+  };
+}
+
+export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
+  const value =
+    typeof raw === 'object' && raw !== null ? (raw as Partial<SubAgentsConfig>) : {};
+  const perRole: Partial<Record<SubAgentRoleKey, string>> = {};
+  if (typeof value.perRole === 'object' && value.perRole !== null) {
+    for (const key of SUB_AGENT_ROLE_KEYS) {
+      const entry = value.perRole[key];
+      if (typeof entry === 'string' && entry.trim()) {
+        perRole[key] = entry.trim();
+      }
+    }
+  }
+  return {
+    configSetId:
+      typeof value.configSetId === 'string'
+        ? value.configSetId.trim()
+        : DEFAULT_SUB_AGENTS.configSetId,
+    perRole,
+    timeoutMs:
+      typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs)
+        ? Math.max(10_000, Math.min(300_000, Math.round(value.timeoutMs)))
+        : DEFAULT_SUB_AGENTS.timeoutMs,
+    maxConcurrent:
+      typeof value.maxConcurrent === 'number' && Number.isFinite(value.maxConcurrent)
+        ? Math.max(1, Math.min(8, Math.round(value.maxConcurrent)))
+        : DEFAULT_SUB_AGENTS.maxConcurrent,
   };
 }
 
@@ -1092,6 +1153,7 @@ export class ConfigStore {
         typeof raw.braveApiKey === 'string' ? raw.braveApiKey : defaultConfig.braveApiKey,
       trayEnabled: toBoolean(raw.trayEnabled, defaultConfig.trayEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
+      subAgents: normalizeSubAgentsConfig(raw.subAgents),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
@@ -1520,6 +1582,10 @@ export class ConfigStore {
         updates.memoryRuntime !== undefined
           ? normalizeMemoryRuntimeConfig(updates.memoryRuntime)
           : current.memoryRuntime,
+      subAgents:
+        updates.subAgents !== undefined
+          ? normalizeSubAgentsConfig(updates.subAgents)
+          : current.subAgents,
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
     });

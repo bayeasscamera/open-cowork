@@ -7,7 +7,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { logError } from '../utils/logger';
+import { log, logError } from '../utils/logger';
 import { getCodeGraphIndexer } from '../memory/codegraph-indexer';
 
 export type AgentRole = 'architect' | 'developer' | 'reviewer' | 'security';
@@ -24,6 +24,12 @@ export interface AgentTask {
   assignedModel?: string;
   startedAt?: number;
   completedAt?: number;
+  /** Files the sub-agent actually modified (reported by the runner). */
+  modifiedFiles?: string[];
+  /** Model label the task actually ran on. */
+  modelUsed?: string;
+  /** True when the task fell back to the active profile after a model failure. */
+  usedFallback?: boolean;
 }
 
 export interface MultiAgentPlan {
@@ -44,6 +50,10 @@ export type SubAgentRunnerFn = (
 export interface SubAgentRunResult {
   output: string;
   modifiedFiles?: string[];
+  /** True when the configured sub-agent model failed and the active profile was used instead. */
+  usedFallback?: boolean;
+  /** Model label actually used — post-run visibility of what each task ran on. */
+  modelUsed?: string;
 }
 
 export class MultiAgentCoordinator extends EventEmitter {
@@ -167,10 +177,14 @@ export class MultiAgentCoordinator extends EventEmitter {
 
             let result = '';
             let modifiedFiles: string[] = [];
+            let usedFallback: boolean | undefined;
+            let modelUsed: string | undefined;
             if (this.runnerFn) {
               const run = await this.runnerFn(task, depContext);
               result = run.output;
               modifiedFiles = run.modifiedFiles ?? [];
+              usedFallback = run.usedFallback;
+              modelUsed = run.modelUsed;
             } else {
               // Simulated execution for testing / fallback
               result = `Output for ${task.title} verified.`;
@@ -179,7 +193,16 @@ export class MultiAgentCoordinator extends EventEmitter {
             task.status = 'completed';
             task.result = result;
             task.completedAt = Date.now();
-            this.emit('task:completed', { planId, task, modifiedFiles });
+            task.modifiedFiles = modifiedFiles;
+            task.modelUsed = modelUsed;
+            task.usedFallback = usedFallback;
+            if (modelUsed) {
+              log(
+                `[MultiAgentCoordinator] Task ${task.role} (${task.id}) completed on model "${modelUsed}"` +
+                  (usedFallback ? ' — via fallback' : '')
+              );
+            }
+            this.emit('task:completed', { planId, task, modifiedFiles, usedFallback, modelUsed });
 
             // Files a sub-agent changed are no longer fresh in the codegraph
             // index: invalidate exactly those entries instead of waiting for
