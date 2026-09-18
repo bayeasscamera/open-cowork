@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -251,6 +251,32 @@ describe('buildConfinementHook', () => {
     const result = await hook({ toolName: 'write', args: { content: 'no path' } });
     expect(result).toBeUndefined();
   });
+
+  it('blocks writes through a symlink escaping the workspace', async () => {
+    const secretDir = mkdtempSync(join(tmpdir(), 'cowork-swarm-secret-'));
+    try {
+      writeFileSync(join(secretDir, 'target.txt'), 'secret');
+      symlinkSync(join(secretDir, 'target.txt'), join(root, 'escape-link.txt'));
+      const hook = buildConfinementHook(root);
+      const blocked = await hook({ toolName: 'write', args: { path: 'escape-link.txt' } });
+      expect(blocked?.block).toBe(true);
+    } finally {
+      rmSync(secretDir, { recursive: true, force: true });
+    }
+  });
+
+  it('blocks new files written through a symlinked directory', async () => {
+    const secretDir = mkdtempSync(join(tmpdir(), 'cowork-swarm-secret-'));
+    try {
+      const linkDir = join(root, 'linked');
+      symlinkSync(secretDir, linkDir);
+      const hook = buildConfinementHook(root);
+      const blocked = await hook({ toolName: 'write', args: { path: 'linked/new.txt' } });
+      expect(blocked?.block).toBe(true);
+    } finally {
+      rmSync(secretDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('collectModifiedPath', () => {
@@ -313,7 +339,15 @@ describe('TaskSlotLimiter', () => {
 });
 
 describe('withConfinement', () => {
-  const root = '/workspace';
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'cowork-wrap-'));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
 
   function fakeWriteTool(): { tool: AgentTool; execute: ReturnType<typeof vi.fn> } {
     const execute = vi.fn(async () => ({ content: [{ type: 'text', text: 'written' }], details: undefined }));

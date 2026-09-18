@@ -14,6 +14,7 @@
  *   sub-agent model fails (rate limit, timeout, provider error).
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import {
   createAgentSession,
@@ -206,6 +207,44 @@ interface ToolCallShape {
   args: unknown;
 }
 
+/**
+ * Resolve to the REAL filesystem path, following symlinks for existing
+ * entries; for not-yet-existing paths, resolve the nearest existing ancestor
+ * so a write through a symlinked directory is still caught. Lexical
+ * resolution alone lets a workspace symlink escape the confinement.
+ */
+export function resolveRealPathWithin(root: string, raw: string): string {
+  const abs = path.resolve(root, raw);
+  let probe = abs;
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      let real = fs.realpathSync(probe);
+      // Re-append the not-yet-existing tail so a new file keeps its full path.
+      for (const part of missing.reverse()) {
+        real = path.join(real, part);
+      }
+      return real;
+    } catch {
+      missing.push(path.basename(probe));
+      const parent = path.dirname(probe);
+      if (parent === probe) {
+        return abs; // reached the filesystem root: nothing exists to follow
+      }
+      probe = parent;
+    }
+  }
+}
+
+/** Real (symlink-resolved) workspace root; falls back to the raw path. */
+function resolveRealRoot(cwd: string): string {
+  try {
+    return fs.realpathSync(path.resolve(cwd));
+  } catch {
+    return path.resolve(cwd);
+  }
+}
+
 /** Resolved absolute path when the call targets a file path inside the workspace. */
 export function extractConfinedToolPath(
   root: string,
@@ -219,7 +258,7 @@ export function extractConfinedToolPath(
   if (typeof raw !== 'string' || !raw.trim()) {
     return null;
   }
-  const resolved = path.resolve(root, raw);
+  const resolved = resolveRealPathWithin(root, raw);
   return { resolved, raw };
 }
 
@@ -230,7 +269,7 @@ export function extractConfinedToolPath(
 export function buildConfinementHook(
   cwd: string
 ): (call: ToolCallShape) => Promise<{ block: boolean; reason?: string } | void> {
-  const root = path.resolve(cwd);
+  const root = resolveRealRoot(cwd);
   return async (call: ToolCallShape) => {
     const target = extractConfinedToolPath(root, call.toolName, call.args);
     if (!target) {
@@ -252,10 +291,11 @@ export function buildConfinementHook(
 
 /** Record a modified file path when the event is a confined write/edit. */
 export function collectModifiedPath(
-  root: string,
+  cwd: string,
   toolName: string,
   args: unknown
 ): string | null {
+  const root = resolveRealRoot(cwd);
   if (!WRITE_TOOL_NAMES.has(toolName)) {
     return null;
   }
@@ -278,8 +318,8 @@ export function collectModifiedPath(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyTool = AgentTool<any>;
 
-export function withConfinement(tool: AnyTool, root: string): AnyTool {
-  const hook = buildConfinementHook(root);
+export function withConfinement(tool: AnyTool, cwd: string): AnyTool {
+  const hook = buildConfinementHook(cwd);
   return {
     ...tool,
     execute: async (
