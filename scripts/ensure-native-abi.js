@@ -27,6 +27,39 @@ const PKG_DIR = path.join(ROOT, "node_modules", "better-sqlite3");
 const NATIVE_FILE = "better_sqlite3.node";
 const BUILD_PATH = path.join(PKG_DIR, "build", "Release", NATIVE_FILE);
 const CACHE_DIR = path.join(ROOT, "node_modules", ".cowork-abi-cache");
+// Crash sentinel: a verbatim copy of the binary taken before any switch. If
+// the process is interrupted mid-switch (Ctrl-C, kill, power loss), the next
+// run restores from this file instead of leaving an unusable binary behind.
+const BACKUP_PATH = path.join(CACHE_DIR, NATIVE_FILE + ".preswitch-backup");
+
+function savePreSwitchBackup() {
+  try {
+    if (!fs.existsSync(BUILD_PATH)) return;
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.copyFileSync(BUILD_PATH, BACKUP_PATH);
+  } catch {
+    /* backup is a safety net only — never block the test run */
+  }
+}
+
+function restorePreSwitchBackup() {
+  try {
+    if (fs.existsSync(BACKUP_PATH)) {
+      fs.copyFileSync(BACKUP_PATH, BUILD_PATH);
+      console.log("[ensure-native-abi] restored pre-switch binary backup");
+    }
+  } catch {
+    /* best effort */
+  }
+}
+
+function clearPreSwitchBackup() {
+  try {
+    if (fs.existsSync(BACKUP_PATH)) fs.unlinkSync(BACKUP_PATH);
+  } catch {
+    /* best effort */
+  }
+}
 
 /**
  * Probe the current binary from plain Node.
@@ -218,16 +251,19 @@ function main() {
   }
   console.log("[ensure-native-abi] current binary ABI " + previousAbi + " — switching to Node ABI " + process.versions.modules);
 
+  savePreSwitchBackup();
+
   const nodeCached = path.join(CACHE_DIR, NATIVE_FILE + "." + process.versions.modules);
   if (fs.existsSync(nodeCached)) {
     fs.copyFileSync(nodeCached, BUILD_PATH);
   } else if (!buildNodeAbi()) {
     console.error("[ensure-native-abi] could not build better-sqlite3 for the Node ABI");
+    restorePreSwitchBackup();
     return 1;
   }
   if (!probeAbi().loadOk) {
     console.error("[ensure-native-abi] Node-ABI build did not produce a loadable binary");
-    restoreAbi(previousAbi);
+    restorePreSwitchBackup();
     return 1;
   }
   try {
@@ -236,7 +272,9 @@ function main() {
     /* cache is an optimization only */
   }
 
-  return runTests(vitestArgs, previousAbi);
+  const status = runTests(vitestArgs, previousAbi);
+  clearPreSwitchBackup();
+  return status;
 }
 
 process.exitCode = main();

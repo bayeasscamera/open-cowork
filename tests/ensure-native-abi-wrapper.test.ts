@@ -42,6 +42,21 @@ describe('ensure-native-abi test wrapper', () => {
     expect(wrapper).toContain('--release');
   });
 
+  it('saves a pre-switch backup and restores it on failure paths', () => {
+    expect(wrapper).toContain('preswitch-backup');
+    const main = wrapper.match(/function main\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    // Backup must be taken before any binary replacement.
+    const backupIndex = main.indexOf('savePreSwitchBackup()');
+    const firstCopy = main.indexOf('fs.copyFileSync(nodeCached, BUILD_PATH)');
+    expect(backupIndex).toBeGreaterThan(-1);
+    expect(firstCopy).toBeGreaterThan(backupIndex);
+    // Both failure paths must restore the pre-switch binary.
+    expect(main).toContain('restorePreSwitchBackup();\n    return 1;');
+    // The sentinel is only cleared after tests and restore both completed.
+    const clearIndex = main.indexOf('clearPreSwitchBackup()');
+    expect(clearIndex).toBeGreaterThan(main.indexOf('runTests(vitestArgs, previousAbi)'));
+  });
+
   it('pre-push gate runs the wrapper and checks its exit code (no silent pipes)', () => {
     const hook = readFileSync(resolve(root, '.husky/pre-push'), 'utf8');
     expect(hook).toContain('node scripts/ensure-native-abi.js run');
