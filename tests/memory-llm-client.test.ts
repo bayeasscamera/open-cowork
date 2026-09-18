@@ -8,6 +8,7 @@ vi.mock('../src/main/agent/sdk-one-shot', () => ({
 
 import type { AppConfig } from '../src/main/config/config-store';
 import { MemoryLLMClient } from '../src/main/memory/memory-llm-client';
+import { MemoryLlmLimiter } from '../src/main/memory/memory-llm-limiter';
 
 function makeConfig(timeoutMs: number): AppConfig {
   return {
@@ -204,5 +205,47 @@ describe('MemoryLLMClient', () => {
     // Rate limiting is transient: the override model is retried, not bypassed.
     expect(configAt(2)?.model).toBe('blocked-model');
     expect(configAt(3)?.model).toBe('blocked-model');
+  });
+
+  it('serializes concurrent completions through the limiter', async () => {
+    vi.useRealTimers();
+    let inFlight = 0;
+    let peak = 0;
+    runPiAiOneShotMock.mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return { text: 'ok', hasThinking: false, durationMs: 1 };
+    });
+
+    const client = new MemoryLLMClient(() => makeConfig(5000));
+    await Promise.all([
+      client.complete({ systemPrompt: 's', userPrompt: 'a' }),
+      client.complete({ systemPrompt: 's', userPrompt: 'b' }),
+    ]);
+
+    expect(peak).toBe(1);
+    expect(runPiAiOneShotMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('pauses the shared limiter while backing off from a 429', async () => {
+    vi.useRealTimers();
+    const rateLimitError = new Error('429 too many requests');
+    runPiAiOneShotMock
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValue({ text: 'ok', hasThinking: false, durationMs: 1 });
+
+    const limiter = new MemoryLlmLimiter();
+    const notify = vi.spyOn(limiter, 'notifyRateLimited');
+    const client = new MemoryLLMClient(() => makeConfig(5000), {
+      limiter,
+      rateLimitRetries: 1,
+      rateLimitBackoffMs: 25,
+    });
+
+    await client.complete({ systemPrompt: 's', userPrompt: 'u' });
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(25);
   });
 });

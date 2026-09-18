@@ -8,12 +8,15 @@ import {
 } from '../config/auth-utils';
 import { runPiAiOneShot } from '../agent/sdk-one-shot';
 import { logWarn } from '../utils/logger';
+import { MemoryLlmLimiter, type MemoryLlmPriority } from './memory-llm-limiter';
 
 export interface MemoryCompletionRequest {
   systemPrompt: string;
   userPrompt: string;
   temperature?: number;
   maxTokens?: number;
+  /** Foreground calls (user-visible navigation) preempt queued background work. */
+  priority?: MemoryLlmPriority;
 }
 
 export interface MemoryCompletionResponse {
@@ -51,6 +54,8 @@ export interface MemoryLLMClientOptions {
   rateLimitRetries?: number;
   /** Base delay in ms for the exponential 429 backoff (delay doubles per retry). */
   rateLimitBackoffMs?: number;
+  /** Concurrency gate for completions; defaults to a private serialized limiter. */
+  limiter?: MemoryLlmLimiter;
 }
 
 const DEFAULT_BREAKER_COOLDOWN_MS = 10 * 60_000;
@@ -128,6 +133,7 @@ export class MemoryLLMClient implements MemoryLLMClientLike {
   private readonly cooldownMs: number;
   private readonly rateLimitRetries: number;
   private readonly rateLimitBackoffMs: number;
+  private readonly limiter: MemoryLlmLimiter;
 
   constructor(
     private readonly getConfig: () => AppConfig = () => configStore.getAll(),
@@ -139,6 +145,7 @@ export class MemoryLLMClient implements MemoryLLMClientLike {
       0,
       options?.rateLimitBackoffMs ?? DEFAULT_RATE_LIMIT_BACKOFF_MS
     );
+    this.limiter = options?.limiter ?? new MemoryLlmLimiter();
   }
 
   async complete(request: MemoryCompletionRequest): Promise<MemoryCompletionResponse> {
@@ -189,6 +196,8 @@ export class MemoryLLMClient implements MemoryLLMClientLike {
         }
         const delayMs = this.rateLimitBackoffMs * 2 ** attempt;
         attempt += 1;
+        // Queued memory calls must also stand down, not retry in parallel.
+        this.limiter.notifyRateLimited(delayMs);
         logWarn(
           `[MemoryLLMClient] Memory LLM rate limited (429); ` +
             `retry ${attempt}/${this.rateLimitRetries} in ${delayMs / 1000}s.`
@@ -203,6 +212,7 @@ export class MemoryLLMClient implements MemoryLLMClientLike {
     llmConfig: ResolvedMemoryModelConfig,
     request: MemoryCompletionRequest
   ): Promise<MemoryCompletionResponse> {
+    await this.limiter.acquire(request.priority ?? 'background');
     const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -232,6 +242,7 @@ export class MemoryLLMClient implements MemoryLLMClientLike {
       if (timeout) {
         clearTimeout(timeout);
       }
+      this.limiter.release();
     }
   }
 

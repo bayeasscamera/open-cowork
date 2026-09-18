@@ -25,6 +25,8 @@ export class MemoryNavigator {
       ].join('\n'),
       temperature: 0,
       maxTokens: 2_000,
+      // Awaited inside buildPromptPrefix while the user waits for a reply.
+      priority: 'foreground',
     });
     const payload = extractJson(response.text);
     if (!payload || typeof payload !== 'object') {

@@ -4,14 +4,14 @@ export class MemoryIngestionQueue {
   enqueue(key: string, task: () => Promise<void>): Promise<void> {
     const previous = this.chains.get(key) || Promise.resolve();
     const next = previous.catch(() => undefined).then(task);
-    this.chains.set(
-      key,
-      next.finally(() => {
-        if (this.chains.get(key) === next) {
-          this.chains.delete(key);
-        }
-      })
-    );
+    // Store the finally-wrapped promise so the identity check on cleanup
+    // matches the object actually held in the map.
+    const tracked = next.finally(() => {
+      if (this.chains.get(key) === tracked) {
+        this.chains.delete(key);
+      }
+    });
+    this.chains.set(key, tracked);
     return next;
   }
 }
