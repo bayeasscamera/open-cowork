@@ -990,7 +990,10 @@ export function buildAgentMetaTools(): ToolDefinition[] {
             const syntax = t.syntaxIssues?.length
               ? `\n   SYNTAX ISSUES (not fully resolved):\n   ${t.syntaxIssues.join('\n   ')}`
               : '';
-            return `• [${t.role.toUpperCase()}] ${t.title} — ${t.status}${model}${fallback}${files}${failure}${syntax}`;
+            const tokens = t.tokenUsage
+              ? `\n   tokens: ${t.tokenUsage.input} in / ${t.tokenUsage.output} out`
+              : '';
+            return `• [${t.role.toUpperCase()}] ${t.title} — ${t.status}${model}${fallback}${files}${failure}${syntax}${tokens}`;
           })
           .join('\n');
 

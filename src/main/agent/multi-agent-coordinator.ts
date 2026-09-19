@@ -32,6 +32,8 @@ export interface AgentTask {
   syntaxIssues?: string[];
   /** True when the task fell back to the active profile after a model failure. */
   usedFallback?: boolean;
+  /** Cumulative token usage of the task's session(s), when reported. */
+  tokenUsage?: { input: number; output: number };
 }
 
 export interface MultiAgentPlan {
@@ -58,6 +60,8 @@ export interface SubAgentRunResult {
   modelUsed?: string;
   /** Syntax diagnostics from post-task verification, if any survived. */
   syntaxIssues?: string[];
+  /** Cumulative token usage across the run (including any corrective re-run). */
+  tokenUsage?: { input: number; output: number };
 }
 
 /** Maximum upstream context each dependent sub-agent receives. */
@@ -204,6 +208,7 @@ export class MultiAgentCoordinator extends EventEmitter {
             let usedFallback: boolean | undefined;
             let modelUsed: string | undefined;
             let syntaxIssues: string[] | undefined;
+            let tokenUsage: { input: number; output: number } | undefined;
             if (this.runnerFn) {
               const run = await this.runnerFn(task, depContext);
               result = run.output;
@@ -211,6 +216,7 @@ export class MultiAgentCoordinator extends EventEmitter {
               usedFallback = run.usedFallback;
               modelUsed = run.modelUsed;
               syntaxIssues = run.syntaxIssues;
+              tokenUsage = run.tokenUsage;
             } else {
               // Simulated execution for testing / fallback
               result = `Output for ${task.title} verified.`;
@@ -223,6 +229,7 @@ export class MultiAgentCoordinator extends EventEmitter {
             task.modelUsed = modelUsed;
             task.usedFallback = usedFallback;
             task.syntaxIssues = syntaxIssues;
+            task.tokenUsage = tokenUsage;
             if (modelUsed) {
               log(
                 `[MultiAgentCoordinator] Task ${task.role} (${task.id}) completed on model "${modelUsed}"` +

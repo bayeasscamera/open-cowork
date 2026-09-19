@@ -503,6 +503,8 @@ export interface SubAgentSessionArgs {
 export interface SubAgentSessionResult {
   output: string;
   modifiedFiles: string[];
+  /** Cumulative token usage of the session, when the provider reports it. */
+  tokenUsage?: { input: number; output: number };
 }
 
 function buildChildSystemPrompt(task: AgentTask): string {
@@ -596,9 +598,23 @@ async function launchSubAgentSession(
 
   const modifiedFiles = new Set<string>();
   let finalText = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let sawUsage = false;
   const root = path.resolve(args.cwd);
 
   const unsubscribe = session.subscribe((event) => {
+    if (event.type === 'message_end') {
+      // In-memory sessions never persist messages, so usage has to be
+      // cumulated here or it disappears with the session.
+      const msg = (event as { message?: unknown }).message;
+      const usage = normalizeSubAgentUsage(msg);
+      if (usage) {
+        inputTokens += usage.input;
+        outputTokens += usage.output;
+        sawUsage = true;
+      }
+    }
     if (event.type === 'agent_end') {
       const messages = (event as { messages?: unknown[] }).messages || [];
       for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -657,7 +673,38 @@ async function launchSubAgentSession(
     piSession.dispose?.();
   }
 
-  return { output: finalText, modifiedFiles: [...modifiedFiles] };
+  return {
+    output: finalText,
+    modifiedFiles: [...modifiedFiles],
+    tokenUsage: sawUsage ? { input: inputTokens, output: outputTokens } : undefined,
+  };
+}
+
+/** Accept the provider usage shapes seen on message_end messages. */
+function normalizeSubAgentUsage(
+  msg: unknown
+): { input: number; output: number } | undefined {
+  if (!msg || typeof msg !== 'object') {
+    return undefined;
+  }
+  const usage = (msg as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== 'object') {
+    return undefined;
+  }
+  const raw = usage as {
+    input?: unknown;
+    output?: unknown;
+    input_tokens?: unknown;
+    output_tokens?: unknown;
+    inputTokens?: unknown;
+    outputTokens?: unknown;
+  };
+  const input = raw.input ?? raw.input_tokens ?? raw.inputTokens;
+  const output = raw.output ?? raw.output_tokens ?? raw.outputTokens;
+  if (typeof input !== 'number' || typeof output !== 'number') {
+    return undefined;
+  }
+  return { input, output };
 }
 
 // ---------------------------------------------------------------------------
@@ -700,6 +747,15 @@ async function finalizeTaskResult(
 ): Promise<SubAgentRunResult> {
   let output = result.output;
   let modifiedFiles = result.modifiedFiles;
+  const usage = { input: 0, output: 0 };
+  let sawUsage = false;
+  const addUsage = (u?: { input: number; output: number }) => {
+    if (!u) return;
+    usage.input += u.input;
+    usage.output += u.output;
+    sawUsage = true;
+  };
+  addUsage(result.tokenUsage);
   let syntaxIssues = await checkModifiedFilesSyntax(modifiedFiles);
 
   if (syntaxIssues.length > 0) {
@@ -724,6 +780,7 @@ async function finalizeTaskResult(
     // re-running with the original config through a fresh launcher call.
     output = retry.output;
     modifiedFiles = retry.modifiedFiles;
+    addUsage(retry.tokenUsage);
     syntaxIssues = await checkModifiedFilesSyntax(modifiedFiles);
   }
 
@@ -735,6 +792,7 @@ async function finalizeTaskResult(
     syntaxIssues: syntaxIssues.length
       ? syntaxIssues.map((i) => `${i.file}:${i.line} ${i.message}`)
       : undefined,
+    tokenUsage: sawUsage ? usage : undefined,
   };
 }
 

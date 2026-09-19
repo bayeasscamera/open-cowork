@@ -17,7 +17,9 @@ vi.mock('@mariozechner/pi-coding-agent', () => ({
   createFindTool: vi.fn(() => ({})),
   createGrepTool: vi.fn(() => ({})),
   createLsTool: vi.fn(() => ({})),
-  DefaultResourceLoader: vi.fn(() => ({ reload: vi.fn() })),
+  DefaultResourceLoader: vi.fn(function (this: unknown) {
+    return { reload: vi.fn() };
+  }),
   SessionManager: { inMemory: vi.fn() },
   SettingsManager: { inMemory: vi.fn() },
   AuthStorage: { create: vi.fn(() => ({ setRuntimeApiKey: vi.fn() })) },
@@ -59,6 +61,7 @@ import {
   type SubAgentSessionArgs,
 } from '../src/main/agent/swarm-runner';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
+import { createAgentSession } from '@mariozechner/pi-coding-agent';
 
 function makeConfig(subAgents: Partial<AppConfig['subAgents']>): AppConfig {
   const profile = (apiKey: string, baseUrl: string, model: string) => ({
@@ -567,5 +570,46 @@ describe('createSwarmRunner', () => {
       (c) => c[0].task.role === 'developer'
     );
     expect(developerCall?.[0].context).toContain('architect');
+  });
+
+  function mockSessionEmitting(events: Array<{ type: string; message?: unknown }>): void {
+    vi.mocked(createAgentSession).mockResolvedValue({
+      session: {
+        subscribe: (cb: (event: unknown) => void) => {
+          for (const event of events) {
+            cb(event);
+          }
+          return () => undefined;
+        },
+        prompt: async () => undefined,
+      },
+    } as never);
+  }
+
+  it('cumulates sub-agent token usage from message_end events', async () => {
+    mockSessionEmitting([
+      { type: 'message_end', message: { usage: { input: 100, output: 40 } } },
+      { type: 'message_end', message: { usage: { input_tokens: 50, output_tokens: 10 } } },
+    ]);
+    const runner = createSwarmRunner({
+      cwd,
+      getConfig: () => makeConfig({ configSetId: '', perRole: {} }),
+    });
+
+    const result = await runner(makeTask('developer'), '');
+
+    expect(result.tokenUsage).toEqual({ input: 150, output: 50 });
+  });
+
+  it('leaves tokenUsage undefined when the provider reports no usage', async () => {
+    mockSessionEmitting([{ type: 'message_end', message: {} }]);
+    const runner = createSwarmRunner({
+      cwd,
+      getConfig: () => makeConfig({ configSetId: '', perRole: {} }),
+    });
+
+    const result = await runner(makeTask('developer'), '');
+
+    expect(result.tokenUsage).toBeUndefined();
   });
 });
