@@ -19,7 +19,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, gl
 import { join, resolve, isAbsolute } from 'path';
 import * as fs from 'fs';
 import { config } from 'dotenv';
-import { initDatabase, closeDatabase } from './db/database';
+import { initDatabase, closeDatabase, getDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
@@ -94,6 +94,7 @@ import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { registerLogsIpcHandlers } from './ipc/logs-handlers';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods, getDiffCollector } from './mods/builtin-mods';
+import { createProjectStore, ProjectStore, ProjectValidationError } from './projects/project-store';
 import {
   buildSkillDoctorReport,
   loadSkillSourcesFromDir,
@@ -162,6 +163,15 @@ let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
 let memoryService: MemoryService | null = null;
 let scheduledTaskManager: ScheduledTaskManager | null = null;
+let projectStore: ProjectStore | null = null;
+
+/** Lazily wire the ProjectStore over the database once it is initialized. */
+function getProjectStore(): ProjectStore {
+  if (!projectStore) {
+    projectStore = createProjectStore(getDatabase());
+  }
+  return projectStore;
+}
 
 // Wire the extracted modules to the mutable app-level singletons above.
 setRendererSenderContext({
@@ -3074,12 +3084,22 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
   const sm = sessionManager!;
 
   switch (event.type) {
-    case 'session.start':
-      if (getWorkspacePathUnsupportedReason(event.payload.cwd)) {
+    case 'session.start': {
+      // When the session starts inside a project, the project's workdir is the
+      // workspace unless the caller explicitly overrode cwd.
+      let cwd = event.payload.cwd;
+      if (event.payload.projectId) {
+        const project = getProjectStore().get(event.payload.projectId);
+        if (!project) {
+          throw new Error(`Project not found: ${event.payload.projectId}`);
+        }
+        if (!cwd) cwd = project.workdir;
+      }
+      if (getWorkspacePathUnsupportedReason(cwd)) {
         sendToRenderer({
           type: 'error',
           payload: {
-            message: getWorkspacePathUnsupportedReason(event.payload.cwd)!,
+            message: getWorkspacePathUnsupportedReason(cwd)!,
           },
         });
         return null;
@@ -3087,11 +3107,13 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       return sm.startSession(
         event.payload.title,
         event.payload.prompt,
-        event.payload.cwd,
+        cwd,
         event.payload.allowedTools,
         event.payload.content,
-        event.payload.memoryEnabled
+        event.payload.memoryEnabled,
+        event.payload.projectId
       );
+    }
 
     case 'session.continue':
       return sm.continueSession(
@@ -3270,6 +3292,125 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         });
       }
       return null;
+    }
+
+    // ── Projects ────────────────────────────────────────────────────────────
+    // Validation errors (bad name, missing workdir, unknown id) come back as
+    // { success: false, error } so the renderer can show them; internal errors
+    // surface the same shape after logging, never an uncaught IPC throw.
+    case 'projects.create': {
+      try {
+        const project = getProjectStore().create({
+          name: event.payload.name,
+          workdir: event.payload.workdir,
+          description: event.payload.description,
+          configSetId: event.payload.configSetId,
+          instructions: event.payload.instructions,
+        });
+        return { success: true, project };
+      } catch (error) {
+        if (error instanceof ProjectValidationError) {
+          return { success: false, error: error.message };
+        }
+        logError('[IPC] projects.create failed:', error);
+        return { success: false, error: 'Failed to create project' };
+      }
+    }
+
+    case 'projects.list': {
+      try {
+        const projects = getProjectStore().list(event.payload.includeArchived === true);
+        return { success: true, projects };
+      } catch (error) {
+        logError('[IPC] projects.list failed:', error);
+        return { success: false, error: 'Failed to list projects', projects: [] };
+      }
+    }
+
+    case 'projects.get': {
+      try {
+        const project = getProjectStore().get(event.payload.projectId);
+        if (!project) return { success: false, error: 'Project not found' };
+        const sessions = getProjectStore().getSessions(project.id);
+        return { success: true, project, sessions };
+      } catch (error) {
+        logError('[IPC] projects.get failed:', error);
+        return { success: false, error: 'Failed to load project' };
+      }
+    }
+
+    case 'projects.update': {
+      try {
+        const project = getProjectStore().update(event.payload.projectId, {
+          name: event.payload.name,
+          description: event.payload.description,
+          workdir: event.payload.workdir,
+          configSetId: event.payload.configSetId,
+          instructions: event.payload.instructions,
+        });
+        return { success: true, project };
+      } catch (error) {
+        if (error instanceof ProjectValidationError) {
+          return { success: false, error: error.message };
+        }
+        logError('[IPC] projects.update failed:', error);
+        return { success: false, error: 'Failed to update project' };
+      }
+    }
+
+    case 'projects.archive': {
+      try {
+        const project = getProjectStore().archive(
+          event.payload.projectId,
+          event.payload.archived
+        );
+        return { success: true, project };
+      } catch (error) {
+        if (error instanceof ProjectValidationError) {
+          return { success: false, error: error.message };
+        }
+        logError('[IPC] projects.archive failed:', error);
+        return { success: false, error: 'Failed to archive project' };
+      }
+    }
+
+    case 'projects.attachFile': {
+      try {
+        const project = getProjectStore().attachFile(event.payload.projectId, event.payload.path);
+        return { success: true, project };
+      } catch (error) {
+        if (error instanceof ProjectValidationError) {
+          return { success: false, error: error.message };
+        }
+        logError('[IPC] projects.attachFile failed:', error);
+        return { success: false, error: 'Failed to attach file' };
+      }
+    }
+
+    case 'projects.detachFile': {
+      try {
+        const project = getProjectStore().detachFile(event.payload.projectId, event.payload.path);
+        return { success: true, project };
+      } catch (error) {
+        if (error instanceof ProjectValidationError) {
+          return { success: false, error: error.message };
+        }
+        logError('[IPC] projects.detachFile failed:', error);
+        return { success: false, error: 'Failed to detach file' };
+      }
+    }
+
+    case 'projects.linkSession': {
+      try {
+        getProjectStore().linkSession(event.payload.projectId, event.payload.sessionId);
+        return { success: true };
+      } catch (error) {
+        if (error instanceof ProjectValidationError) {
+          return { success: false, error: error.message };
+        }
+        logError('[IPC] projects.linkSession failed:', error);
+        return { success: false, error: 'Failed to link session' };
+      }
     }
 
     default:

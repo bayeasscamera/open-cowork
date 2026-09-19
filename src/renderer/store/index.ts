@@ -10,6 +10,7 @@ import type {
   SandboxSetupProgress,
   SandboxSyncStatus,
   SkillsStorageChangeEvent,
+  Project,
 } from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
@@ -90,6 +91,14 @@ interface AppState {
   sessions: Session[];
   activeSessionId: string | null;
 
+  // Projects (grouped sessions with shared working context)
+  projects: Project[];
+  /** Project whose sessions are shown / that new sessions start in; null = all sessions. */
+  activeProjectId: string | null;
+  /** Projects editor modal: open flag + project being edited (null = creating). */
+  showProjectsModal: boolean;
+  projectsModalProjectId: string | null;
+
   // Per-session state (messages, partials, turns, traces, etc.)
   sessionStates: Record<string, SessionState>;
 
@@ -143,6 +152,12 @@ interface AppState {
   removeSessions: (sessionIds: string[]) => void;
   setActiveSession: (sessionId: string | null) => void;
   setSessionScrollPosition: (sessionId: string, scrollTop: number) => void;
+
+  // Projects actions
+  setProjects: (projects: Project[]) => void;
+  setActiveProjectId: (projectId: string | null) => void;
+  openProjectsModal: (projectId: string | null) => void;
+  closeProjectsModal: () => void;
 
   addMessage: (sessionId: string, message: Message) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
@@ -245,6 +260,10 @@ export const useAppStore = create<AppState>((set) => ({
   // Initial state
   sessions: [],
   activeSessionId: null,
+  projects: [],
+  activeProjectId: null,
+  showProjectsModal: false,
+  projectsModalProjectId: null,
   sessionStates: {},
   sessionScrollPositions: {},
   isLoading: false,
@@ -271,6 +290,13 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Session actions
   setSessions: (sessions) => set({ sessions }),
+
+  // Projects
+  setProjects: (projects) => set({ projects }),
+  setActiveProjectId: (projectId) => set({ activeProjectId: projectId }),
+  openProjectsModal: (projectId) =>
+    set({ showProjectsModal: true, projectsModalProjectId: projectId }),
+  closeProjectsModal: () => set({ showProjectsModal: false, projectsModalProjectId: null }),
 
   addSession: (session) =>
     set((state) => ({

@@ -41,6 +41,9 @@ const ConfigModal = lazy(() =>
 const SettingsPanel = lazy(() =>
   import('./components/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
 );
+const ProjectsPanel = lazy(() =>
+  import('./components/ProjectsPanel').then((module) => ({ default: module.ProjectsPanel }))
+);
 
 function MainPanelFallback() {
   return (
@@ -284,6 +287,13 @@ function App() {
           onComplete={handleSandboxSetupComplete}
         />
       )}
+
+      {/* Projects editor modal */}
+      <PanelErrorBoundary name="ProjectsPanel" fallback={null}>
+        <Suspense fallback={null}>
+          <ProjectsPanel />
+        </Suspense>
+      </PanelErrorBoundary>
 
       {/* Sandbox Sync Toast */}
       <SandboxSyncToast status={sandboxSyncStatus} />

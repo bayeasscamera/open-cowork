@@ -265,11 +265,12 @@ export class SessionManager {
     cwd?: string,
     allowedTools?: string[],
     content?: ContentBlock[],
-    memoryEnabled?: boolean
+    memoryEnabled?: boolean,
+    projectId?: string
   ): Promise<Session> {
     log('[SessionManager] Starting new session:', title);
 
-    const session = this.createSession(title, cwd, allowedTools, memoryEnabled);
+    const session = this.createSession(title, cwd, allowedTools, memoryEnabled, projectId);
 
     // Save to database
     this.saveSession(session);
@@ -292,7 +293,8 @@ export class SessionManager {
     title: string,
     cwd?: string,
     allowedTools?: string[],
-    memoryEnabled?: boolean
+    memoryEnabled?: boolean,
+    projectId?: string
   ): Session {
     const now = Date.now();
     // Prefer frontend-provided cwd; fallback to env vars if provided
@@ -323,6 +325,7 @@ export class SessionManager {
       ],
       memoryEnabled: resolvedMemoryEnabled,
       model: configStore.get('model') || undefined,
+      projectId: projectId || undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -341,6 +344,7 @@ export class SessionManager {
       allowed_tools: JSON.stringify(session.allowedTools),
       memory_enabled: session.memoryEnabled ? 1 : 0,
       model: session.model || null,
+      project_id: session.projectId || null,
       created_at: session.createdAt,
       updated_at: session.updatedAt,
     });
@@ -379,6 +383,7 @@ export class SessionManager {
       memoryEnabled: row.memory_enabled === 1,
       model: row.model || undefined,
       isPinned: row.is_pinned === 1,
+      projectId: row.project_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -417,6 +422,7 @@ export class SessionManager {
         memoryEnabled: row.memory_enabled === 1,
         model: row.model || undefined,
         isPinned: row.is_pinned === 1,
+        projectId: row.project_id || undefined,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };

@@ -25,6 +25,11 @@ import { Type, type TSchema } from '@sinclair/typebox';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
+import { getSharedProjectStore } from '../projects/project-store';
+import {
+  resolveProjectContext,
+  type ProjectContextResolution,
+} from '../projects/project-context';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
@@ -98,6 +103,20 @@ import { ActivePreferenceLearner } from '../memory/active-preference-learner';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
+
+/**
+ * Resolve the project context of a session (instructions, reference files,
+ * pinned ConfigSet). Never throws: an uninitialized database (unit tests,
+ * headless startup order) degrades to an empty context — a project link must
+ * never take a session down with it.
+ */
+function resolveProjectContextForRunner(sessionId: string): ProjectContextResolution {
+  try {
+    return resolveProjectContext(sessionId, getSharedProjectStore());
+  } catch {
+    return { project: undefined, configSetId: null, systemPromptBlock: '' };
+  }
+}
 
 /**
  * Estimate chars-per-token ratio based on content language.
@@ -1668,8 +1687,16 @@ ${hints.join('\n')}
 
       logTiming('before pi-ai model resolution', runStartTime);
 
-      // Resolve model via pi-ai
-      const runtimeConfig = configStore.getAll();
+      // Project context for this session: instructions + reference files are
+      // injected in the system prompt (first query), and a project may pin its
+      // own ConfigSet instead of the globally active one.
+      const projectContext = resolveProjectContextForRunner(session.id);
+
+      // Resolve model via pi-ai — project's ConfigSet wins when pinned.
+      const runtimeConfig =
+        (projectContext.configSetId
+          ? configStore.getConfigSetProjectedConfig(projectContext.configSetId)
+          : undefined) || configStore.getAll();
       const modelString = this.getCurrentModelString(runtimeConfig.model);
       const configProtocol = resolvePiRouteProtocol(
         runtimeConfig.provider,
@@ -2235,6 +2262,7 @@ Tool routing:
         AdaptiveStrategyEngine.getStrategicPrompt(),
         this.getBundledPathHints(),
         extensionResult.systemContext || '',
+        projectContext.systemPromptBlock,
         memoryEnabled ? this.memoryManager?.formatUserPreferencesForContext() || '' : '',
         memoryEnabled ? this.memoryManager?.formatErrorPatternsForContext(prompt) || '' : '',
         memoryEnabled ? this.memoryManager?.formatProjectResumptionContext(session.id) || '' : '',

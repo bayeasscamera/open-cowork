@@ -26,6 +26,7 @@ import type {
   MemoryDebugFileInfo,
   MemoryDebugFileContent,
   MemoryInspectSessionResult,
+  Project,
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type {
@@ -67,6 +68,14 @@ const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>(
   'workdir.get',
   'workdir.set',
   'workdir.select',
+  'projects.create',
+  'projects.list',
+  'projects.get',
+  'projects.update',
+  'projects.archive',
+  'projects.attachFile',
+  'projects.detachFile',
+  'projects.linkSession',
 ]);
 
 // Invoke a whitelisted ClientEvent and wait for the response. Defined once at
@@ -154,6 +163,70 @@ contextBridge.exposeInMainWorld('electronAPI', {
         type: 'session.getContextUsage',
         payload: { sessionId },
       }),
+  },
+
+  // Projects — grouped sessions with shared working context
+  projects: {
+    create: (payload: {
+      name: string;
+      workdir: string;
+      description?: string;
+      configSetId?: string;
+      instructions?: string;
+    }): Promise<{ success: boolean; project?: Project; error?: string }> =>
+      invoke({ type: 'projects.create', payload }),
+
+    list: (includeArchived?: boolean): Promise<{ success: boolean; projects: Project[] }> =>
+      invoke({ type: 'projects.list', payload: { includeArchived } }),
+
+    get: (
+      projectId: string
+    ): Promise<{
+      success: boolean;
+      project?: Project;
+      sessions?: Array<{
+        id: string;
+        title: string;
+        status: string;
+        cwd: string | null;
+        updated_at: number;
+      }>;
+      error?: string;
+    }> => invoke({ type: 'projects.get', payload: { projectId } }),
+
+    update: (payload: {
+      projectId: string;
+      name?: string;
+      description?: string | null;
+      workdir?: string;
+      configSetId?: string | null;
+      instructions?: string | null;
+    }): Promise<{ success: boolean; project?: Project; error?: string }> =>
+      invoke({ type: 'projects.update', payload }),
+
+    archive: (
+      projectId: string,
+      archived: boolean
+    ): Promise<{ success: boolean; project?: Project; error?: string }> =>
+      invoke({ type: 'projects.archive', payload: { projectId, archived } }),
+
+    attachFile: (
+      projectId: string,
+      path: string
+    ): Promise<{ success: boolean; project?: Project; error?: string }> =>
+      invoke({ type: 'projects.attachFile', payload: { projectId, path } }),
+
+    detachFile: (
+      projectId: string,
+      path: string
+    ): Promise<{ success: boolean; project?: Project; error?: string }> =>
+      invoke({ type: 'projects.detachFile', payload: { projectId, path } }),
+
+    linkSession: (
+      projectId: string,
+      sessionId: string
+    ): Promise<{ success: boolean; error?: string }> =>
+      invoke({ type: 'projects.linkSession', payload: { projectId, sessionId } }),
   },
 
   // Platform info
@@ -559,6 +632,56 @@ declare global {
           contextWindow: number;
           percent: number | null;
         } | null>;
+      };
+      projects: {
+        create: (payload: {
+          name: string;
+          workdir: string;
+          description?: string;
+          configSetId?: string;
+          instructions?: string;
+        }) => Promise<{ success: boolean; project?: Project; error?: string }>;
+        list: (
+          includeArchived?: boolean
+        ) => Promise<{ success: boolean; projects: Project[] }>;
+        get: (
+          projectId: string
+        ) => Promise<{
+          success: boolean;
+          project?: Project;
+          sessions?: Array<{
+            id: string;
+            title: string;
+            status: string;
+            cwd: string | null;
+            updated_at: number;
+          }>;
+          error?: string;
+        }>;
+        update: (payload: {
+          projectId: string;
+          name?: string;
+          description?: string | null;
+          workdir?: string;
+          configSetId?: string | null;
+          instructions?: string | null;
+        }) => Promise<{ success: boolean; project?: Project; error?: string }>;
+        archive: (
+          projectId: string,
+          archived: boolean
+        ) => Promise<{ success: boolean; project?: Project; error?: string }>;
+        attachFile: (
+          projectId: string,
+          path: string
+        ) => Promise<{ success: boolean; project?: Project; error?: string }>;
+        detachFile: (
+          projectId: string,
+          path: string
+        ) => Promise<{ success: boolean; project?: Project; error?: string }>;
+        linkSession: (
+          projectId: string,
+          sessionId: string
+        ) => Promise<{ success: boolean; error?: string }>;
       };
       platform: NodeJS.Platform;
       getSystemTheme: () => Promise<{ shouldUseDarkColors: boolean }>;

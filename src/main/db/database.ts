@@ -47,6 +47,22 @@ export interface DatabaseInstance {
     delete: (id: string) => void;
   };
 
+  projects: {
+    create: (project: ProjectRow) => void;
+    update: (id: string, updates: Partial<ProjectRow>) => void;
+    get: (id: string) => ProjectRow | undefined;
+    getAll: () => ProjectRow[];
+    /** Hard delete — only legal for empty/archived projects (store guards it). */
+    delete: (id: string) => void;
+  };
+
+  projectFiles: {
+    add: (file: ProjectFileRow) => void;
+    remove: (projectId: string, filePath: string) => void;
+    listByProject: (projectId: string) => ProjectFileRow[];
+    deleteByProject: (projectId: string) => void;
+  };
+
   // For compatibility with old interface
   prepare: (sql: string) => Database.Statement;
   exec: (sql: string) => void;
@@ -66,6 +82,7 @@ export interface SessionRow {
   memory_enabled: number;
   model: string | null;
   is_pinned?: number | null;
+  project_id?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -111,6 +128,30 @@ export interface ScheduledTaskRow {
   last_error: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface ProjectRow {
+  id: string;
+  name: string;
+  description: string | null;
+  /** Workspace folder the project is bound to (sandbox confinement target). */
+  workdir: string;
+  /** Optional ConfigSet used instead of the globally active one for this project. */
+  config_set_id: string | null;
+  /** Persistent project instructions injected into every linked session. */
+  instructions: string | null;
+  /** 0 = active, 1 = archived (no destructive delete without confirmation). */
+  archived: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ProjectFileRow {
+  id: string;
+  project_id: string;
+  /** Absolute path of the reference file (read at session start, never mounted writable). */
+  file_path: string;
+  added_at: number;
 }
 
 let db: DatabaseInstance | null = null;
@@ -353,6 +394,42 @@ function initializeSchema(database: Database.Database): void {
     ON scheduled_tasks(enabled, next_run_at)
   `);
 
+    // Create projects table — groups sessions around a shared working
+    // context (workdir + persistent instructions + reference files).
+    database.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      workdir TEXT NOT NULL,
+      config_set_id TEXT,
+      instructions TEXT,
+      archived INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
+    // Sessions can point at the project they belong to (null = no project).
+    ensureColumn(database, 'sessions', 'project_id', 'project_id TEXT');
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_project_id
+    ON sessions(project_id)
+  `);
+
+    // Reference files attached to a project: paths read at session start
+    // and injected into the agent context (never mounted writable).
+    database.exec(`
+    CREATE TABLE IF NOT EXISTS project_files (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      added_at INTEGER NOT NULL,
+      UNIQUE(project_id, file_path),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+
     log('[Database] Schema initialized');
   } catch (error) {
     logError('[Database] Schema initialization failed:', error);
@@ -512,6 +589,42 @@ export function initDatabase(): DatabaseInstance {
 
   const deleteScheduledTaskStmt = rawDb.prepare(`
     DELETE FROM scheduled_tasks WHERE id = ?
+  `);
+
+  const insertProject = rawDb.prepare(`
+    INSERT INTO projects (
+      id, name, description, workdir, config_set_id, instructions, archived, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const getProjectStmt = rawDb.prepare(`
+    SELECT * FROM projects WHERE id = ?
+  `);
+
+  const getAllProjectsStmt = rawDb.prepare(`
+    SELECT * FROM projects ORDER BY created_at DESC
+  `);
+
+  const deleteProjectStmt = rawDb.prepare(`
+    DELETE FROM projects WHERE id = ?
+  `);
+
+  const insertProjectFile = rawDb.prepare(`
+    INSERT OR IGNORE INTO project_files (id, project_id, file_path, added_at)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  const deleteProjectFileStmt = rawDb.prepare(`
+    DELETE FROM project_files WHERE project_id = ? AND file_path = ?
+  `);
+
+  const getProjectFilesStmt = rawDb.prepare(`
+    SELECT * FROM project_files WHERE project_id = ? ORDER BY added_at ASC
+  `);
+
+  const deleteProjectFilesByProjectStmt = rawDb.prepare(`
+    DELETE FROM project_files WHERE project_id = ?
   `);
 
   db = {
@@ -708,6 +821,76 @@ export function initDatabase(): DatabaseInstance {
 
       delete: (id: string) => {
         deleteScheduledTaskStmt.run(id);
+      },
+    },
+
+    projects: {
+      create: (project: ProjectRow) => {
+        insertProject.run(
+          project.id,
+          project.name,
+          project.description,
+          project.workdir,
+          project.config_set_id,
+          project.instructions,
+          project.archived,
+          project.created_at,
+          project.updated_at
+        );
+      },
+
+      update: (id: string, updates: Partial<ProjectRow>) => {
+        const IMMUTABLE_COLUMNS = new Set(['id', 'created_at']);
+        const setClauses: string[] = [];
+        const values: unknown[] = [];
+
+        for (const [key, value] of Object.entries(updates)) {
+          if (value !== undefined) {
+            if (IMMUTABLE_COLUMNS.has(key)) continue;
+            validateIdentifier(key);
+            setClauses.push(`${key} = ?`);
+            values.push(value);
+          }
+        }
+
+        if (setClauses.length === 0) return;
+
+        setClauses.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(id);
+
+        const sql = `UPDATE projects SET ${setClauses.join(', ')} WHERE id = ?`;
+        rawDb.prepare(sql).run(...values);
+      },
+
+      get: (id: string): ProjectRow | undefined => {
+        return getProjectStmt.get(id) as ProjectRow | undefined;
+      },
+
+      getAll: (): ProjectRow[] => {
+        return getAllProjectsStmt.all() as ProjectRow[];
+      },
+
+      delete: (id: string) => {
+        deleteProjectStmt.run(id);
+      },
+    },
+
+    projectFiles: {
+      add: (file: ProjectFileRow) => {
+        insertProjectFile.run(file.id, file.project_id, file.file_path, file.added_at);
+      },
+
+      remove: (projectId: string, filePath: string) => {
+        deleteProjectFileStmt.run(projectId, filePath);
+      },
+
+      listByProject: (projectId: string): ProjectFileRow[] => {
+        return getProjectFilesStmt.all(projectId) as ProjectFileRow[];
+      },
+
+      deleteByProject: (projectId: string) => {
+        deleteProjectFilesByProjectStmt.run(projectId);
       },
     },
 

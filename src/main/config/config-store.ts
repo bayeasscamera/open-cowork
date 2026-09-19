@@ -1297,6 +1297,19 @@ export class ConfigStore {
   }
 
   /**
+   * Project a SPECIFIC ConfigSet into a full AppConfig without changing the
+   * globally active set. Used by Projects so a project can pin its own
+   * provider/model. Returns undefined when the set id is unknown — callers
+   * fall back to the active config.
+   */
+  getConfigSetProjectedConfig(setId: string): AppConfig | undefined {
+    const current = this.getAll();
+    const set = current.configSets.find((s) => s.id === setId);
+    if (!set) return undefined;
+    return this.composeProjectedConfig(current, current.configSets, set.id);
+  }
+
+  /**
    * Get a specific config value
    */
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {

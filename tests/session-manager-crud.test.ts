@@ -158,6 +158,91 @@ describe('SessionManager.listSessions', () => {
     expect(s.mountedPaths).toEqual([]);
     expect(s.allowedTools).toEqual([]);
   });
+
+  it('maps the project_id column back to session.projectId', () => {
+    const row = {
+      id: 's3',
+      title: 'Project session',
+      claude_session_id: null,
+      openai_thread_id: null,
+      status: 'idle',
+      cwd: '/tmp/workspace',
+      mounted_paths: '[]',
+      allowed_tools: '[]',
+      memory_enabled: 0,
+      model: null,
+      project_id: 'proj-1',
+      created_at: 1,
+      updated_at: 1,
+    };
+    const db = makeDb({
+      sessions: {
+        create: vi.fn(),
+        get: vi.fn(() => null),
+        getAll: vi.fn(() => [row]),
+        update: vi.fn(),
+        delete: vi.fn(),
+      } as unknown,
+    });
+
+    const manager = new SessionManager(db, vi.fn());
+    const [s] = manager.listSessions();
+    expect(s.projectId).toBe('proj-1');
+  });
+});
+
+// ------------------------------------------------------------------
+// startSession — project link persistence
+// ------------------------------------------------------------------
+describe('SessionManager.startSession with projectId', () => {
+  it('persists the project link on the session row', async () => {
+    const create = vi.fn();
+    const db = makeDb({
+      sessions: {
+        create,
+        get: vi.fn(() => null),
+        getAll: vi.fn(() => []),
+        update: vi.fn(),
+        delete: vi.fn(),
+      } as unknown,
+    });
+
+    const manager = new SessionManager(db, vi.fn());
+    const session = await manager.startSession(
+      'AO Lot 1',
+      'bonjour',
+      '/tmp/workspace',
+      undefined,
+      undefined,
+      true,
+      'proj-1'
+    );
+
+    expect(session.projectId).toBe('proj-1');
+    expect(create).toHaveBeenCalledTimes(1);
+    const row = create.mock.calls[0][0] as { project_id: string | null };
+    expect(row.project_id).toBe('proj-1');
+  });
+
+  it('stores a null project_id when no project is given', async () => {
+    const create = vi.fn();
+    const db = makeDb({
+      sessions: {
+        create,
+        get: vi.fn(() => null),
+        getAll: vi.fn(() => []),
+        update: vi.fn(),
+        delete: vi.fn(),
+      } as unknown,
+    });
+
+    const manager = new SessionManager(db, vi.fn());
+    const session = await manager.startSession('Sans projet', 'bonjour', '/tmp/workspace');
+
+    expect(session.projectId).toBeUndefined();
+    const row = create.mock.calls[0][0] as { project_id: string | null };
+    expect(row.project_id).toBeNull();
+  });
 });
 
 // ------------------------------------------------------------------

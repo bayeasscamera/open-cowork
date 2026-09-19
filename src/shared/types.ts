@@ -11,6 +11,27 @@ export interface Session {
   memoryEnabled: boolean;
   model?: string;
   isPinned?: boolean;
+  /** Project this session belongs to, when linked. */
+  projectId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * A Project groups sessions around a shared working context: a workspace
+ * folder, persistent instructions, reference files and an optional ConfigSet
+ * (provider/model) override. Never hard-deleted — archived only.
+ */
+export interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  workdir: string;
+  configSetId: string | null;
+  instructions: string | null;
+  archived: boolean;
+  /** Absolute paths of attached reference files (read-only context at session start). */
+  referenceFiles: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -459,6 +480,8 @@ export type ClientEvent =
         allowedTools?: string[];
         content?: ContentBlock[];
         memoryEnabled?: boolean;
+        /** Start the session inside this project (uses its workdir/context). */
+        projectId?: string;
       };
     }
   | {
@@ -489,7 +512,37 @@ export type ClientEvent =
   | { type: 'folder.select'; payload: Record<string, never> }
   | { type: 'workdir.get'; payload: Record<string, never> }
   | { type: 'workdir.set'; payload: { path: string; sessionId?: string } }
-  | { type: 'workdir.select'; payload: { sessionId?: string; currentPath?: string } };
+  | { type: 'workdir.select'; payload: { sessionId?: string; currentPath?: string } }
+  | {
+      type: 'projects.create';
+      payload: {
+        name: string;
+        workdir: string;
+        description?: string;
+        configSetId?: string;
+        instructions?: string;
+      };
+    }
+  | { type: 'projects.list'; payload: { includeArchived?: boolean } }
+  | { type: 'projects.get'; payload: { projectId: string } }
+  | {
+      type: 'projects.update';
+      payload: {
+        projectId: string;
+        name?: string;
+        description?: string | null;
+        workdir?: string;
+        configSetId?: string | null;
+        instructions?: string | null;
+      };
+    }
+  | { type: 'projects.archive'; payload: { projectId: string; archived: boolean } }
+  | {
+      type: 'projects.attachFile';
+      payload: { projectId: string; path: string };
+    }
+  | { type: 'projects.detachFile'; payload: { projectId: string; path: string } }
+  | { type: 'projects.linkSession'; payload: { projectId: string; sessionId: string } };
 
 // Sandbox setup types (app startup)
 export type SandboxSetupPhase =

@@ -392,11 +392,18 @@ export function WelcomeView() {
       });
     }
 
-    // Use the global working directory (always available after app startup)
+    // Use the global working directory (always available after app startup).
+    // An active project pins the session to the project (workdir + context).
+    const activeProjectId = useAppStore.getState().activeProjectId;
     setIsSubmitting(true);
     try {
       const sessionTitle = getInitialSessionTitle(currentPrompt, attachedFiles[0]?.name);
-      const session = await startSession(sessionTitle, contentBlocks, workingDir || undefined);
+      const session = await startSession(
+        sessionTitle,
+        contentBlocks,
+        workingDir || undefined,
+        activeProjectId || undefined
+      );
       if (session) {
         setPrompt('');
         if (textareaRef.current) {
