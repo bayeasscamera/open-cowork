@@ -126,7 +126,7 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
           >
             {configSets.map((set) => (
               <option key={set.id} value={set.id}>
-                {set.isSystem ? `${set.name} (${t('api.defaultSetTag')})` : set.name}
+                {set.isSystem ? `${t('api.defaultProfile')} (${t('api.defaultSetTag')})` : set.name}
               </option>
             ))}
           </select>

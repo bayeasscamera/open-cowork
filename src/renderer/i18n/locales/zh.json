@@ -225,6 +225,7 @@
     "settingsSubtitle": "管理 API 提供商、密钥和模型",
     "configSet": "配置方案",
     "defaultSetTag": "默认",
+    "defaultProfile": "默认配置",
     "saveAs": "另存为",
     "renameSet": "重命名",
     "deleteSet": "删除方案",

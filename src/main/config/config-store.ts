@@ -323,7 +323,7 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
 
 const defaultConfigSet: ApiConfigSet = {
   id: DEFAULT_CONFIG_SET_ID,
-  name: '默认方案',
+  name: 'Profil par défaut',
   isSystem: true,
   provider: 'openrouter',
   customProtocol: 'anthropic',

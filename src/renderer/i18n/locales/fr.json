@@ -500,6 +500,7 @@
     "settingsSubtitle": "Configurez vos fournisseurs, modèles et clés API.",
     "configSet": "Jeu de configuration",
     "defaultSetTag": "Par défaut",
+    "defaultProfile": "Profil par défaut",
     "saveAs": "Enregistrer sous...",
     "renameSet": "Renommer le jeu",
     "deleteSet": "Supprimer le jeu",

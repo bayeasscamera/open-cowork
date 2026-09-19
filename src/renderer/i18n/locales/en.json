@@ -203,6 +203,7 @@
     "settingsSubtitle": "Manage provider, key, and model settings",
     "configSet": "Config Set",
     "defaultSetTag": "Default",
+    "defaultProfile": "Default profile",
     "saveAs": "Save As",
     "renameSet": "Rename",
     "deleteSet": "Delete Set",
