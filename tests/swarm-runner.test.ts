@@ -475,24 +475,46 @@ describe('createSwarmRunner', () => {
     expect(launchSession).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back when the sub-agent model times out', async () => {
-    const launchSession = vi.fn(async (args: SubAgentSessionArgs) => {
-      if (args.config.model === 'cheap-model') {
-        return new Promise<{ output: string; modifiedFiles: string[] }>(() => undefined);
+  it('falls back when the sub-agent session is silent past the idle timeout', async () => {
+    // First launch (cheap-model): a session that never emits events and never
+    // resolves — the idle timeout aborts it. Second launch (fallback): works.
+    let call = 0;
+    vi.mocked(createAgentSession).mockImplementation(async () => {
+      call += 1;
+      if (call === 1) {
+        return {
+          session: {
+            subscribe: () => () => undefined,
+            prompt: () => new Promise(() => undefined),
+            abort: vi.fn(),
+            dispose: vi.fn(),
+          },
+        } as never;
       }
-      return { output: 'slow recovered', modifiedFiles: [] };
+      return {
+        session: {
+          subscribe: (cb: (event: unknown) => void) => {
+            cb({
+              type: 'agent_end',
+              messages: [
+                { role: 'assistant', content: [{ type: 'text', text: 'recovered' }] },
+              ],
+            });
+            return () => undefined;
+          },
+          prompt: async () => undefined,
+        },
+      } as never;
     });
-    writeFileSync(join(cwd, 'slow.ts'), 'export const slow = 1;\n');
     const runner = createSwarmRunner({
       cwd,
       getConfig: () => makeConfig({ timeoutMs: 50 }),
-      launchSession,
     });
 
     const result = await runner(makeTask('developer'), '');
     expect(result.usedFallback).toBe(true);
     expect(result.modelUsed).toBe('active/main-model');
-    expect(result.output).toBe('slow recovered');
+    expect(result.output).toBe('recovered');
   });
 
   it('routes a per-role modelId to the exact sub-agent session config', async () => {

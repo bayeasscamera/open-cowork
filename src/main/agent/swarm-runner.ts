@@ -497,6 +497,8 @@ export interface SubAgentSessionArgs {
   config: AppConfig;
   cwd: string;
   label: string;
+  /** Idle timeout: the session is aborted after this much time without events. */
+  timeoutMs: number;
   signal?: AbortSignal;
 }
 
@@ -603,7 +605,26 @@ async function launchSubAgentSession(
   let sawUsage = false;
   const root = path.resolve(args.cwd);
 
+  // Activity-based idle timeout: every session event (streaming deltas, tool
+  // calls, message ends) resets the timer, so a slow-but-progressing task is
+  // never killed mid-stream; a silent/hung session is aborted after idleMs.
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let idleReject: ((err: Error) => void) | undefined;
+  const idlePromise = new Promise<never>((_, reject) => {
+    idleReject = reject;
+  });
+  const touch = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(
+      () => idleReject?.(new SubAgentTaskTimeoutError(args.label, args.timeoutMs)),
+      args.timeoutMs
+    );
+    idleTimer.unref?.();
+  };
+  touch();
+
   const unsubscribe = session.subscribe((event) => {
+    touch();
     if (event.type === 'message_end') {
       // In-memory sessions never persist messages, so usage has to be
       // cumulated here or it disappears with the session.
@@ -655,12 +676,13 @@ async function launchSubAgentSession(
         })
       : null;
 
-    const racers: Promise<unknown>[] = [session.prompt(promptParts.join('\n'))];
+    const racers: Promise<unknown>[] = [session.prompt(promptParts.join('\n')), idlePromise];
     if (abortPromise) {
       racers.push(abortPromise);
     }
     await Promise.race(racers);
   } finally {
+    if (idleTimer) clearTimeout(idleTimer);
     unsubscribe();
     try {
       const abortResult = piSession.abort?.();
@@ -771,6 +793,7 @@ async function finalizeTaskResult(
           config: usedConfig,
           cwd,
           label: modelLabel,
+          timeoutMs,
           signal,
         }) as unknown as Promise<SubAgentSessionResult>,
       timeoutMs,
@@ -816,19 +839,14 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
     log(`[SwarmRunner] ${task.role} starting with model "${profile.label}"`);
     try {
       try {
-        const result = await withTaskTimeout(
-          (signal) =>
-            launchSession({
-              task,
-              context,
-              config: profile.config,
-              cwd: options.cwd,
-              label: profile.label,
-              signal,
-            }),
+        const result = await launchSession({
+          task,
+          context,
+          config: profile.config,
+          cwd: options.cwd,
+          label: profile.label,
           timeoutMs,
-          `${task.role}:${task.id}`
-        );
+        });
         return await finalizeTaskResult(task, context, result, profile.label, false, profile.config, launchSession, options.cwd, timeoutMs);
       } catch (error) {
         if (profile.source === 'inherited') {
@@ -842,19 +860,14 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           `[SwarmRunner] Sub-agent model "${profile.label}" failed (${reason}) — ` +
             `falling back to "${activeLabel}"`
         );
-        const result = await withTaskTimeout(
-          (signal) =>
-            launchSession({
-              task,
-              context,
-              config: appConfig,
-              cwd: options.cwd,
-              label: activeLabel,
-              signal,
-            }),
+        const result = await launchSession({
+          task,
+          context,
+          config: appConfig,
+          cwd: options.cwd,
+          label: activeLabel,
           timeoutMs,
-          `${task.role}:${task.id}:fallback`
-        );
+        });
         return await finalizeTaskResult(task, context, result, activeLabel, true, appConfig, launchSession, options.cwd, timeoutMs);
       }
     } finally {
