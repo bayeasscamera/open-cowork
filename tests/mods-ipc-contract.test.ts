@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -34,6 +34,31 @@ describe('mods/diff/skill-doctor IPC contract', () => {
     const main = readFileSync(resolve(root, 'src/main/index.ts'), 'utf8');
     expect(main).toContain('createBuiltinMods()');
     expect(main).toContain('modsRegistry.register(mod)');
+  });
+
+  it('SettingsMods renders at the TOP of the Skills tab (discoverability)', () => {
+    const panel = readFileSync(resolve(root, 'src/renderer/components/SettingsPanel.tsx'), 'utf8');
+    const skillsTabStart = panel.indexOf("activeTab === 'skills' ? '' : 'hidden'");
+    expect(skillsTabStart).toBeGreaterThan(-1);
+    const modsPos = panel.indexOf('<SettingsMods />');
+    const skillsPos = panel.indexOf('<SettingsSkills ');
+    // Both must be inside the skills tab, mods BEFORE the skills list.
+    expect(modsPos).toBeGreaterThan(skillsTabStart);
+    expect(modsPos).toBeLessThan(skillsPos);
+  });
+
+  it('business skill is tender-and-funding-response, generalist format', () => {
+    const skill = readFileSync(
+      resolve(root, '.claude/skills/tender-and-funding-response/SKILL.md'),
+      'utf8'
+    );
+    expect(skill.startsWith('---')).toBe(true);
+    expect(skill).toContain('name: tender-and-funding-response');
+    expect(skill).toContain('[À COMPLÉTER]');
+    expect(skill).toMatch(/Jamais inventer/i);
+    // The replaced drafts must be gone.
+    expect(existsSync(resolve(root, '.claude/skills/dahira-admin-assistant'))).toBe(false);
+    expect(existsSync(resolve(root, '.claude/skills/funding-dossier'))).toBe(false);
   });
 
   it('agent-runner installs both pre and post mods hooks', () => {

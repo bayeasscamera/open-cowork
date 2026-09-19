@@ -279,10 +279,8 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
                 )}
               </div>
               <div className={activeTab === 'skills' ? '' : 'hidden'}>
-                {viewedTabs.has('skills') && <SettingsSkills isActive={activeTab === 'skills'} />}
-              <div className="mt-4">
                 <SettingsMods />
-              </div>
+                {viewedTabs.has('skills') && <SettingsSkills isActive={activeTab === 'skills'} />}
               </div>
               <div className={activeTab === 'personalization' ? '' : 'hidden'}>
                 {viewedTabs.has('personalization') && <SettingsPersonalization />}
