@@ -1037,5 +1037,36 @@
     "preset_codeComments": "Code commenté",
     "presetText_codeComments": "Quand tu écris du code, ajoute des commentaires brefs sur les décisions non évidentes.",
     "instructionsSave": "Enregistrer les instructions"
+  },
+  "mods": {
+    "title": "Mods locaux",
+    "description": "Hooks de fonctions 100% locaux — ils interceptent les appels d'outils et filtrent les sorties avant qu'elles n'atteignent le modèle.",
+    "loading": "Chargement des mods…",
+    "empty": "Aucun mod enregistré.",
+    "failed": "Échec du chargement des mods.",
+    "toggleFailed": "Échec de la mise à jour du mod."
+  },
+  "diffPanel": {
+    "title": "Diff de session",
+    "description": "Fichiers modifiés par l'agent pendant cette session.",
+    "files": "Fichiers modifiés",
+    "empty": "Aucun changement de fichier enregistré pour l'instant.",
+    "error": "Échec du chargement des changements.",
+    "unchanged": "Aucun changement textuel détecté."
+  },
+  "skillDoctor": {
+    "title": "Skill doctor",
+    "description": "Coût en contexte des skills chargées, calculé localement à partir de vos fichiers.",
+    "refresh": "Analyser",
+    "failed": "Échec de l'analyse.",
+    "empty": "Aucune skill trouvée.",
+    "skill": "Skill",
+    "tokens": "Tokens",
+    "uses": "Usage récent",
+    "never": "jamais",
+    "recommendation": "Recommandation",
+    "considerDisabling": "À envisager de désactiver",
+    "keep": "Conserver",
+    "total": "Contexte skills : {{tokens}} tokens {{percent}} de la fenêtre"
   }
 }

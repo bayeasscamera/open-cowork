@@ -17,6 +17,7 @@ import {
 import type { Skill, PluginCatalogItemV2, InstalledPlugin, PluginComponentKind } from '../../types';
 import { useAppStore } from '../../store';
 import { SettingsContentSection } from './shared';
+import { SettingsSkillDoctor } from './SettingsSkillDoctor';
 import type { LocalizedBanner } from './shared';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -408,6 +409,7 @@ export function SettingsSkills({ isActive }: { isActive: boolean }) {
 
   return (
     <div className="space-y-4">
+      <SettingsSkillDoctor />
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-error/10 text-error text-sm">
           <AlertCircle className="w-4 h-4" />

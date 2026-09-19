@@ -386,6 +386,51 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('logs.write', level, args),
   },
 
+  // Local mods (function hooks)
+  mods: {
+    list: (): Promise<{
+      success: boolean;
+      mods: Array<{ id: string; label: string; description: string; enabled: boolean }>;
+    }> => ipcRenderer.invoke('mods.list'),
+    setEnabled: (id: string, enabled: boolean): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('mods.setEnabled', id, enabled),
+  },
+
+  // Live diff panel (session file changes)
+  diff: {
+    getSessionFiles: (
+      sessionId: string
+    ): Promise<{
+      success: boolean;
+      files: Array<{
+        path: string;
+        added: number;
+        removed: number;
+        updatedAt: number;
+        before: string | null;
+        after: string | null;
+        diff: string;
+      }>;
+    }> => ipcRenderer.invoke('diff.getSessionFiles', sessionId),
+  },
+
+  // Skill doctor (context cost analyzer)
+  skillsDoctor: (): Promise<{
+    success: boolean;
+    report: {
+      entries: Array<{
+        name: string;
+        path: string;
+        tokenEstimate: number;
+        useCount: number;
+        lastUsedAt: number | null;
+        recommendation: 'disable' | 'keep';
+      }>;
+      totalSkillTokens: number;
+      contextWindow: number | null;
+    } | null;
+  }> => ipcRenderer.invoke('skills.doctor'),
+
   // Remote control methods
   remote: {
     getConfig: (): Promise<RemoteConfig> => ipcRenderer.invoke('remote.getConfig'),
@@ -722,6 +767,44 @@ declare global {
         runNow: (id: string) => Promise<ScheduleTask | null>;
       };
       personalFiles: PersonalFilesAPI;
+      mods: {
+        list: () => Promise<{
+          success: boolean;
+          mods: Array<{ id: string; label: string; description: string; enabled: boolean }>;
+        }>;
+        setEnabled: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+      };
+      diff: {
+        getSessionFiles: (
+          sessionId: string
+        ) => Promise<{
+          success: boolean;
+          files: Array<{
+            path: string;
+            added: number;
+            removed: number;
+            updatedAt: number;
+            before: string | null;
+            after: string | null;
+            diff: string;
+          }>;
+        }>;
+      };
+      skillsDoctor: () => Promise<{
+        success: boolean;
+        report: {
+          entries: Array<{
+            name: string;
+            path: string;
+            tokenEstimate: number;
+            useCount: number;
+            lastUsedAt: number | null;
+            recommendation: 'disable' | 'keep';
+          }>;
+          totalSkillTokens: number;
+          contextWindow: number | null;
+        } | null;
+      }>;
       memory: {
         getOverview: (cwd?: string) => Promise<MemoryOverview>;
         search: (payload: {

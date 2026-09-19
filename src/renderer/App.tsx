@@ -32,6 +32,9 @@ const ChatView = lazy(() =>
 const ContextPanel = lazy(() =>
   import('./components/ContextPanel').then((module) => ({ default: module.ContextPanel }))
 );
+const DiffPanel = lazy(() =>
+  import('./components/DiffPanel').then((module) => ({ default: module.DiffPanel }))
+);
 const ConfigModal = lazy(() =>
   import('./components/ConfigModal').then((module) => ({ default: module.ConfigModal }))
 );
@@ -79,6 +82,8 @@ function App() {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
+  const diffPanelVisible = useAppStore((s) => s.diffPanelVisible);
+  const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
 
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
@@ -223,6 +228,34 @@ function App() {
             </Suspense>
           </PanelErrorBoundary>
         )}
+      {/* Diff Panel toggle + live session diff (local mods only) */}
+      {activeSessionId && !showSettings && (
+        <>
+          <button
+            type="button"
+            aria-pressed={diffPanelVisible}
+            aria-label="Toggle diff panel"
+            onClick={() => setDiffPanelVisible(!diffPanelVisible)}
+            className={`fixed bottom-4 right-4 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
+              diffPanelVisible
+                ? 'border-accent bg-accent/10 text-text-primary'
+                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
+            }`}
+          >
+            Diff
+          </button>
+          {diffPanelVisible && (
+            <div className="fixed bottom-16 right-4 top-16 z-40 w-[380px] rounded-xl border border-border bg-background shadow-xl">
+              <PanelErrorBoundary name="DiffPanel" resetKey={activeSessionId} fallback={null}>
+                <Suspense fallback={null}>
+                  <DiffPanel />
+                </Suspense>
+              </PanelErrorBoundary>
+            </div>
+          )}
+        </>
+      )}
+
       </div>
 
       {/* Permission Dialog */}

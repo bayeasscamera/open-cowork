@@ -92,6 +92,13 @@ import {
 import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { registerLogsIpcHandlers } from './ipc/logs-handlers';
+import { getModsRegistry } from './mods/mods-runtime';
+import { createBuiltinMods, getDiffCollector } from './mods/builtin-mods';
+import {
+  buildSkillDoctorReport,
+  loadSkillSourcesFromDir,
+  type SkillDoctorSkillSource,
+} from './mods/skill-doctor';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { SystemNotifier } from './utils/system-notifier';
 import {
@@ -2438,8 +2445,68 @@ ipcMain.handle('sandbox.installPythonInLima', async () => {
   }
 });
 
+// Register built-in local mods once (idempotent registry).
+const modsRegistry = getModsRegistry();
+for (const mod of createBuiltinMods()) {
+  modsRegistry.register(mod);
+}
+
 // Logs IPC handlers (logs.export stays here: it needs app-wide runtime state)
 registerLogsIpcHandlers();
+
+// Mods IPC handlers (local function hooks)
+ipcMain.handle('mods.list', () => {
+  try {
+    return { success: true, mods: getModsRegistry().list() };
+  } catch (error) {
+    logError('[IPC] Error listing mods:', error);
+    return { success: false, mods: [] };
+  }
+});
+
+ipcMain.handle('mods.setEnabled', (_event, id: unknown, enabled: unknown) => {
+  try {
+    if (typeof id !== 'string' || typeof enabled !== 'boolean') {
+      return { success: false, error: 'invalid_input' };
+    }
+    getModsRegistry().setEnabled(id, enabled);
+    return { success: true };
+  } catch (error) {
+    logError('[IPC] Error setting mod state:', error);
+    return { success: false, error: 'failed' };
+  }
+});
+
+ipcMain.handle('diff.getSessionFiles', (_event, sessionId: unknown) => {
+  try {
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      return { success: false, files: [] };
+    }
+    return { success: true, files: getDiffCollector().summary(sessionId) };
+  } catch (error) {
+    logError('[IPC] Error getting diff summary:', error);
+    return { success: false, files: [] };
+  }
+});
+
+ipcMain.handle('skills.doctor', async () => {
+  try {
+    const sources: SkillDoctorSkillSource[] = [];
+    // Built-in skills (bundled with the app)
+    const builtinDir = app.isPackaged
+      ? join(process.resourcesPath, 'skills')
+      : join(__dirname, '../../.claude', 'skills');
+    sources.push(...loadSkillSourcesFromDir(builtinDir));
+    // User skills directory
+    const userDir = join(app.getPath('userData'), 'claude', 'skills');
+    sources.push(...loadSkillSourcesFromDir(userDir));
+    const contextWindow = Number(configStore.get('contextWindow')) || null;
+    return { success: true, report: buildSkillDoctorReport(sources, contextWindow) };
+  } catch (error) {
+    logError('[IPC] Error building skill doctor report:', error);
+    return { success: false, report: null };
+  }
+});
 
 ipcMain.handle('logs.export', async () => {
   try {

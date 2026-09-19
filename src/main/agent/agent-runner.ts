@@ -23,6 +23,8 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import { Type, type TSchema } from '@sinclair/typebox';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+import { getModsRegistry } from '../mods/mods-runtime';
+import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
@@ -1021,6 +1023,70 @@ ${hints.join('\n')}
     log(
       `[CoworkAgentRunner] Permission hook installed on session ${sessionId} via agent.setBeforeToolCall`
     );
+  }
+
+  /**
+   * Install the local mods hooks on the session agent:
+   *  - pre-hook composes into the SAME beforeToolCall slot as the permission
+   *    gate (mods run first — they can block a call before permissions).
+   *  - post-hook uses the Agent's setAfterToolCall: mods can replace the text
+   *    content of tool results BEFORE they are emitted into the model context
+   *    (security-redactor) or observe them (telemetry, diff collector).
+   */
+  private installModsHooks(piSession: PiAgentSession, sessionId: string): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const agent = (piSession as any).agent;
+    if (!agent || typeof agent.setAfterToolCall !== 'function') {
+      logWarn('[CoworkAgentRunner] Cannot access agent.setAfterToolCall — mods post-hook skipped');
+      return;
+    }
+
+    // Pre-hook composition into the existing permission slot.
+    const originalBefore =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (agent as any)._beforeToolCall as
+      | ((ctx: unknown, signal?: AbortSignal) => Promise<unknown>)
+      | undefined;
+
+    if (typeof agent.setBeforeToolCall === 'function') {
+      agent.setBeforeToolCall(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        async (ctx: any, signal?: AbortSignal): Promise<any> => {
+          const toolName: string = ctx.toolCall?.name ?? '';
+          const args: Record<string, unknown> = ctx.args ?? {};
+          const modsDecision = getModsRegistry().runPreToolUse({ sessionId, toolName, args });
+          recordSkillUseIfApplicable(toolName, args);
+          if (modsDecision.block) {
+            return { block: true, reason: modsDecision.reason ?? 'Blocked by a local mod.' };
+          }
+          return originalBefore ? originalBefore(ctx, signal) : undefined;
+        }
+      );
+    }
+
+    // Post-hook: replace the result text when any mod rewrites it.
+    agent.setAfterToolCall(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async (ctx: any): Promise<any> => {
+        const toolName: string = ctx.toolCall?.name ?? '';
+        const args: Record<string, unknown> = ctx.args ?? {};
+        const blocks = Array.isArray(ctx.result?.content) ? ctx.result.content : [];
+        const text = blocks
+          .filter((block: { type?: string; text?: string }) => block.type === 'text')
+          .map((block: { text?: string }) => block.text ?? '')
+          .join('');
+        const replaced = getModsRegistry().runPostToolUse(
+          { sessionId, toolName, args },
+          { content: text }
+        );
+        if (replaced !== text) {
+          return { content: [{ type: 'text', text: replaced }] };
+        }
+        return undefined;
+      }
+    );
+
+    log(`[CoworkAgentRunner] Mods hooks installed on session ${sessionId}`);
   }
 
   /**
@@ -2361,6 +2427,7 @@ Tool routing:
         // Install permission-gating hook via the SDK's tool_call extension event.
         // This must happen once per new session — the hook persists across reuses.
         this.installPermissionHook(piSession, session.id);
+        this.installModsHooks(piSession, session.id);
 
         // Store session for reuse — evict oldest if cache is full
         if (this.piSessions.size >= CoworkAgentRunner.MAX_CACHED_SESSIONS) {

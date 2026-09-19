@@ -22,6 +22,7 @@ import { SettingsSubAgents } from './settings/SettingsSubAgents';
 import { SettingsSandbox } from './settings/SettingsSandbox';
 import { SettingsConnectors } from './settings/SettingsConnectors';
 import { SettingsSkills } from './settings/SettingsSkills';
+import { SettingsMods } from './settings/SettingsMods';
 import { SettingsSchedule } from './settings/SettingsSchedule';
 import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
@@ -279,6 +280,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'skills' ? '' : 'hidden'}>
                 {viewedTabs.has('skills') && <SettingsSkills isActive={activeTab === 'skills'} />}
+              <div className="mt-4">
+                <SettingsMods />
+              </div>
               </div>
               <div className={activeTab === 'personalization' ? '' : 'hidden'}>
                 {viewedTabs.has('personalization') && <SettingsPersonalization />}

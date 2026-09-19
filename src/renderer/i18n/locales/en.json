@@ -1038,5 +1038,36 @@
     "preset_codeComments": "Commented code",
     "presetText_codeComments": "When writing code, add brief comments explaining non-obvious decisions.",
     "instructionsSave": "Save instructions"
+  },
+  "mods": {
+    "title": "Local mods",
+    "description": "Function hooks running 100% locally — they can intercept tool calls and filter tool outputs before they reach the model.",
+    "loading": "Loading mods…",
+    "empty": "No mods registered.",
+    "failed": "Failed to load mods.",
+    "toggleFailed": "Failed to update the mod."
+  },
+  "diffPanel": {
+    "title": "Session diff",
+    "description": "Files modified by the agent during this session.",
+    "files": "Modified files",
+    "empty": "No file changes recorded yet.",
+    "error": "Failed to load file changes.",
+    "unchanged": "No textual changes detected."
+  },
+  "skillDoctor": {
+    "title": "Skill doctor",
+    "description": "Context cost of loaded skills, computed locally from your files.",
+    "refresh": "Analyze",
+    "failed": "Analysis failed.",
+    "empty": "No skills found.",
+    "skill": "Skill",
+    "tokens": "Tokens",
+    "uses": "Recent use",
+    "never": "never",
+    "recommendation": "Recommendation",
+    "considerDisabling": "Consider disabling",
+    "keep": "Keep",
+    "total": "Skills context: {{tokens}} tokens {{percent}} of the window"
   }
 }

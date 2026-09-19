@@ -1038,5 +1038,36 @@
     "completed": "已完成",
     "inDuration": "耗时 {{duration}}",
     "showResult": "查看结果"
+  },
+  "mods": {
+    "title": "本地 Mods",
+    "description": "100% 本地的函数钩子——可拦截工具调用并在输出到达模型前过滤。",
+    "loading": "正在加载 Mods…",
+    "empty": "没有已注册的 Mod。",
+    "failed": "加载 Mods 失败。",
+    "toggleFailed": "更新 Mod 失败。"
+  },
+  "diffPanel": {
+    "title": "会话 Diff",
+    "description": "本次会话中代理修改的文件。",
+    "files": "已修改文件",
+    "empty": "尚无文件变更记录。",
+    "error": "加载文件变更失败。",
+    "unchanged": "未检测到文本变更。"
+  },
+  "skillDoctor": {
+    "title": "Skill 体检",
+    "description": "已加载 skills 的上下文成本，全部本地计算。",
+    "refresh": "分析",
+    "failed": "分析失败。",
+    "empty": "未找到 skills。",
+    "skill": "Skill",
+    "tokens": "Token",
+    "uses": "近期使用",
+    "never": "从未",
+    "recommendation": "建议",
+    "considerDisabling": "建议停用",
+    "keep": "保留",
+    "total": "Skills 上下文：{{tokens}} tokens {{percent}} 可用窗口"
   }
 }
