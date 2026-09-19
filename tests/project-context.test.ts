@@ -136,8 +136,9 @@ describe('resolveProjectContext — INTEGRATION over the real database', () => {
       writeFileSync(cdcPath, '# Cahier des charges\nLot 1 — Périmètre : 12 postes.', 'utf-8');
       store.attachFile(project.id, cdcPath);
 
-      // Real session row linked to the project — exactly what
-      // handleClientEvent('session.start') persists in production.
+      // Real session row created WITH the project link — exactly what
+      // handleClientEvent('session.start') → startSession → saveSession
+      // persists in production (insertSession must carry project_id).
       const now = Date.now();
       const sessionId = 'sess-integration-1';
       db.sessions.create({
@@ -151,11 +152,10 @@ describe('resolveProjectContext — INTEGRATION over the real database', () => {
         allowed_tools: '[]',
         memory_enabled: 1,
         model: null,
-        project_id: null,
+        project_id: project.id,
         created_at: now,
         updated_at: now,
       });
-      store.linkSession(project.id, sessionId);
 
       // The exact resolution the agent runner performs at session start.
       const resolution = resolveProjectContext(sessionId, store);

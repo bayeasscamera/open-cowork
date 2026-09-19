@@ -144,4 +144,29 @@ describe('ProjectStore (real better-sqlite3)', () => {
     const store = createProjectStore(getDatabase());
     expect(store.list().length).toBeGreaterThan(0); // projects created above persist
   });
+
+  it('sessions.create persists project_id through the REAL data-access layer', () => {
+    // Regression for a real E2E failure: insertSession's SQL missed the
+    // project_id column, silently dropping the link on session creation
+    // (mock-based tests could not see it — the real prepared statement can).
+    const db = getDatabase();
+    const now = Date.now();
+    db.sessions.create({
+      id: 'sess-dal-project',
+      title: 'DAL persistence',
+      claude_session_id: null,
+      openai_thread_id: null,
+      status: 'idle',
+      cwd: workdir,
+      mounted_paths: '[]',
+      allowed_tools: '[]',
+      memory_enabled: 1,
+      model: null,
+      project_id: 'project-dal-check',
+      created_at: now,
+      updated_at: now,
+    });
+    const row = db.sessions.get('sess-dal-project');
+    expect(row?.project_id).toBe('project-dal-check');
+  });
 });

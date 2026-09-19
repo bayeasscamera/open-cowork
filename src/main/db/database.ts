@@ -515,8 +515,8 @@ export function initDatabase(): DatabaseInstance {
   // Prepare statements for better performance
   const insertSession = rawDb.prepare(`
     INSERT OR REPLACE INTO sessions
-    (id, title, claude_session_id, openai_thread_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, model, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, title, claude_session_id, openai_thread_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, model, project_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Note: Dynamic update queries are built in sessions.update() for flexibility
@@ -643,6 +643,7 @@ export function initDatabase(): DatabaseInstance {
           session.allowed_tools,
           session.memory_enabled,
           session.model,
+          session.project_id ?? null,
           session.created_at,
           session.updated_at
         );
