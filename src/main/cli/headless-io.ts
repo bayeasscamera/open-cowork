@@ -14,6 +14,7 @@
 
 import * as readline from 'readline';
 import type { ServerEvent, ClientEvent } from '../../shared/types';
+import { redactSecrets } from '../utils/secret-redaction';
 
 // ── Headless JSONL event types ──
 
@@ -41,10 +42,19 @@ const REDACTED_KEYS = new Set([
  * Recursively replace credential values with a placeholder. Headless stdout
  * can be captured by any parent process, so no event (config.status, RPC
  * results, passthrough payloads) may ever carry a real credential.
+ *
+ * Two passes, both from shared sources:
+ *  - key-based: any string value under a known credential key → [REDACTED];
+ *  - pattern-based: every other string leaf is scanned with the shared
+ *    secret-redaction rules (JWT, ghp_, connection strings, …) so credentials
+ *    embedded in free-form content are caught too.
  */
 export function redactSensitiveValues<T>(value: T): T {
   if (Array.isArray(value)) {
     return value.map(redactSensitiveValues) as unknown as T;
+  }
+  if (typeof value === 'string') {
+    return redactSecrets(value) as unknown as T;
   }
   if (value && typeof value === 'object') {
     const source = value as Record<string, unknown>;

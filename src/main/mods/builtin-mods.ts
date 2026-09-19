@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { log } from '../utils/logger';
+import { redactSecrets } from '../utils/secret-redaction';
 import type { CoworkMod, ModsToolCall, ModsToolResult } from './mods-runtime';
 
 // ---------------------------------------------------------------------------
@@ -26,35 +27,12 @@ export const telemetryMod: CoworkMod = {
 
 // ---------------------------------------------------------------------------
 // 2. security-redactor — strips secrets from tool outputs before they
-//    reach the model context or the renderer.
+//    reach the model context or the renderer. Uses the shared redaction
+//    rules from utils/secret-redaction (single source of truth).
 // ---------------------------------------------------------------------------
 
-const SECRET_PATTERNS: Array<{ pattern: RegExp; placeholder: string }> = [
-  { pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g, placeholder: '[REDACTED-KEY]' },
-  { pattern: /\bghp_[A-Za-z0-9]{30,}\b/g, placeholder: '[REDACTED-TOKEN]' },
-  { pattern: /\bgho_[A-Za-z0-9]{30,}\b/g, placeholder: '[REDACTED-TOKEN]' },
-  { pattern: /\bgithub_pat_[A-Za-z0-9_]{30,}\b/g, placeholder: '[REDACTED-TOKEN]' },
-  { pattern: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g, placeholder: '[REDACTED-TOKEN]' },
-  {
-    pattern:
-      /\b(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp):\/\/[^\s"'`<>\]]+@\S+/g,
-    placeholder: '[REDACTED-CONNECTION]',
-  },
-  {
-    pattern:
-      /\b(api[_-]?key|token|secret|password|authorization)\b["'\s:=]{0,4}["']?([A-Za-z0-9_.-]{20,})["']?/gi,
-    placeholder: '$1=[REDACTED]',
-  },
-];
-
 /** Redact every recognized secret pattern from a text. Exported for tests. */
-export function redactSecrets(text: string): string {
-  let output = text;
-  for (const { pattern, placeholder } of SECRET_PATTERNS) {
-    output = output.replace(pattern, placeholder);
-  }
-  return output;
-}
+export { redactSecrets };
 
 export const securityRedactorMod: CoworkMod = {
   id: 'security-redactor',

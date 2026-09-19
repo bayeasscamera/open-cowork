@@ -14,14 +14,14 @@ describe('logger secret redaction', () => {
   it('masks sk-style API keys', async () => {
     const { redactSecretsForTest } = await import('../src/main/utils/logger');
     const out = redactSecretsForTest('token: sk-abc123def456ghi789jkl done');
-    expect(out).toContain('[REDACTED]');
+    expect(out).toContain('[REDACTED-KEY]');
     expect(out).not.toContain('sk-abc123def456ghi789jkl');
   });
 
   it('masks bearer tokens', async () => {
     const { redactSecretsForTest } = await import('../src/main/utils/logger');
     const out = redactSecretsForTest('Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
-    expect(out).toContain('[REDACTED]');
+    expect(out).toContain('[REDACTED-TOKEN]');
     expect(out).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
   });
 
