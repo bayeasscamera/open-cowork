@@ -1,6 +1,7 @@
+import * as fs from 'node:fs';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CodeGraphIndexer, getCodeGraphIndexer } from '../src/main/memory/codegraph-indexer';
 
@@ -77,6 +78,43 @@ describe('CodeGraphIndexer', () => {
     writeFileSync(join(dir, 'worker.py'), PY_SAMPLE);
     const result = await indexer.scanDirectory(dir, ['.py'], true);
     expect(result.symbols.map((s) => s.name).sort()).toEqual(['PyWorker']);
+  });
+
+  it('refreshes the expired TTL without rescanning when content is unchanged', async () => {
+    writeFileSync(join(dir, 'a.ts'), 'export function alpha() {}\n');
+    const first = await indexer.scanDirectory(dir, ['.ts'], true);
+    expect(first.fingerprint).toBeTruthy();
+
+    // Expire the TTL, then re-scan without touching any file: the
+    // fingerprint matches, so the cache is refreshed (lastIndexed bumped)
+    // and served as-is — no full rescan happens.
+    const cacheFile = join(dir, 'cache', indexer['getCachePath'](dir).split(sep).pop() ?? '');
+    const expired = JSON.parse(fs.readFileSync(cacheFile, 'utf-8')) as {
+      lastIndexed: number;
+      fingerprint?: string;
+    };
+    expired.lastIndexed = Date.now() - 2 * 3600 * 1000;
+    fs.writeFileSync(cacheFile, JSON.stringify(expired));
+
+    const second = await indexer.scanDirectory(dir, ['.ts']);
+    expect(second.fingerprint).toBe(first.fingerprint);
+    expect(second.symbols.map((x) => x.name)).toEqual(first.symbols.map((x) => x.name));
+    expect(second.lastIndexed).toBeGreaterThan(expired.lastIndexed);
+  });
+
+  it('rescans for real when a file changed after TTL expiry', async () => {
+    writeFileSync(join(dir, 'a.ts'), 'export function alpha() {}\n');
+    await indexer.scanDirectory(dir, ['.ts'], true);
+    const cacheFile = join(dir, 'cache', indexer['getCachePath'](dir).split(sep).pop() ?? '');
+    const expired = JSON.parse(fs.readFileSync(cacheFile, 'utf-8')) as { lastIndexed: number };
+    expired.lastIndexed = Date.now() - 2 * 3600 * 1000;
+    fs.writeFileSync(cacheFile, JSON.stringify(expired));
+
+    // Different size + different mtime ⇒ fingerprint differs ⇒ real rescan.
+    await new Promise((r) => setTimeout(r, 10));
+    writeFileSync(join(dir, 'a.ts'), 'export function renamedBeta() {}\n');
+    const third = await indexer.scanDirectory(dir, ['.ts']);
+    expect(third.symbols.map((x) => x.name)).toContain('renamedBeta');
   });
 
   it('invalidates only the symbols of the changed file, in memory and cache', async () => {

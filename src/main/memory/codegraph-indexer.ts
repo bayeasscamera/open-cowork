@@ -4,6 +4,7 @@
  */
 
 import * as fs from 'fs';
+import { createHash } from 'crypto';
 import * as path from 'path';
 // Type-only: erased at compile time, the runtime value is loaded lazily via
 // import('typescript') inside extractSymbolsFromFile.
@@ -20,6 +21,8 @@ export interface CodeGraphIndex {
   symbols: CodeSymbol[];
   filesCount: number;
   lastIndexed: number;
+  /** Content fingerprint; an unchanged workspace refreshes the TTL cheaply. */
+  fingerprint?: string;
 }
 
 /** Module-level shared indexer so tools reuse one in-memory index. */
@@ -137,6 +140,47 @@ export class CodeGraphIndexer {
     }
   }
 
+  /** Cheap fingerprint: listing (path/mtime/size) without reading contents. */
+  private computeFingerprint(
+    dirPath: string,
+    extensions: string[]
+  ): { fingerprint: string; filesCount: number } {
+    const parts: string[] = [];
+    let filesCount = 0;
+    const traverse = (currentDir: string) => {
+      try {
+        const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (
+            entry.name.startsWith('.') ||
+            entry.name === 'node_modules' ||
+            entry.name === 'dist' ||
+            entry.name === 'release' ||
+            entry.name === 'build'
+          ) {
+            continue;
+          }
+          const fullPath = path.join(currentDir, entry.name);
+          if (entry.isDirectory()) {
+            traverse(fullPath);
+          } else if (entry.isFile() && extensions.some((ext) => entry.name.endsWith(ext))) {
+            const stat = fs.statSync(fullPath);
+            filesCount++;
+            parts.push(`${fullPath}:${stat.mtimeMs}:${stat.size}`);
+          }
+        }
+      } catch {
+        // Skip unreadable directories
+      }
+    };
+    traverse(dirPath);
+    parts.sort();
+    return {
+      fingerprint: createHash('sha256').update(parts.join('|')).digest('base64url'),
+      filesCount,
+    };
+  }
+
   public async scanDirectory(
     dirPath: string,
     extensions: string[] = ['.ts', '.tsx', '.js', '.jsx', '.py'],
@@ -146,6 +190,28 @@ export class CodeGraphIndexer {
       const cached = this.loadPersistentIndex(dirPath);
       if (cached) {
         return cached;
+      }
+      // TTL expired: if nothing changed on disk, refresh the cache timestamp
+      // instead of rescanning (listing only — no file reads).
+      try {
+        const cacheFile = this.getCachePath(dirPath);
+        if (fs.existsSync(cacheFile)) {
+          const data = JSON.parse(fs.readFileSync(cacheFile, 'utf-8')) as CodeGraphIndex;
+          const current = this.computeFingerprint(dirPath, extensions);
+          if (data.fingerprint && data.fingerprint === current.fingerprint) {
+            const refreshed: CodeGraphIndex = { ...data, lastIndexed: Date.now() };
+            this.savePersistentIndex(dirPath, refreshed);
+            this.index.clear();
+            for (const sym of refreshed.symbols) {
+              const key = sym.name.toLowerCase();
+              if (!this.index.has(key)) this.index.set(key, []);
+              this.index.get(key)!.push(sym);
+            }
+            return refreshed;
+          }
+        }
+      } catch {
+        // Fall through to a full rescan on any fingerprint problem
       }
     }
 
@@ -194,10 +260,12 @@ export class CodeGraphIndexer {
     }
 
     this.isScanning = false;
+    const fp = this.computeFingerprint(dirPath, extensions);
     const result: CodeGraphIndex = {
       symbols: allSymbols,
       filesCount,
       lastIndexed: Date.now(),
+      fingerprint: fp.fingerprint,
     };
 
     this.savePersistentIndex(dirPath, result);

@@ -60,6 +60,20 @@ export interface SubAgentRunResult {
   syntaxIssues?: string[];
 }
 
+/** Maximum upstream context each dependent sub-agent receives. */
+const MAX_DEP_CONTEXT_CHARS = 4000;
+
+/** Keep the most informative head of the upstream context, with a marker. */
+function capDependencyContext(context: string): string {
+  if (context.length <= MAX_DEP_CONTEXT_CHARS) return context;
+  return (
+    context.slice(0, MAX_DEP_CONTEXT_CHARS) +
+    '\n\n… [upstream context truncated to the first ' +
+    MAX_DEP_CONTEXT_CHARS +
+    ' characters to save tokens]'
+  );
+}
+
 export class MultiAgentCoordinator extends EventEmitter {
   private activePlans: Map<string, MultiAgentPlan> = new Map();
   private runnerFn?: SubAgentRunnerFn;
@@ -171,13 +185,19 @@ export class MultiAgentCoordinator extends EventEmitter {
           this.emit('task:started', { planId, task });
 
           try {
-            // Aggregate results of previous dependencies as context
-            const depContext = (task.dependsOn || [])
-              .map((depId) => {
-                const dep = plan.tasks.find((t) => t.id === depId);
-                return `### [${dep?.role.toUpperCase()}] ${dep?.title}\n${dep?.result || ''}`;
-              })
-              .join('\n\n');
+            // Aggregate results of previous dependencies as context. Each
+            // dependent task receives the full aggregate — reviewer AND
+            // security both get a copy — so an uncapped context multiplies
+            // token cost for long upstream outputs (measured: an architect
+            // run can produce a very large result).
+            const depContext = capDependencyContext(
+              (task.dependsOn || [])
+                .map((depId) => {
+                  const dep = plan.tasks.find((t) => t.id === depId);
+                  return `### [${dep?.role.toUpperCase()}] ${dep?.title}\n${dep?.result || ''}`;
+                })
+                .join('\n\n')
+            );
 
             let result = '';
             let modifiedFiles: string[] = [];
