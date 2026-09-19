@@ -963,7 +963,8 @@ export function buildAgentMetaTools(): ToolDefinition[] {
       name: 'orchestrate_multi_agent_plan',
       label: 'Multi-Agent Swarm Coordinator',
       description:
-        'Decompose complex multi-step tasks into specialized autonomous sub-agents (Architect, Developer, Reviewer, Security) organized in a collaborative DAG.',
+        'Decompose complex multi-step tasks into specialized autonomous sub-agents (Architect, Developer, Reviewer, Security) organized in a collaborative DAG. ' +
+        'MEASURED COST: a 4-task swarm took 452s vs 33s for direct execution of the same simple task (13.7x slower) — use ONLY for genuinely complex, multi-disciplinary work; for simple tasks act directly.',
       parameters: Type.Object({
         goal: Type.String({ description: 'Overall project or engineering goal to plan and coordinate' }),
       }),
