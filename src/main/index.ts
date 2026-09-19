@@ -294,7 +294,12 @@ if (isDev) {
   );
 }
 
-const hasSingleInstanceLock = isDev || app.requestSingleInstanceLock();
+// COWORK_MULTI_INSTANCE=1 bypasses the lock for measurement/automation runs
+// (headless benchmarks beside an active GUI session). Never the default.
+const hasSingleInstanceLock =
+  isDev ||
+  process.env.COWORK_MULTI_INSTANCE === '1' ||
+  app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   logWarn('[App] Another instance is already running, quitting this instance');
   app.quit();
