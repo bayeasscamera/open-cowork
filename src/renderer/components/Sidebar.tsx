@@ -10,7 +10,6 @@ import {
   Sun,
   Monitor,
   Settings,
-  Search as SearchIcon,
   Plus,
   ListChecks,
   Check,
@@ -20,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Session } from '../types';
+import { partitionSidebarSessions } from '../utils/sidebar-partition';
 
 import sidebarLogoSrc from '../assets/logo.png';
 
@@ -57,13 +57,15 @@ export function Sidebar() {
     isElectron,
   } = useIPC();
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitleValue, setEditTitleValue] = useState('');
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
+  /** Projects the user explicitly expanded; the project holding the active
+   *  session is always treated as expanded too. */
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(new Set());
   /** Session whose project picker popover is open; null = closed. */
   const [projectPickerSessionId, setProjectPickerSessionId] = useState<string | null>(null);
 
@@ -114,22 +116,43 @@ export function Sidebar() {
     };
   }, [isElectron, setProjects]);
 
-  const normalizedQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
-  const filteredSessions = useMemo(() => {
-    let list = sessions;
-    if (activeProjectId) {
-      list = list.filter((session) => session.projectId === activeProjectId);
-    }
-    if (normalizedQuery) {
-      list = list.filter((session) => session.title.toLowerCase().includes(normalizedQuery));
-    }
-    return list;
-  }, [sessions, normalizedQuery, activeProjectId]);
+  const knownProjectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
+
+  // Sessions linked to a known project live ONLY under that project's
+  // accordion; everything else lands in the pinned or history sections.
+  const {
+    byProject: sessionsByProject,
+    pinned: pinnedSessions,
+    history: historySessions,
+  } = useMemo(
+    () => partitionSidebarSessions(sessions, knownProjectIds),
+    [sessions, knownProjectIds]
+  );
 
   const groupedSessions = useMemo(
-    () => groupSessionsByDate(filteredSessions, t),
-    [filteredSessions, t]
+    () => groupSessionsByDate(historySessions, t),
+    [historySessions, t]
   );
+
+  const isProjectExpanded = useCallback(
+    (projectId: string) => {
+      if (expandedProjectIds.has(projectId)) return true;
+      return (sessionsByProject.get(projectId) || []).some((s) => s.id === activeSessionId);
+    },
+    [expandedProjectIds, sessionsByProject, activeSessionId]
+  );
+
+  const toggleProjectExpanded = useCallback((projectId: string) => {
+    setExpandedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  }, []);
 
   // Exit select mode when sidebar collapses
   useEffect(() => {
@@ -154,13 +177,6 @@ export function Sidebar() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSelectMode]);
 
-  // Reset selection when search query changes to avoid deleting hidden sessions
-  useEffect(() => {
-    if (isSelectMode) {
-      setSelectedIds(new Set());
-    }
-  }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const exitSelectMode = useCallback(() => {
     setIsSelectMode(false);
     setSelectedIds(new Set());
@@ -179,7 +195,12 @@ export function Sidebar() {
     });
   }, []);
 
-  const visibleSessionIds = useMemo(() => filteredSessions.map((s) => s.id), [filteredSessions]);
+  // Batch selection applies to sessions rendered in the general area
+  // (pinned + history); project sessions stay reachable via their hover actions.
+  const visibleSessionIds = useMemo(
+    () => [...pinnedSessions, ...historySessions].map((s) => s.id),
+    [pinnedSessions, historySessions]
+  );
 
   const allVisibleSelected =
     visibleSessionIds.length > 0 && visibleSessionIds.every((id) => selectedIds.has(id));
@@ -312,6 +333,190 @@ export function Sidebar() {
       <Monitor className="w-4 h-4" />
     );
 
+  // One row renderer used by all three levels: under a project accordion, in
+  // the pinned section and in the dated history. Sessions inside a project are
+  // not batch-selectable — their hover actions stay available instead.
+  const renderSessionRow = (session: Session) => {
+    const isActive = activeSessionId === session.id;
+    const isSelected = selectedIds.has(session.id);
+    const isEditing = editingSessionId === session.id;
+    const selectable = isSelectMode && !session.projectId;
+
+    return (
+      <div
+        key={session.id}
+        onClick={() => {
+          if (isEditing) return;
+          if (selectable) {
+            toggleSelectSession(session.id);
+          } else {
+            handleSessionClick(session.id);
+          }
+        }}
+        onMouseEnter={() => setHoveredSession(session.id)}
+        onMouseLeave={() => setHoveredSession(null)}
+        className={`group relative cursor-pointer rounded-lg px-2.5 py-1.5 transition-colors ${
+          selectable && isSelected
+            ? 'bg-accent-muted/20'
+            : isActive && !isSelectMode
+              ? 'bg-surface-hover/80'
+              : 'hover:bg-surface-hover/60'
+        }`}
+      >
+        <div className={`flex items-center gap-2 ${!isSelectMode && !isEditing ? 'pr-16' : ''}`}>
+          {selectable && (
+            <div
+              className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors ${
+                isSelected
+                  ? 'bg-accent text-white'
+                  : 'border border-border-muted bg-background'
+              }`}
+            >
+              {isSelected && <Check className="w-2.5 h-2.5" />}
+            </div>
+          )}
+
+          {session.isPinned && !isSelectMode && !isEditing && (
+            <Pin className="w-3 h-3 text-accent flex-shrink-0 -rotate-45" />
+          )}
+
+          <div className="min-w-0 flex-1">
+            {isEditing ? (
+              <input
+                type="text"
+                autoFocus
+                value={editTitleValue}
+                onChange={(e) => setEditTitleValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveRename(session.id);
+                  } else if (e.key === 'Escape') {
+                    handleCancelRename();
+                  }
+                }}
+                onBlur={() => handleSaveRename(session.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full bg-background border border-accent rounded px-1.5 py-0.5 text-[13px] font-medium text-text-primary focus:outline-none"
+                placeholder={t('sidebar.renamePlaceholder')}
+              />
+            ) : (
+              <div
+                onDoubleClick={(e) => {
+                  if (!isSelectMode) handleStartRename(e, session);
+                }}
+                className="text-[13px] font-medium leading-5 text-text-primary truncate"
+                title={session.title}
+              >
+                {session.title}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {!isSelectMode && !isEditing && hoveredSession === session.id && (
+          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+            {projects.length > 0 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setProjectPickerSessionId(
+                    projectPickerSessionId === session.id ? null : session.id
+                  );
+                }}
+                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                  session.projectId
+                    ? 'text-accent hover:bg-surface-active'
+                    : 'text-text-muted hover:text-text-primary hover:bg-surface-active'
+                }`}
+                title={
+                  session.projectId
+                    ? t('projects.moveOrRemoveTitle')
+                    : t('projects.moveToProject')
+                }
+              >
+                <FolderOpen className="w-3 h-3" />
+              </button>
+            )}
+            <button
+              onClick={(e) => handleTogglePin(e, session)}
+              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                session.isPinned
+                  ? 'text-accent hover:bg-surface-active'
+                  : 'text-text-muted hover:text-text-primary hover:bg-surface-active'
+              }`}
+              title={session.isPinned ? t('sidebar.unpin') : t('sidebar.pin')}
+            >
+              <Pin className={`w-3 h-3 ${session.isPinned ? '-rotate-45' : ''}`} />
+            </button>
+            <button
+              onClick={(e) => handleStartRename(e, session)}
+              className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+              title={t('sidebar.rename')}
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            <button
+              onClick={(e) => handleDeleteSession(e, session.id)}
+              className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-error hover:bg-surface-active transition-colors"
+              title={t('common.delete')}
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Project picker popover: move to a project / remove from project */}
+        {projectPickerSessionId === session.id && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={(e) => {
+                e.stopPropagation();
+                setProjectPickerSessionId(null);
+              }}
+            />
+            <div
+              className="absolute right-1.5 bottom-full z-50 mb-1 w-56 rounded-xl bg-surface border border-border shadow-elevated p-1.5 animate-in fade-in zoom-in-95"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                {t('projects.moveToProject')}
+              </div>
+              {projects
+                .filter((project) => !project.archived)
+                .map((project) => (
+                  <button
+                    key={project.id}
+                    onClick={() => void handleMoveSessionToProject(project.id, session.id)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] transition-colors ${
+                      session.projectId === project.id
+                        ? 'bg-surface-hover text-accent'
+                        : 'text-text-primary hover:bg-surface-hover'
+                    }`}
+                  >
+                    <FolderOpen className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">{project.name}</span>
+                  </button>
+                ))}
+              {session.projectId && (
+                <>
+                  <div className="my-1 border-t border-border-subtle" />
+                  <button
+                    onClick={() => void handleRemoveSessionFromProject(session.id)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                  >
+                    <X className="w-3 h-3 flex-shrink-0" />
+                    <span>{t('projects.removeFromProject')}</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   if (sidebarCollapsed) {
     return (
       <aside className="w-[4.5rem] bg-surface/96 border-r border-border-muted flex flex-col overflow-hidden">
@@ -398,115 +603,8 @@ export function Sidebar() {
           <span className="text-[13px] font-medium">{t('sidebar.newTask')}</span>
         </button>
 
-        {/* Projects — grouped sessions with a shared working context */}
-        <div className="mt-3">
-          <div className="flex items-center justify-between px-1 pb-1.5">
-            <span className="text-[11px] font-medium tracking-[0.04em] text-text-muted">
-              {t('projects.sidebarSection')}
-            </span>
-            <button
-              onClick={() => openProjectsModal(null)}
-              className="w-5 h-5 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-              title={t('projects.newTitle')}
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-          </div>
-          <div className="space-y-0.5">
-            {activeProjectId && (
-              <button
-                onClick={() => setActiveProjectId(null)}
-                className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-surface-hover/60 transition-colors"
-                title={t('projects.showAllSessions')}
-              >
-                <ChevronRight className="w-3 h-3 text-text-muted flex-shrink-0" />
-                <span className="text-[12px] text-text-secondary">
-                  {t('projects.showAllSessions')}
-                </span>
-              </button>
-            )}
-            {projects.map((project) => {
-              const isActive = activeProjectId === project.id;
-              const isArchived = project.archived;
-              return (
-                <div
-                  key={project.id}
-                  onClick={() => {
-                    // Archived projects are not filterable — open their editor
-                    // (the only place to restore or permanently delete them).
-                    if (isArchived) {
-                      openProjectsModal(project.id);
-                      return;
-                    }
-                    setActiveProjectId(isActive ? null : project.id);
-                  }}
-                  onMouseEnter={() => setHoveredProject(project.id)}
-                  onMouseLeave={() => setHoveredProject(null)}
-                  className={`group relative cursor-pointer flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors ${
-                    isArchived
-                      ? 'opacity-60 hover:bg-surface-hover/40'
-                      : isActive
-                        ? 'bg-surface-hover/80'
-                        : 'hover:bg-surface-hover/60'
-                  }`}
-                >
-                  <FolderOpen
-                    className={`w-3.5 h-3.5 flex-shrink-0 ${
-                      isArchived ? 'text-text-muted' : isActive ? 'text-accent' : 'text-text-muted'
-                    }`}
-                  />
-                  <span
-                    className={`text-[12px] font-medium truncate ${
-                      isActive && !isArchived
-                        ? 'text-text-primary'
-                        : isArchived
-                          ? 'text-text-muted'
-                          : 'text-text-secondary'
-                    }`}
-                    title={isArchived ? `${project.name} (${t('projects.archivedTag')})` : project.workdir}
-                  >
-                    {project.name}
-                  </span>
-                  {isArchived && (
-                    <span className="ml-auto flex-shrink-0 text-[10px] uppercase tracking-wider text-text-muted">
-                      {t('projects.archivedTag')}
-                    </span>
-                  )}
-                  {hoveredProject === project.id && !isArchived && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openProjectsModal(project.id);
-                      }}
-                      className="absolute right-1.5 w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
-                      title={t('projects.editTitle')}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {projects.length === 0 && !activeProjectId && (
-              <p className="px-2.5 py-1 text-[11px] text-text-muted">
-                {t('projects.emptyHint')}
-              </p>
-            )}
-          </div>
-        </div>
-
         {sessions.length > 0 && (
-          <div className="mt-2 flex items-center gap-2">
-            <div className="relative flex-1 min-w-0">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('sidebar.search')}
-                className="w-full rounded-xl border border-transparent bg-background/50 pl-9 pr-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border focus:bg-background transition-colors"
-              />
-            </div>
+          <div className="mt-2 flex justify-end">
             <button
               onClick={() => {
                 if (isSelectMode) {
@@ -529,199 +627,145 @@ export function Sidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        {groupedSessions.length === 0 ? (
+        {sessions.length === 0 ? (
           <div className="px-3 py-6">
             <p className="text-sm text-text-secondary">{t('sidebar.noTasks')}</p>
             <p className="mt-1 text-xs leading-5 text-text-muted">{t('sidebar.noTasksHint')}</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* Level 1 — Projects: accordion holding ONLY their linked sessions */}
+            <section>
+              <div className="flex items-center justify-between px-3 pb-2">
+                <span className="text-[11px] font-medium tracking-[0.04em] text-text-muted">
+                  {t('projects.sidebarSection')}
+                </span>
+                <button
+                  onClick={() => openProjectsModal(null)}
+                  className="w-5 h-5 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                  title={t('projects.newTitle')}
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="space-y-0.5">
+                {projects.map((project) => {
+                  const projectSessionList = sessionsByProject.get(project.id) || [];
+                  const isExpanded = isProjectExpanded(project.id);
+                  const isActiveProject = activeProjectId === project.id;
+                  const isArchived = project.archived;
+                  return (
+                    <div key={project.id}>
+                      <div
+                        onClick={() => {
+                          const willExpand = !isExpanded;
+                          toggleProjectExpanded(project.id);
+                          if (!isArchived) {
+                            if (willExpand) {
+                              setActiveProjectId(project.id);
+                            } else if (isActiveProject) {
+                              setActiveProjectId(null);
+                            }
+                          }
+                        }}
+                        onMouseEnter={() => setHoveredProject(project.id)}
+                        onMouseLeave={() => setHoveredProject(null)}
+                        className={`group relative cursor-pointer flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-colors ${
+                          isArchived
+                            ? 'opacity-60 hover:bg-surface-hover/40'
+                            : isActiveProject
+                              ? 'bg-surface-hover/80'
+                              : 'hover:bg-surface-hover/60'
+                        }`}
+                      >
+                        <ChevronRight
+                          className={`w-3 h-3 text-text-muted flex-shrink-0 transition-transform ${
+                            isExpanded ? 'rotate-90' : ''
+                          }`}
+                        />
+                        <FolderOpen
+                          className={`w-3.5 h-3.5 flex-shrink-0 ${
+                            isArchived
+                              ? 'text-text-muted'
+                              : isActiveProject
+                                ? 'text-accent'
+                                : 'text-text-muted'
+                          }`}
+                        />
+                        <span
+                          className={`text-[12px] font-medium truncate ${
+                            isActiveProject && !isArchived
+                              ? 'text-text-primary'
+                              : isArchived
+                                ? 'text-text-muted'
+                                : 'text-text-secondary'
+                          }`}
+                          title={
+                            isArchived
+                              ? `${project.name} (${t('projects.archivedTag')})`
+                              : project.workdir
+                          }
+                        >
+                          {project.name}
+                        </span>
+                        <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                          {projectSessionList.length > 0 && (
+                            <span className="text-[10px] text-text-muted">
+                              {projectSessionList.length}
+                            </span>
+                          )}
+                          {isArchived && (
+                            <span className="text-[10px] uppercase tracking-wider text-text-muted">
+                              {t('projects.archivedTag')}
+                            </span>
+                          )}
+                        </span>
+                        {hoveredProject === project.id && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openProjectsModal(project.id);
+                            }}
+                            className="absolute right-1.5 w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                            title={t('projects.editTitle')}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                      {isExpanded && projectSessionList.length > 0 && (
+                        <div className="ml-[1.15rem] border-l border-border-subtle pl-2 py-0.5 space-y-0.5">
+                          {projectSessionList.map(renderSessionRow)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {projects.length === 0 && (
+                  <p className="px-2.5 py-1 text-[11px] text-text-muted">
+                    {t('projects.emptyHint')}
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {/* Level 2 — Pinned conversations that belong to no project */}
+            {pinnedSessions.length > 0 && (
+              <section>
+                <div className="px-3 pb-2 text-[11px] font-medium tracking-[0.04em] text-text-muted">
+                  {t('sidebar.pinned')}
+                </div>
+                <div className="space-y-0.5">{pinnedSessions.map(renderSessionRow)}</div>
+              </section>
+            )}
+
+            {/* Level 3 — Everything else, grouped by date */}
             {groupedSessions.map((group) => (
               <section key={group.key}>
                 <div className="px-3 pb-2 text-[11px] font-medium tracking-[0.04em] text-text-muted">
                   {group.label}
                 </div>
-                <div className="space-y-0.5">
-                  {group.sessions.map((session) => {
-                    const isActive = activeSessionId === session.id;
-                    const isSelected = selectedIds.has(session.id);
-                    const isEditing = editingSessionId === session.id;
-
-                    return (
-                      <div
-                        key={session.id}
-                        onClick={() => {
-                          if (isEditing) return;
-                          if (isSelectMode) {
-                            toggleSelectSession(session.id);
-                          } else {
-                            handleSessionClick(session.id);
-                          }
-                        }}
-                        onMouseEnter={() => setHoveredSession(session.id)}
-                        onMouseLeave={() => setHoveredSession(null)}
-                        className={`group relative cursor-pointer rounded-lg px-2.5 py-1.5 transition-colors ${
-                          isSelectMode && isSelected
-                            ? 'bg-accent-muted/20'
-                            : isActive && !isSelectMode
-                              ? 'bg-surface-hover/80'
-                              : 'hover:bg-surface-hover/60'
-                        }`}
-                      >
-                        <div className={`flex items-center gap-2 ${!isSelectMode && !isEditing ? 'pr-16' : ''}`}>
-                          {isSelectMode && (
-                            <div
-                              className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors ${
-                                isSelected
-                                  ? 'bg-accent text-white'
-                                  : 'border border-border-muted bg-background'
-                              }`}
-                            >
-                              {isSelected && <Check className="w-2.5 h-2.5" />}
-                            </div>
-                          )}
-
-                          {session.isPinned && !isSelectMode && !isEditing && (
-                            <Pin className="w-3 h-3 text-accent flex-shrink-0 -rotate-45" />
-                          )}
-
-                          <div className="min-w-0 flex-1">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                autoFocus
-                                value={editTitleValue}
-                                onChange={(e) => setEditTitleValue(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleSaveRename(session.id);
-                                  } else if (e.key === 'Escape') {
-                                    handleCancelRename();
-                                  }
-                                }}
-                                onBlur={() => handleSaveRename(session.id)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-full bg-background border border-accent rounded px-1.5 py-0.5 text-[13px] font-medium text-text-primary focus:outline-none"
-                                placeholder={t('sidebar.renamePlaceholder')}
-                              />
-                            ) : (
-                              <div
-                                onDoubleClick={(e) => {
-                                  if (!isSelectMode) handleStartRename(e, session);
-                                }}
-                                className="text-[13px] font-medium leading-5 text-text-primary truncate"
-                                title={session.title}
-                              >
-                                {session.title}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {!isSelectMode && !isEditing && hoveredSession === session.id && (
-                          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-                            {projects.length > 0 && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setProjectPickerSessionId(
-                                    projectPickerSessionId === session.id ? null : session.id
-                                  );
-                                }}
-                                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
-                                  session.projectId
-                                    ? 'text-accent hover:bg-surface-active'
-                                    : 'text-text-muted hover:text-text-primary hover:bg-surface-active'
-                                }`}
-                                title={
-                                  session.projectId
-                                    ? t('projects.moveOrRemoveTitle')
-                                    : t('projects.moveToProject')
-                                }
-                              >
-                                <FolderOpen className="w-3 h-3" />
-                              </button>
-                            )}
-                            <button
-                              onClick={(e) => handleTogglePin(e, session)}
-                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
-                                session.isPinned
-                                  ? 'text-accent hover:bg-surface-active'
-                                  : 'text-text-muted hover:text-text-primary hover:bg-surface-active'
-                              }`}
-                              title={session.isPinned ? t('sidebar.unpin') : t('sidebar.pin')}
-                            >
-                              <Pin className={`w-3 h-3 ${session.isPinned ? '-rotate-45' : ''}`} />
-                            </button>
-                            <button
-                              onClick={(e) => handleStartRename(e, session)}
-                              className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
-                              title={t('sidebar.rename')}
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteSession(e, session.id)}
-                              className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-error hover:bg-surface-active transition-colors"
-                              title={t('common.delete')}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Project picker popover: move to a project / remove from project */}
-                        {projectPickerSessionId === session.id && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-40"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setProjectPickerSessionId(null);
-                              }}
-                            />
-                            <div
-                              className="absolute right-1.5 bottom-full z-50 mb-1 w-56 rounded-xl bg-surface border border-border shadow-elevated p-1.5 animate-in fade-in zoom-in-95"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                                {t('projects.moveToProject')}
-                              </div>
-                              {projects
-                                .filter((project) => !project.archived)
-                                .map((project) => (
-                                  <button
-                                    key={project.id}
-                                    onClick={() => void handleMoveSessionToProject(project.id, session.id)}
-                                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] transition-colors ${
-                                      session.projectId === project.id
-                                        ? 'bg-surface-hover text-accent'
-                                        : 'text-text-primary hover:bg-surface-hover'
-                                    }`}
-                                  >
-                                    <FolderOpen className="w-3 h-3 flex-shrink-0" />
-                                    <span className="truncate">{project.name}</span>
-                                  </button>
-                                ))}
-                              {session.projectId && (
-                                <>
-                                  <div className="my-1 border-t border-border-subtle" />
-                                  <button
-                                    onClick={() => void handleRemoveSessionFromProject(session.id)}
-                                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
-                                  >
-                                    <X className="w-3 h-3 flex-shrink-0" />
-                                    <span>{t('projects.removeFromProject')}</span>
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <div className="space-y-0.5">{group.sessions.map(renderSessionRow)}</div>
               </section>
             ))}
           </div>
@@ -820,7 +864,6 @@ function groupSessionsByDate(sessions: Session[], t: (key: string) => string): S
   const startOfYesterday = startOfToday - 86_400_000;
   const startOfPreviousWeek = startOfToday - 7 * 86_400_000;
 
-  const pinnedBucket: SessionGroup = { key: 'pinned', label: t('sidebar.pinned'), sessions: [] };
   const buckets: SessionGroup[] = [
     { key: 'today', label: t('sidebar.today'), sessions: [] },
     { key: 'yesterday', label: t('sidebar.yesterday'), sessions: [] },
@@ -832,11 +875,6 @@ function groupSessionsByDate(sessions: Session[], t: (key: string) => string): S
     (a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)
   );
   for (const session of sortedSessions) {
-    if (session.isPinned) {
-      pinnedBucket.sessions.push(session);
-      continue;
-    }
-
     const timestamp = session.updatedAt || session.createdAt;
     if (timestamp >= startOfToday) {
       buckets[0].sessions.push(session);
@@ -849,14 +887,5 @@ function groupSessionsByDate(sessions: Session[], t: (key: string) => string): S
     }
   }
 
-  const result: SessionGroup[] = [];
-  if (pinnedBucket.sessions.length > 0) {
-    result.push(pinnedBucket);
-  }
-  for (const b of buckets) {
-    if (b.sessions.length > 0) {
-      result.push(b);
-    }
-  }
-  return result;
+  return buckets.filter((b) => b.sessions.length > 0);
 }

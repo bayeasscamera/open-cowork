@@ -9,8 +9,7 @@ import { readFileSync } from 'node:fs';
 
 const sidebar = readFileSync('src/renderer/components/Sidebar.tsx', 'utf8');
 const panel = readFileSync('src/renderer/components/ProjectsPanel.tsx', 'utf8');
-// Whitespace-insensitive views for assertions spanning reformatted lines.
-const sidebarFlat = sidebar.replace(/\s+/g, ' ');
+// Whitespace-insensitive view for assertions spanning reformatted lines.
 const panelFlat = panel.replace(/\s+/g, ' ');
 
 describe('Sidebar session project actions', () => {
@@ -51,9 +50,31 @@ describe('Sidebar archived projects stay reachable (delete/restore dead-end fix)
     expect(sidebar).not.toContain('projects.list(false)');
   });
 
-  it('archived projects render distinctly and open their editor on click', () => {
+  it('archived projects render distinctly and stay editable via the pencil action', () => {
     expect(sidebar).toContain("t('projects.archivedTag')");
-    expect(sidebarFlat).toContain('if (isArchived) { openProjectsModal(project.id); return; }');
+    expect(sidebar).toContain('opacity-60');
+    expect(sidebar).toContain('openProjectsModal(project.id)');
+  });
+});
+
+describe('Sidebar three-level hierarchy and search removal', () => {
+  it('partitions sessions with the shared utility (projects / pinned / history)', () => {
+    expect(sidebar).toContain(
+      "import { partitionSidebarSessions } from '../utils/sidebar-partition';"
+    );
+    expect(sidebar).toContain('partitionSidebarSessions(sessions, knownProjectIds)');
+  });
+
+  it('renders a dedicated pinned section between projects and the dated history', () => {
+    expect(sidebar).toContain("t('sidebar.pinned')");
+    expect(sidebar).toContain('pinnedSessions.map(renderSessionRow)');
+    expect(sidebar).toContain('groupedSessions.map');
+  });
+
+  it('the search bar is fully removed (no state, no UI, no orphaned effect)', () => {
+    expect(sidebar).not.toContain('searchQuery');
+    expect(sidebar).not.toContain("t('sidebar.search')");
+    expect(sidebar).not.toContain('SearchIcon');
   });
 });
 
