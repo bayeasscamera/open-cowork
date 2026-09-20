@@ -17,6 +17,7 @@ import {
   Pin,
   Pencil,
   FolderOpen,
+  X,
 } from 'lucide-react';
 import type { Session } from '../types';
 
@@ -63,6 +64,37 @@ export function Sidebar() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitleValue, setEditTitleValue] = useState('');
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
+  /** Session whose project picker popover is open; null = closed. */
+  const [projectPickerSessionId, setProjectPickerSessionId] = useState<string | null>(null);
+
+  /** Move a session into a project (single membership: relink moves it). */
+  const handleMoveSessionToProject = useCallback(
+    async (projectId: string, sessionId: string) => {
+      setProjectPickerSessionId(null);
+      try {
+        const result = await window.electronAPI.projects.linkSession(projectId, sessionId);
+        if (result.success) {
+          useAppStore.getState().updateSession(sessionId, { projectId });
+        }
+      } catch {
+        // Non-fatal: the sidebar keeps its current state.
+      }
+    },
+    []
+  );
+
+  /** Detach a session from its project — it becomes a free conversation again. */
+  const handleRemoveSessionFromProject = useCallback(async (sessionId: string) => {
+    setProjectPickerSessionId(null);
+    try {
+      const result = await window.electronAPI.projects.unlinkSession(sessionId);
+      if (result.success) {
+        useAppStore.getState().updateSession(sessionId, { projectId: undefined });
+      }
+    } catch {
+      // Non-fatal: the sidebar keeps its current state.
+    }
+  }, []);
 
   // Load projects once on mount (Electron mode only).
   useEffect(() => {
@@ -565,6 +597,28 @@ export function Sidebar() {
 
                         {!isSelectMode && !isEditing && hoveredSession === session.id && (
                           <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                            {projects.length > 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setProjectPickerSessionId(
+                                    projectPickerSessionId === session.id ? null : session.id
+                                  );
+                                }}
+                                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                                  session.projectId
+                                    ? 'text-accent hover:bg-surface-active'
+                                    : 'text-text-muted hover:text-text-primary hover:bg-surface-active'
+                                }`}
+                                title={
+                                  session.projectId
+                                    ? t('projects.moveOrRemoveTitle')
+                                    : t('projects.moveToProject')
+                                }
+                              >
+                                <FolderOpen className="w-3 h-3" />
+                              </button>
+                            )}
                             <button
                               onClick={(e) => handleTogglePin(e, session)}
                               className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
@@ -591,6 +645,53 @@ export function Sidebar() {
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
+                        )}
+
+                        {/* Project picker popover: move to a project / remove from project */}
+                        {projectPickerSessionId === session.id && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-40"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setProjectPickerSessionId(null);
+                              }}
+                            />
+                            <div
+                              className="absolute right-1.5 bottom-full z-50 mb-1 w-56 rounded-xl bg-surface border border-border shadow-elevated p-1.5 animate-in fade-in zoom-in-95"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                                {t('projects.moveToProject')}
+                              </div>
+                              {projects.map((project) => (
+                                <button
+                                  key={project.id}
+                                  onClick={() => void handleMoveSessionToProject(project.id, session.id)}
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] transition-colors ${
+                                    session.projectId === project.id
+                                      ? 'bg-surface-hover text-accent'
+                                      : 'text-text-primary hover:bg-surface-hover'
+                                  }`}
+                                >
+                                  <FolderOpen className="w-3 h-3 flex-shrink-0" />
+                                  <span className="truncate">{project.name}</span>
+                                </button>
+                              ))}
+                              {session.projectId && (
+                                <>
+                                  <div className="my-1 border-t border-border-subtle" />
+                                  <button
+                                    onClick={() => void handleRemoveSessionFromProject(session.id)}
+                                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                                  >
+                                    <X className="w-3 h-3 flex-shrink-0" />
+                                    <span>{t('projects.removeFromProject')}</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
                     );

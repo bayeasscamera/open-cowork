@@ -538,11 +538,17 @@ export type ClientEvent =
     }
   | { type: 'projects.archive'; payload: { projectId: string; archived: boolean } }
   | {
+      /** Permanent delete — archived projects only; linked sessions are orphaned, never deleted. */
+      type: 'projects.delete';
+      payload: { projectId: string };
+    }
+  | {
       type: 'projects.attachFile';
       payload: { projectId: string; path: string };
     }
   | { type: 'projects.detachFile'; payload: { projectId: string; path: string } }
-  | { type: 'projects.linkSession'; payload: { projectId: string; sessionId: string } };
+  | { type: 'projects.linkSession'; payload: { projectId: string; sessionId: string } }
+  | { type: 'projects.unlinkSession'; payload: { sessionId: string } };
 
 // Sandbox setup types (app startup)
 export type SandboxSetupPhase =

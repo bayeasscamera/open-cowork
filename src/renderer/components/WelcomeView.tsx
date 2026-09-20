@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
+import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 import type { ContentBlock, AppConfig, ProviderProfile, ProviderProfileKey } from '../types';
 import { getInitialSessionTitle } from '../../shared/session-title';
 import {
@@ -92,6 +93,10 @@ export function WelcomeView() {
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
+
+  // Claude-Desktop-style: the field grows with its content up to ~40% of the
+  // window height, then scrolls internally — text never overflows the box.
+  useAutoResizeTextarea(textareaRef, prompt);
 
   const handleSelectFolder = async () => {
     try {
@@ -422,33 +427,8 @@ export function WelcomeView() {
     setSelectedTag(tag === selectedTag ? null : tag);
     if (tag !== selectedTag) {
       setPrompt(tagPrompt);
-      if (textareaRef.current) {
-        textareaRef.current.value = tagPrompt;
-        // Trigger height adjustment
-        adjustTextareaHeight();
-      }
     }
   };
-
-  // Auto-adjust textarea height based on content
-  const adjustTextareaHeight = () => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      // Reset height to auto to get the correct scrollHeight
-      textarea.style.height = 'auto';
-      // Set max height to 200px (about 8 lines), then scroll
-      const maxHeight = 200;
-      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
-      textarea.style.height = `${newHeight}px`;
-      // Show scrollbar if content exceeds max height
-      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-    }
-  };
-
-  // Adjust height when prompt changes
-  useEffect(() => {
-    adjustTextareaHeight();
-  }, [prompt]);
 
   const quickTags = [
     {
@@ -627,7 +607,6 @@ export function WelcomeView() {
             value={prompt}
             onChange={(e) => {
               setPrompt(e.target.value);
-              adjustTextareaHeight();
             }}
             onCompositionStart={() => {
               isComposingRef.current = true;
@@ -639,7 +618,7 @@ export function WelcomeView() {
             placeholder={t('welcome.placeholder')}
             rows={1}
             style={{ minHeight: '72px', maxHeight: '200px' }}
-            className="w-full resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-base leading-relaxed overflow-hidden"
+            className="w-full resize-none max-h-[40vh] overflow-y-auto bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-base leading-relaxed"
             onKeyDown={(e) => {
               // Enter to send, Shift+Enter for new line
               if (e.key === 'Enter' && !e.shiftKey) {

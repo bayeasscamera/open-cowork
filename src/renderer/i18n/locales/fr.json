@@ -282,12 +282,19 @@
     "save": "Enregistrer",
     "archive": "Archiver",
     "restore": "Restaurer",
+    "moveToProject": "Déplacer vers un projet",
+    "moveOrRemoveTitle": "Déplacer vers un autre projet ou retirer du projet",
+    "removeFromProject": "Retirer du projet",
+    "deletePermanently": "Supprimer définitivement",
+    "deleteConfirm": "Supprimer définitivement",
+    "deleteWarning": "Cette action est irréversible. Le projet et ses fichiers de référence seront supprimés. Les conversations liées seront CONSERVÉES et simplement détachées du projet.",
     "errors": {
       "loadFailed": "Échec du chargement du projet",
       "saveFailed": "Échec de l'enregistrement du projet",
       "attachFailed": "Échec de la pièce jointe",
       "detachFailed": "Échec du retrait du fichier",
       "archiveFailed": "Échec de l'archivage du projet",
+      "deleteFailed": "Échec de la suppression du projet",
       "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis"
     }
   },

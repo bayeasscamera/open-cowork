@@ -710,12 +710,19 @@
     "save": "保存",
     "archive": "归档",
     "restore": "恢复",
+    "moveToProject": "移入项目",
+    "moveOrRemoveTitle": "移到其他项目或移出当前项目",
+    "removeFromProject": "移出项目",
+    "deletePermanently": "永久删除",
+    "deleteConfirm": "确认永久删除",
+    "deleteWarning": "此操作不可撤销。项目及其参考文件将被删除。相关会话将被保留，只是不再属于该项目。",
     "errors": {
       "loadFailed": "加载项目失败",
       "saveFailed": "保存项目失败",
       "attachFailed": "添加文件失败",
       "detachFailed": "移除文件失败",
       "archiveFailed": "归档项目失败",
+      "deleteFailed": "删除项目失败",
       "nameAndWorkdirRequired": "名称和工作目录为必填项"
     }
   },

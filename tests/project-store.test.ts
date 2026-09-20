@@ -169,4 +169,116 @@ describe('ProjectStore (real better-sqlite3)', () => {
     const row = db.sessions.get('sess-dal-project');
     expect(row?.project_id).toBe('project-dal-check');
   });
+
+  it('permanent delete orphans linked sessions — NEVER deletes them', () => {
+    const db = getDatabase();
+    const store = createProjectStore(db);
+
+    // A project with one linked session and one reference file.
+    const project = store.create({ name: 'À supprimer', workdir });
+    const refFile = join(testRoot, 'to-delete.md');
+    writeFileSync(refFile, 'réf', 'utf-8');
+    store.attachFile(project.id, refFile);
+    const now = Date.now();
+    db.sessions.create({
+      id: 'sess-keep-me',
+      title: 'Conversation à conserver',
+      claude_session_id: null,
+      openai_thread_id: null,
+      status: 'idle',
+      cwd: workdir,
+      mounted_paths: '[]',
+      allowed_tools: '[]',
+      memory_enabled: 1,
+      model: null,
+      project_id: project.id,
+      created_at: now,
+      updated_at: now,
+    });
+
+    // Double safety: a non-archived project refuses the permanent delete.
+    expect(() => store.delete(project.id)).toThrow(ProjectValidationError);
+
+    store.archive(project.id, true);
+    const outcome = store.delete(project.id);
+
+    expect(outcome.orphanedSessions).toBe(1);
+    expect(outcome.removedReferenceFiles).toBe(1);
+
+    // The project and its reference-file rows are gone…
+    expect(store.get(project.id)).toBeUndefined();
+    expect(db.raw.prepare('SELECT * FROM project_files WHERE project_id = ?').all(project.id)).toEqual([]);
+
+    // …but the SESSION SURVIVES, orphaned (project_id reset), title intact.
+    const sessionRow = db.sessions.get('sess-keep-me');
+    expect(sessionRow).toBeDefined();
+    expect(sessionRow?.project_id).toBeNull();
+    expect(sessionRow?.title).toBe('Conversation à conserver');
+    // No session row was deleted by the project deletion.
+    expect(db.sessions.getAll().length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('moving a session from project A to B leaves A and joins B (single membership)', () => {
+    const store = createProjectStore(getDatabase());
+    const projectA = store.create({ name: 'Projet A', workdir });
+    const projectB = store.create({ name: 'Projet B', workdir });
+    const db = getDatabase();
+    const now = Date.now();
+    db.sessions.create({
+      id: 'sess-mover',
+      title: 'Session à déplacer',
+      claude_session_id: null,
+      openai_thread_id: null,
+      status: 'idle',
+      cwd: workdir,
+      mounted_paths: '[]',
+      allowed_tools: '[]',
+      memory_enabled: 1,
+      model: null,
+      project_id: projectA.id,
+      created_at: now,
+      updated_at: now,
+    });
+    expect(store.getSessions(projectA.id).map((s) => s.id)).toEqual(['sess-mover']);
+
+    store.linkSession(projectB.id, 'sess-mover');
+
+    // Appears in B, no longer in A, exactly one project membership.
+    expect(store.getSessions(projectA.id)).toEqual([]);
+    expect(store.getSessions(projectB.id).map((s) => s.id)).toEqual(['sess-mover']);
+    expect(db.sessions.get('sess-mover')?.project_id).toBe(projectB.id);
+    expect(store.getForSession('sess-mover')?.id).toBe(projectB.id);
+  });
+
+  it('removing a session from its project frees it back to the general list', () => {
+    const store = createProjectStore(getDatabase());
+    const project = store.create({ name: 'Projet libérateur', workdir });
+    const db = getDatabase();
+    const now = Date.now();
+    db.sessions.create({
+      id: 'sess-to-free',
+      title: 'Session à libérer',
+      claude_session_id: null,
+      openai_thread_id: null,
+      status: 'idle',
+      cwd: workdir,
+      mounted_paths: '[]',
+      allowed_tools: '[]',
+      memory_enabled: 1,
+      model: null,
+      project_id: project.id,
+      created_at: now,
+      updated_at: now,
+    });
+
+    store.unlinkSession('sess-to-free');
+
+    // Belongs to no project, project_id null — still alive in the general list.
+    expect(db.sessions.get('sess-to-free')?.project_id).toBeNull();
+    expect(store.getForSession('sess-to-free')).toBeUndefined();
+    expect(store.getSessions(project.id)).toEqual([]);
+    expect(db.sessions.get('sess-to-free')).toBeDefined();
+    // Unlinking an unknown session is a no-op, never a crash.
+    store.unlinkSession('unknown-session');
+  });
 });

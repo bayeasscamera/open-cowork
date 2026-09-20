@@ -76,6 +76,8 @@ const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>(
   'projects.attachFile',
   'projects.detachFile',
   'projects.linkSession',
+  'projects.unlinkSession',
+  'projects.delete',
 ]);
 
 // Invoke a whitelisted ClientEvent and wait for the response. Defined once at
@@ -227,6 +229,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       sessionId: string
     ): Promise<{ success: boolean; error?: string }> =>
       invoke({ type: 'projects.linkSession', payload: { projectId, sessionId } }),
+
+    unlinkSession: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
+      invoke({ type: 'projects.unlinkSession', payload: { sessionId } }),
+
+    delete: (
+      projectId: string
+    ): Promise<{
+      success: boolean;
+      orphanedSessions?: number;
+      removedReferenceFiles?: number;
+      error?: string;
+    }> => invoke({ type: 'projects.delete', payload: { projectId } }),
   },
 
   // Platform info
@@ -682,6 +696,15 @@ declare global {
           projectId: string,
           sessionId: string
         ) => Promise<{ success: boolean; error?: string }>;
+        unlinkSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+        delete: (
+          projectId: string
+        ) => Promise<{
+          success: boolean;
+          orphanedSessions?: number;
+          removedReferenceFiles?: number;
+          error?: string;
+        }>;
       };
       platform: NodeJS.Platform;
       getSystemTheme: () => Promise<{ shouldUseDarkColors: boolean }>;

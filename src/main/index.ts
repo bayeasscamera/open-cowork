@@ -3413,6 +3413,29 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       }
     }
 
+    case 'projects.unlinkSession': {
+      try {
+        getProjectStore().unlinkSession(event.payload.sessionId);
+        return { success: true };
+      } catch (error) {
+        logError('[IPC] projects.unlinkSession failed:', error);
+        return { success: false, error: 'Failed to unlink session' };
+      }
+    }
+
+    case 'projects.delete': {
+      try {
+        const outcome = getProjectStore().delete(event.payload.projectId);
+        return { success: true, ...outcome };
+      } catch (error) {
+        if (error instanceof ProjectValidationError) {
+          return { success: false, error: error.message };
+        }
+        logError('[IPC] projects.delete failed:', error);
+        return { success: false, error: 'Failed to delete project' };
+      }
+    }
+
     default:
       logWarn('Unknown event type:', event);
       return null;

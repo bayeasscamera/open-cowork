@@ -688,12 +688,19 @@
     "save": "Save",
     "archive": "Archive",
     "restore": "Restore",
+    "moveToProject": "Move to project",
+    "moveOrRemoveTitle": "Move to another project or remove from project",
+    "removeFromProject": "Remove from project",
+    "deletePermanently": "Delete permanently",
+    "deleteConfirm": "Delete definitively",
+    "deleteWarning": "This action is irreversible. The project and its reference files will be removed. Linked conversations will be KEPT and simply detached from the project.",
     "errors": {
       "loadFailed": "Failed to load project",
       "saveFailed": "Failed to save project",
       "attachFailed": "Failed to attach file",
       "detachFailed": "Failed to remove file",
       "archiveFailed": "Failed to archive project",
+      "deleteFailed": "Failed to delete project",
       "nameAndWorkdirRequired": "Name and workspace folder are required"
     }
   },

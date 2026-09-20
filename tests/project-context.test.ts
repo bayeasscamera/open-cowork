@@ -212,9 +212,11 @@ describe('IPC surface — source contract', () => {
       'projects.get',
       'projects.update',
       'projects.archive',
+      'projects.delete',
       'projects.attachFile',
       'projects.detachFile',
       'projects.linkSession',
+      'projects.unlinkSession',
     ]) {
       expect(preloadSource).toContain(`'${channel}'`);
     }
@@ -228,9 +230,11 @@ describe('IPC surface — source contract', () => {
       'projects.get',
       'projects.update',
       'projects.archive',
+      'projects.delete',
       'projects.attachFile',
       'projects.detachFile',
       'projects.linkSession',
+      'projects.unlinkSession',
     ]) {
       expect(indexSource).toContain(`case '${channel}'`);
     }

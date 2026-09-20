@@ -8,6 +8,7 @@ import {
   Loader2,
   Plus,
   Save,
+  Trash2,
   X,
 } from 'lucide-react';
 import type { Project } from '../types';
@@ -40,6 +41,8 @@ export function ProjectsPanel() {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const isEdit = projectsModalProjectId !== null;
 
@@ -82,6 +85,7 @@ export function ProjectsPanel() {
 
   useEffect(() => {
     if (!showProjectsModal) return;
+    setConfirmDelete(false);
     if (isEdit && projectsModalProjectId) {
       void loadProject(projectsModalProjectId);
     } else {
@@ -204,9 +208,33 @@ export function ProjectsPanel() {
         return;
       }
       setArchived(!archived);
+      setConfirmDelete(false);
       void refreshProjectsList();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('projects.errors.archiveFailed'));
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!projectsModalProjectId) return;
+    setIsDeleting(true);
+    setError(null);
+    try {
+      const result = await window.electronAPI.projects.delete(projectsModalProjectId);
+      if (!result.success) {
+        setError(result.error || t('projects.errors.deleteFailed'));
+        return;
+      }
+      // Never leave the sidebar filter pointing at a deleted project.
+      if (useAppStore.getState().activeProjectId === projectsModalProjectId) {
+        useAppStore.getState().setActiveProjectId(null);
+      }
+      await refreshProjectsList();
+      closeProjectsModal();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('projects.errors.deleteFailed'));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -413,6 +441,46 @@ export function ProjectsPanel() {
                 <p className="text-[12px] text-red-400" role="alert">
                   {error}
                 </p>
+              )}
+
+              {isEdit && archived && (
+                <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2.5">
+                  {confirmDelete ? (
+                    <>
+                      <p className="text-[12px] text-text-primary leading-relaxed">
+                        {t('projects.deleteWarning')}
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          onClick={() => setConfirmDelete(false)}
+                          className="flex-1 px-3 py-1.5 rounded-lg text-[12px] font-medium text-text-secondary hover:bg-surface-hover transition-colors"
+                        >
+                          {t('common.cancel')}
+                        </button>
+                        <button
+                          onClick={handleDelete}
+                          disabled={isDeleting}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-60"
+                        >
+                          {isDeleting ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3 h-3" />
+                          )}
+                          <span>{t('projects.deleteConfirm')}</span>
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(true)}
+                      className="flex items-center gap-1.5 text-[12px] font-medium text-red-400 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{t('projects.deletePermanently')}</span>
+                    </button>
+                  )}
+                </div>
               )}
 
               <div className="flex items-center justify-between pt-2">

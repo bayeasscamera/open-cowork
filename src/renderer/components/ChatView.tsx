@@ -12,6 +12,7 @@ import {
 } from '../store/selectors';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
+import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 import { MessageCard } from './MessageCard';
 import { SubagentTracker } from './SubagentTracker';
 import { ContextUsageBar } from './ContextUsageBar';
@@ -236,6 +237,11 @@ export function ChatView() {
   const pendingCount = pendingTurns.length;
   const isSessionRunning = activeSession?.status === 'running';
   const canStop = isSessionRunning || hasActiveTurn || pendingCount > 0;
+
+  // Claude-Desktop-style: the input grows with its content up to ~40% of the
+  // window height, then scrolls internally — text never overflows the box and
+  // the model/mic/send buttons stay anchored at the bottom-right.
+  useAutoResizeTextarea(textareaRef, prompt);
 
   const displayedMessages = useMemo(() => {
     if (!activeSessionId) return messages;
@@ -1163,7 +1169,7 @@ export function ChatView() {
                 placeholder={t('chat.typeMessage')}
                 disabled={isSubmitting}
                 rows={1}
-                className="flex-1 min-w-0 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[14px] sm:text-[15px] py-1.5 px-2 leading-relaxed"
+                className="flex-1 min-w-0 resize-none max-h-[40vh] overflow-y-auto bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[14px] sm:text-[15px] py-1.5 px-2 leading-relaxed"
               />
 
               <div className="flex items-center gap-1.5 flex-shrink-0">

@@ -89,11 +89,13 @@ export class ProjectStore {
         update: (id: string, updates: Partial<ProjectRow>) => void;
         get: (id: string) => ProjectRow | undefined;
         getAll: () => ProjectRow[];
+        delete: (id: string) => void;
       };
       projectFiles: {
         add: (file: { id: string; project_id: string; file_path: string; added_at: number }) => void;
         remove: (projectId: string, filePath: string) => void;
         listByProject: (projectId: string) => Array<{ file_path: string }>;
+        deleteByProject: (projectId: string) => void;
       };
       sessions: {
         get: (id: string) => SessionRow | undefined;
@@ -158,6 +160,40 @@ export class ProjectStore {
 
   archive(projectId: string, archived: boolean): Project {
     return this.update(projectId, { archived });
+  }
+
+  /**
+   * Permanently delete an ARCHIVED project (double safety: archive first).
+   * Linked sessions are ORPHANED — their project_id is reset to null, they are
+   * NEVER deleted (conversations are the user's data, not the project's).
+   * Reference-file associations are removed from the database; the files
+   * themselves on disk are the user's and stay untouched.
+   */
+  delete(projectId: string): { orphanedSessions: number; removedReferenceFiles: number } {
+    const project = this.get(projectId);
+    if (!project) throw new ProjectValidationError(`Project not found: ${projectId}`);
+    if (!project.archived) {
+      throw new ProjectValidationError(
+        'Archive the project before deleting it — permanent delete works only on archived projects'
+      );
+    }
+
+    // Orphan the linked sessions (never delete them) via the existing DAL
+    // update path — one dynamic UPDATE per session, sessions are few.
+    const linked = this.getSessions(projectId);
+    for (const session of linked) {
+      this.deps.sessions.update(session.id, { project_id: null });
+    }
+
+    // Remove reference-file associations, then the project row.
+    const removedReferenceFiles = project.referenceFiles.length;
+    this.deps.projectFiles.deleteByProject(projectId);
+    this.deps.projects.delete(projectId);
+    log(
+      `[ProjectStore] Deleted project "${project.name}": ${linked.length} session(s) orphaned ` +
+        `(kept), ${removedReferenceFiles} reference-file association(s) removed`
+    );
+    return { orphanedSessions: linked.length, removedReferenceFiles };
   }
 
   attachFile(projectId: string, filePath: string): Project {
