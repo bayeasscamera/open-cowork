@@ -51,6 +51,48 @@ export interface ProjectContextUsage {
   filesTotal: number;
 }
 
+/** Structured self-report produced by an autonomous delegated task. */
+export interface BackgroundTaskReport {
+  summary: string;
+  findings: string;
+  assumptions: string;
+  limits: string;
+}
+
+export interface BackgroundTaskLogEntry {
+  at: number;
+  kind: 'launched' | 'tool' | 'completed' | 'failed' | 'cancelled';
+  text: string;
+}
+
+/** One delegated background task, as surfaced to the UI. */
+export interface BackgroundTask {
+  id: string;
+  sessionId: string;
+  title: string;
+  prompt: string;
+  role: string;
+  cwd: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  startedAt: number;
+  completedAt?: number;
+  modelUsed?: string;
+  report?: BackgroundTaskReport;
+  error?: string;
+  modifiedFiles?: string[];
+  delivered: boolean;
+  log: BackgroundTaskLogEntry[];
+}
+
+/** Settings dedicated to the async-delegation mode. */
+export interface DelegationSettings {
+  configSetId: string;
+  modelId?: string;
+  timeoutMs: number;
+  maxConcurrent: number;
+  notifyOnCompletion: boolean;
+}
+
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error';
 
 export interface MountedPath {
@@ -565,7 +607,23 @@ export type ClientEvent =
     }
   | { type: 'projects.detachFile'; payload: { projectId: string; path: string } }
   | { type: 'projects.linkSession'; payload: { projectId: string; sessionId: string } }
-  | { type: 'projects.unlinkSession'; payload: { sessionId: string } };
+  | { type: 'projects.unlinkSession'; payload: { sessionId: string } }
+  | { type: 'backgroundTasks.list'; payload: { sessionId?: string } }
+  | { type: 'backgroundTasks.get'; payload: { taskId: string } }
+  | { type: 'backgroundTasks.cancel'; payload: { taskId: string } }
+  | { type: 'backgroundTasks.retry'; payload: { taskId: string } }
+  | { type: 'backgroundTasks.delete'; payload: { taskId: string } }
+  | { type: 'backgroundTasks.getSettings'; payload: Record<string, never> }
+  | {
+      type: 'backgroundTasks.setSettings';
+      payload: {
+        configSetId?: string;
+        modelId?: string | null;
+        timeoutMs?: number;
+        maxConcurrent?: number;
+        notifyOnCompletion?: boolean;
+      };
+    };
 
 // Sandbox setup types (app startup)
 export type SandboxSetupPhase =
@@ -645,9 +703,11 @@ export type ServerEvent =
         sessionId: string;
         taskId: string;
         title: string;
-        status: 'running' | 'completed' | 'failed';
+        status: 'running' | 'completed' | 'failed' | 'cancelled';
         summary?: string;
         error?: string;
+        /** 'progress' = live tool step; 'status' = lifecycle transition. */
+        eventKind?: 'progress' | 'status';
       };
     }
   | {

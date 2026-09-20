@@ -63,6 +63,12 @@ import {
   takePendingDelegationResults,
   describeRunningDelegations,
   listDelegations,
+  cancelDelegation,
+  retryDelegation,
+  deleteDelegation,
+  getDelegationSettings,
+  setDelegationSettings,
+  parseDelegationReport,
   initBackgroundDelegations,
   __resetDelegationsForTest,
 } from '../src/main/agent/background-delegations';
@@ -283,6 +289,229 @@ describe('background delegations — async delegation mode', () => {
     expect(existsSync(stateFile)).toBe(true);
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8')) as Array<{ title: string }>;
     expect(raw.some((d) => d.title === 'Persisted')).toBe(true);
+  });
+
+  it('AUTONOMY: the launched prompt carries the no-questions contract and the report format', async () => {
+    const launch = makeDeferredLaunch();
+    startDelegation({
+      sessionId: 's7',
+      cwd: testRoot,
+      title: 'Autonomous research',
+      prompt: 'Research X',
+      launchSession: launch.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    const sent = launch.calls[0].task.prompt;
+    // The sub-agent is told explicitly: never ask back, signalled assumptions,
+    // mandatory structured report sections.
+    expect(sent).toContain('You work ALONE');
+    expect(sent).toContain('make a reasonable assumption and record it');
+    expect(sent).toContain('## Summary');
+    expect(sent).toContain('## Assumptions');
+    expect(sent).toContain('## Limits');
+    expect(sent).toContain('## Modified files');
+  });
+
+  it('a completed delegation produces a PARSED structured report (UI-ready) and injection', async () => {
+    const launch = makeDeferredLaunch();
+    const { taskId } = startDelegation({
+      sessionId: 's8',
+      cwd: testRoot,
+      title: 'Structured outcome',
+      prompt: 'p',
+      launchSession: launch.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    launch.resolve({
+      output: [
+        '## Summary',
+        'Researched X across 5 sources.',
+        '## Findings',
+        'X leads in Europe.',
+        '## Assumptions',
+        'Assumed 2026 data.',
+        '## Limits',
+        'Could not access paywalled source.',
+        '## Modified files',
+        'notes.md',
+      ].join('\n'),
+      modifiedFiles: [join(testRoot, 'notes.md')],
+    });
+    await flushAsync();
+
+    const task = listDelegations('s8').find((d) => d.id === taskId);
+    expect(task?.status).toBe('completed');
+    expect(task?.report?.summary).toBe('Researched X across 5 sources.');
+    expect(task?.report?.findings).toBe('X leads in Europe.');
+    expect(task?.report?.assumptions).toBe('Assumed 2026 data.');
+    expect(task?.report?.limits).toBe('Could not access paywalled source.');
+    expect(task?.modifiedFiles).toEqual([join(testRoot, 'notes.md')]);
+
+    // Injection renders the structured sections for the model.
+    const injected = takePendingDelegationResults('s8');
+    expect(injected).toContain('Summary: Researched X across 5 sources.');
+    expect(injected).toContain('Findings: X leads in Europe.');
+    expect(injected).toContain('Assumptions: Assumed 2026 data.');
+    expect(injected).toContain('Limits: Could not access paywalled source.');
+  });
+
+  it('CANCEL actually aborts the sub-agent session (AbortSignal fired) and the task never completes', async () => {
+    const launch = makeDeferredLaunch();
+    const { taskId } = startDelegation({
+      sessionId: 's9',
+      cwd: testRoot,
+      title: 'Will be cancelled',
+      prompt: 'p',
+      launchSession: launch.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    expect(launch.calls[0].signal).toBeTruthy(); // a real AbortSignal was handed down
+
+    expect(cancelDelegation(taskId)).toBe(true);
+    expect(launch.calls[0].signal!.aborted).toBe(true); // the session is told to stop
+    expect(listDelegations('s9')[0].status).toBe('cancelled');
+
+    // Late completion of the aborted session must NOT resurrect the task nor
+    // inject anything (no ghost result after a real cancellation).
+    launch.resolve({ output: 'too late', modifiedFiles: [] });
+    await flushAsync();
+    expect(listDelegations('s9')[0].status).toBe('cancelled');
+    expect(takePendingDelegationResults('s9')).toBe('');
+
+    // Cancelling a non-running task is refused.
+    expect(cancelDelegation(taskId)).toBe(false);
+  });
+
+  it('RETRY re-launches the same prompt as a new delegation (running task cannot retry)', async () => {
+    const launch = makeDeferredLaunch();
+    const { taskId } = startDelegation({
+      sessionId: 's10',
+      cwd: testRoot,
+      title: 'To retry',
+      prompt: 'original task text',
+      launchSession: launch.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    // Running tasks cannot be retried.
+    expect(retryDelegation(taskId)).toBeUndefined();
+
+    // Fail it, then retry with the same overrides.
+    launch.reject(new Error('boom'));
+    await flushAsync();
+    const retryLaunch = makeDeferredLaunch();
+    const retried = retryDelegation(taskId, {
+      launchSession: retryLaunch.launch,
+      getConfig: () => testConfig,
+    });
+    expect(retried).toBeTruthy();
+    expect(retried!.taskId).not.toBe(taskId); // a NEW delegation id
+    await flushAsync();
+    expect(retryLaunch.calls).toHaveLength(1);
+    expect(retryLaunch.calls[0].task.prompt).toContain('original task text');
+  });
+
+  it('DELETE removes finished tasks from the tracking list (never a running one)', async () => {
+    const launch = makeDeferredLaunch();
+    const { taskId } = startDelegation({
+      sessionId: 's11',
+      cwd: testRoot,
+      title: 'Deletable',
+      prompt: 'p',
+      launchSession: launch.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    expect(deleteDelegation(taskId)).toBe(false); // still running — refused
+
+    launch.resolve({ output: 'done', modifiedFiles: [] });
+    await flushAsync();
+    expect(deleteDelegation(taskId)).toBe(true);
+    expect(listDelegations('s11').find((d) => d.id === taskId)).toBeUndefined();
+  });
+
+  it('dedicated settings: normalize, persist, cap enforcement, notification flag', async () => {
+    // Normalization + clamps.
+    const saved = setDelegationSettings({
+      configSetId: ' set-jan ',
+      modelId: 'glm-x',
+      timeoutMs: 50, // below floor
+      maxConcurrent: 99, // above cap
+    });
+    expect(saved.configSetId).toBe('set-jan');
+    expect(saved.modelId).toBe('glm-x');
+    expect(saved.timeoutMs).toBe(10_000); // clamped to floor
+    expect(saved.maxConcurrent).toBe(4); // clamped to cap
+    expect(getDelegationSettings().notifyOnCompletion).toBe(true);
+
+    // Settings file persisted separately from task state.
+    expect(existsSync(join(testRoot, 'delegation_settings.json'))).toBe(true);
+
+    // Concurrency cap enforced at start time. Reset the pin first: the test
+    // config above has no 'set-jan', and an unresolvable profile would make
+    // the first task fail instead of occupying the single slot.
+    setDelegationSettings({ configSetId: '', modelId: null, maxConcurrent: 1 });
+    const a = makeDeferredLaunch();
+    startDelegation({
+      sessionId: 's12',
+      cwd: testRoot,
+      title: 'First',
+      prompt: 'p',
+      launchSession: a.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    const b = makeDeferredLaunch();
+    expect(() =>
+      startDelegation({
+        sessionId: 's12',
+        cwd: testRoot,
+        title: 'Second',
+        prompt: 'p',
+        launchSession: b.launch,
+        getConfig: () => testConfig,
+      })
+    ).toThrow(/Max concurrent delegations/);
+    expect(b.calls).toHaveLength(0); // never launched
+  });
+
+  it('live progress: tool calls stream into the task log and as progress events', async () => {
+    const launch = makeDeferredLaunch();
+    const { taskId } = startDelegation({
+      sessionId: 's13',
+      cwd: testRoot,
+      title: 'Watched task',
+      prompt: 'p',
+      launchSession: launch.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+
+    // Drive the onEvent hook the delegation handed to the launcher.
+    const onEvent = launch.calls[0].onEvent;
+    expect(onEvent).toBeTruthy();
+    onEvent!({ toolName: 'web_search', at: Date.now() });
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ eventKind: 'progress', summary: 'web_search' }),
+      })
+    );
+    const task = listDelegations('s13').find((d) => d.id === taskId)!;
+    expect(task.log.some((entry) => entry.kind === 'tool' && entry.text === 'web_search')).toBe(
+      true
+    );
+    launch.resolve({ output: 'x', modifiedFiles: [] });
+  });
+});
+
+describe('parseDelegationReport', () => {
+  it('falls back to a text summary when the sub-agent ignored the format', () => {
+    const report = parseDelegationReport('Just a blob of free-form text, no sections at all.');
+    expect(report.summary).toContain('Just a blob');
+    expect(report.findings).toBe('');
   });
 });
 

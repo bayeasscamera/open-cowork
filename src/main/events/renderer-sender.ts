@@ -17,6 +17,8 @@ export interface RendererSenderContext {
   getMainWindow(): BrowserWindow | null;
   getEventSender(): ((event: ServerEvent) => void) | null;
   getSessionManager(): SessionManager | null;
+  /** Whether delegation completion notifications are enabled (settings gate). */
+  getDelegationNotifyEnabled?: () => boolean;
 }
 
 // Tracks session running/idle state transitions for task completion notifications
@@ -168,13 +170,18 @@ export function sendToRenderer(event: ServerEvent) {
       } else if (event.type === 'background.task') {
         // Async delegation finished — notify even though no Cowork session
         // status changed (the sub-agent ran in-process, outside sessionManager).
+        // Completion/failure notifications respect the delegations setting;
+        // cancellations were user-initiated, so they never notify.
         const status = payload?.status as string | undefined;
         if (status === 'completed' || status === 'failed') {
-          SystemNotifier.notifyTaskCompleted(
-            mainWindow,
-            (payload?.title as string) || undefined,
-            sessionId
-          );
+          const notifyEnabled = context?.getDelegationNotifyEnabled?.() ?? true;
+          if (notifyEnabled) {
+            SystemNotifier.notifyTaskCompleted(
+              mainWindow,
+              (payload?.title as string) || undefined,
+              sessionId
+            );
+          }
         }
       } else if (event.type === 'trace.step') {
         const step = payload?.step as { type?: string; toolName?: string; title?: string } | undefined;

@@ -97,6 +97,16 @@ import { createBuiltinMods, getDiffCollector } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore, ProjectValidationError } from './projects/project-store';
 import { computeProjectContextUsage } from './projects/project-context';
 import {
+  listDelegations,
+  getDelegation,
+  cancelDelegation,
+  retryDelegation,
+  deleteDelegation,
+  getDelegationSettings,
+  setDelegationSettings,
+  delegationNotifyEnabled,
+} from './agent/background-delegations';
+import {
   buildSkillDoctorReport,
   loadSkillSourcesFromDir,
   type SkillDoctorSkillSource,
@@ -179,6 +189,7 @@ setRendererSenderContext({
   getMainWindow: () => mainWindow,
   getEventSender: () => eventSender,
   getSessionManager: () => sessionManager,
+  getDelegationNotifyEnabled: () => delegationNotifyEnabled(),
 });
 setRevealContext({
   getWorkingDir: () => currentWorkingDir,
@@ -3441,6 +3452,95 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         }
         logError('[IPC] projects.delete failed:', error);
         return { success: false, error: 'Failed to delete project' };
+      }
+    }
+
+    // ── Background delegations (tracking view) ─────────────────────────────
+    case 'backgroundTasks.list': {
+      try {
+        return { success: true, tasks: listDelegations(event.payload.sessionId) };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.list failed:', error);
+        return { success: false, tasks: [] };
+      }
+    }
+
+    case 'backgroundTasks.get': {
+      try {
+        const task = getDelegation(event.payload.taskId);
+        if (!task) return { success: false, error: 'Task not found' };
+        return { success: true, task };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.get failed:', error);
+        return { success: false, error: 'Failed to load task' };
+      }
+    }
+
+    case 'backgroundTasks.cancel': {
+      try {
+        const cancelled = cancelDelegation(event.payload.taskId);
+        return {
+          success: true,
+          cancelled,
+          error: cancelled ? undefined : 'Task not found or not running',
+        };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.cancel failed:', error);
+        return { success: false, error: 'Failed to cancel task' };
+      }
+    }
+
+    case 'backgroundTasks.retry': {
+      try {
+        const retried = retryDelegation(event.payload.taskId);
+        if (!retried) {
+          return { success: false, error: 'Task not found or still running' };
+        }
+        return { success: true, taskId: retried.taskId };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.retry failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to retry task',
+        };
+      }
+    }
+
+    case 'backgroundTasks.delete': {
+      try {
+        const deleted = deleteDelegation(event.payload.taskId);
+        return {
+          success: true,
+          deleted,
+          error: deleted ? undefined : 'Task not found or still running',
+        };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.delete failed:', error);
+        return { success: false, error: 'Failed to delete task' };
+      }
+    }
+
+    case 'backgroundTasks.getSettings': {
+      try {
+        return { success: true, settings: getDelegationSettings() };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.getSettings failed:', error);
+        return { success: false, error: 'Failed to load settings' };
+      }
+    }
+
+    case 'backgroundTasks.setSettings': {
+      try {
+        // modelId null (UI "clear the pin") normalizes to undefined internally.
+        const { modelId, ...rest } = event.payload;
+        const settings = setDelegationSettings({
+          ...rest,
+          ...(modelId === null ? { modelId: undefined } : { modelId }),
+        });
+        return { success: true, settings };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.setSettings failed:', error);
+        return { success: false, error: 'Failed to save settings' };
       }
     }
 

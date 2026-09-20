@@ -45,6 +45,17 @@ describe('ConfigSetModelPicker — one shared component, two screens', () => {
     // No separate second implementation of the model list in the panel.
     expect(projectsPanel).not.toContain('chosen.models.map');
   });
+
+  it('DelegatedTasksPanel uses the SAME shared picker (3rd consumer, no new implementation)', () => {
+    const panel = readFileSync(
+      resolve(root, 'src/renderer/components/DelegatedTasksPanel.tsx'),
+      'utf8'
+    );
+    expect(panel).toContain("from './shared/ConfigSetModelPicker'");
+    expect(panel).toContain('<ConfigSetModelPicker');
+    expect(panel).toContain('buildConfigSetLites');
+    expect(panel).not.toContain('chosen.models.map');
+  });
 });
 
 describe('project model pin — resolution wiring', () => {

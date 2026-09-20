@@ -315,6 +315,39 @@
       "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis"
     }
   },
+  "delegatedTasks": {
+    "title": "Tâches déléguées",
+    "configure": "Configurer les délégations",
+    "settingsTitle": "Réglages des délégations",
+    "inheritActive": "Hériter du profil actif",
+    "timeout": "Timeout d'inactivité (secondes)",
+    "maxConcurrent": "Délégations simultanées max",
+    "notify": "Notifier quand une tâche se termine",
+    "empty": "Aucune tâche déléguée pour l'instant.",
+    "selectHint": "Sélectionnez une tâche pour voir son rapport ou sa progression en direct.",
+    "summaryCounts": "{running} en cours · {completed} terminées · {failed} échouées",
+    "meta": "rôle {role} · modèle {model} · {duration} · {date}",
+    "liveProgress": "Progression en direct",
+    "actionsError": "L'action a échoué.",
+    "actions": {
+      "cancel": "Annuler",
+      "retry": "Relancer",
+      "delete": "Supprimer"
+    },
+    "status": {
+      "running": "en cours",
+      "completed": "terminée",
+      "failed": "échouée",
+      "cancelled": "annulée"
+    },
+    "report": {
+      "summary": "Résumé",
+      "findings": "Constats",
+      "assumptions": "Hypothèses",
+      "limits": "Limites",
+      "files": "Fichiers modifiés"
+    }
+  },
   "backgroundTasks": {
     "badge": "tâche de fond en cours"
   },

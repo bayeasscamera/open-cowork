@@ -1026,8 +1026,9 @@ export function buildAgentMetaTools(
       label: 'Background Task Delegation',
       description:
         'Delegate ONE autonomous task (typically a web research) to a background sub-agent and CONTINUE immediately: ' +
-        'this tool returns a task id right away WITHOUT blocking. The sub-agent runs with the same guardrails as the swarm ' +
-        '(workspace confinement, timeout) and its result is injected into this conversation automatically when ready. ' +
+        'this tool returns a task id right away WITHOUT blocking. The sub-agent works alone (never asks back — assumptions ' +
+        'go in its report), produces a structured report (summary/findings/assumptions/limits/modified files) that is ' +
+        'injected into this conversation automatically when ready and visible in the Delegated Tasks view. ' +
         'Use for slow research the user does not need synchronously; do NOT use when the user is waiting for the answer.',
       parameters: Type.Object({
         task: Type.String({
@@ -1057,13 +1058,27 @@ export function buildAgentMetaTools(
             details: {},
           };
         }
-        const { taskId } = startDelegation({
-          sessionId: options.sessionId ?? 'default',
-          cwd: options.cwd ?? (configStore.getAll().defaultWorkdir?.trim() || process.cwd()),
-          title: args.title?.trim() || args.task.trim().slice(0, 60),
-          prompt: args.task.trim(),
-          role: args.role ?? 'developer',
-        });
+        let taskId: string;
+        try {
+          taskId = startDelegation({
+            sessionId: options.sessionId ?? 'default',
+            cwd: options.cwd ?? (configStore.getAll().defaultWorkdir?.trim() || process.cwd()),
+            title: args.title?.trim() || args.task.trim().slice(0, 60),
+            prompt: args.task.trim(),
+            role: args.role ?? 'developer',
+          }).taskId;
+        } catch (delegationError) {
+          // Capacity or validation: surface it, the main agent adapts.
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Delegation refused: ${delegationError instanceof Error ? delegationError.message : String(delegationError)}`,
+              },
+            ],
+            details: {},
+          };
+        }
         // Non-blocking by design: startDelegation returns before the sub-agent
         // finishes; the result arrives via background.task events + injection.
         return {

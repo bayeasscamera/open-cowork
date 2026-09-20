@@ -197,6 +197,8 @@ export function useIPC() {
             } else {
               store.removeRunningBackgroundTask(taskId);
             }
+            // Any transition (including live progress) refreshes tracking views.
+            store.bumpDelegationsVersion();
             break;
           }
 

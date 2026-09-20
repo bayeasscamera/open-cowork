@@ -501,6 +501,14 @@ export interface SubAgentSessionArgs {
   /** Idle timeout: the session is aborted after this much time without events. */
   timeoutMs: number;
   signal?: AbortSignal;
+  /** Live progress hook (tool calls) — used by async delegations. */
+  onEvent?: (step: SubAgentToolStep) => void;
+}
+
+/** One observed tool call inside a sub-agent session. */
+export interface SubAgentToolStep {
+  toolName: string;
+  at: number;
 }
 
 export interface SubAgentSessionResult {
@@ -656,6 +664,11 @@ async function launchSubAgentSession(
     }
     if (event.type === 'tool_execution_start') {
       const e = event as { toolName?: string; args?: unknown };
+      try {
+        args.onEvent?.({ toolName: e.toolName || 'unknown', at: Date.now() });
+      } catch {
+        // A throwing progress hook must never break the sub-agent session.
+      }
       const modified = collectModifiedPath(root, e.toolName || '', e.args);
       if (modified) {
         modifiedFiles.add(modified);
@@ -745,6 +758,18 @@ export interface SwarmRunnerOptions {
   getConfig?: () => AppConfig;
   /** Session launcher; overridable for tests. */
   launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
+  /** Concurrency cap override (default: sub-agents maxConcurrent). */
+  maxConcurrentOverride?: number;
+  /** Idle timeout override in ms (default: sub-agents timeoutMs). */
+  timeoutMsOverride?: number;
+  /**
+   * Per-task cancellation signal + live-progress hook, consulted when the
+   * session is launched (used by async delegations for cancel/monitoring).
+   */
+  taskExtras?: (task: AgentTask) => {
+    signal?: AbortSignal;
+    onEvent?: (step: SubAgentToolStep) => void;
+  };
 }
 
 interface TaskGuardrails {
@@ -833,12 +858,16 @@ async function finalizeTaskResult(
 export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn {
   const getConfig = options.getConfig ?? (() => configStore.getAll());
   const launchSession = options.launchSession ?? launchSubAgentSession;
-  const limiter = new TaskSlotLimiter(resolveGuardrails(getConfig()).maxConcurrent);
+  const limiter = new TaskSlotLimiter(
+    options.maxConcurrentOverride ?? resolveGuardrails(getConfig()).maxConcurrent
+  );
 
   return async (task: AgentTask, context: string): Promise<SubAgentRunResult> => {
     const appConfig = getConfig();
-    const { timeoutMs } = resolveGuardrails(appConfig);
+    const baseGuardrails = resolveGuardrails(appConfig);
+    const timeoutMs = options.timeoutMsOverride ?? baseGuardrails.timeoutMs;
     const profile = resolveSubAgentProfile(task.role, appConfig);
+    const extras = options.taskExtras?.(task) ?? {};
 
     await limiter.acquire();
     log(`[SwarmRunner] ${task.role} starting with model "${profile.label}"`);
@@ -851,9 +880,14 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           cwd: options.cwd,
           label: profile.label,
           timeoutMs,
+          ...(extras.signal ? { signal: extras.signal } : {}),
+          ...(extras.onEvent ? { onEvent: extras.onEvent } : {}),
         });
         return await finalizeTaskResult(task, context, result, profile.label, false, profile.config, launchSession, options.cwd, timeoutMs);
       } catch (error) {
+        // A user cancellation must surface as cancelled — NOT be masked by
+        // the model fallback retry (which would resurrect the aborted run).
+        if (extras.signal?.aborted) throw error;
         if (profile.source === 'inherited') {
           logError(`[SwarmRunner] Task ${task.role} failed on model "${profile.label}":`, error);
           throw error;
@@ -872,6 +906,8 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           cwd: options.cwd,
           label: activeLabel,
           timeoutMs,
+          ...(extras.signal ? { signal: extras.signal } : {}),
+          ...(extras.onEvent ? { onEvent: extras.onEvent } : {}),
         });
         return await finalizeTaskResult(task, context, result, activeLabel, true, appConfig, launchSession, options.cwd, timeoutMs);
       }

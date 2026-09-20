@@ -28,6 +28,8 @@ import type {
   MemoryInspectSessionResult,
   Project,
   ProjectContextUsage,
+  BackgroundTask,
+  DelegationSettings,
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type {
@@ -79,6 +81,13 @@ const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>(
   'projects.linkSession',
   'projects.unlinkSession',
   'projects.delete',
+  'backgroundTasks.list',
+  'backgroundTasks.get',
+  'backgroundTasks.cancel',
+  'backgroundTasks.retry',
+  'backgroundTasks.delete',
+  'backgroundTasks.getSettings',
+  'backgroundTasks.setSettings',
 ]);
 
 // Invoke a whitelisted ClientEvent and wait for the response. Defined once at
@@ -245,6 +254,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
       removedReferenceFiles?: number;
       error?: string;
     }> => invoke({ type: 'projects.delete', payload: { projectId } }),
+  },
+
+  // Background delegations — tracking view API
+  backgroundTasks: {
+    list: (sessionId?: string): Promise<{ success: boolean; tasks: BackgroundTask[] }> =>
+      invoke({ type: 'backgroundTasks.list', payload: { sessionId } }),
+    get: (
+      taskId: string
+    ): Promise<{ success: boolean; task?: BackgroundTask; error?: string }> =>
+      invoke({ type: 'backgroundTasks.get', payload: { taskId } }),
+    cancel: (
+      taskId: string
+    ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
+      invoke({ type: 'backgroundTasks.cancel', payload: { taskId } }),
+    retry: (
+      taskId: string
+    ): Promise<{ success: boolean; taskId?: string; error?: string }> =>
+      invoke({ type: 'backgroundTasks.retry', payload: { taskId } }),
+    delete: (
+      taskId: string
+    ): Promise<{ success: boolean; deleted?: boolean; error?: string }> =>
+      invoke({ type: 'backgroundTasks.delete', payload: { taskId } }),
+    getSettings: (): Promise<{ success: boolean; settings?: DelegationSettings; error?: string }> =>
+      invoke({ type: 'backgroundTasks.getSettings', payload: {} }),
+    setSettings: (next: {
+      configSetId?: string;
+      modelId?: string | null;
+      timeoutMs?: number;
+      maxConcurrent?: number;
+      notifyOnCompletion?: boolean;
+    }): Promise<{ success: boolean; settings?: DelegationSettings; error?: string }> =>
+      invoke({ type: 'backgroundTasks.setSettings', payload: next }),
   },
 
   // Platform info
@@ -712,6 +753,33 @@ declare global {
           removedReferenceFiles?: number;
           error?: string;
         }>;
+      };
+      backgroundTasks: {
+        list: (sessionId?: string) => Promise<{ success: boolean; tasks: BackgroundTask[] }>;
+        get: (
+          taskId: string
+        ) => Promise<{ success: boolean; task?: BackgroundTask; error?: string }>;
+        cancel: (
+          taskId: string
+        ) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>;
+        retry: (
+          taskId: string
+        ) => Promise<{ success: boolean; taskId?: string; error?: string }>;
+        delete: (
+          taskId: string
+        ) => Promise<{ success: boolean; deleted?: boolean; error?: string }>;
+        getSettings: () => Promise<{
+          success: boolean;
+          settings?: DelegationSettings;
+          error?: string;
+        }>;
+        setSettings: (next: {
+          configSetId?: string;
+          modelId?: string | null;
+          timeoutMs?: number;
+          maxConcurrent?: number;
+          notifyOnCompletion?: boolean;
+        }) => Promise<{ success: boolean; settings?: DelegationSettings; error?: string }>;
       };
       platform: NodeJS.Platform;
       getSystemTheme: () => Promise<{ shouldUseDarkColors: boolean }>;

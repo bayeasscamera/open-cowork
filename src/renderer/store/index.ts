@@ -108,6 +108,10 @@ interface AppState {
 
   /** Background delegated tasks currently running (badge in the main view). */
   runningBackgroundTasks: Array<{ taskId: string; sessionId: string; title: string }>;
+  /** Bumped on every background.task event so tracking views refetch. */
+  delegationsVersion: number;
+  /** Delegated-tasks tracking panel visibility. */
+  delegatedTasksVisible: boolean;
 
   // Per-session state (messages, partials, turns, traces, etc.)
   sessionStates: Record<string, SessionState>;
@@ -173,6 +177,8 @@ interface AppState {
   closeProjectsPage: () => void;
   addRunningBackgroundTask: (task: { taskId: string; sessionId: string; title: string }) => void;
   removeRunningBackgroundTask: (taskId: string) => void;
+  bumpDelegationsVersion: () => void;
+  setDelegatedTasksVisible: (visible: boolean) => void;
 
   addMessage: (sessionId: string, message: Message) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
@@ -281,6 +287,8 @@ export const useAppStore = create<AppState>((set) => ({
   projectsModalProjectId: null,
   projectsPage: null,
   runningBackgroundTasks: [],
+  delegationsVersion: 0,
+  delegatedTasksVisible: false,
   sessionStates: {},
   sessionScrollPositions: {},
   isLoading: false,
@@ -329,6 +337,8 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       runningBackgroundTasks: state.runningBackgroundTasks.filter((t) => t.taskId !== taskId),
     })),
+  bumpDelegationsVersion: () => set((state) => ({ delegationsVersion: state.delegationsVersion + 1 })),
+  setDelegatedTasksVisible: (visible) => set({ delegatedTasksVisible: visible }),
 
   addSession: (session) =>
     set((state) => ({

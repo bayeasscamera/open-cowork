@@ -49,6 +49,11 @@ const ProjectsPanel = lazy(() =>
 const ProjectsPages = lazy(() =>
   import('./components/projects/ProjectsPages').then((module) => ({ default: module.ProjectsPages }))
 );
+const DelegatedTasksPanel = lazy(() =>
+  import('./components/DelegatedTasksPanel').then((module) => ({
+    default: module.DelegatedTasksPanel,
+  }))
+);
 
 function MainPanelFallback() {
   return (
@@ -94,6 +99,8 @@ function App() {
   const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
   const projectsPage = useAppStore((s) => s.projectsPage);
   const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
+  const delegatedTasksVisible = useAppStore((s) => s.delegatedTasksVisible);
+  const setDelegatedTasksVisible = useAppStore((s) => s.setDelegatedTasksVisible);
   const { t } = useTranslation();
 
   const { listSessions, isElectron } = useIPC();
@@ -283,9 +290,10 @@ function App() {
           {runningBackgroundTasks
             .filter((task) => task.sessionId === activeSessionId)
             .map((task) => (
-              <div
+              <button
                 key={task.taskId}
-                className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-xs text-text-secondary shadow"
+                onClick={() => setDelegatedTasksVisible(true)}
+                className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-xs text-text-secondary shadow hover:bg-surface-hover transition-colors"
                 title={task.title}
               >
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
@@ -293,9 +301,40 @@ function App() {
                 <span className="text-text-muted">
                   {t('backgroundTasks.badge', { count: 1 })}
                 </span>
-              </div>
+              </button>
             ))}
         </div>
+      )}
+
+      {/* Delegated-tasks tracking view (list + live detail + actions + settings) */}
+      {!showSettings && !projectsPage && (
+        <>
+          <button
+            type="button"
+            aria-pressed={delegatedTasksVisible}
+            aria-label={t('delegatedTasks.title')}
+            onClick={() => setDelegatedTasksVisible(!delegatedTasksVisible)}
+            className={`fixed bottom-4 right-24 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
+              delegatedTasksVisible
+                ? 'border-accent bg-accent/10 text-text-primary'
+                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
+            }`}
+          >
+            {t('delegatedTasks.title')}
+            {runningBackgroundTasks.length > 0 && (
+              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-white">
+                {runningBackgroundTasks.length}
+              </span>
+            )}
+          </button>
+          {delegatedTasksVisible && (
+            <PanelErrorBoundary name="DelegatedTasksPanel" fallback={null}>
+              <Suspense fallback={null}>
+                <DelegatedTasksPanel />
+              </Suspense>
+            </PanelErrorBoundary>
+          )}
+        </>
       )}
 
       </div>

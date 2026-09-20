@@ -743,6 +743,39 @@
       "nameAndWorkdirRequired": "名称和工作目录为必填项"
     }
   },
+  "delegatedTasks": {
+    "title": "委托任务",
+    "configure": "配置委托",
+    "settingsTitle": "委托设置",
+    "inheritActive": "继承当前配置",
+    "timeout": "空闲超时（秒）",
+    "maxConcurrent": "最大并发委托数",
+    "notify": "任务完成时通知",
+    "empty": "暂无委托任务。",
+    "selectHint": "选择一个任务查看报告或实时进度。",
+    "summaryCounts": "{running} 进行中 · {completed} 已完成 · {failed} 失败",
+    "meta": "角色 {role} · 模型 {model} · {duration} · {date}",
+    "liveProgress": "实时进度",
+    "actionsError": "操作失败。",
+    "actions": {
+      "cancel": "取消",
+      "retry": "重试",
+      "delete": "删除"
+    },
+    "status": {
+      "running": "进行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "report": {
+      "summary": "摘要",
+      "findings": "发现",
+      "assumptions": "假设",
+      "limits": "局限",
+      "files": "修改的文件"
+    }
+  },
   "backgroundTasks": {
     "badge": "后台任务运行中"
   },

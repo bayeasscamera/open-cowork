@@ -721,6 +721,39 @@
       "nameAndWorkdirRequired": "Name and workspace folder are required"
     }
   },
+  "delegatedTasks": {
+    "title": "Delegated tasks",
+    "configure": "Configure delegations",
+    "settingsTitle": "Delegation settings",
+    "inheritActive": "Inherit active profile",
+    "timeout": "Idle timeout (seconds)",
+    "maxConcurrent": "Max concurrent delegations",
+    "notify": "Notify when a task finishes",
+    "empty": "No delegated tasks yet.",
+    "selectHint": "Select a task to see its report or live progress.",
+    "summaryCounts": "{running} running · {completed} completed · {failed} failed",
+    "meta": "role {role} · model {model} · {duration} · {date}",
+    "liveProgress": "Live progress",
+    "actionsError": "The action failed.",
+    "actions": {
+      "cancel": "Cancel",
+      "retry": "Retry",
+      "delete": "Delete"
+    },
+    "status": {
+      "running": "running",
+      "completed": "done",
+      "failed": "failed",
+      "cancelled": "cancelled"
+    },
+    "report": {
+      "summary": "Summary",
+      "findings": "Findings",
+      "assumptions": "Assumptions",
+      "limits": "Limits",
+      "files": "Modified files"
+    }
+  },
   "backgroundTasks": {
     "badge": "background task running"
   },
