@@ -689,6 +689,8 @@
     "archive": "Archive",
     "restore": "Restore",
     "archivedTag": "Archived",
+    "model": "Model",
+    "configSetShort": "ConfigSet",
     "backToList": "Back to projects",
     "openProjectsPage": "Open the projects page",
     "cardSessionCount": "{{count}} conversations",

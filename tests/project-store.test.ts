@@ -145,6 +145,30 @@ describe('ProjectStore (real better-sqlite3)', () => {
     expect(store.list().length).toBeGreaterThan(0); // projects created above persist
   });
 
+  it('persists a pinned modelId and reads legacy rows as null (set active model)', () => {
+    const store = createProjectStore(getDatabase());
+
+    const withModel = store.create({
+      name: 'Pinned model',
+      workdir,
+      configSetId: 'set-jan',
+      modelId: 'z-ai/glm-5.3-flash',
+    });
+    expect(withModel.configSetId).toBe('set-jan');
+    expect(withModel.modelId).toBe('z-ai/glm-5.3-flash');
+    expect(store.get(withModel.id)?.modelId).toBe('z-ai/glm-5.3-flash');
+
+    // Legacy shape: a project created without a model pin reads as null —
+    // resolution then uses the ConfigSet's ACTIVE model (old rows migrated
+    // via ensureColumn keep working the same way).
+    const legacy = store.create({ name: 'Legacy shape', workdir, configSetId: 'set-jan' });
+    expect(legacy.modelId).toBeNull();
+
+    // Clearing the pin returns to the set's active model.
+    const cleared = store.update(withModel.id, { modelId: null });
+    expect(cleared.modelId).toBeNull();
+  });
+
   it('sessions.create persists project_id through the REAL data-access layer', () => {
     // Regression for a real E2E failure: insertSession's SQL missed the
     // project_id column, silently dropping the link on session creation

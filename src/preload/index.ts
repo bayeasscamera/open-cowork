@@ -175,6 +175,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       workdir: string;
       description?: string;
       configSetId?: string;
+      modelId?: string;
       instructions?: string;
     }): Promise<{ success: boolean; project?: Project; error?: string }> =>
       invoke({ type: 'projects.create', payload }),
@@ -204,6 +205,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       description?: string | null;
       workdir?: string;
       configSetId?: string | null;
+      modelId?: string | null;
       instructions?: string | null;
     }): Promise<{ success: boolean; project?: Project; error?: string }> =>
       invoke({ type: 'projects.update', payload }),
@@ -655,6 +657,7 @@ declare global {
           workdir: string;
           description?: string;
           configSetId?: string;
+          modelId?: string;
           instructions?: string;
         }) => Promise<{ success: boolean; project?: Project; error?: string }>;
         list: (
@@ -681,6 +684,7 @@ declare global {
           description?: string | null;
           workdir?: string;
           configSetId?: string | null;
+          modelId?: string | null;
           instructions?: string | null;
         }) => Promise<{ success: boolean; project?: Project; error?: string }>;
         archive: (

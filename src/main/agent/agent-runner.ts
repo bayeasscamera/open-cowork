@@ -114,7 +114,7 @@ function resolveProjectContextForRunner(sessionId: string): ProjectContextResolu
   try {
     return resolveProjectContext(sessionId, getSharedProjectStore());
   } catch {
-    return { project: undefined, configSetId: null, systemPromptBlock: '' };
+    return { project: undefined, configSetId: null, configModelId: null, systemPromptBlock: '' };
   }
 }
 
@@ -1692,10 +1692,14 @@ ${hints.join('\n')}
       // own ConfigSet instead of the globally active one.
       const projectContext = resolveProjectContextForRunner(session.id);
 
-      // Resolve model via pi-ai — project's ConfigSet wins when pinned.
+      // Resolve model via pi-ai — project's ConfigSet wins when pinned, and a
+      // pinned project modelId overrides the set's active model.
       const runtimeConfig =
         (projectContext.configSetId
-          ? configStore.getConfigSetProjectedConfig(projectContext.configSetId)
+          ? configStore.getConfigSetProjectedConfig(
+              projectContext.configSetId,
+              projectContext.configModelId ?? undefined
+            )
           : undefined) || configStore.getAll();
       const modelString = this.getCurrentModelString(runtimeConfig.model);
       const configProtocol = resolvePiRouteProtocol(

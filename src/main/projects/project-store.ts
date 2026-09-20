@@ -24,6 +24,8 @@ export interface CreateProjectInput {
   workdir: string;
   description?: string;
   configSetId?: string;
+  /** Model pinned inside the selected ConfigSet (absent = its active model). */
+  modelId?: string;
   instructions?: string;
 }
 
@@ -32,6 +34,7 @@ export interface UpdateProjectInput {
   description?: string | null;
   workdir?: string;
   configSetId?: string | null;
+  modelId?: string | null;
   instructions?: string | null;
   archived?: boolean;
 }
@@ -53,6 +56,7 @@ function rowToProject(
     description: row.description,
     workdir: row.workdir,
     configSetId: row.config_set_id,
+    modelId: row.config_model_id,
     instructions: row.instructions,
     archived: row.archived === 1,
     referenceFiles,
@@ -128,6 +132,7 @@ export class ProjectStore {
       description: input.description?.trim() || null,
       workdir,
       config_set_id: input.configSetId?.trim() || null,
+      config_model_id: input.modelId?.trim() || null,
       instructions: input.instructions?.trim() || null,
       archived: 0,
       created_at: now,
@@ -147,6 +152,7 @@ export class ProjectStore {
     if (input.workdir !== undefined) updates.workdir = validateWorkdir(input.workdir);
     if (input.description !== undefined) updates.description = input.description?.trim() || null;
     if (input.configSetId !== undefined) updates.config_set_id = input.configSetId?.trim() || null;
+    if (input.modelId !== undefined) updates.config_model_id = input.modelId?.trim() || null;
     if (input.instructions !== undefined) updates.instructions = input.instructions?.trim() || null;
     if (input.archived !== undefined) updates.archived = input.archived ? 1 : 0;
 

@@ -3306,6 +3306,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
           workdir: event.payload.workdir,
           description: event.payload.description,
           configSetId: event.payload.configSetId,
+          modelId: event.payload.modelId,
           instructions: event.payload.instructions,
         });
         return { success: true, project };
@@ -3352,6 +3353,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
           description: event.payload.description,
           workdir: event.payload.workdir,
           configSetId: event.payload.configSetId,
+          modelId: event.payload.modelId,
           instructions: event.payload.instructions,
         });
         return { success: true, project };

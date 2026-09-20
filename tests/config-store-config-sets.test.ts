@@ -101,6 +101,36 @@ describe('ConfigStore config sets', () => {
     expect(defaultSetView.apiKey).toBe('sk-openrouter-origin');
   });
 
+  it('projects a set config with an optional pinned modelId (project model pin)', () => {
+    mocks.seed = {
+      provider: 'openrouter',
+      customProtocol: 'anthropic',
+      apiKey: 'sk-origin',
+      baseUrl: 'https://openrouter.ai/api',
+      model: 'anthropic/claude-sonnet-4-6',
+      isConfigured: true,
+    };
+
+    const store = new ConfigStore();
+    const created = store.createSet({ name: 'JAN', mode: 'clone' });
+    const janId = created.configSets.find((set) => set.id !== 'default')?.id;
+    expect(janId).toBeTruthy();
+
+    // No model pin → the set's active model (legacy project behavior).
+    // Note: normalizeModelIds canonicalizes known aliases (4-6 → 4.6).
+    const activeView = store.getConfigSetProjectedConfig(janId!);
+    expect(activeView?.model).toBe('anthropic/claude-sonnet-4.6');
+
+    // A pinned modelId overrides the set's active model, keeping the set's
+    // provider/credentials — same semantic as subAgents.perRole.
+    const pinnedView = store.getConfigSetProjectedConfig(janId!, 'z-ai/glm-5.3-flash');
+    expect(pinnedView?.model).toBe('z-ai/glm-5.3-flash');
+    expect(pinnedView?.provider).toBe('openrouter');
+
+    // Unknown set id still degrades to undefined.
+    expect(store.getConfigSetProjectedConfig('does-not-exist', 'whatever')).toBeUndefined();
+  });
+
   it('guards default set deletion and falls back to default after delete', () => {
     const store = new ConfigStore();
     const created = store.createSet({ name: 'My Set', mode: 'clone' });

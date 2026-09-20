@@ -283,6 +283,8 @@
     "archive": "Archiver",
     "restore": "Restaurer",
     "archivedTag": "Archivé",
+    "model": "Modèle",
+    "configSetShort": "ConfigSet",
     "backToList": "Retour aux projets",
     "openProjectsPage": "Ouvrir la page des projets",
     "cardSessionCount": "{{count}} conversations",

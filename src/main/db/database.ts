@@ -138,6 +138,8 @@ export interface ProjectRow {
   workdir: string;
   /** Optional ConfigSet used instead of the globally active one for this project. */
   config_set_id: string | null;
+  /** Model pinned inside the ConfigSet (NULL = the set's active model — legacy rows). */
+  config_model_id: string | null;
   /** Persistent project instructions injected into every linked session. */
   instructions: string | null;
   /** 0 = active, 1 = archived (no destructive delete without confirmation). */
@@ -403,12 +405,15 @@ function initializeSchema(database: Database.Database): void {
       description TEXT,
       workdir TEXT NOT NULL,
       config_set_id TEXT,
+      config_model_id TEXT,
       instructions TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
   `);
+    // Legacy projects predate the model pin: NULL = the ConfigSet's active model.
+    ensureColumn(database, 'projects', 'config_model_id', 'config_model_id TEXT');
 
     // Sessions can point at the project they belong to (null = no project).
     ensureColumn(database, 'sessions', 'project_id', 'project_id TEXT');
@@ -593,9 +598,9 @@ export function initDatabase(): DatabaseInstance {
 
   const insertProject = rawDb.prepare(`
     INSERT INTO projects (
-      id, name, description, workdir, config_set_id, instructions, archived, created_at, updated_at
+      id, name, description, workdir, config_set_id, config_model_id, instructions, archived, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getProjectStmt = rawDb.prepare(`
@@ -833,6 +838,7 @@ export function initDatabase(): DatabaseInstance {
           project.description,
           project.workdir,
           project.config_set_id,
+          project.config_model_id,
           project.instructions,
           project.archived,
           project.created_at,

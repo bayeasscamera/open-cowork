@@ -13,6 +13,10 @@ import {
 } from 'lucide-react';
 import type { Project } from '../types';
 import { useAppStore } from '../store';
+import {
+  buildConfigSetLites,
+  ConfigSetModelPicker,
+} from './shared/ConfigSetModelPicker';
 
 /**
  * Projects editor modal — creation and detail/edit of a Project.
@@ -32,6 +36,7 @@ export function ProjectsPanel() {
   const [description, setDescription] = useState('');
   const [workdir, setWorkdir] = useState('');
   const [configSetId, setConfigSetId] = useState('');
+  const [configModelId, setConfigModelId] = useState('');
   const [instructions, setInstructions] = useState('');
   const [referenceFiles, setReferenceFiles] = useState<string[]>([]);
   const [archived, setArchived] = useState(false);
@@ -70,6 +75,7 @@ export function ProjectsPanel() {
         setDescription(project.description ?? '');
         setWorkdir(project.workdir);
         setConfigSetId(project.configSetId ?? '');
+        setConfigModelId(project.modelId ?? '');
         setInstructions(project.instructions ?? '');
         setReferenceFiles(project.referenceFiles);
         setArchived(project.archived);
@@ -94,6 +100,7 @@ export function ProjectsPanel() {
       setDescription('');
       setWorkdir('');
       setConfigSetId('');
+      setConfigModelId('');
       setInstructions('');
       setReferenceFiles([]);
       setArchived(false);
@@ -168,6 +175,7 @@ export function ProjectsPanel() {
           description: description.trim() || null,
           workdir: workdir.trim(),
           configSetId: configSetId || null,
+          modelId: configModelId || null,
           instructions: instructions.trim() || null,
         });
         if (!result.success) {
@@ -180,6 +188,7 @@ export function ProjectsPanel() {
           workdir: workdir.trim(),
           description: description.trim() || undefined,
           configSetId: configSetId || undefined,
+          modelId: configModelId || undefined,
           instructions: instructions.trim() || undefined,
         });
         if (!result.success) {
@@ -253,7 +262,6 @@ export function ProjectsPanel() {
 
   if (!showProjectsModal) return null;
 
-  const configSets = appConfig?.configSets ?? [];
 
   return (
     <div
@@ -342,18 +350,20 @@ export function ProjectsPanel() {
                   <label className="block text-xs font-medium text-text-secondary mb-1.5">
                     {t('projects.configSet')}
                   </label>
-                  <select
-                    value={configSetId}
-                    onChange={(e) => setConfigSetId(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-[13px] text-text-primary focus:outline-none focus:border-accent"
-                  >
-                    <option value="">{t('projects.configSetNone')}</option>
-                    {configSets.map((set) => (
-                      <option key={set.id} value={set.id}>
-                        {set.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex flex-col gap-2">
+                    <ConfigSetModelPicker
+                      sets={buildConfigSetLites(appConfig ?? {})}
+                      value={{ configSetId: configSetId, modelId: configModelId || undefined }}
+                      onChange={(next) => {
+                        setConfigSetId(next.configSetId);
+                        setConfigModelId(next.modelId ?? '');
+                      }}
+                      configSetLabel={t('projects.configSetShort')}
+                      modelLabel={t('projects.model')}
+                      allowEmpty
+                      emptyLabel={t('projects.configSetNone')}
+                    />
+                  </div>
                   <p className="mt-1 text-[11px] text-text-muted">{t('projects.configSetHint')}</p>
                 </div>
 

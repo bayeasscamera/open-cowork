@@ -711,6 +711,8 @@
     "archive": "归档",
     "restore": "恢复",
     "archivedTag": "已归档",
+    "model": "模型",
+    "configSetShort": "配置方案",
     "backToList": "返回项目列表",
     "openProjectsPage": "打开项目页面",
     "cardSessionCount": "{{count}} 个对话",

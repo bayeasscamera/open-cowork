@@ -28,6 +28,8 @@ export interface Project {
   description: string | null;
   workdir: string;
   configSetId: string | null;
+  /** Model pinned INSIDE the selected ConfigSet (null = the set's active model). */
+  modelId: string | null;
   instructions: string | null;
   archived: boolean;
   /** Absolute paths of attached reference files (read-only context at session start). */
@@ -533,6 +535,7 @@ export type ClientEvent =
         workdir: string;
         description?: string;
         configSetId?: string;
+        modelId?: string;
         instructions?: string;
       };
     }
@@ -546,6 +549,7 @@ export type ClientEvent =
         description?: string | null;
         workdir?: string;
         configSetId?: string | null;
+        modelId?: string | null;
         instructions?: string | null;
       };
     }

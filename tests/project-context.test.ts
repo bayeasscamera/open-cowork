@@ -192,7 +192,11 @@ describe('agent runner wiring — source contract', () => {
   });
 
   it('uses the project ConfigSet when pinned, falling back to the active config', () => {
-    expect(runnerSource).toContain('configStore.getConfigSetProjectedConfig(projectContext.configSetId)');
+    // The pinned project modelId (when set) overrides the set's active model.
+    const runnerFlat = runnerSource.replace(/\s+/g, ' ');
+    expect(runnerFlat).toContain(
+      'configStore.getConfigSetProjectedConfig( projectContext.configSetId, projectContext.configModelId ?? undefined )'
+    );
     expect(runnerSource).toContain('|| configStore.getAll()');
   });
 

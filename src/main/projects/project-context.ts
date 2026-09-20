@@ -28,6 +28,8 @@ export interface ProjectContextResolution {
   project: Project | undefined;
   /** ConfigSet the project pins for its sessions (overrides the global active set). */
   configSetId: string | null;
+  /** Model pinned INSIDE that ConfigSet (null = the set's active model). */
+  configModelId: string | null;
   /** Ready-to-inject system prompt block ('' when nothing applies). */
   systemPromptBlock: string;
 }
@@ -150,16 +152,17 @@ export function resolveProjectContext(
   try {
     const project = store.getForSession(sessionId);
     if (!project || project.archived) {
-      return { project: undefined, configSetId: null, systemPromptBlock: '' };
+      return { project: undefined, configSetId: null, configModelId: null, systemPromptBlock: '' };
     }
     return {
       project,
       configSetId: project.configSetId,
+      configModelId: project.modelId,
       systemPromptBlock: buildSystemPromptBlock(project),
     };
   } catch (err) {
     // Resolve must never take a session down with it — degrade to no context.
     logError('[ProjectContext] Failed resolving project context for session:', sessionId, err);
-    return { project: undefined, configSetId: null, systemPromptBlock: '' };
+    return { project: undefined, configSetId: null, configModelId: null, systemPromptBlock: '' };
   }
 }
