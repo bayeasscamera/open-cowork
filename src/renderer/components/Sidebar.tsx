@@ -96,13 +96,14 @@ export function Sidebar() {
     }
   }, []);
 
-  // Load projects once on mount (Electron mode only).
+  // Load projects once on mount (Electron mode only). Archived projects stay
+  // visible — otherwise the restore/delete actions become unreachable.
   useEffect(() => {
     if (!isElectron) return;
     let cancelled = false;
     void (async () => {
       try {
-        const result = await window.electronAPI.projects.list(false);
+        const result = await window.electronAPI.projects.list(true);
         if (!cancelled && result.success) setProjects(result.projects);
       } catch {
         // Projects are optional — sidebar works fine without them.
@@ -426,30 +427,52 @@ export function Sidebar() {
             )}
             {projects.map((project) => {
               const isActive = activeProjectId === project.id;
+              const isArchived = project.archived;
               return (
                 <div
                   key={project.id}
-                  onClick={() => setActiveProjectId(isActive ? null : project.id)}
+                  onClick={() => {
+                    // Archived projects are not filterable — open their editor
+                    // (the only place to restore or permanently delete them).
+                    if (isArchived) {
+                      openProjectsModal(project.id);
+                      return;
+                    }
+                    setActiveProjectId(isActive ? null : project.id);
+                  }}
                   onMouseEnter={() => setHoveredProject(project.id)}
                   onMouseLeave={() => setHoveredProject(null)}
                   className={`group relative cursor-pointer flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors ${
-                    isActive ? 'bg-surface-hover/80' : 'hover:bg-surface-hover/60'
+                    isArchived
+                      ? 'opacity-60 hover:bg-surface-hover/40'
+                      : isActive
+                        ? 'bg-surface-hover/80'
+                        : 'hover:bg-surface-hover/60'
                   }`}
                 >
                   <FolderOpen
                     className={`w-3.5 h-3.5 flex-shrink-0 ${
-                      isActive ? 'text-accent' : 'text-text-muted'
+                      isArchived ? 'text-text-muted' : isActive ? 'text-accent' : 'text-text-muted'
                     }`}
                   />
                   <span
                     className={`text-[12px] font-medium truncate ${
-                      isActive ? 'text-text-primary' : 'text-text-secondary'
+                      isActive && !isArchived
+                        ? 'text-text-primary'
+                        : isArchived
+                          ? 'text-text-muted'
+                          : 'text-text-secondary'
                     }`}
-                    title={project.workdir}
+                    title={isArchived ? `${project.name} (${t('projects.archivedTag')})` : project.workdir}
                   >
                     {project.name}
                   </span>
-                  {hoveredProject === project.id && (
+                  {isArchived && (
+                    <span className="ml-auto flex-shrink-0 text-[10px] uppercase tracking-wider text-text-muted">
+                      {t('projects.archivedTag')}
+                    </span>
+                  )}
+                  {hoveredProject === project.id && !isArchived && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -664,20 +687,22 @@ export function Sidebar() {
                               <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
                                 {t('projects.moveToProject')}
                               </div>
-                              {projects.map((project) => (
-                                <button
-                                  key={project.id}
-                                  onClick={() => void handleMoveSessionToProject(project.id, session.id)}
-                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] transition-colors ${
-                                    session.projectId === project.id
-                                      ? 'bg-surface-hover text-accent'
-                                      : 'text-text-primary hover:bg-surface-hover'
-                                  }`}
-                                >
-                                  <FolderOpen className="w-3 h-3 flex-shrink-0" />
-                                  <span className="truncate">{project.name}</span>
-                                </button>
-                              ))}
+                              {projects
+                                .filter((project) => !project.archived)
+                                .map((project) => (
+                                  <button
+                                    key={project.id}
+                                    onClick={() => void handleMoveSessionToProject(project.id, session.id)}
+                                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] transition-colors ${
+                                      session.projectId === project.id
+                                        ? 'bg-surface-hover text-accent'
+                                        : 'text-text-primary hover:bg-surface-hover'
+                                    }`}
+                                  >
+                                    <FolderOpen className="w-3 h-3 flex-shrink-0" />
+                                    <span className="truncate">{project.name}</span>
+                                  </button>
+                                ))}
                               {session.projectId && (
                                 <>
                                   <div className="my-1 border-t border-border-subtle" />

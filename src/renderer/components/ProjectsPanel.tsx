@@ -220,6 +220,19 @@ export function ProjectsPanel() {
     setIsDeleting(true);
     setError(null);
     try {
+      // The backend keeps its double-security invariant: permanent delete
+      // works only on ARCHIVED projects. From a still-active project, the
+      // confirmed delete archives it first.
+      if (!archived) {
+        const archiveResult = await window.electronAPI.projects.archive(
+          projectsModalProjectId,
+          true
+        );
+        if (!archiveResult.success) {
+          setError(archiveResult.error || t('projects.errors.archiveFailed'));
+          return;
+        }
+      }
       const result = await window.electronAPI.projects.delete(projectsModalProjectId);
       if (!result.success) {
         setError(result.error || t('projects.errors.deleteFailed'));
@@ -443,12 +456,14 @@ export function ProjectsPanel() {
                 </p>
               )}
 
-              {isEdit && archived && (
+              {isEdit && (
                 <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2.5">
                   {confirmDelete ? (
                     <>
                       <p className="text-[12px] text-text-primary leading-relaxed">
-                        {t('projects.deleteWarning')}
+                        {archived
+                          ? t('projects.deleteWarning')
+                          : t('projects.deleteWarningArchiveFirst')}
                       </p>
                       <div className="mt-2 flex items-center gap-2">
                         <button

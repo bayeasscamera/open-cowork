@@ -9,6 +9,9 @@ import { readFileSync } from 'node:fs';
 
 const sidebar = readFileSync('src/renderer/components/Sidebar.tsx', 'utf8');
 const panel = readFileSync('src/renderer/components/ProjectsPanel.tsx', 'utf8');
+// Whitespace-insensitive views for assertions spanning reformatted lines.
+const sidebarFlat = sidebar.replace(/\s+/g, ' ');
+const panelFlat = panel.replace(/\s+/g, ' ');
 
 describe('Sidebar session project actions', () => {
   it('every session row offers a project action opening a picker popover', () => {
@@ -36,15 +39,41 @@ describe('Sidebar session project actions', () => {
     expect(sidebar).toContain('hoveredSession === session.id');
     expect(sidebar).toContain('setProjectPickerSessionId(null)');
   });
+
+  it('the move picker never offers ARCHIVED projects as a destination', () => {
+    expect(sidebar).toContain('.filter((project) => !project.archived)');
+  });
+});
+
+describe('Sidebar archived projects stay reachable (delete/restore dead-end fix)', () => {
+  it('loads the project list WITH archived projects', () => {
+    expect(sidebar).toContain('projects.list(true)');
+    expect(sidebar).not.toContain('projects.list(false)');
+  });
+
+  it('archived projects render distinctly and open their editor on click', () => {
+    expect(sidebar).toContain("t('projects.archivedTag')");
+    expect(sidebarFlat).toContain('if (isArchived) { openProjectsModal(project.id); return; }');
+  });
 });
 
 describe('ProjectsPanel permanent delete', () => {
-  it('delete is only offered on archived projects, behind an explicit confirmation', () => {
-    // The red zone renders only when archived, and asks twice.
-    expect(panel).toContain('isEdit && archived && (');
-    expect(panel).toContain('setConfirmDelete');
+  it('the delete zone is ALWAYS visible in the edit modal — no dead-end', () => {
+    // Regression: the zone used to render only for archived projects, which
+    // were simultaneously invisible in the sidebar — delete was unreachable.
+    expect(panel).toContain('{isEdit && (');
+    expect(panel).not.toContain('{isEdit && archived && (');
+  });
+
+  it('deleting a still-active project archives it first (backend guard intact)', () => {
+    expect(panel).toContain('if (!archived) {');
+    expect(panelFlat).toContain('projects.archive( projectsModalProjectId, true )');
     expect(panel).toContain('projects.delete(projectsModalProjectId)');
+  });
+
+  it('the warning text adapts: archived vs archive-first flows', () => {
     expect(panel).toContain("t('projects.deleteWarning')");
+    expect(panel).toContain("t('projects.deleteWarningArchiveFirst')");
   });
 
   it('deleting clears a sidebar filter that pointed at the deleted project', () => {
