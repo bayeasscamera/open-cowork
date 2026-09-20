@@ -28,11 +28,11 @@ describe('SystemController & Omnipotent OS Control (OpenClaw style)', () => {
     expect(procs[0]).toHaveProperty('name');
   });
 
-  it('exposes all 20 meta tools including the 5 advanced pillars', () => {
+  it('exposes all 22 meta tools including the 5 advanced pillars and async delegation', () => {
     const tools = buildAgentMetaTools();
     const names = tools.map((t) => t.name);
 
-    expect(tools.length).toBe(20);
+    expect(tools.length).toBe(22);
     expect(names).toContain('system_app_control');
     expect(names).toContain('system_clipboard');
     expect(names).toContain('system_notify');
@@ -48,6 +48,9 @@ describe('SystemController & Omnipotent OS Control (OpenClaw style)', () => {
     expect(names).toContain('background_job_manager');
     // Pilier 5
     expect(names).toContain('orchestrate_multi_agent_plan');
+    // Async delegation (OpenClaw-style fire-and-forget)
+    expect(names).toContain('delegate_background_task');
+    expect(names).toContain('background_task_status');
   });
 });
 

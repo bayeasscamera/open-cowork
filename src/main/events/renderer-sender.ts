@@ -165,6 +165,17 @@ export function sendToRenderer(event: ServerEvent) {
           }
           SystemNotifier.notifyTaskCompleted(mainWindow, sessionTitle, sessionId);
         }
+      } else if (event.type === 'background.task') {
+        // Async delegation finished — notify even though no Cowork session
+        // status changed (the sub-agent ran in-process, outside sessionManager).
+        const status = payload?.status as string | undefined;
+        if (status === 'completed' || status === 'failed') {
+          SystemNotifier.notifyTaskCompleted(
+            mainWindow,
+            (payload?.title as string) || undefined,
+            sessionId
+          );
+        }
       } else if (event.type === 'trace.step') {
         const step = payload?.step as { type?: string; toolName?: string; title?: string } | undefined;
         if (step?.type === 'tool_call' && step.toolName?.toLowerCase().includes('ask')) {

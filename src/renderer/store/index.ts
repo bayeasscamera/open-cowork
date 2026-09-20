@@ -106,6 +106,9 @@ interface AppState {
   /** Dedicated full-width pages: project list or a single project's detail. */
   projectsPage: ProjectsPageState | null;
 
+  /** Background delegated tasks currently running (badge in the main view). */
+  runningBackgroundTasks: Array<{ taskId: string; sessionId: string; title: string }>;
+
   // Per-session state (messages, partials, turns, traces, etc.)
   sessionStates: Record<string, SessionState>;
 
@@ -168,6 +171,8 @@ interface AppState {
   openProjectsList: () => void;
   openProjectDetail: (projectId: string) => void;
   closeProjectsPage: () => void;
+  addRunningBackgroundTask: (task: { taskId: string; sessionId: string; title: string }) => void;
+  removeRunningBackgroundTask: (taskId: string) => void;
 
   addMessage: (sessionId: string, message: Message) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
@@ -275,6 +280,7 @@ export const useAppStore = create<AppState>((set) => ({
   showProjectsModal: false,
   projectsModalProjectId: null,
   projectsPage: null,
+  runningBackgroundTasks: [],
   sessionStates: {},
   sessionScrollPositions: {},
   isLoading: false,
@@ -311,6 +317,18 @@ export const useAppStore = create<AppState>((set) => ({
   openProjectsList: () => set({ projectsPage: { view: 'list' } }),
   openProjectDetail: (projectId) => set({ projectsPage: { view: 'detail', projectId } }),
   closeProjectsPage: () => set({ projectsPage: null }),
+  addRunningBackgroundTask: (task) =>
+    set((state) => ({
+      runningBackgroundTasks: state.runningBackgroundTasks.some(
+        (t) => t.taskId === task.taskId
+      )
+        ? state.runningBackgroundTasks
+        : [...state.runningBackgroundTasks, task],
+    })),
+  removeRunningBackgroundTask: (taskId) =>
+    set((state) => ({
+      runningBackgroundTasks: state.runningBackgroundTasks.filter((t) => t.taskId !== taskId),
+    })),
 
   addSession: (session) =>
     set((state) => ({

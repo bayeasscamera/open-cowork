@@ -743,6 +743,9 @@
       "nameAndWorkdirRequired": "名称和工作目录为必填项"
     }
   },
+  "backgroundTasks": {
+    "badge": "后台任务运行中"
+  },
   "sidebar": {
     "expandToView": "展开查看任务",
     "noTasks": "暂无任务",

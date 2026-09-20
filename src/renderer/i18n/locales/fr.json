@@ -315,6 +315,9 @@
       "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis"
     }
   },
+  "backgroundTasks": {
+    "badge": "tâche de fond en cours"
+  },
   "sidebar": {
     "settings": "Paramètres",
     "today": "Aujourd’hui",

@@ -34,6 +34,7 @@ import type { Model, Api } from '@mariozechner/pi-ai';
 import type { AgentTool, AgentToolUpdateCallback } from '@mariozechner/pi-agent-core';
 import { AuthStorage, ModelRegistry } from './shared-auth';
 import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
+import { buildWebTools } from './web-tools';
 import {
   configStore,
   normalizeSubAgentsConfig,
@@ -548,7 +549,8 @@ async function launchSubAgentSession(
   // No bash tool: a free-form shell cannot be reliably confined without an
   // OS sandbox, and the swarm requires writes to stay inside the workspace.
   // Every tool is additionally confined by a wrapper refusing paths that
-  // escape the workspace.
+  // escape the workspace. Web tools (search/fetch) are stateless and not
+  // fs-bound: research delegations need them.
   const tools = [
     createReadTool(args.cwd),
     createWriteTool(args.cwd),
@@ -570,7 +572,10 @@ async function launchSubAgentSession(
     authStorage,
     modelRegistry,
     tools,
-    customTools: [],
+    customTools: buildWebTools({
+      tavilyApiKey: args.config.tavilyApiKey || '',
+      braveApiKey: args.config.braveApiKey || '',
+    }),
     sessionManager: PiSessionManager.inMemory(),
     settingsManager: PiSettingsManager.inMemory({
       compaction: { enabled: false },

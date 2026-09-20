@@ -27,6 +27,10 @@ import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
 import { getSharedProjectStore } from '../projects/project-store';
 import {
+  takePendingDelegationResults,
+  describeRunningDelegations,
+} from './background-delegations';
+import {
   resolveProjectContext,
   type ProjectContextResolution,
 } from '../projects/project-context';
@@ -2064,6 +2068,18 @@ ${hints.join('\n')}
         contextualPrompt = `${extensionResult.promptPrefix.trim()}\n\n${contextualPrompt}`;
       }
 
+      // Async delegation: append results of finished background tasks (once)
+      // and mark still-running ones, so the main agent can keep the user
+      // informed without blocking on the delegation.
+      const delegationResults = takePendingDelegationResults(session.id);
+      if (delegationResults) {
+        contextualPrompt = `${contextualPrompt}\n\n${delegationResults}`;
+      }
+      const runningDelegations = describeRunningDelegations(session.id);
+      if (runningDelegations) {
+        contextualPrompt = `${contextualPrompt}\n\n${runningDelegations}`;
+      }
+
       logTiming('before building MCP servers config', runStartTime);
 
       // Build MCP servers configuration for SDK
@@ -2281,7 +2297,7 @@ Tool routing:
       // and dynamically created tools into the agent SDK.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
       const extensionCustomTools = extensionResult.customTools || [];
-      const metaTools = buildAgentMetaTools();
+      const metaTools = buildAgentMetaTools({ sessionId: session.id, cwd: effectiveCwd });
       const webTools = buildWebTools({
         tavilyApiKey: runtimeConfig.tavilyApiKey || process.env.TAVILY_API_KEY || '',
         braveApiKey: runtimeConfig.braveApiKey || process.env.BRAVE_API_KEY || '',

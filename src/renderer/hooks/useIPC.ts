@@ -190,6 +190,16 @@ export function useIPC() {
             store.updateSession(event.payload.sessionId, event.payload.updates);
             break;
 
+          case 'background.task': {
+            const { taskId, sessionId, title, status } = event.payload;
+            if (status === 'running') {
+              store.addRunningBackgroundTask({ taskId, sessionId, title });
+            } else {
+              store.removeRunningBackgroundTask(taskId);
+            }
+            break;
+          }
+
           case 'stream.message':
             console.log(
               '[useIPC] stream.message received:',

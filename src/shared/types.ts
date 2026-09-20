@@ -640,6 +640,17 @@ export type ServerEvent =
   | { type: 'workdir.changed'; payload: { path: string } }
   | { type: 'session.contextInfo'; payload: { sessionId: string; contextWindow: number } }
   | {
+      type: 'background.task';
+      payload: {
+        sessionId: string;
+        taskId: string;
+        title: string;
+        status: 'running' | 'completed' | 'failed';
+        summary?: string;
+        error?: string;
+      };
+    }
+  | {
       type: 'compaction.result';
       payload: {
         sessionId: string;

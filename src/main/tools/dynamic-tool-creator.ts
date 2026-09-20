@@ -22,8 +22,9 @@ import { AstCodeIntelligence } from '../agent/ast-code-intelligence';
 import { SystemController } from '../system/system-controller';
 import { SelfHealingRunner } from '../agent/self-healing-runner';
 import { CodeGraphIndexer } from '../memory/codegraph-indexer';
-import { MultiAgentCoordinator } from '../agent/multi-agent-coordinator';
+import { MultiAgentCoordinator, type AgentRole } from '../agent/multi-agent-coordinator';
 import { createSwarmRunner } from '../agent/swarm-runner';
+import { startDelegation, listDelegations } from '../agent/background-delegations';
 import { configStore } from '../config/config-store';
 import { spawn, type ChildProcess } from 'child_process';
 
@@ -260,7 +261,9 @@ export class DynamicToolRegistry {
  * 3. `list_agent_capabilities`   — Discover existing tools + skills
  * 4. `deepseek_eval_harness`     — Evaluation Driven Development & Benchmarking
  */
-export function buildAgentMetaTools(): ToolDefinition[] {
+export function buildAgentMetaTools(
+  options: { sessionId?: string; cwd?: string } = {}
+): ToolDefinition[] {
   const toolRegistry = DynamicToolRegistry.getInstance();
   const skillRegistry = DynamicSkillRegistry.getInstance();
 
@@ -1010,6 +1013,100 @@ export function buildAgentMetaTools(): ToolDefinition[] {
             },
           ],
           details: executed,
+        };
+      },
+    },
+
+    // =========================================================================
+    // ASYNC DELEGATION — fire-and-forget background sub-agent
+    // =========================================================================
+
+    {
+      name: 'delegate_background_task',
+      label: 'Background Task Delegation',
+      description:
+        'Delegate ONE autonomous task (typically a web research) to a background sub-agent and CONTINUE immediately: ' +
+        'this tool returns a task id right away WITHOUT blocking. The sub-agent runs with the same guardrails as the swarm ' +
+        '(workspace confinement, timeout) and its result is injected into this conversation automatically when ready. ' +
+        'Use for slow research the user does not need synchronously; do NOT use when the user is waiting for the answer.',
+      parameters: Type.Object({
+        task: Type.String({
+          description:
+            'Full self-contained instructions for the background sub-agent, e.g. "Research X on the web and summarize key findings with sources"',
+        }),
+        title: Type.Optional(
+          Type.String({ description: 'Short label shown in notifications and the running badge' })
+        ),
+        role: Type.Optional(
+          Type.Union(
+            [
+              Type.Literal('architect'),
+              Type.Literal('developer'),
+              Type.Literal('reviewer'),
+              Type.Literal('security'),
+            ],
+            { description: 'Sub-agent profile; defaults to developer' }
+          )
+        ),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { task?: string; title?: string; role?: AgentRole };
+        if (!args.task || !args.task.trim()) {
+          return {
+            content: [{ type: 'text' as const, text: 'task is required to delegate a background job.' }],
+            details: {},
+          };
+        }
+        const { taskId } = startDelegation({
+          sessionId: options.sessionId ?? 'default',
+          cwd: options.cwd ?? (configStore.getAll().defaultWorkdir?.trim() || process.cwd()),
+          title: args.title?.trim() || args.task.trim().slice(0, 60),
+          prompt: args.task.trim(),
+          role: args.role ?? 'developer',
+        });
+        // Non-blocking by design: startDelegation returns before the sub-agent
+        // finishes; the result arrives via background.task events + injection.
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                `Background task delegated (id: ${taskId}). Continue with whatever the user needs now — ` +
+                `the result will be injected into this conversation automatically when the sub-agent finishes.`,
+            },
+          ],
+          details: { taskId },
+        };
+      },
+    },
+
+    {
+      name: 'background_task_status',
+      label: 'Background Task Status',
+      description:
+        'List the background tasks delegated in this conversation with their status (running / completed / failed) so you can report progress to the user.',
+      parameters: Type.Object({}),
+      execute: async () => {
+        const list = listDelegations(options.sessionId ?? 'default');
+        if (list.length === 0) {
+          return {
+            content: [{ type: 'text' as const, text: 'No background tasks delegated in this conversation.' }],
+            details: { delegations: [] },
+          };
+        }
+        const lines = list.map(
+          (d) =>
+            `• [${d.status.toUpperCase()}] "${d.title}" (id: ${d.id}, started ${new Date(d.startedAt).toLocaleTimeString()})` +
+            (d.status === 'failed' ? ` — ${d.error ?? 'unknown error'}` : '')
+        );
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Background tasks (${list.length}):\n${lines.join('\n')}`,
+            },
+          ],
+          details: { delegations: list },
         };
       },
     },

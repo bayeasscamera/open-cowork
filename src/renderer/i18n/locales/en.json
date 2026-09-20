@@ -721,6 +721,9 @@
       "nameAndWorkdirRequired": "Name and workspace folder are required"
     }
   },
+  "backgroundTasks": {
+    "badge": "background task running"
+  },
   "sidebar": {
     "expandToView": "Expand to view tasks",
     "noTasks": "No tasks yet",

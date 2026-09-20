@@ -1,4 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Loader2 } from 'lucide-react';
 import { useAppStore } from './store';
 import {
   useActiveSessionId,
@@ -91,6 +93,8 @@ function App() {
   const diffPanelVisible = useAppStore((s) => s.diffPanelVisible);
   const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
   const projectsPage = useAppStore((s) => s.projectsPage);
+  const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
+  const { t } = useTranslation();
 
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
@@ -271,6 +275,27 @@ function App() {
             </div>
           )}
         </>
+      )}
+
+      {/* Async delegation badge: background sub-agents running for the active session */}
+      {activeSessionId && !showSettings && !projectsPage && (
+        <div className="fixed bottom-4 left-4 z-40 flex flex-col gap-1.5">
+          {runningBackgroundTasks
+            .filter((task) => task.sessionId === activeSessionId)
+            .map((task) => (
+              <div
+                key={task.taskId}
+                className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-xs text-text-secondary shadow"
+                title={task.title}
+              >
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+                <span className="max-w-[260px] truncate">{task.title}</span>
+                <span className="text-text-muted">
+                  {t('backgroundTasks.badge', { count: 1 })}
+                </span>
+              </div>
+            ))}
+        </div>
       )}
 
       </div>
