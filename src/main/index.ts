@@ -105,7 +105,9 @@ import {
   getDelegationSettings,
   setDelegationSettings,
   delegationNotifyEnabled,
+  getDelegationStats,
 } from './agent/background-delegations';
+import { getSwarmStats } from './agent/swarm-stats';
 import {
   buildSkillDoctorReport,
   loadSkillSourcesFromDir,
@@ -3526,6 +3528,20 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       } catch (error) {
         logError('[IPC] backgroundTasks.getSettings failed:', error);
         return { success: false, error: 'Failed to load settings' };
+      }
+    }
+
+    // Single round-trip for the Sub-agents transparency sections.
+    case 'backgroundTasks.getStats': {
+      try {
+        return {
+          success: true,
+          swarm: getSwarmStats(),
+          delegations: getDelegationStats(),
+        };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.getStats failed:', error);
+        return { success: false, error: 'Failed to load stats' };
       }
     }
 

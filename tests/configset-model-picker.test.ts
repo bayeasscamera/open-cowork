@@ -51,10 +51,45 @@ describe('ConfigSetModelPicker — one shared component, two screens', () => {
       resolve(root, 'src/renderer/components/DelegatedTasksPanel.tsx'),
       'utf8'
     );
-    expect(panel).toContain("from './shared/ConfigSetModelPicker'");
-    expect(panel).toContain('<ConfigSetModelPicker');
-    expect(panel).toContain('buildConfigSetLites');
+    // The panel no longer touches the picker directly — it renders the shared
+    // delegation form instead (which uses the picker). Same single component.
+    expect(panel).toContain("from './settings/DelegationSettingsForm'");
+    expect(panel).toContain('<DelegationSettingsForm');
     expect(panel).not.toContain('chosen.models.map');
+  });
+
+  it('SettingsSubAgents renders the picker directly (global + per-role) AND via the shared delegation form (section 3)', () => {
+    const settings = readFileSync(
+      resolve(root, 'src/renderer/components/settings/SettingsSubAgents.tsx'),
+      'utf8'
+    );
+    expect(settings).toContain('<ConfigSetModelPicker');
+    expect(settings).toContain("from './DelegationSettingsForm'");
+    expect(settings).toContain('<DelegationSettingsForm');
+  });
+});
+
+describe('DelegationSettingsForm — single form, two hosts', () => {
+  const form = readFileSync(
+    resolve(root, 'src/renderer/components/settings/DelegationSettingsForm.tsx'),
+    'utf8'
+  );
+
+  it('owns the delegation settings UI (picker + timeout + concurrency + notify) in one place', () => {
+    expect(form).toContain('<ConfigSetModelPicker');
+    expect(form).toContain('backgroundTasks.getSettings');
+    expect(form).toContain('backgroundTasks.setSettings');
+    expect(form).toContain('notifyOnCompletion');
+  });
+
+  it('the tracking panel and the settings screen both delegate to it — no duplicated markup', () => {
+    const panel = readFileSync(
+      resolve(root, 'src/renderer/components/DelegatedTasksPanel.tsx'),
+      'utf8'
+    );
+    // Neither host re-implements the fields inline anymore.
+    expect(panel).not.toContain('notifyOnCompletion');
+    expect(panel).not.toContain('buildConfigSetLites');
   });
 });
 

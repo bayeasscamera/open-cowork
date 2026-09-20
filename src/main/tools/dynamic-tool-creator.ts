@@ -25,6 +25,7 @@ import { CodeGraphIndexer } from '../memory/codegraph-indexer';
 import { MultiAgentCoordinator, type AgentRole } from '../agent/multi-agent-coordinator';
 import { createSwarmRunner } from '../agent/swarm-runner';
 import { startDelegation, listDelegations } from '../agent/background-delegations';
+import { recordSwarmExecution } from '../agent/swarm-stats';
 import { configStore } from '../config/config-store';
 import { spawn, type ChildProcess } from 'child_process';
 
@@ -976,11 +977,13 @@ export function buildAgentMetaTools(
         const config = configStore.getAll();
         // Every sub-agent is confined to the default workspace.
         const swarmCwd = config.defaultWorkdir?.trim() || process.cwd();
+        const swarmStartedAt = Date.now();
 
         const coordinator = new MultiAgentCoordinator();
         coordinator.setRunner(createSwarmRunner({ cwd: swarmCwd }));
         const plan = coordinator.createCollaborativePlan(args.goal);
         const executed = await coordinator.executePlan(plan.id);
+        recordSwarmExecution(executed, Date.now() - swarmStartedAt);
 
         const taskSummary = executed.tasks
           .map((t) => {

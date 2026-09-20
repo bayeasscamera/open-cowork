@@ -30,6 +30,8 @@ import type {
   ProjectContextUsage,
   BackgroundTask,
   DelegationSettings,
+  SwarmStats,
+  DelegationStats,
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type {
@@ -87,6 +89,7 @@ const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>(
   'backgroundTasks.retry',
   'backgroundTasks.delete',
   'backgroundTasks.getSettings',
+  'backgroundTasks.getStats',
   'backgroundTasks.setSettings',
 ]);
 
@@ -278,6 +281,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invoke({ type: 'backgroundTasks.delete', payload: { taskId } }),
     getSettings: (): Promise<{ success: boolean; settings?: DelegationSettings; error?: string }> =>
       invoke({ type: 'backgroundTasks.getSettings', payload: {} }),
+    getStats: (): Promise<{
+      success: boolean;
+      swarm?: SwarmStats;
+      delegations?: DelegationStats;
+      error?: string;
+    }> => invoke({ type: 'backgroundTasks.getStats', payload: {} }),
     setSettings: (next: {
       configSetId?: string;
       modelId?: string | null;
@@ -771,6 +780,12 @@ declare global {
         getSettings: () => Promise<{
           success: boolean;
           settings?: DelegationSettings;
+          error?: string;
+        }>;
+        getStats: () => Promise<{
+          success: boolean;
+          swarm?: SwarmStats;
+          delegations?: DelegationStats;
           error?: string;
         }>;
         setSettings: (next: {

@@ -12,11 +12,8 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
-import {
-  buildConfigSetLites,
-  ConfigSetModelPicker,
-} from './shared/ConfigSetModelPicker';
-import type { BackgroundTask, DelegationSettings } from '../types';
+import { DelegationSettingsForm } from './settings/DelegationSettingsForm';
+import type { BackgroundTask } from '../types';
 
 /**
  * "Delegated tasks" tracking panel — list + live detail + actions + settings.
@@ -50,13 +47,11 @@ export function DelegatedTasksPanel() {
   const visible = useAppStore((s) => s.delegatedTasksVisible);
   const setVisible = useAppStore((s) => s.setDelegatedTasksVisible);
   const delegationsVersion = useAppStore((s) => s.delegationsVersion);
-  const appConfig = useAppStore((s) => s.appConfig);
   const { isElectron } = useIPC();
 
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState<DelegationSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
@@ -75,18 +70,6 @@ export function DelegatedTasksPanel() {
     if (!visible) return;
     void refresh();
   }, [visible, delegationsVersion, refresh]);
-
-  useEffect(() => {
-    if (!visible || !isElectron) return;
-    void (async () => {
-      try {
-        const result = await window.electronAPI.backgroundTasks.getSettings();
-        if (result.success && result.settings) setSettings(result.settings);
-      } catch {
-        // settings optional
-      }
-    })();
-  }, [visible, isElectron]);
 
   const selected = useMemo(
     () => tasks.find((task) => task.id === selectedId) ?? null,
@@ -123,14 +106,6 @@ export function DelegatedTasksPanel() {
     void refresh();
   };
 
-  const saveSettings = async (
-    next: Omit<Partial<DelegationSettings>, 'modelId'> & { modelId?: string | null }
-  ) => {
-    const result = await window.electronAPI.backgroundTasks.setSettings(next);
-    if (result.success && result.settings) setSettings(result.settings);
-    else setError(result.error ?? t('delegatedTasks.actionsError'));
-  };
-
   return (
     <div className="fixed bottom-16 right-4 top-16 z-40 flex w-[460px] overflow-hidden rounded-xl border border-border bg-background shadow-xl">
       {/* List column */}
@@ -162,69 +137,11 @@ export function DelegatedTasksPanel() {
         </div>
 
         {showSettings && (
-          <div className="border-b border-border-muted p-2.5 space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+          <div className="border-b border-border-muted p-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">
               {t('delegatedTasks.settingsTitle')}
             </p>
-            {settings && (
-              <>
-                <ConfigSetModelPicker
-                  sets={buildConfigSetLites(appConfig ?? {})}
-                  value={{
-                    configSetId: settings.configSetId,
-                    modelId: settings.modelId,
-                  }}
-                  onChange={(next) =>
-                    saveSettings({
-                      configSetId: next.configSetId,
-                      modelId: next.modelId ?? null,
-                    })
-                  }
-                  configSetLabel={t('projects.configSetShort')}
-                  modelLabel={t('projects.model')}
-                  allowEmpty
-                  emptyLabel={t('delegatedTasks.inheritActive')}
-                  inputClassName="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-[12px] text-text-primary focus:border-accent focus:outline-none"
-                />
-                <label className="block text-[11px] text-text-secondary">
-                  {t('delegatedTasks.timeout')}
-                  <input
-                    type="number"
-                    min={10}
-                    max={900}
-                    step={10}
-                    value={Math.round(settings.timeoutMs / 1000)}
-                    onChange={(e) =>
-                      setSettings({ ...settings, timeoutMs: Number(e.target.value) * 1000 })
-                    }
-                    onBlur={(e) => void saveSettings({ timeoutMs: Number(e.target.value) * 1000 })}
-                    className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-[12px] text-text-primary focus:border-accent focus:outline-none"
-                  />
-                </label>
-                <label className="block text-[11px] text-text-secondary">
-                  {t('delegatedTasks.maxConcurrent')}
-                  <select
-                    value={settings.maxConcurrent}
-                    onChange={(e) => void saveSettings({ maxConcurrent: Number(e.target.value) })}
-                    className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-[12px] text-text-primary focus:border-accent focus:outline-none"
-                  >
-                    {[1, 2, 3, 4].map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex items-center gap-2 text-[11px] text-text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={settings.notifyOnCompletion}
-                    onChange={(e) => void saveSettings({ notifyOnCompletion: e.target.checked })}
-                  />
-                  {t('delegatedTasks.notify')}
-                </label>
-              </>
-            )}
+            <DelegationSettingsForm compact />
           </div>
         )}
 

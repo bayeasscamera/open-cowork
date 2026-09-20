@@ -68,6 +68,7 @@ import {
   deleteDelegation,
   getDelegationSettings,
   setDelegationSettings,
+  getDelegationStats,
   parseDelegationReport,
   initBackgroundDelegations,
   __resetDelegationsForTest,
@@ -504,6 +505,74 @@ describe('background delegations — async delegation mode', () => {
       true
     );
     launch.resolve({ output: 'x', modifiedFiles: [] });
+  });
+
+  it('getDelegationStats aggregates totals, statuses and fallbacks', async () => {
+    // Success WITH a real fallback: the pinned ConfigSet profile fails, the
+    // swarm runner retries once on the active profile and reports usedFallback.
+    const pinnedConfig = {
+      ...testConfig,
+      configSets: [
+        {
+          id: 'set-jan',
+          name: 'JAN',
+          provider: 'custom',
+          customProtocol: 'openai',
+          activeProfileKey: 'custom:openai',
+          profiles: { 'custom:openai': { apiKey: 'k', baseUrl: 'https://x/v1', model: 'jan-model' } },
+        },
+      ],
+    } as unknown as typeof testConfig;
+    setDelegationSettings({ configSetId: 'set-jan', maxConcurrent: 4 });
+    let firstCall = true;
+    let resolveSecond!: (r: SubAgentSessionResult) => void;
+    const secondPromise = new Promise<SubAgentSessionResult>((res) => {
+      resolveSecond = res;
+    });
+    const fallbackLaunch = ((args: SubAgentSessionArgs) => {
+      if (firstCall) {
+        firstCall = false;
+        return Promise.reject(new Error('configured model down'));
+      }
+      void args;
+      return secondPromise;
+    }) as unknown as (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
+    startDelegation({
+      sessionId: 's14',
+      cwd: testRoot,
+      title: 'Fell back',
+      prompt: 'p',
+      launchSession: fallbackLaunch,
+      getConfig: () => pinnedConfig,
+    });
+    await flushAsync();
+    resolveSecond({ output: 'ok on active profile', modifiedFiles: [] });
+    await flushAsync();
+
+    const okTask = listDelegations('s14').find((d) => d.title === 'Fell back');
+    expect(okTask?.status).toBe('completed');
+    expect(okTask?.usedFallback).toBe(true);
+
+    const bad = makeDeferredLaunch();
+    startDelegation({
+      sessionId: 's14',
+      cwd: testRoot,
+      title: 'Bad',
+      prompt: 'p',
+      launchSession: bad.launch,
+      getConfig: () => pinnedConfig,
+    });
+    await flushAsync();
+    bad.reject(new Error('nope'));
+    await flushAsync();
+
+    const stats = getDelegationStats();
+    expect(stats.total).toBeGreaterThanOrEqual(2);
+    expect(stats.completed).toBeGreaterThanOrEqual(1);
+    expect(stats.failed).toBeGreaterThanOrEqual(1);
+    expect(stats.fallbacks).toBe(1);
+    // Reset the pin for any later test in this file.
+    setDelegationSettings({ configSetId: '' });
   });
 });
 

@@ -78,6 +78,8 @@ export interface BackgroundDelegation {
   completedAt?: number;
   /** Model label the sub-agent actually ran on (fallback included). */
   modelUsed?: string;
+  /** True when the delegation fell back to the active profile. */
+  usedFallback?: boolean;
   report?: DelegationReport;
   rawResult?: string;
   error?: string;
@@ -460,6 +462,7 @@ function launchBackgroundTask(
       current.status = 'completed';
       current.completedAt = Date.now();
       current.modelUsed = run.modelUsed;
+      current.usedFallback = run.usedFallback;
       current.modifiedFiles = run.modifiedFiles;
       current.rawResult = run.output;
       current.report = parseDelegationReport(run.output);
@@ -618,6 +621,27 @@ export function listDelegations(sessionId?: string): BackgroundDelegation[] {
 export function getDelegation(taskId: string): BackgroundDelegation | undefined {
   ensureLoaded();
   return delegations.get(taskId);
+}
+
+export interface DelegationStats {
+  total: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  fallbacks: number;
+}
+
+/** Aggregate counters over ALL tracked delegations (any session). */
+export function getDelegationStats(): DelegationStats {
+  ensureLoaded();
+  const all = Array.from(delegations.values());
+  return {
+    total: all.length,
+    completed: all.filter((d) => d.status === 'completed').length,
+    failed: all.filter((d) => d.status === 'failed').length,
+    cancelled: all.filter((d) => d.status === 'cancelled').length,
+    fallbacks: all.filter((d) => d.usedFallback).length,
+  };
 }
 
 /** Whether completion notifications are enabled (renderer-sender gate). */

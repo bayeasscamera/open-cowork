@@ -93,6 +93,26 @@ export interface DelegationSettings {
   notifyOnCompletion: boolean;
 }
 
+/** Swarm execution stats (main screen transparency section). */
+export interface SwarmStats {
+  totalSwarms: number;
+  succeededSwarms: number;
+  totalTasks: number;
+  fallbackTasks: number;
+  lastRunMs?: number;
+  lastRunAt?: number;
+  lastRunTokens?: { input: number; output: number };
+}
+
+/** Delegated task stats (main screen transparency section). */
+export interface DelegationStats {
+  total: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  fallbacks: number;
+}
+
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error';
 
 export interface MountedPath {
@@ -614,6 +634,7 @@ export type ClientEvent =
   | { type: 'backgroundTasks.retry'; payload: { taskId: string } }
   | { type: 'backgroundTasks.delete'; payload: { taskId: string } }
   | { type: 'backgroundTasks.getSettings'; payload: Record<string, never> }
+  | { type: 'backgroundTasks.getStats'; payload: Record<string, never> }
   | {
       type: 'backgroundTasks.setSettings';
       payload: {
