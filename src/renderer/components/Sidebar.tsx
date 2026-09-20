@@ -47,6 +47,7 @@ export function Sidebar() {
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const setActiveProjectId = useAppStore((s) => s.setActiveProjectId);
   const openProjectsModal = useAppStore((s) => s.openProjectsModal);
+  const openProjectsList = useAppStore((s) => s.openProjectsList);
   const {
     deleteSession,
     batchDeleteSessions,
@@ -637,9 +638,13 @@ export function Sidebar() {
             {/* Level 1 — Projects: accordion holding ONLY their linked sessions */}
             <section>
               <div className="flex items-center justify-between px-3 pb-2">
-                <span className="text-[11px] font-medium tracking-[0.04em] text-text-muted">
+                <button
+                  onClick={openProjectsList}
+                  className="text-[11px] font-medium tracking-[0.04em] text-text-muted hover:text-text-primary transition-colors"
+                  title={t('projects.openProjectsPage')}
+                >
                   {t('projects.sidebarSection')}
-                </span>
+                </button>
                 <button
                   onClick={() => openProjectsModal(null)}
                   className="w-5 h-5 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"

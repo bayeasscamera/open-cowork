@@ -27,6 +27,7 @@ import type {
   MemoryDebugFileContent,
   MemoryInspectSessionResult,
   Project,
+  ProjectContextUsage,
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type {
@@ -193,6 +194,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         cwd: string | null;
         updated_at: number;
       }>;
+      usage?: ProjectContextUsage;
       error?: string;
     }> => invoke({ type: 'projects.get', payload: { projectId } }),
 
@@ -670,6 +672,7 @@ declare global {
             cwd: string | null;
             updated_at: number;
           }>;
+          usage?: ProjectContextUsage;
           error?: string;
         }>;
         update: (payload: {

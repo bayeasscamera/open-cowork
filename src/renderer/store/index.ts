@@ -15,6 +15,11 @@ import type {
 import { applySessionUpdate } from '../utils/session-update';
 
 export type GlobalNoticeType = 'info' | 'warning' | 'error' | 'success';
+
+/** Dedicated full-width project pages (list or detail). */
+export type ProjectsPageState =
+  | { view: 'list' }
+  | { view: 'detail'; projectId: string };
 export type GlobalNoticeAction = 'open_api_settings';
 
 export interface GlobalNotice {
@@ -98,6 +103,8 @@ interface AppState {
   /** Projects editor modal: open flag + project being edited (null = creating). */
   showProjectsModal: boolean;
   projectsModalProjectId: string | null;
+  /** Dedicated full-width pages: project list or a single project's detail. */
+  projectsPage: ProjectsPageState | null;
 
   // Per-session state (messages, partials, turns, traces, etc.)
   sessionStates: Record<string, SessionState>;
@@ -158,6 +165,9 @@ interface AppState {
   setActiveProjectId: (projectId: string | null) => void;
   openProjectsModal: (projectId: string | null) => void;
   closeProjectsModal: () => void;
+  openProjectsList: () => void;
+  openProjectDetail: (projectId: string) => void;
+  closeProjectsPage: () => void;
 
   addMessage: (sessionId: string, message: Message) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
@@ -264,6 +274,7 @@ export const useAppStore = create<AppState>((set) => ({
   activeProjectId: null,
   showProjectsModal: false,
   projectsModalProjectId: null,
+  projectsPage: null,
   sessionStates: {},
   sessionScrollPositions: {},
   isLoading: false,
@@ -297,6 +308,9 @@ export const useAppStore = create<AppState>((set) => ({
   openProjectsModal: (projectId) =>
     set({ showProjectsModal: true, projectsModalProjectId: projectId }),
   closeProjectsModal: () => set({ showProjectsModal: false, projectsModalProjectId: null }),
+  openProjectsList: () => set({ projectsPage: { view: 'list' } }),
+  openProjectDetail: (projectId) => set({ projectsPage: { view: 'detail', projectId } }),
+  closeProjectsPage: () => set({ projectsPage: null }),
 
   addSession: (session) =>
     set((state) => ({

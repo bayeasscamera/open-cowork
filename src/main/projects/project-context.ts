@@ -38,6 +38,53 @@ const MAX_FILE_CHARS = 8000;
 const MAX_TOTAL_FILE_CHARS = 32000;
 const MAX_INSTRUCTIONS_CHARS = 8000;
 
+/** What the context injection will actually spend for a project. */
+export interface ProjectContextUsage {
+  /** Chars of instructions injected (capped). */
+  instructionsChars: number;
+  /** Chars of reference-file content injected (sequential budget, capped). */
+  filesChars: number;
+  /** Total injection budget: instructions cap + files cap. */
+  maxChars: number;
+  /** How many of the attached files will actually be injected. */
+  filesInjected: number;
+  filesTotal: number;
+}
+
+/**
+ * Mirror of the injection budget in buildSystemPromptBlock: this is the number
+ * the UI progress bar shows, not an invented figure.
+ */
+export function computeProjectContextUsage(project: Project): ProjectContextUsage {
+  const instructionsChars = Math.min(
+    project.instructions?.length ?? 0,
+    MAX_INSTRUCTIONS_CHARS
+  );
+  let filesChars = 0;
+  let filesInjected = 0;
+  let budget = MAX_TOTAL_FILE_CHARS;
+  for (const file of project.referenceFiles.slice(0, MAX_REFERENCE_FILES)) {
+    if (budget <= 0) break;
+    let content = '';
+    try {
+      content = readFileSync(file, 'utf-8');
+    } catch {
+      content = '';
+    }
+    const injected = Math.min(content.length, MAX_FILE_CHARS, budget);
+    filesChars += injected;
+    budget -= injected;
+    filesInjected += 1;
+  }
+  return {
+    instructionsChars,
+    filesChars,
+    maxChars: MAX_INSTRUCTIONS_CHARS + MAX_TOTAL_FILE_CHARS,
+    filesInjected,
+    filesTotal: project.referenceFiles.length,
+  };
+}
+
 function truncate(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n… [truncated to the first ${maxChars} characters]`;

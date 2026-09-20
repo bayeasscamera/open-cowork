@@ -36,6 +36,19 @@ export interface Project {
   updatedAt: number;
 }
 
+/** Real context-injection budget usage for a project (mirrors project-context.ts). */
+export interface ProjectContextUsage {
+  /** Chars of instructions injected (capped). */
+  instructionsChars: number;
+  /** Chars of reference-file content injected (sequential budget, capped). */
+  filesChars: number;
+  /** Total injection budget: instructions cap + files cap. */
+  maxChars: number;
+  /** How many of the attached files will actually be injected. */
+  filesInjected: number;
+  filesTotal: number;
+}
+
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error';
 
 export interface MountedPath {

@@ -44,6 +44,9 @@ const SettingsPanel = lazy(() =>
 const ProjectsPanel = lazy(() =>
   import('./components/ProjectsPanel').then((module) => ({ default: module.ProjectsPanel }))
 );
+const ProjectsPages = lazy(() =>
+  import('./components/projects/ProjectsPages').then((module) => ({ default: module.ProjectsPages }))
+);
 
 function MainPanelFallback() {
   return (
@@ -87,6 +90,7 @@ function App() {
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
   const diffPanelVisible = useAppStore((s) => s.diffPanelVisible);
   const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
+  const projectsPage = useAppStore((s) => s.projectsPage);
 
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
@@ -204,6 +208,16 @@ function App() {
                 <SettingsPanel onClose={() => setShowSettings(false)} />
               </Suspense>
             </PanelErrorBoundary>
+          ) : projectsPage ? (
+            <PanelErrorBoundary
+              name="ProjectsPages"
+              resetKey={projectsPage.view === 'detail' ? projectsPage.projectId : 'list'}
+              fallback={<MainPanelFallback />}
+            >
+              <Suspense fallback={<MainPanelFallback />}>
+                <ProjectsPages />
+              </Suspense>
+            </PanelErrorBoundary>
           ) : activeSessionId ? (
             <PanelErrorBoundary
               name="ChatView"
@@ -219,8 +233,8 @@ function App() {
           )}
         </main>
 
-        {/* Context Panel - only show when in session and not in settings */}
-        {activeSessionId && !showSettings && (
+        {/* Context Panel - only show when in session and not in settings/projects pages */}
+        {activeSessionId && !showSettings && !projectsPage && (
           <PanelErrorBoundary
             name="ContextPanel"
             resetKey={activeSessionId}
@@ -232,7 +246,7 @@ function App() {
           </PanelErrorBoundary>
         )}
       {/* Diff Panel toggle + live session diff (local mods only) */}
-      {activeSessionId && !showSettings && (
+      {activeSessionId && !showSettings && !projectsPage && (
         <>
           <button
             type="button"

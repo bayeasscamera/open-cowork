@@ -95,6 +95,7 @@ import { registerLogsIpcHandlers } from './ipc/logs-handlers';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods, getDiffCollector } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore, ProjectValidationError } from './projects/project-store';
+import { computeProjectContextUsage } from './projects/project-context';
 import {
   buildSkillDoctorReport,
   loadSkillSourcesFromDir,
@@ -3332,7 +3333,12 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         const project = getProjectStore().get(event.payload.projectId);
         if (!project) return { success: false, error: 'Project not found' };
         const sessions = getProjectStore().getSessions(project.id);
-        return { success: true, project, sessions };
+        return {
+          success: true,
+          project,
+          sessions,
+          usage: computeProjectContextUsage(project),
+        };
       } catch (error) {
         logError('[IPC] projects.get failed:', error);
         return { success: false, error: 'Failed to load project' };
