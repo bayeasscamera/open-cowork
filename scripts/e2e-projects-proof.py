@@ -138,6 +138,19 @@ wait_for(
     "session completion",
 )
 
+# Housekeeping BEFORE closing stdin: archive leftover proof projects from
+# earlier runs so the sidebar keeps exactly one visible E2E project.
+try:
+    send({"type": "projects.list", "payload": {"includeArchived": True}})
+    wait_for(lambda t, e: t == "rpc.result" and e.get("eventType") == "projects.list", 60, "projects.list")
+    for stale in (rpc_results.get("projects.list") or {}).get("projects") or []:
+        if stale.get("name") == "Projet AO — Preuve E2E" and stale.get("id") != project_id and not stale.get("archived"):
+            send({"type": "projects.archive", "payload": {"projectId": stale["id"], "archived": True}})
+            wait_for(lambda t, e: t == "rpc.result" and e.get("eventType") == "projects.archive", 60, "projects.archive")
+            print(f"[e2e] archived stale proof project {stale['id'][:16]}…")
+except Exception as exc:  # housekeeping must never mask the verdict
+    print(f"[e2e] (housekeeping skipped: {exc})")
+
 try:
     proc.stdin.close()
 except Exception:
