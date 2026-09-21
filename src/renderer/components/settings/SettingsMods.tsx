@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SettingsContentSection } from './shared';
+import { SettingsContentSection, ToggleSwitch } from './shared';
 
 interface ModSummary {
   id: string;
@@ -85,14 +85,12 @@ export function SettingsMods() {
               <span className="block text-sm text-text-primary">{mod.label}</span>
               <span className="mt-0.5 block text-xs text-text-muted">{mod.description}</span>
             </span>
-            <input
-              type="checkbox"
+            <ToggleSwitch
               checked={mod.enabled}
               disabled={busy}
-              onChange={() => {
+              onToggle={() => {
                 void toggle(mod);
               }}
-              className="mt-1"
             />
           </label>
         ))}

@@ -1,5 +1,6 @@
 // Shared types, constants, and components used across settings tab files.
 
+import { useState } from 'react';
 import type { TFunction } from 'i18next';
 import type { ScheduleWeekday } from '../../types';
 
@@ -94,5 +95,45 @@ export function SettingsContentSection({
       </div>
       <div className="space-y-3">{children}</div>
     </section>
+  );
+}
+
+export function ToggleSwitch({
+  checked,
+  onToggle,
+  disabled,
+  label,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+  label?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled || busy}
+      onClick={() => {
+        setBusy(true);
+        try {
+          onToggle();
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+        checked ? 'bg-accent' : 'bg-surface-muted'
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
   );
 }
