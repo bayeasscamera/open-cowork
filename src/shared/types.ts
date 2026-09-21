@@ -77,6 +77,10 @@ export interface BackgroundTask {
   startedAt: number;
   completedAt?: number;
   modelUsed?: string;
+  /** Hierarchy depth: 1 = main agent's delegation, 2 = recursive child (hard cap). */
+  depth: number;
+  /** Cumulative token usage of THIS level plus its recursive children (rollup). */
+  tokenUsage?: { input: number; output: number };
   report?: BackgroundTaskReport;
   error?: string;
   modifiedFiles?: string[];

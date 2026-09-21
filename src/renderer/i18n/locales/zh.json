@@ -812,6 +812,9 @@
     "selectHint": "选择一个任务查看报告或实时进度。",
     "summaryCounts": "{running} 进行中 · {completed} 已完成 · {failed} 失败",
     "meta": "角色 {role} · 模型 {model} · {duration} · {date}",
+    "depthBadge": "L{depth}",
+    "hierarchyDepth": "深度 {depth}/2",
+    "hierarchyCost": "累计成本（含子任务）：{tokens} in/out",
     "liveProgress": "实时进度",
     "actionsError": "操作失败。",
     "actions": {

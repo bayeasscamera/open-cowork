@@ -389,6 +389,9 @@
     "selectHint": "Sélectionnez une tâche pour voir son rapport ou sa progression en direct.",
     "summaryCounts": "{running} en cours · {completed} terminées · {failed} échouées",
     "meta": "rôle {role} · modèle {model} · {duration} · {date}",
+    "depthBadge": "N{depth}",
+    "hierarchyDepth": "profondeur {depth} sur 2",
+    "hierarchyCost": "coût cumulé (avec sous-tâches) : {tokens} in/out",
     "liveProgress": "Progression en direct",
     "actionsError": "L'action a échoué.",
     "actions": {

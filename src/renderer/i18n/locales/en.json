@@ -795,6 +795,9 @@
     "selectHint": "Select a task to see its report or live progress.",
     "summaryCounts": "{running} running · {completed} completed · {failed} failed",
     "meta": "role {role} · model {model} · {duration} · {date}",
+    "depthBadge": "L{depth}",
+    "hierarchyDepth": "depth {depth} of 2",
+    "hierarchyCost": "cumulative cost (incl. subtasks): {tokens} in/out",
     "liveProgress": "Live progress",
     "actionsError": "The action failed.",
     "actions": {

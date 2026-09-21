@@ -24,7 +24,7 @@ import { SelfHealingRunner } from '../agent/self-healing-runner';
 import { CodeGraphIndexer } from '../memory/codegraph-indexer';
 import { MultiAgentCoordinator, type AgentRole } from '../agent/multi-agent-coordinator';
 import { createSwarmRunner } from '../agent/swarm-runner';
-import { startDelegation, listDelegations } from '../agent/background-delegations';
+import { startDelegation, listDelegations, subAgentGate } from '../agent/background-delegations';
 import { recordSwarmExecution } from '../agent/swarm-stats';
 import { configStore } from '../config/config-store';
 import { spawn, type ChildProcess } from 'child_process';
@@ -980,7 +980,10 @@ export function buildAgentMetaTools(
         const swarmStartedAt = Date.now();
 
         const coordinator = new MultiAgentCoordinator();
-        coordinator.setRunner(createSwarmRunner({ cwd: swarmCwd }));
+        // The swarm shares the GLOBAL hierarchy semaphore (same budget as async
+        // delegations and their recursive children) — parallelism is bounded
+        // across ALL sub-agent levels combined, never per level.
+        coordinator.setRunner(createSwarmRunner({ cwd: swarmCwd, gate: subAgentGate }));
         const plan = coordinator.createCollaborativePlan(args.goal);
         const executed = await coordinator.executePlan(plan.id);
         recordSwarmExecution(executed, Date.now() - swarmStartedAt);

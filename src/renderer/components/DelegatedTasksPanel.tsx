@@ -35,6 +35,12 @@ function durationLabel(task: BackgroundTask): string {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+/** Compact hierarchy-cost line: parent tokenUsage already includes rolled-up children. */
+function tokenLabel(task: BackgroundTask): string {
+  if (!task.tokenUsage) return '—';
+  return `${task.tokenUsage.input.toLocaleString()} / ${task.tokenUsage.output.toLocaleString()}`;
+}
+
 function fileIcon(path: string) {
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return ImageIcon;
@@ -156,6 +162,11 @@ export function DelegatedTasksPanel() {
             >
               <span className="block truncate text-[12px] text-text-primary">{task.title}</span>
               <span className="mt-0.5 flex items-center gap-1.5">
+                {task.depth >= 2 && (
+                  <span className="inline-block rounded-full border border-accent/40 px-1.5 py-px text-[9px] font-medium text-accent">
+                    {t('delegatedTasks.depthBadge', { depth: task.depth })}
+                  </span>
+                )}
                 <span
                   className={`inline-block rounded-full border px-1.5 py-px text-[9px] font-medium uppercase ${STATUS_STYLE[task.status]}`}
                 >
@@ -202,6 +213,11 @@ export function DelegatedTasksPanel() {
                   duration: durationLabel(selected),
                   date: new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' }).format(selected.startedAt),
                 })}
+              </p>
+              <p className="mt-1 text-[11px] text-text-muted">
+                {t('delegatedTasks.hierarchyDepth', { depth: selected.depth })}
+                {' · '}
+                {t('delegatedTasks.hierarchyCost', { tokens: tokenLabel(selected) })}
               </p>
             </div>
 
