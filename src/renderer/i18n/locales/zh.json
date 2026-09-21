@@ -25,6 +25,11 @@
       "failed": "无法加载或恢复记忆文件。请刷新后重试。"
     }
   },
+  "subAgentsView": {
+    "eyebrow": "工作区",
+    "title": "子代理",
+    "description": "角色与人格设定、按角色选择模型、护栏、委托任务与实测成本 — 汇聚在一个专属界面。"
+  },
   "subAgents": {
     "title": "子代理",
     "description": "选择多代理群组使用的模型配置，并调整执行保护参数。",
@@ -840,6 +845,7 @@
     "badge": "后台任务运行中"
   },
   "sidebar": {
+    "subAgentsTitle": "子代理",
     "expandToView": "展开查看任务",
     "noTasks": "暂无任务",
     "noTasksHint": "开始一个新对话，继续构建、调研或编辑文件。",
@@ -1227,7 +1233,23 @@
     "recommendation": "建议",
     "considerDisabling": "建议停用",
     "keep": "保留",
-    "total": "Skills 上下文：{{tokens}} tokens {{percent}} 可用窗口"
+    "total": "Skills 上下文：{{tokens}} tokens {{percent}} 可用窗口",
+    "proposals": {
+      "title": "待审批的技能提案",
+      "description": "由子代理或自动合成器在发现可复用模式时提交的草稿。",
+      "securityNote": "提案只是静态 markdown 草稿：在你批准之前不会被加载、不会生效、也绝不执行。批准会把它移动到生效的 skills 目录；拒绝会将其删除。只能提出静态 SKILL.md 说明——不能提出任何工具或可执行代码。",
+      "empty": "暂无待审批提案。",
+      "pendingTag": "待审批",
+      "meta": "来自 {{by}} · 草稿 v{{version}} · {{date}}",
+      "rationale": "提案理由",
+      "contentPreview": "查看草稿内容",
+      "approve": "批准",
+      "reject": "拒绝",
+      "rejectTitle": "拒绝 — 永久删除该草稿",
+      "approvedNotice": "\u201c{{name}}\u201d 现已生效。",
+      "rejectedNotice": "\u201c{{name}}\u201d 已被拒绝并删除。",
+      "actionFailed": "操作失败。"
+    }
   },
   "documentPanel": {
     "title": "文档",

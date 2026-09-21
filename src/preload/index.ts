@@ -452,6 +452,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }> => ipcRenderer.invoke('skills.setStoragePath', targetPath, migrate),
     openStoragePath: (): Promise<{ success: boolean; path: string; error?: string }> =>
       ipcRenderer.invoke('skills.openStoragePath'),
+    // Proposed skills (sub-agent / synthesizer drafts awaiting MANUAL approval)
+    listProposals: (): Promise<{
+      success: boolean;
+      proposals: Array<{
+        name: string;
+        description: string;
+        proposedBy: string;
+        proposedAt: number;
+        version: number;
+        rationale?: string;
+        path: string;
+        content: string;
+      }>;
+    }> => ipcRenderer.invoke('skills.listProposals'),
+    approveProposal: (
+      name: string
+    ): Promise<{ success: boolean; path?: string; error?: string }> =>
+      ipcRenderer.invoke('skills.approveProposal', name),
+    rejectProposal: (name: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('skills.rejectProposal', name),
   },
 
   plugins: {
@@ -930,6 +950,21 @@ declare global {
           error?: string;
         }>;
         openStoragePath: () => Promise<{ success: boolean; path: string; error?: string }>;
+        listProposals: () => Promise<{
+          success: boolean;
+          proposals: Array<{
+            name: string;
+            description: string;
+            proposedBy: string;
+            proposedAt: number;
+            version: number;
+            rationale?: string;
+            path: string;
+            content: string;
+          }>;
+        }>;
+        approveProposal: (name: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+        rejectProposal: (name: string) => Promise<{ success: boolean; error?: string }>;
       };
       plugins: {
         listCatalog: (options?: { installableOnly?: boolean }) => Promise<PluginCatalogItemV2[]>;

@@ -3,6 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { SkillSynthesizer } from '../src/main/skills/skill-synthesizer';
+import {
+  listProposals,
+  approveProposal,
+  proposalsDirForActiveSkillsDir,
+} from '../src/main/skills/skill-proposals';
 import * as sdkOneShot from '../src/main/agent/sdk-one-shot';
 import type { Message } from '../src/shared/types';
 
@@ -118,5 +123,22 @@ describe('SkillSynthesizer', () => {
     const savedContent = fs.readFileSync(result!.skillPath, 'utf-8');
     expect(savedContent).toContain('gcloud-run-deploy');
     expect(mockDb.exec).toHaveBeenCalled();
+
+    // ── Approval-gate proof ─────────────────────────────────────────────
+    // The synthesized draft is a PENDING proposal: it lands in the sibling
+    // skills-proposed directory and MUST NOT appear inside the active skills
+    // dir (nor the legacy learned/ subdirectory).
+    const proposalsDir = proposalsDirForActiveSkillsDir(tmpDir);
+    expect(result?.skillPath).toContain(path.join(proposalsDir, 'gcloud-run-deploy'));
+    expect(fs.existsSync(path.join(tmpDir, 'gcloud-run-deploy'))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, 'learned'))).toBe(false);
+    const pending = listProposals();
+    expect(pending.map((p) => p.name)).toContain('gcloud-run-deploy');
+
+    // It becomes active ONLY through the explicit human approval path.
+    const approved = approveProposal('gcloud-run-deploy', tmpDir);
+    expect(approved.ok).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, 'gcloud-run-deploy', 'SKILL.md'))).toBe(true);
+    expect(listProposals()).toHaveLength(0);
   });
 });

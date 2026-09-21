@@ -14,7 +14,7 @@ const picker = readFileSync(
   'utf8'
 );
 const subAgents = readFileSync(
-  resolve(root, 'src/renderer/components/settings/SettingsSubAgents.tsx'),
+  resolve(root, 'src/renderer/components/subagents/SubAgentsView.tsx'),
   'utf8'
 );
 const projectsPanel = readFileSync(
@@ -58,13 +58,13 @@ describe('ConfigSetModelPicker — one shared component, two screens', () => {
     expect(panel).not.toContain('chosen.models.map');
   });
 
-  it('SettingsSubAgents renders the picker directly (global + per-role) AND via the shared delegation form (section 3)', () => {
+  it('SubAgentsView renders the picker directly (global + per-role) AND via the shared delegation form (section 3)', () => {
     const settings = readFileSync(
-      resolve(root, 'src/renderer/components/settings/SettingsSubAgents.tsx'),
+      resolve(root, 'src/renderer/components/subagents/SubAgentsView.tsx'),
       'utf8'
     );
     expect(settings).toContain('<ConfigSetModelPicker');
-    expect(settings).toContain("from './DelegationSettingsForm'");
+    expect(settings).toContain("from '../settings/DelegationSettingsForm'");
     expect(settings).toContain('<DelegationSettingsForm');
   });
 });

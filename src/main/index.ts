@@ -118,6 +118,11 @@ import {
   loadSkillSourcesFromDir,
   type SkillDoctorSkillSource,
 } from './mods/skill-doctor';
+import {
+  approveProposal,
+  listProposals,
+  rejectProposal,
+} from './skills/skill-proposals';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { SystemNotifier } from './utils/system-notifier';
 import {
@@ -2226,6 +2231,54 @@ ipcMain.handle('skills.openStoragePath', async () => {
     return { success: false, path: storagePath, error: openResult };
   }
   return { success: true, path: storagePath };
+});
+
+// ── Proposed skills (sub-agent / synthesizer drafts, MANUAL approval gate) ──
+// A proposal is INERT until the user approves it here: approve moves the draft
+// into the ACTIVE skills directory; reject deletes it. Nothing else in the app
+// can activate a proposal — there is no automatic path.
+ipcMain.handle('skills.listProposals', async () => {
+  try {
+    return { success: true, proposals: listProposals() };
+  } catch (error) {
+    logError('[IPC] skills.listProposals failed:', error);
+    return { success: false, proposals: [] };
+  }
+});
+
+ipcMain.handle('skills.approveProposal', async (_event, name: unknown) => {
+  try {
+    if (typeof name !== 'string' || !name.trim()) {
+      return { success: false, error: 'Skill name is required.' };
+    }
+    const activeDir = skillsManager
+      ? skillsManager.getGlobalSkillsPath()
+      : join(app.getPath('userData'), 'claude', 'skills');
+    const result = approveProposal(name, activeDir);
+    if (!result.ok) {
+      return { success: false, error: result.error };
+    }
+    return { success: true, path: result.path };
+  } catch (error) {
+    logError('[IPC] skills.approveProposal failed:', error);
+    return { success: false, error: 'Failed to approve the proposed skill.' };
+  }
+});
+
+ipcMain.handle('skills.rejectProposal', async (_event, name: unknown) => {
+  try {
+    if (typeof name !== 'string' || !name.trim()) {
+      return { success: false, error: 'Skill name is required.' };
+    }
+    const result = rejectProposal(name);
+    if (!result.ok) {
+      return { success: false, error: result.error };
+    }
+    return { success: true };
+  } catch (error) {
+    logError('[IPC] skills.rejectProposal failed:', error);
+    return { success: false, error: 'Failed to reject the proposed skill.' };
+  }
 });
 
 ipcMain.handle('plugins.listCatalog', async (_event, options?: { installableOnly?: boolean }) => {

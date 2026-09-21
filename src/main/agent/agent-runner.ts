@@ -3207,7 +3207,7 @@ Tool routing:
                 id: uuidv4(),
                 type: 'thinking',
                 status: 'completed',
-                title: `✨ Learned new skill: ${res.name} (v${res.version || 1})`,
+                title: `✨ Proposed new skill: ${res.name} (v${res.version || 1}) — pending your approval in Skill doctor`,
                 timestamp: Date.now(),
               });
             }

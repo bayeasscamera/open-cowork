@@ -1232,7 +1232,23 @@
     "recommendation": "Recommandation",
     "considerDisabling": "À envisager de désactiver",
     "keep": "Conserver",
-    "total": "Contexte skills : {{tokens}} tokens {{percent}} de la fenêtre"
+    "total": "Contexte skills : {{tokens}} tokens {{percent}} de la fenêtre",
+    "proposals": {
+      "title": "Skills proposés — en attente de votre approbation",
+      "description": "Brouillons proposés par les sous-agents ou l'auto-synthétiseur lorsqu'un schéma récurrent a été identifié.",
+      "securityNote": "Une proposition est un brouillon markdown inerte : elle n'est NI chargée, NI active et JAMAIS exécutée tant que vous ne l'approuvez pas. L'approbation la déplace vers le répertoire des skills actifs ; le rejet la supprime. Aucun tool ni code exécutable ne peut être proposé — uniquement des instructions SKILL.md statiques.",
+      "empty": "Aucune skill proposée en attente.",
+      "pendingTag": "en attente",
+      "meta": "par {{by}} · brouillon v{{version}} · {{date}}",
+      "rationale": "Justification",
+      "contentPreview": "Afficher le contenu du brouillon",
+      "approve": "Approuver",
+      "reject": "Rejeter",
+      "rejectTitle": "Rejeter — supprime définitivement le brouillon",
+      "approvedNotice": "\u201c{{name}}\u201d est maintenant une skill active.",
+      "rejectedNotice": "\u201c{{name}}\u201d a été rejetée et supprimée.",
+      "actionFailed": "L'action a échoué."
+    }
   },
   "documentPanel": {
     "title": "Document",

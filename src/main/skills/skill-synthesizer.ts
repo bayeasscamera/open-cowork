@@ -7,16 +7,22 @@
  * 1. Identifies novel problem-solving workflows, specialized tooling chains,
  *    or complex multi-step solutions.
  * 2. Uses one-shot LLM synthesis to extract a structured, standardized SKILL.md.
- * 3. Validates frontmatter, ensures atomic writing with fsync, and maintains
- *    a SQLite ledger of synthesized skills for provenance and dedup.
+ * 3. Records the result as a PENDING PROPOSAL (skill-proposals store) and
+ *    maintains a SQLite ledger of synthesized skills for provenance/dedup.
+ *
+ * A synthesized skill is NEVER active on arrival: it stays a static draft in
+ * the skills-proposed directory until a human approves it in the Skill doctor.
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { log, logError } from '../utils/logger';
 import { runPiAiOneShot } from '../agent/sdk-one-shot';
 import { configStore } from '../config/config-store';
+import {
+  initSkillProposals,
+  proposeSkill,
+  proposalsDirForActiveSkillsDir,
+} from './skill-proposals';
 import type { Message } from '../../shared/types';
 import type Database from 'better-sqlite3';
 
@@ -71,17 +77,19 @@ Respond with a strict JSON object:
 Only output the valid JSON object, no markdown ticks or wrapping.`;
 
 export class SkillSynthesizer {
-  private learnedSkillsDir: string;
   private db?: Database.Database;
 
   constructor(baseSkillsDir: string, db?: Database.Database) {
-    this.learnedSkillsDir = path.join(baseSkillsDir, 'learned');
+    // Synthesized skills are DRAFT PROPOSALS, never direct activations: they
+    // land in the sibling skills-proposed directory and stay inert until a
+    // human approves them in the Skill doctor screen.
+    initSkillProposals(proposalsDirForActiveSkillsDir(baseSkillsDir));
     this.db = db;
     this.ensureLedgerTable();
   }
 
   setBaseSkillsDir(baseSkillsDir: string): void {
-    this.learnedSkillsDir = path.join(baseSkillsDir, 'learned');
+    initSkillProposals(proposalsDirForActiveSkillsDir(baseSkillsDir));
   }
 
   setDatabase(db: Database.Database): void {
@@ -162,19 +170,24 @@ export class SkillSynthesizer {
       }
 
       const skillSlug = evalResult.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
-      const targetDir = path.join(this.learnedSkillsDir, skillSlug);
-      const targetFile = path.join(targetDir, 'SKILL.md');
-      const tempFile = path.join(targetDir, `SKILL.tmp.${Date.now()}`);
 
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
+      // Route through the PENDING-proposals store — the draft is written to
+      // the skills-proposed directory and is NOT active until a human
+      // approves it in the Skill doctor screen (approval gate).
+      const proposal = proposeSkill({
+        name: skillSlug,
+        description: evalResult.description || '',
+        content: evalResult.content,
+        proposedBy: 'skill-synthesizer',
+        rationale: evalResult.reasoning?.slice(0, 2_000),
+      });
+      if (!proposal.ok || !proposal.path) {
+        logError(`[SkillSynthesizer] Proposal rejected by the store: ${proposal.error}`);
+        return null;
       }
+      const targetFile = proposal.path;
 
-      // Atomic file write (temp file + fsync + rename)
-      fs.writeFileSync(tempFile, evalResult.content, 'utf-8');
-      fs.renameSync(tempFile, targetFile);
-
-      let version = 1;
+      let version = proposal.version ?? 1;
       if (this.db) {
         try {
           const now = Date.now();
@@ -201,7 +214,7 @@ export class SkillSynthesizer {
         }
       }
 
-      log(`[SkillSynthesizer] 🎉 Successfully created autonomous learned skill (v${version}): ${skillSlug} at ${targetFile}`);
+      log(`[SkillSynthesizer] ✍️ Skill PROPOSED as a pending draft (v${version}): ${skillSlug} at ${targetFile} — awaiting manual approval in the Skill doctor`);
 
       return {
         name: skillSlug,

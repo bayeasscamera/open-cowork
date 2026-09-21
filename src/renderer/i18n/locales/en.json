@@ -1233,7 +1233,23 @@
     "recommendation": "Recommendation",
     "considerDisabling": "Consider disabling",
     "keep": "Keep",
-    "total": "Skills context: {{tokens}} tokens {{percent}} of the window"
+    "total": "Skills context: {{tokens}} tokens {{percent}} of the window",
+    "proposals": {
+      "title": "Proposed skills — pending your approval",
+      "description": "Drafts proposed by sub-agents or the auto-synthesizer when a recurring pattern was identified.",
+      "securityNote": "A proposal is an inert markdown draft: it is NOT loaded, NOT active and NEVER executed until you approve it. Approving moves it into the active skills directory; rejecting deletes it. No tool or executable code can be proposed — only static SKILL.md instructions.",
+      "empty": "No pending skill proposals.",
+      "pendingTag": "pending",
+      "meta": "by {{by}} · draft v{{version}} · {{date}}",
+      "rationale": "Rationale",
+      "contentPreview": "Show draft content",
+      "approve": "Approve",
+      "reject": "Reject",
+      "rejectTitle": "Reject — permanently deletes the draft",
+      "approvedNotice": "\u201c{{name}}\u201d is now an active skill.",
+      "rejectedNotice": "\u201c{{name}}\u201d was rejected and deleted.",
+      "actionFailed": "The action failed."
+    }
   },
   "documentPanel": {
     "title": "Document",

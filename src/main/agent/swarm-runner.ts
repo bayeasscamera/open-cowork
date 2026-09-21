@@ -37,6 +37,7 @@ import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import { buildWebTools } from './web-tools';
 import { buildSubAgentDelegationTool } from './background-delegations';
 import { SubAgentGate } from './sub-agent-gate';
+import { proposeSkill } from '../skills/skill-proposals';
 import {
   configStore,
   normalizeSubAgentsConfig,
@@ -552,6 +553,80 @@ function buildChildSystemPrompt(task: AgentTask): string {
   ].join('\n');
 }
 
+/**
+ * The PROPOSAL-ONLY skill tool every sub-agent carries. It can never activate
+ * anything: it hands a static markdown draft to the skill-proposals store,
+ * which parks it in a pending directory a human must approve (Skill doctor).
+ * There is NO counterpart for proposing tools or executable code — tools stay
+ * fixed, audited and confined.
+ */
+export function buildProposeSkillTool(): import('@mariozechner/pi-coding-agent').ToolDefinition {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { Type } = require('@sinclair/typebox') as typeof import('@sinclair/typebox');
+  return {
+    name: 'propose_skill',
+    label: 'Propose a reusable skill (pending human approval)',
+    description:
+      'Propose a new SKILL as STATIC, PROCEDURAL markdown instructions (SKILL.md front-matter + guidance) when you identify a pattern worth reusing. ' +
+      'The draft lands in a PENDING proposals directory — it is NOT active and will NEVER run automatically; a human reviews it in the Skill doctor screen. ' +
+      'This is for documentation/playbooks ONLY: never executable code, never tool definitions.',
+    parameters: Type.Object({
+      name: Type.String({
+        description: 'kebab-case skill name, 3-64 chars, lowercase letters/digits/dashes (used as the directory name)',
+      }),
+      description: Type.String({
+        description: 'One-sentence description of what the skill covers and when to use it',
+      }),
+      content: Type.String({
+        description:
+          'Full SKILL.md content. MUST start with YAML front-matter ("---\nname: ...\ndescription: ...\n---") followed by procedural guidance in markdown.',
+      }),
+      rationale: Type.Optional(
+        Type.String({ description: 'Why this pattern is worth reusing (shown to the human reviewer)' })
+      ),
+    }),
+    execute: async (_toolCallId, params) => {
+      const args = params as {
+        name?: string;
+        description?: string;
+        content?: string;
+        rationale?: string;
+      };
+      if (!args.name || !args.description || !args.content) {
+        return {
+          content: [{ type: 'text' as const, text: 'propose_skill requires name, description and content.' }],
+          details: {},
+        };
+      }
+      const result = proposeSkill({
+        name: args.name,
+        description: args.description,
+        content: args.content,
+        proposedBy: 'sub-agent',
+        rationale: args.rationale,
+      });
+      if (!result.ok) {
+        return {
+          content: [{ type: 'text' as const, text: `Proposal rejected: ${result.error}` }],
+          details: { ok: false },
+        };
+      }
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text:
+              `Skill proposal recorded as "${result.name}" (draft v${result.version}). ` +
+              'It is PENDING — inactive until a human approves it in the Skill doctor screen. ' +
+              'It will never run automatically. Mention in your report that you proposed this skill.',
+          },
+        ],
+        details: { ok: true, name: result.name, version: result.version },
+      };
+    },
+  };
+}
+
 async function launchSubAgentSession(
   args: SubAgentSessionArgs
 ): Promise<SubAgentSessionResult> {
@@ -649,6 +724,9 @@ async function launchSubAgentSession(
         braveApiKey: args.config.braveApiKey || '',
       }),
       ...subAgentDelegationTool,
+      // Proposal-only skill drafting (static markdown, human-gated) — every
+      // sub-agent carries it; it can never activate or execute anything.
+      buildProposeSkillTool(),
     ],
     sessionManager: PiSessionManager.inMemory(),
     settingsManager: PiSettingsManager.inMemory({

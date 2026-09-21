@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Check, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { SettingsContentSection } from './shared';
 
 interface DoctorEntry {
@@ -15,6 +16,166 @@ interface DoctorReport {
   entries: DoctorEntry[];
   totalSkillTokens: number;
   contextWindow: number | null;
+}
+
+interface SkillProposal {
+  name: string;
+  description: string;
+  proposedBy: string;
+  proposedAt: number;
+  version: number;
+  rationale?: string;
+  path: string;
+  content: string;
+}
+
+/**
+ * PENDING skill proposals (from sub-agents or the auto-synthesizer) with the
+ * MANDATORY manual gate: Approve moves the draft into the active skills
+ * directory (making it the ONLY activation path), Reject deletes it. Until one
+ * of those two buttons is pressed, the proposal is inert — nothing loads it
+ * and nothing executes it.
+ */
+function ProposedSkillsSection({ onChanged }: { onChanged: () => void }) {
+  const { t } = useTranslation();
+  const [proposals, setProposals] = useState<SkillProposal[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const id = Math.random().toString(36).slice(2);
+    setBusy(true);
+    try {
+      const result = await window.electronAPI.skills.listProposals();
+      if (result.success) setProposals(result.proposals);
+      void id;
+    } catch {
+      setActionError('failed');
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const act = async (name: string, action: 'approve' | 'reject') => {
+    setActionError(null);
+    setNotice(null);
+    try {
+      const result =
+        action === 'approve'
+          ? await window.electronAPI.skills.approveProposal(name)
+          : await window.electronAPI.skills.rejectProposal(name);
+      if (!result.success) {
+        setActionError(result.error ?? t('skillDoctor.proposals.actionFailed'));
+        return;
+      }
+      setNotice(
+        action === 'approve'
+          ? t('skillDoctor.proposals.approvedNotice', { name })
+          : t('skillDoctor.proposals.rejectedNotice', { name })
+      );
+      await refresh();
+      onChanged();
+    } catch {
+      setActionError(t('skillDoctor.proposals.actionFailed'));
+    }
+  };
+
+  return (
+    <SettingsContentSection
+      title={t('skillDoctor.proposals.title')}
+      description={t('skillDoctor.proposals.description')}
+    >
+      <p className="rounded-lg border border-border-subtle bg-surface-muted/40 px-3 py-2 text-xs leading-5 text-text-secondary">
+        {t('skillDoctor.proposals.securityNote')}
+      </p>
+      {notice && <p className="text-xs text-emerald-500">{notice}</p>}
+      {actionError && (
+        <p role="alert" className="text-xs text-rose-500">
+          {actionError}
+        </p>
+      )}
+      {!busy && proposals.length === 0 && (
+        <p className="text-sm text-text-muted">{t('skillDoctor.proposals.empty')}</p>
+      )}
+      {proposals.map((proposal) => (
+        <div
+          key={proposal.name}
+          className="rounded-lg border border-border-subtle bg-background px-3 py-2.5"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-text-primary truncate">
+                  {proposal.name}
+                </span>
+                <span className="rounded-full border border-accent/40 px-1.5 py-px text-[9px] font-medium text-accent">
+                  {t('skillDoctor.proposals.pendingTag')}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs leading-5 text-text-secondary">
+                {proposal.description}
+              </p>
+              <p className="mt-1 text-[11px] text-text-muted">
+                {t('skillDoctor.proposals.meta', {
+                  by: proposal.proposedBy,
+                  version: proposal.version,
+                  date: new Intl.DateTimeFormat(undefined, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  }).format(new Date(proposal.proposedAt)),
+                })}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={() => void act(proposal.name, 'approve')}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-500 hover:bg-emerald-500/20 transition-colors"
+              >
+                <Check className="w-3 h-3" />
+                {t('skillDoctor.proposals.approve')}
+              </button>
+              <button
+                onClick={() => void act(proposal.name, 'reject')}
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:text-error hover:bg-surface-hover transition-colors"
+                title={t('skillDoctor.proposals.rejectTitle')}
+              >
+                <Trash2 className="w-3 h-3" />
+                {t('skillDoctor.proposals.reject')}
+              </button>
+            </div>
+          </div>
+          {proposal.rationale && (
+            <p className="mt-2 text-[11px] leading-5 text-text-muted">
+              <span className="font-medium">{t('skillDoctor.proposals.rationale')}:</span>{' '}
+              {proposal.rationale}
+            </p>
+          )}
+          <button
+            onClick={() => setExpanded(expanded === proposal.name ? null : proposal.name)}
+            className="mt-1.5 flex items-center gap-1 text-[11px] text-accent hover:underline"
+          >
+            {expanded === proposal.name ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+            {t('skillDoctor.proposals.contentPreview')}
+          </button>
+          {expanded === proposal.name && (
+            <pre className="mt-1.5 max-h-64 overflow-auto rounded-lg border border-border-subtle bg-surface-muted/40 p-2 text-[10px] leading-4 text-text-secondary whitespace-pre-wrap">
+              {proposal.content}
+            </pre>
+          )}
+        </div>
+      ))}
+    </SettingsContentSection>
+  );
 }
 
 /**
@@ -60,6 +221,9 @@ export function SettingsSkillDoctor() {
       : null;
 
   return (
+    <>
+    {/* Pending proposals FIRST — the manual approval gate is the entry point. */}
+    <ProposedSkillsSection onChanged={() => void run()} />
     <SettingsContentSection title={t('skillDoctor.title')} description={t('skillDoctor.description')}>
       <div className="space-y-3 settings-card p-4" aria-busy={busy}>
         <div className="flex items-center justify-between gap-3">
@@ -122,5 +286,6 @@ export function SettingsSkillDoctor() {
         )}
       </div>
     </SettingsContentSection>
+    </>
   );
 }

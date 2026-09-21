@@ -22,7 +22,9 @@ describe('ProjectsPages — routing integration', () => {
   it('App renders the pages full-width and hides side panels while open', () => {
     expect(app).toContain('projectsPage ? (');
     expect(app).toContain('<ProjectsPages />');
-    expect(app).toContain('!projectsPage && (');
+    // Side panels stay hidden while the pages (or the dedicated Sub-agents
+    // view) are open — both flags are part of the same gating condition.
+    expect(app).toContain('!projectsPage && !subAgentsVisible && (');
   });
 });
 
