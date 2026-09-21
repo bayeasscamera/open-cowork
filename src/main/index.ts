@@ -18,6 +18,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, globalShortcut } from 'electron';
 import { join, resolve, isAbsolute } from 'path';
 import * as fs from 'fs';
+import { spawn } from 'child_process';
 import { config } from 'dotenv';
 import { initDatabase, closeDatabase, getDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
@@ -1580,6 +1581,53 @@ function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string)
 }
 
 /**
+ * Last-resort exit guard that survives a blocked main thread.
+ *
+ * The JS timers on the quit path cannot fire when a cleanup step blocks the
+ * event loop synchronously (observed: chokidar's FSWatcher.close() deadlocking
+ * in libuv's macOS FSEvents teardown on uv_sem_wait). A detached POSIX helper
+ * is the only watchdog that still runs in that case: it SIGKILLs the process
+ * after `graceMs` if it is still alive. Returns a disarm function that the
+ * clean exit path calls to stop the race the other way around.
+ */
+function armHardExitWatchdog(graceMs = 15000): () => void {
+  // Windows has no FSEvents deadlock and kill is not a POSIX shell builtin;
+  // the JS failsafe timer above stays the guard on that platform.
+  if (process.platform === 'win32') {
+    return () => undefined;
+  }
+  try {
+    const seconds = Math.ceil(graceMs / 1000);
+    const pid = process.pid;
+    // Capture our own start time so the helper can never SIGKILL an unrelated
+    // process that happens to reuse this PID after we exit normally.
+    const script = [
+      `START="$(ps -p ${pid} -o lstart= 2>/dev/null)"`,
+      `sleep ${seconds}`,
+      `NOW="$(ps -p ${pid} -o lstart= 2>/dev/null)"`,
+      `[ -n "$START" ] && [ "$NOW" = "$START" ] && kill -9 ${pid} 2>/dev/null`,
+      'exit 0',
+    ].join('; ');
+    const watchdog = spawn('/bin/sh', ['-c', script], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    // Detached + unref so the helper never keeps us alive by itself.
+    watchdog.unref();
+    return () => {
+      try {
+        watchdog.kill('SIGKILL');
+      } catch {
+        // Already gone: the clean exit path won the race.
+      }
+    };
+  } catch (error) {
+    logError('[App] Failed to arm hard-exit watchdog:', error);
+    return () => undefined;
+  }
+}
+
+/**
  * Cleanup all sandbox resources
  * Called on app quit (both Windows and macOS)
  */
@@ -1589,6 +1637,12 @@ async function cleanupSandboxResources(): Promise<void> {
 
   stopNavServer();
   stopConfigFileWatcher();
+  // Skills storage monitoring is a signature poller on macOS (no native
+  // FSEvents handle): closing a recursive chokidar watcher deadlocks libuv
+  // (uv_fs_event_stop → uv__fsevents_close → uv_sem_wait), and leaving the
+  // handle open hangs Node's own teardown just the same, so the app could only
+  // ever be killed with Force Quit. Clearing the poller interval here is what
+  // lets the event loop drain.
   skillsManager?.stopStorageMonitoring();
   scheduledTaskManager?.stop();
   try {
@@ -1733,10 +1787,16 @@ app.on('before-quit', async (event) => {
     // enough for a healthy shutdown to finish while still guaranteeing the
     // process cannot linger as a zombie. The old 3s cut cleanup short and
     // orphaned MCP/VM child processes.
+    let disarmWatchdog: () => void = () => undefined;
     const failsafeTimer = setTimeout(() => {
       logError('[App] Cleanup timed out — forcing exit');
+      disarmWatchdog();
       process.exit(0);
     }, 9000);
+
+    // Armed BEFORE cleanup: a synchronous block inside cleanup would starve
+    // the timer above, so only an out-of-process watchdog can still exit us.
+    disarmWatchdog = armHardExitWatchdog(15000);
 
     try {
       await cleanupSandboxResources();
@@ -1747,8 +1807,25 @@ app.on('before-quit', async (event) => {
     }
     // Unregister shortcuts
     globalShortcut.unregisterAll();
-    // Use app.exit() to avoid re-triggering before-quit event loop
-    app.exit(0);
+    log('[App] Cleanup complete — exiting now');
+    // Clean shutdown won the race: cancel the long-grace watchdog …
+    disarmWatchdog();
+    // … and immediately re-arm a short-grace one. process.exit() runs Node's
+    // environment teardown first, and that teardown can block forever closing
+    // a native handle (observed: uv_fs_event_stop → uv__fsevents_close →
+    // uv_sem_wait while freeing a chokidar FSWatcher). In-process timers cannot
+    // fire during that synchronous block, so this out-of-process helper is the
+    // only thing that can still end the process. It is SIGKILLed as soon as we
+    // exit normally, so a healthy quit just leaves a sleeping shell for at most
+    // the grace period — the guarantee is that no quit can ever hang again.
+    armHardExitWatchdog(5000);
+    // process.exit() is deliberate, NOT app.exit(): once a quit has been
+    // cancelled with preventDefault() above, app.exit(0) can return without
+    // terminating (observed: cleanup fully completed, watchdog disarmed, and
+    // the process was still alive and needed Force Quit). process.exit() cannot
+    // be swallowed, and both failsafe timers above rely on it for the same
+    // reason.
+    process.exit(0);
   }
 });
 

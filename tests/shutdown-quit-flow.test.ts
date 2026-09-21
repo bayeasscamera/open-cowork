@@ -132,4 +132,108 @@ describe('shutdown quit flow', () => {
     expect(spawnBlock).toContain('detached: true');
     expect(mcpSource).toContain('this.debugChromeProcess = chromeProcess;');
   });
+
+  it('never creates a native FSEvents watcher for skills storage on macOS', () => {
+    // Regression: a recursive chokidar watcher deadlocks libuv on macOS
+    // (uv_fs_event_stop → uv__fsevents_close → uv_sem_wait). The freeze is
+    // synchronous, so the 9s failsafe could never fire. Skipping close() only
+    // moved the deadlock to Node's own handle cleanup at teardown
+    // (node::FreeEnvironment → Environment::CleanupHandles → uv_close), which
+    // is why process.exit(0) also never returned and Force Quit was required.
+    // macOS must therefore use the signature poller, which owns no native
+    // handle at all.
+    const skills = source(resolve(root, 'src/main/skills/skills-manager.ts'));
+    const startWatcher = block(
+      skills,
+      /private startStorageWatcher\(\): void \{[\s\S]*?\n  \}/,
+      'startStorageWatcher()'
+    );
+    const darwinIndex = startWatcher.indexOf("process.platform === 'darwin'");
+    const nativeIndex = startWatcher.indexOf('chokidar.watch(');
+    expect(darwinIndex).toBeGreaterThan(-1);
+    expect(nativeIndex).toBeGreaterThan(-1);
+    // The darwin branch must return before any native watcher is created.
+    expect(darwinIndex).toBeLessThan(nativeIndex);
+    expect(startWatcher).toContain('this.startStoragePolling(storagePath)');
+
+    const stopWatcher = block(
+      skills,
+      /private stopStorageWatcher\(\): void \{[\s\S]*?\n  \}/,
+      'stopStorageWatcher()'
+    );
+    // The releaseOnly escape hatch is gone: nothing must ever skip the close
+    // while a native handle can still exist.
+    expect(stopWatcher).not.toContain('releaseOnly');
+    expect(stopWatcher).toContain('clearInterval(this.storagePollingTimer)');
+
+    const monitoring = block(
+      skills,
+      /stopStorageMonitoring\(\): void \{[\s\S]*?\n  \}/,
+      'stopStorageMonitoring()'
+    );
+    expect(monitoring).not.toContain('releaseOnly');
+    expect(monitoring).toContain('this.stopStorageWatcher()');
+
+    const cleanup = block(
+      source(indexPath),
+      /async function cleanupSandboxResources[\s\S]*?\n\}/,
+      'cleanupSandboxResources()'
+    );
+    expect(cleanup).toContain('stopStorageMonitoring()');
+    expect(cleanup).not.toContain('releaseOnly');
+  });
+
+  it('arms an out-of-process watchdog before cleanup starts', () => {
+    // A synchronous block cannot be interrupted by a JS timer, so the quit
+    // path needs a watchdog running outside this process.
+    const beforeQuit = block(
+      source(indexPath),
+      /app\.on\('before-quit'[\s\S]*?\n\}\);/,
+      "app.on('before-quit') handler"
+    );
+    const armIndex = beforeQuit.indexOf('armHardExitWatchdog(');
+    const cleanupIndex = beforeQuit.indexOf('await cleanupSandboxResources()');
+    expect(armIndex).toBeGreaterThan(-1);
+    expect(cleanupIndex).toBeGreaterThan(-1);
+    expect(armIndex).toBeLessThan(cleanupIndex);
+    expect(beforeQuit).toContain('disarmWatchdog()');
+
+    const watchdog = block(
+      source(indexPath),
+      /function armHardExitWatchdog\([\s\S]*?\n\}/,
+      'armHardExitWatchdog()'
+    );
+    expect(watchdog).toContain('detached: true');
+    expect(watchdog).toContain('kill -9');
+  });
+
+  it('terminates with process.exit(0) rather than app.exit(0)', () => {
+    // Regression: once before-quit cancelled the quit with preventDefault(),
+    // app.exit(0) returned without terminating. The shutdown log showed every
+    // cleanup step completing and the watchdog being disarmed, yet the process
+    // stayed alive and still needed Force Quit. process.exit() cannot be
+    // swallowed by Electron's (already cancelled) quit sequence.
+    const beforeQuit = block(
+      source(indexPath),
+      /app.on\('before-quit'[\s\S]*?\n\}\);/,
+      "app.on('before-quit') handler"
+    );
+    // Strip line comments so the rationale above (which names app.exit) does
+    // not defeat the assertion.
+    const code = beforeQuit.replace(/\/\/[^\n]*/g, '');
+    expect(code).toContain('process.exit(0)');
+    expect(code).not.toContain('app.exit(0)');
+
+    // After the clean-path disarm, a short-grace watchdog must be re-armed
+    // BEFORE the exit call: Node's environment teardown can block forever
+    // closing a native handle, and an in-process timer cannot fire during that
+    // synchronous block. lastIndexOf because the 9s failsafe earlier in the
+    // handler also disarms and calls process.exit(0).
+    const disarmIndex = code.lastIndexOf('disarmWatchdog()');
+    const rearmIndex = code.indexOf('armHardExitWatchdog(5000)');
+    const exitIndex = code.lastIndexOf('process.exit(0)');
+    expect(disarmIndex).toBeGreaterThan(-1);
+    expect(rearmIndex).toBeGreaterThan(disarmIndex);
+    expect(exitIndex).toBeGreaterThan(rearmIndex);
+  });
 });

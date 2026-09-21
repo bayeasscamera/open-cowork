@@ -320,9 +320,16 @@ export class SkillsManager {
 
   private stopStorageWatcher(): void {
     if (this.storageWatcher) {
-      this.storageWatcher.close().catch((error) => {
-        logError('[Skills] Failed to close storage watcher:', error);
-      });
+      // Only reached on platforms where the native watcher is safe to close
+      // (see startStorageWatcher): macOS runs the poller instead.
+      try {
+        this.storageWatcher.close().catch((error) => {
+          logError('[Skills] Failed to close storage watcher:', error);
+        });
+      } catch (error) {
+        // close() may throw synchronously; that must not abort the caller.
+        logError('[Skills] Storage watcher close threw:', error);
+      }
       this.storageWatcher = null;
     }
     if (this.storagePollingTimer) {
@@ -348,6 +355,23 @@ export class SkillsManager {
     this.stopStorageWatcher();
     const storagePath = this.getGlobalSkillsPath();
     this.lastStorageSignature = this.computeStorageSignature(storagePath);
+
+    // macOS: never create a native FSEvents watcher here. libuv's macOS
+    // FSEvents teardown (uv_fs_event_stop → uv__fsevents_close → uv_sem_wait)
+    // deadlocks the main thread *synchronously*: no timer, failsafe or
+    // out-of-bounds signal handler in this process can run. With a recursive
+    // chokidar watcher (depth 3 → one FSEvents stream per directory) BOTH
+    // teardown paths hang — watcher.close() during cleanup, and Node's own
+    // handle cleanup at process teardown
+    // (node::FreeEnvironment → Environment::CleanupHandles → uv_close), so
+    // even process.exit(0) never returned and quitting required Force Quit.
+    // The signature poller below detects the same changes (it is already the
+    // documented fallback when the watcher errors) and owns no native handle.
+    if (process.platform === 'darwin') {
+      log('[Skills] Using signature polling for storage changes (macOS)');
+      this.startStoragePolling(storagePath);
+      return;
+    }
 
     try {
       this.storageWatcher = chokidar.watch(storagePath, {
@@ -731,6 +755,13 @@ export class SkillsManager {
     }
   }
 
+  /**
+   * Stop watching the skills storage directory.
+   *
+   * Safe to call on the quit path: on macOS the storage watcher is a signature
+   * poller (never a native FSEvents watcher), and the poller's interval is
+   * cleared here — a live interval would otherwise hold the event loop open.
+   */
   stopStorageMonitoring(): void {
     this.stopStorageWatcher();
   }
