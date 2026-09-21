@@ -3,6 +3,34 @@ import react from '@vitejs/plugin-react';
 import electron from 'vite-plugin-electron';
 import { resolve } from 'path';
 import { builtinModules } from 'module';
+import { execSync } from 'child_process';
+
+/**
+ * Build staleness guard.
+ *
+ * Bakes the built revision and timestamp into the bundle so Settings → General
+ * can show which commit the RUNNING app was built from. Without it a stale
+ * /Applications install silently keeps old UI — historically the most frequent
+ * cause of "the feature is missing from the installed app".
+ */
+function readBuildStamp(): { sha: string; time: string } {
+  const time = new Date().toISOString();
+  const fromCi = process.env.GITHUB_SHA?.slice(0, 7);
+  if (fromCi) return { sha: fromCi, time };
+  try {
+    const sha = execSync('git rev-parse --short HEAD', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+    return { sha: sha || 'unknown', time };
+  } catch {
+    // No git available (e.g. building from a tarball) — never fail the build.
+    return { sha: 'unknown', time };
+  }
+}
+
+const buildStamp = readBuildStamp();
 
 // Node built-in modules must be external for Electron main process
 const nodeBuiltins = builtinModules.flatMap((m) => [m, `node:${m}`]);
@@ -80,6 +108,10 @@ export default defineConfig({
       },
     ]),
   ],
+  define: {
+    __BUILD_SHA__: JSON.stringify(buildStamp.sha),
+    __BUILD_TIME__: JSON.stringify(buildStamp.time),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

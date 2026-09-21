@@ -213,6 +213,7 @@
     "systemPlatform": "平台",
     "systemArchitecture": "架构",
     "systemLanguage": "界面语言",
+    "systemBuild": "构建版本",
     "configProvider": "提供商",
     "configModel": "模型"
   },

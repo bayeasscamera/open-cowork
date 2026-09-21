@@ -191,6 +191,7 @@
     "systemPlatform": "Platform",
     "systemArchitecture": "Architecture",
     "systemLanguage": "Interface language",
+    "systemBuild": "Build",
     "configProvider": "Provider",
     "configModel": "Model"
   },

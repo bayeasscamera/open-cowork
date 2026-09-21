@@ -90,6 +90,20 @@ function summarizeConfiguration(
   return { providerName, modelName: modelName || '—' };
 }
 
+/**
+ * Build staleness guard: which revision this installed bundle was built from.
+ * Compare it with `git log` before concluding a feature was never implemented.
+ */
+function formatBuildStamp(): string {
+  const sha = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : '';
+  const time = typeof __BUILD_TIME__ === 'string' ? __BUILD_TIME__ : '';
+  if (!sha && !time) return '—';
+  if (!time) return sha;
+  const date = new Date(time);
+  const when = Number.isNaN(date.getTime()) ? time : date.toLocaleString();
+  return sha ? `${sha} · ${when}` : when;
+}
+
 export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
@@ -166,6 +180,7 @@ export function SettingsGeneral() {
 
   const systemRows = [
     { label: t('general.systemVersion'), value: appVer ? `v${appVer}` : '—' },
+    { label: t('general.systemBuild'), value: formatBuildStamp() },
     { label: t('general.systemPlatform'), value: platform },
     { label: t('general.systemArchitecture'), value: architecture },
     { label: t('general.systemLanguage'), value: currentLanguageName },
