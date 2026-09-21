@@ -109,6 +109,11 @@ import {
 } from './agent/background-delegations';
 import { getSwarmStats } from './agent/swarm-stats';
 import {
+  readWorkspaceDoc,
+  writeWorkspaceDoc,
+  listWorkspaceDocs,
+} from './documents/document-doc';
+import {
   buildSkillDoctorReport,
   loadSkillSourcesFromDir,
   type SkillDoctorSkillSource,
@@ -3542,6 +3547,40 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       } catch (error) {
         logError('[IPC] backgroundTasks.getStats failed:', error);
         return { success: false, error: 'Failed to load stats' };
+      }
+    }
+
+    // ── Live document co-editing (workspace-confined) ──────────────────────
+    case 'document.read': {
+      try {
+        return { success: true, ...readWorkspaceDoc(event.payload.cwd, event.payload.path) };
+      } catch (error) {
+        logError('[IPC] document.read failed:', error);
+        return { success: false, error: 'Failed to read document' };
+      }
+    }
+
+    case 'document.write': {
+      try {
+        const result = writeWorkspaceDoc(
+          event.payload.cwd,
+          event.payload.path,
+          event.payload.content,
+          { baseMtimeMs: event.payload.baseMtimeMs, force: event.payload.force }
+        );
+        return { success: result.ok, ...result };
+      } catch (error) {
+        logError('[IPC] document.write failed:', error);
+        return { success: false, status: 'error', error: 'Failed to write document' };
+      }
+    }
+
+    case 'document.list': {
+      try {
+        return { success: true, files: listWorkspaceDocs(event.payload.cwd) };
+      } catch (error) {
+        logError('[IPC] document.list failed:', error);
+        return { success: false, files: [], error: 'Failed to list documents' };
       }
     }
 

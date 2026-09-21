@@ -91,6 +91,9 @@ const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>(
   'backgroundTasks.getSettings',
   'backgroundTasks.getStats',
   'backgroundTasks.setSettings',
+  'document.read',
+  'document.write',
+  'document.list',
 ]);
 
 // Invoke a whitelisted ClientEvent and wait for the response. Defined once at
@@ -295,6 +298,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
       notifyOnCompletion?: boolean;
     }): Promise<{ success: boolean; settings?: DelegationSettings; error?: string }> =>
       invoke({ type: 'backgroundTasks.setSettings', payload: next }),
+  },
+
+  // Live document co-editing (workspace-confined)
+  document: {
+    read: (
+      cwd: string,
+      path: string
+    ): Promise<{
+      success: boolean;
+      ok?: boolean;
+      content?: string;
+      mtimeMs?: number;
+      error?: string;
+    }> => invoke({ type: 'document.read', payload: { cwd, path } }),
+    write: (
+      cwd: string,
+      path: string,
+      content: string,
+      options?: { baseMtimeMs?: number; force?: boolean }
+    ): Promise<{
+      success: boolean;
+      ok?: boolean;
+      status?: 'written' | 'conflict' | 'error';
+      mtimeMs?: number;
+      error?: string;
+    }> => invoke({ type: 'document.write', payload: { cwd, path, content, ...options } }),
+    list: (
+      cwd: string
+    ): Promise<{
+      success: boolean;
+      files?: Array<{ path: string; mtimeMs: number }>;
+      error?: string;
+    }> => invoke({ type: 'document.list', payload: { cwd } }),
   },
 
   // Platform info
@@ -795,6 +831,37 @@ declare global {
           maxConcurrent?: number;
           notifyOnCompletion?: boolean;
         }) => Promise<{ success: boolean; settings?: DelegationSettings; error?: string }>;
+      };
+      document: {
+        read: (
+          cwd: string,
+          path: string
+        ) => Promise<{
+          success: boolean;
+          ok?: boolean;
+          content?: string;
+          mtimeMs?: number;
+          error?: string;
+        }>;
+        write: (
+          cwd: string,
+          path: string,
+          content: string,
+          options?: { baseMtimeMs?: number; force?: boolean }
+        ) => Promise<{
+          success: boolean;
+          ok?: boolean;
+          status?: 'written' | 'conflict' | 'error';
+          mtimeMs?: number;
+          error?: string;
+        }>;
+        list: (
+          cwd: string
+        ) => Promise<{
+          success: boolean;
+          files?: Array<{ path: string; mtimeMs: number }>;
+          error?: string;
+        }>;
       };
       platform: NodeJS.Platform;
       getSystemTheme: () => Promise<{ shouldUseDarkColors: boolean }>;

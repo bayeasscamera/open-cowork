@@ -138,6 +138,9 @@ export interface AppConfig {
   // Sub-agent swarm settings (profile resolution + guardrails)
   subAgents?: SubAgentsConfig;
 
+  // OpenJev "System One" routing hint (optional, off by default)
+  openjev?: OpenJevConfig;
+
   // Enable thinking mode (show thinking steps)
   enableThinking: boolean;
 
@@ -176,10 +179,21 @@ export interface MemoryRuntimeConfig {
 
 export type SubAgentRoleKey = 'architect' | 'developer' | 'reviewer' | 'security';
 
+export interface OpenJevConfig {
+  /** Off by default until validated in real conditions. */
+  enabled: boolean;
+  /** Base URL of the local OpenJev decision server. */
+  baseUrl: string;
+}
+
 export interface SubAgentProfileSelection {
   configSetId: string;
   /** Model id inside the configSet; empty/undefined = the set's active model. */
   modelId?: string;
+  /** Display name for the role (e.g. "Dev Backend"); empty = generic role name. */
+  personaName?: string;
+  /** Role system prompt, ADDED to project/agent instructions (never replaces). */
+  systemPrompt?: string;
 }
 
 export interface SubAgentsConfig {
@@ -396,6 +410,7 @@ const defaultConfig: AppConfig = {
     promptIterationRounds: 2,
   },
   subAgents: DEFAULT_SUB_AGENTS,
+  openjev: { enabled: false, baseUrl: 'http://127.0.0.1:8080' },
   enableThinking: false,
   isConfigured: false,
 };
@@ -571,13 +586,26 @@ export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
       if (typeof entry === 'string' && entry.trim()) {
         perRole[key] = { configSetId: entry.trim() };
       } else if (typeof entry === 'object' && entry !== null) {
-        const selection = entry as { configSetId?: unknown; modelId?: unknown };
+        const selection = entry as {
+          configSetId?: unknown;
+          modelId?: unknown;
+          personaName?: unknown;
+          systemPrompt?: unknown;
+        };
         if (typeof selection.configSetId === 'string' && selection.configSetId.trim()) {
           perRole[key] = {
             configSetId: selection.configSetId.trim(),
             modelId:
               typeof selection.modelId === 'string' && selection.modelId.trim()
                 ? selection.modelId.trim()
+                : undefined,
+            personaName:
+              typeof selection.personaName === 'string' && selection.personaName.trim()
+                ? selection.personaName.trim()
+                : undefined,
+            systemPrompt:
+              typeof selection.systemPrompt === 'string' && selection.systemPrompt.trim()
+                ? selection.systemPrompt.trim()
                 : undefined,
           };
         }
@@ -600,6 +628,17 @@ export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
       typeof value.maxConcurrent === 'number' && Number.isFinite(value.maxConcurrent)
         ? Math.max(1, Math.min(8, Math.round(value.maxConcurrent)))
         : DEFAULT_SUB_AGENTS.maxConcurrent,
+  };
+}
+
+export function normalizeOpenJevConfig(raw: unknown): OpenJevConfig {
+  const r = (raw ?? {}) as Partial<OpenJevConfig>;
+  return {
+    enabled: r.enabled === true,
+    baseUrl:
+      typeof r.baseUrl === 'string' && r.baseUrl.trim()
+        ? r.baseUrl.trim()
+        : 'http://127.0.0.1:8080',
   };
 }
 
@@ -1180,6 +1219,7 @@ export class ConfigStore {
       trayEnabled: toBoolean(raw.trayEnabled, defaultConfig.trayEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       subAgents: normalizeSubAgentsConfig(raw.subAgents),
+      openjev: normalizeOpenJevConfig(raw.openjev),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
@@ -1632,6 +1672,10 @@ export class ConfigStore {
         updates.subAgents !== undefined
           ? normalizeSubAgentsConfig(updates.subAgents)
           : current.subAgents,
+      openjev:
+        updates.openjev !== undefined
+          ? normalizeOpenJevConfig(updates.openjev)
+          : current.openjev,
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
     });

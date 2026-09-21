@@ -72,7 +72,14 @@
     "statDelegations": "委托完成数",
     "refreshStats": "刷新",
     "skillDoctorLink": "打开技能体检（技能标签页）",
-    "saveScopeHint": "保存仅应用于上方配置与护栏部分；委托任务设置即时保存。"
+    "saveScopeHint": "保存仅应用于上方配置与护栏部分；委托任务设置即时保存。",
+    "personaNamePlaceholder": "角色名称（如：后端开发）",
+    "systemPromptPlaceholder": "角色指令 — 附加在项目/主代理指令之上",
+    "openjevTitle": "OpenJev 路由（实验性）",
+    "openjevDescription": "生成前通过轻量级「System One」决策调用评估每个请求并注入建议性路由提示。默认关闭；永不阻塞（服务器不可达时跳过提示）。",
+    "openjevEnable": "启用 OpenJev 路由提示",
+    "openjevUrl": "OpenJev 服务器 URL",
+    "openjevHint": "默认本地服务器：http://127.0.0.1:8080（POST /v1/systemone）。每次决策都有日志记录（请求 → 判定 → 注入）。"
   },
   "common": {
     "save": "保存",
@@ -1193,5 +1200,17 @@
     "considerDisabling": "建议停用",
     "keep": "保留",
     "total": "Skills 上下文：{{tokens}} tokens {{percent}} 可用窗口"
+  },
+  "documentPanel": {
+    "title": "文档",
+    "pathPlaceholder": "工作区/路径/文件.md",
+    "edit": "编辑",
+    "save": "保存",
+    "conflictWarning": "该文件在您编辑期间被 agent 修改过。重新加载其版本（未保存的修改将丢失），或用您的版本覆盖。",
+    "reloadAgentVersion": "重新加载 agent 版本",
+    "overwriteAnyway": "仍用我的覆盖",
+    "openHint": "在上方输入工作区文件路径即可在此打开。视图会跟随 agent 的修改，您的保存对下一次对话生效。",
+    "readError": "读取文档失败",
+    "writeError": "写入文档失败"
   }
 }

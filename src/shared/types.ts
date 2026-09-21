@@ -635,6 +635,12 @@ export type ClientEvent =
   | { type: 'backgroundTasks.delete'; payload: { taskId: string } }
   | { type: 'backgroundTasks.getSettings'; payload: Record<string, never> }
   | { type: 'backgroundTasks.getStats'; payload: Record<string, never> }
+  | { type: 'document.read'; payload: { cwd: string; path: string } }
+  | {
+      type: 'document.write';
+      payload: { cwd: string; path: string; content: string; baseMtimeMs?: number; force?: boolean };
+    }
+  | { type: 'document.list'; payload: { cwd: string } }
   | {
       type: 'backgroundTasks.setSettings';
       payload: {
@@ -905,6 +911,8 @@ export interface AppConfig {
   memoryRuntime?: MemoryRuntimeConfig;
   enableThinking?: boolean;
   isConfigured: boolean;
+  /** OpenJev "System One" routing hint (optional, off by default). */
+  openjev?: { enabled: boolean; baseUrl: string };
 }
 
 export interface ProviderPreset {

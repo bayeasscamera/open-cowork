@@ -34,6 +34,8 @@ export interface AgentTask {
   usedFallback?: boolean;
   /** Cumulative token usage of the task's session(s), when reported. */
   tokenUsage?: { input: number; output: number };
+  /** Hierarchy depth: 0 for the main agent's direct sub-agents (hard cap 2). */
+  depth?: number;
 }
 
 export interface MultiAgentPlan {

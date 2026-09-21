@@ -33,6 +33,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import type { AgentTask, AgentRole, SubAgentRunnerFn } from './multi-agent-coordinator';
+import { SubAgentGate } from './sub-agent-gate';
 import {
   createSwarmRunner,
   type SubAgentSessionArgs,
@@ -80,6 +81,12 @@ export interface BackgroundDelegation {
   modelUsed?: string;
   /** True when the delegation fell back to the active profile. */
   usedFallback?: boolean;
+  /** Hierarchy depth (1 = main agent's delegation, 2 = recursive child — hard cap). */
+  depth: number;
+  /** Parent delegation id when this task was delegated BY another sub-agent. */
+  parentTaskId?: string;
+  /** Cumulative token usage of THIS level only (children roll up separately). */
+  tokenUsage?: { input: number; output: number };
   report?: DelegationReport;
   rawResult?: string;
   error?: string;
@@ -329,24 +336,42 @@ function emit(delegation: BackgroundDelegation, kind: 'status' | 'progress', det
 
 export interface StartDelegationOptions {
   sessionId: string;
-  /** Workspace the background sub-agent is confined to. */
+  /** Workspace the background sub-agent is confined to (children inherit it). */
   cwd: string;
   title: string;
   prompt: string;
   role?: AgentRole;
+  /** Hierarchy depth of the DELEGATED task: 1 = main agent's delegation,
+   * 2 = a sub-agent's own recursive delegation. HARD CAP at 2. */
+  depth?: number;
+  /** Delegation id of the parent task, when delegated by a sub-agent. */
+  parentTaskId?: string;
   /** Config source override (tests); defaults to the app config store. */
   getConfig?: () => StoreAppConfig;
   /** Session launcher override (tests): inject a fake sub-agent session. */
   launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
 }
 
+/** Hard hierarchy cap: main agent (0) → sub-agent (1) → sub-sub-agent (2). */
+export const MAX_DELEGATION_DEPTH = 2;
+
+/** The GLOBAL semaphore shared by the swarm AND every delegation level. */
+export const subAgentGate = new SubAgentGate(DEFAULT_DELEGATION_SETTINGS.maxConcurrent);
+
 /**
  * Launch a background sub-agent and return its task id IMMEDIATELY. The
  * returned object is available before the sub-agent finishes — the caller
  * (tool) must not await the sub-agent's completion.
  */
-export function startDelegation(options: StartDelegationOptions): { taskId: string } {
+export function startDelegation(options: StartDelegationOptions): { taskId: string; done: Promise<void> } {
   ensureLoaded();
+
+  // HARD depth cap — enforced here even if a palette leak ever allowed a
+  // deeper agent to call the delegation tool.
+  const depth = options.depth ?? 1;
+  if (depth > MAX_DELEGATION_DEPTH) {
+    throw new DelegationDepthError(depth);
+  }
 
   // Enforce the delegation-specific concurrency cap BEFORE launching.
   const runningCount = Array.from(delegations.values()).filter((d) => d.status === 'running').length;
@@ -365,21 +390,25 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
     prompt: options.prompt,
     role,
     cwd: options.cwd,
+    depth,
+    parentTaskId: options.parentTaskId,
     status: 'running',
     startedAt: Date.now(),
     delivered: false,
     log: [],
   };
   delegations.set(id, delegation);
-  pushLog(delegation, 'launched', `Task delegated (role: ${role})`);
+  pushLog(delegation, 'launched', `Task delegated (role: ${role}, depth: ${depth})`);
   persist();
 
   const controller = new AbortController();
   controllers.set(id, controller);
+  // The global semaphore budget follows the delegation settings.
+  subAgentGate.setMax(settings.maxConcurrent);
 
-  launchBackgroundTask(id, delegation, options);
+  const done = launchBackgroundTask(id, delegation, options);
   emit(delegation, 'status');
-  return { taskId: id };
+  return { taskId: id, done };
 }
 
 export class DelegationCapacityError extends Error {
@@ -389,22 +418,31 @@ export class DelegationCapacityError extends Error {
   }
 }
 
+export class DelegationDepthError extends Error {
+  constructor(depth: number) {
+    super(`Delegation depth ${depth} exceeds the hard cap of 2 levels (main agent → sub-agent → sub-sub-agent).`);
+    this.name = 'DelegationDepthError';
+  }
+}
+
 function launchBackgroundTask(
   id: string,
   delegation: BackgroundDelegation,
   options: StartDelegationOptions
-): void {
+): Promise<void> {
   const task: AgentTask = {
     id,
     role: delegation.role,
     title: delegation.title,
     prompt: buildAutonomousPrompt(delegation.prompt),
     status: 'pending',
+    depth: delegation.depth,
   };
 
   // Same runner as the swarm (per-role profile, confinement, idle timeout,
-  // fallback) — with the delegation-specific cap, timeout, cancel signal and
-  // a live progress hook feeding the tracking view.
+  // fallback) — with the delegation-specific cap, timeout, cancel signal,
+  // the GLOBAL hierarchy semaphore and a live progress hook feeding the
+  // tracking view.
   const effectiveGetConfig = () => {
     const config = options.getConfig ? options.getConfig() : configStore.getAll();
     if (!settings.configSetId) return config;
@@ -431,6 +469,8 @@ function launchBackgroundTask(
     launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
     maxConcurrentOverride?: number;
     timeoutMsOverride?: number;
+    gate?: SubAgentGate;
+    rootSessionId?: string;
     taskExtras?: (t: AgentTask) => {
       signal?: AbortSignal;
       onEvent?: (step: SubAgentToolStep) => void;
@@ -439,6 +479,8 @@ function launchBackgroundTask(
     cwd: options.cwd,
     maxConcurrentOverride: settings.maxConcurrent,
     timeoutMsOverride: settings.timeoutMs,
+    gate: subAgentGate,
+    rootSessionId: options.sessionId,
     taskExtras: () => ({
       signal: controllers.get(id)?.signal,
       onEvent: (step) => {
@@ -452,8 +494,8 @@ function launchBackgroundTask(
   if (options.launchSession) runnerOptions.launchSession = options.launchSession;
   const runner: SubAgentRunnerFn = createSwarmRunner(runnerOptions);
 
-  void runner(task, 'Background delegation — work autonomously; see the report contract in the task.')
-    .then((run) => {
+  const done = runner(task, 'Background delegation — work autonomously; see the report contract in the task.')
+    .then(async (run) => {
       controllers.delete(id);
       const current = delegations.get(id);
       if (!current) return;
@@ -466,6 +508,10 @@ function launchBackgroundTask(
       current.modifiedFiles = run.modifiedFiles;
       current.rawResult = run.output;
       current.report = parseDelegationReport(run.output);
+      if (run.tokenUsage) current.tokenUsage = run.tokenUsage;
+      // Recursive rollup: this level's tokens accumulate onto its parent so
+      // the measured cost covers the whole hierarchy.
+      if (current.parentTaskId) rollupTokensToParent(current.parentTaskId, current);
       pushLog(current, 'completed', current.report.summary.slice(0, 120));
       enqueuePending(id);
       persist();
@@ -493,6 +539,17 @@ function launchBackgroundTask(
       logError(`[BackgroundDelegations] Task ${id} (${current.title}) failed:`, err);
       emit(current, 'status');
     });
+  return done;
+}
+
+/** Roll a child's token usage onto its parent delegation (whole-hierarchy cost). */
+function rollupTokensToParent(parentTaskId: string, child: BackgroundDelegation): void {
+  const parent = delegations.get(parentTaskId);
+  if (!parent) return;
+  const add = child.tokenUsage ?? { input: 0, output: 0 };
+  const base = parent.tokenUsage ?? { input: 0, output: 0 };
+  parent.tokenUsage = { input: base.input + add.input, output: base.output + add.output };
+  persist();
 }
 
 /**
@@ -658,4 +715,127 @@ export function __resetDelegationsForTest(): void {
   controllers.clear();
   settings = { ...DEFAULT_DELEGATION_SETTINGS };
   loaded = true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECURSIVE delegation — a sub-agent's own subordinate (depth + 1, hard cap 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Run a child delegation SYNCHRONOUSLY from a sub-agent's point of view: the
+ * sub-agent waits for its subordinate's structured report (Agent Zero
+ * hierarchical model) while the GLOBAL semaphore bounds the whole hierarchy.
+ * The child workspace is the PARENT's cwd — same confinement perimeter.
+ */
+export async function runDelegationSync(options: {
+  sessionId: string;
+  cwd: string;
+  title: string;
+  prompt: string;
+  role?: AgentRole;
+  /** Depth of the DELEGATED child (parent depth + 1). Hard cap 2. */
+  depth: number;
+  parentTaskId?: string;
+  getConfig?: () => StoreAppConfig;
+  launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
+}): Promise<{ report: DelegationReport; raw: string }> {
+  const { taskId, done } = startDelegation(options);
+  await done;
+  const delegation = delegations.get(taskId);
+  if (!delegation) throw new Error('Delegated subtask vanished');
+  if (delegation.status === 'failed') {
+    throw new Error(delegation.error ?? 'Delegated subtask failed');
+  }
+  return {
+    report: delegation.report ?? { summary: '', findings: '', assumptions: '', limits: '' },
+    raw: delegation.rawResult ?? '',
+  };
+}
+
+/**
+ * The delegation tool placed in a sub-agent's palette when its depth is below
+ * the hard cap. depth ≥ 2 agents never receive it (palette removal) AND
+ * startDelegation hard-refuses deeper launches — double enforcement.
+ */
+export function buildSubAgentDelegationTool(context: {
+  rootSessionId: string;
+  cwd: string;
+  /** Depth of the session this tool is being built FOR. */
+  depth: number;
+  parentTaskId?: string;
+}): import('@mariozechner/pi-coding-agent').ToolDefinition {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { Type } = require('@sinclair/typebox') as typeof import('@sinclair/typebox');
+  const childDepth = context.depth + 1;
+  const allowed = childDepth <= MAX_DELEGATION_DEPTH;
+  return {
+    name: 'delegate_subtask',
+    label: 'Delegate subtask',
+    description: allowed
+      ? 'Delegate ONE self-contained subtask to your own background subordinate and WAIT for its structured report. ' +
+        'Use it to keep your own context focused: hand over a complete, self-sufficient brief. ' +
+        'The report you receive includes the subordinate\'s summary, findings, assumptions and limits.'
+      : `Delegation is unavailable: the hierarchy depth cap (${MAX_DELEGATION_DEPTH} levels) is reached. Work alone and note in your report that a subtask would have merited delegation.`,
+    parameters: Type.Object({
+      task: Type.String({
+        description:
+          'Complete, self-sufficient brief for the subordinate: goal, constraints, expected output. It cannot ask you questions.',
+      }),
+      title: Type.Optional(Type.String({ description: 'Short label for tracking' })),
+    }),
+    execute: async (_toolCallId, params) => {
+      const args = params as { task?: string; title?: string };
+      if (!allowed) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Delegation refused: the hierarchy depth cap (${MAX_DELEGATION_DEPTH} levels) is reached. Handle this subtask yourself and note it in your report.`,
+            },
+          ],
+          details: { refused: 'depth-cap' },
+        };
+      }
+      if (!args.task || !args.task.trim()) {
+        return {
+          content: [{ type: 'text' as const, text: 'task is required to delegate a subtask.' }],
+          details: {},
+        };
+      }
+      try {
+        const { report, raw } = await runDelegationSync({
+          sessionId: context.rootSessionId,
+          cwd: context.cwd,
+          title: args.title?.trim() || args.task.trim().slice(0, 60),
+          prompt: args.task.trim(),
+          role: 'developer',
+          depth: childDepth,
+          parentTaskId: context.parentTaskId,
+        });
+        const text = [
+          `Subordinate report (depth ${childDepth}):`,
+          `Summary: ${report.summary}`,
+          report.findings ? `Findings: ${report.findings}` : '',
+          report.assumptions && !/^none$/i.test(report.assumptions)
+            ? `Assumptions: ${report.assumptions}`
+            : '',
+          report.limits && !/^none$/i.test(report.limits) ? `Limits: ${report.limits}` : '',
+          raw && raw !== report.summary ? raw : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+        return { content: [{ type: 'text' as const, text }], details: { report } };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Subordinate failed: ${err instanceof Error ? err.message : String(err)}. Handle it yourself or note the failure in your report.`,
+            },
+          ],
+          details: {},
+        };
+      }
+    },
+  };
 }

@@ -54,7 +54,7 @@
     "guardrailsDescription": "Bounds applied to every swarm sub-agent.",
     "fallbackPolicy": "Fallback is automatic: if a configured sub-agent model fails (rate limit, timeout, provider error), the task retries exactly once on the active profile and the result notes it. Not configurable by design.",
     "delegationTitle": "Delegated tasks (async mode)",
-    "delegationDescription": "Settings for background delegations — separate from the swarm's per-role profiles. Applies to tasks started with the delegation tool; the live tracking panel shows the same controls.",
+    "delegationDescription": "Settings for background delegations — separate from the swarm's per-role profiles.",
     "delegationProfile": "Default profile",
     "costTitle": "Cost & transparency",
     "costDescription": "What multi-agent execution really costs, measured.",
@@ -72,7 +72,14 @@
     "statDelegations": "Delegations done",
     "refreshStats": "Refresh",
     "skillDoctorLink": "Open Skill doctor (Skills tab)",
-    "saveScopeHint": "Save applies to the profile and guardrails sections above; delegated-task settings save instantly."
+    "saveScopeHint": "Save applies to the profile and guardrails sections above; delegated-task settings save instantly.",
+    "personaNamePlaceholder": "Persona name (e.g. Dev Backend)",
+    "systemPromptPlaceholder": "Role instructions — added on top of project/agent instructions",
+    "openjevTitle": "OpenJev routing (experimental)",
+    "openjevDescription": "A lightweight 'System One' decision call evaluates each request before generation and injects an advisory routing hint. Off by default; never blocking (the hint is skipped if the server is unreachable).",
+    "openjevEnable": "Enable OpenJev routing hint",
+    "openjevUrl": "OpenJev server URL",
+    "openjevHint": "Default local server: http://127.0.0.1:8080 (POST /v1/systemone). Every decision is logged (prompt → verdict → injected)."
   },
   "common": {
     "save": "Save",
@@ -1193,5 +1200,17 @@
     "considerDisabling": "Consider disabling",
     "keep": "Keep",
     "total": "Skills context: {{tokens}} tokens {{percent}} of the window"
+  },
+  "documentPanel": {
+    "title": "Document",
+    "pathPlaceholder": "workspace/path/to/file.md",
+    "edit": "Edit",
+    "save": "Save",
+    "conflictWarning": "This file was modified by the agent while you were editing. Reload its version (your unsaved edits are lost) or overwrite with yours.",
+    "reloadAgentVersion": "Reload agent version",
+    "overwriteAnyway": "Overwrite with mine",
+    "openHint": "Type a workspace file path above to open it here. The view follows the agent's edits, and your saves are visible to it on the next turn.",
+    "readError": "Failed to read document",
+    "writeError": "Failed to write document"
   }
 }

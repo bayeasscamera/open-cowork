@@ -27,6 +27,10 @@ import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
 import { getSharedProjectStore } from '../projects/project-store';
 import {
+  evaluateRoutingSignal,
+  formatRoutingHint,
+} from './openjev-router';
+import {
   takePendingDelegationResults,
   describeRunningDelegations,
 } from './background-delegations';
@@ -2078,6 +2082,26 @@ ${hints.join('\n')}
       const runningDelegations = describeRunningDelegations(session.id);
       if (runningDelegations) {
         contextualPrompt = `${contextualPrompt}\n\n${runningDelegations}`;
+      }
+
+      // OpenJev routing hint (optional, OFF by default): a lightweight
+      // System One call evaluates whether the swarm is warranted. Never
+      // blocking — any failure degrades to no hint, behavior unchanged.
+      if (runtimeConfig.openjev?.enabled) {
+        const routingStarted = Date.now();
+        const verdict = await evaluateRoutingSignal(prompt, runtimeConfig.openjev);
+        const hint = formatRoutingHint(verdict);
+        if (hint) {
+          contextualPrompt = `${contextualPrompt}\n\n${hint}`;
+        }
+        log(
+          `[OpenJev] prompt="${prompt.slice(0, 80)}" → ` +
+            (verdict
+              ? `swarm=${verdict.needsSwarm.toFixed(2)} complexity=${verdict.complexity.toFixed(2)} ` +
+                `confidence=${verdict.confidence.toFixed(2)} latency=${verdict.latencyMs}ms`
+              : `no verdict (unreachable/timeout) after ${Date.now() - routingStarted}ms`) +
+            ` → hint ${hint ? 'injected' : 'skipped'}`
+        );
       }
 
       logTiming('before building MCP servers config', runStartTime);

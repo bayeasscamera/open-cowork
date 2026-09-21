@@ -9,6 +9,43 @@ import {
 } from '../shared/ConfigSetModelPicker';
 import { DelegationSettingsForm } from './DelegationSettingsForm';
 import { useAppStore } from '../../store';
+
+function OpenJevSection() {
+  const { t } = useTranslation();
+  const appConfig = useAppStore((s) => s.appConfig);
+  const config = appConfig?.openjev ?? { enabled: false, baseUrl: 'http://127.0.0.1:8080' };
+
+  const save = async (next: { enabled?: boolean; baseUrl?: string }) => {
+    const merged = { ...config, ...next };
+    await window.electronAPI.config.save({ openjev: merged } as never);
+  };
+
+  return (
+    <SettingsContentSection title={t('subAgents.openjevTitle')} description={t('subAgents.openjevDescription')}>
+      <label className="flex items-center gap-2 text-sm text-text-primary">
+        <input
+          type="checkbox"
+          checked={config.enabled}
+          onChange={(e) => void save({ enabled: e.target.checked })}
+        />
+        {t('subAgents.openjevEnable')}
+      </label>
+      {config.enabled && (
+        <label className="block text-sm text-text-secondary">
+          {t('subAgents.openjevUrl')}
+          <input
+            type="text"
+            defaultValue={config.baseUrl}
+            onBlur={(e) => void save({ baseUrl: e.target.value.trim() })}
+            className={`${inputClass} mt-1 w-full max-w-md`}
+            placeholder="http://127.0.0.1:8080"
+          />
+          <span className="mt-1 block text-xs text-text-muted">{t('subAgents.openjevHint')}</span>
+        </label>
+      )}
+    </SettingsContentSection>
+  );
+}
 import type { DelegationStats, SwarmStats } from '../../types';
 
 export type SubAgentRoleKey = 'architect' | 'developer' | 'reviewer' | 'security';
@@ -23,7 +60,9 @@ export interface SubAgentsDraft {
   configSetId: string;
   /** Model pinned inside the selected configSet (empty = its active model). */
   modelId?: string;
-  perRole: Partial<Record<SubAgentRoleKey, { configSetId: string; modelId?: string }>>;
+  perRole: Partial<
+    Record<SubAgentRoleKey, { configSetId: string; modelId?: string; personaName?: string; systemPrompt?: string }>
+  >;
   timeoutMs: number;
   maxConcurrent: number;
 }
@@ -44,13 +83,21 @@ function clamp(value: number, min: number, max: number): number {
  * the store would silently rewrite.
  */
 export function buildSubAgentsUpdate(draft: SubAgentsDraft): SubAgentsDraft {
-  const perRole: Partial<Record<SubAgentRoleKey, { configSetId: string; modelId?: string }>> = {};
+  const perRole: Partial<Record<SubAgentRoleKey, RoleSelection>> = {};
   for (const role of SUB_AGENT_ROLES) {
     const selection = draft.perRole?.[role];
     if (typeof selection?.configSetId === 'string' && selection.configSetId.trim()) {
       perRole[role] = {
         configSetId: selection.configSetId.trim(),
         modelId: typeof selection.modelId === 'string' && selection.modelId.trim() ? selection.modelId.trim() : undefined,
+        personaName:
+          typeof selection.personaName === 'string' && selection.personaName.trim()
+            ? selection.personaName.trim()
+            : undefined,
+        systemPrompt:
+          typeof selection.systemPrompt === 'string' && selection.systemPrompt.trim()
+            ? selection.systemPrompt.trim()
+            : undefined,
       };
     }
   }
@@ -68,6 +115,23 @@ export function buildSubAgentsUpdate(draft: SubAgentsDraft): SubAgentsDraft {
       1,
       MAX_CONCURRENT
     ),
+  };
+}
+
+type RoleSelection = { configSetId: string; modelId?: string; personaName?: string; systemPrompt?: string };
+
+/** Merge a partial role patch into the existing selection (empty set id clears the role). */
+function mergeRoleSelection(
+  prev: RoleSelection | undefined,
+  patch: Partial<RoleSelection>
+): RoleSelection | undefined {
+  const merged = { ...(prev ?? { configSetId: '' }), ...patch };
+  if (!merged.configSetId?.trim()) return undefined;
+  return {
+    configSetId: merged.configSetId,
+    modelId: merged.modelId?.trim() || undefined,
+    personaName: merged.personaName?.trim() || undefined,
+    systemPrompt: merged.systemPrompt?.trim() || undefined,
   };
 }
 
@@ -174,6 +238,8 @@ export function SettingsSubAgents() {
 
       <GuardrailsSection t={t} draft={draft} busy={busy} setDraft={setDraft} />
 
+      <OpenJevSection />
+
       <section className="space-y-3 py-5 border-b border-border-muted">
         <div className="space-y-1">
           <h4 className="text-sm font-semibold text-text-primary">
@@ -261,8 +327,16 @@ function ProfileSection({
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {SUB_AGENT_ROLES.map((role) => {
             const selection = draft.perRole[role];
+            const patch = (p: Partial<{ configSetId: string; modelId?: string; personaName?: string; systemPrompt?: string }>) =>
+              setDraft((prev) => ({
+                ...prev,
+                perRole: {
+                  ...prev.perRole,
+                  [role]: mergeRoleSelection(prev.perRole[role], p),
+                },
+              }));
             return (
-              <div key={role} className="flex flex-col gap-1">
+              <div key={role} className="flex flex-col gap-1.5 rounded-lg border border-border-subtle p-2">
                 <ConfigSetModelPicker
                   sets={sets}
                   value={{
@@ -270,15 +344,7 @@ function ProfileSection({
                     modelId: selection?.modelId,
                   }}
                   onChange={(next) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      perRole: {
-                        ...prev.perRole,
-                        [role]: next.configSetId
-                          ? { configSetId: next.configSetId, modelId: next.modelId }
-                          : undefined,
-                      },
-                    }))
+                    patch({ configSetId: next.configSetId, modelId: next.modelId ?? undefined })
                   }
                   disabled={busy}
                   configSetLabel={t(`subAgents.role.${role}`)}
@@ -286,6 +352,24 @@ function ProfileSection({
                   allowEmpty
                   emptyLabel={t('subAgents.defaultProfile')}
                 />
+                {selection && (
+                  <>
+                    <input
+                      type="text"
+                      value={selection.personaName ?? ''}
+                      onChange={(e) => patch({ personaName: e.target.value })}
+                      placeholder={t('subAgents.personaNamePlaceholder')}
+                      className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-[12px] text-text-primary focus:border-accent focus:outline-none"
+                    />
+                    <textarea
+                      value={selection.systemPrompt ?? ''}
+                      onChange={(e) => patch({ systemPrompt: e.target.value })}
+                      placeholder={t('subAgents.systemPromptPlaceholder')}
+                      rows={3}
+                      className="w-full resize-y rounded-lg border border-border bg-background px-2.5 py-1.5 text-[12px] leading-5 text-text-primary focus:border-accent focus:outline-none"
+                    />
+                  </>
+                )}
               </div>
             );
           })}

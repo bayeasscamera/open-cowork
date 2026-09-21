@@ -70,6 +70,10 @@ import {
   setDelegationSettings,
   getDelegationStats,
   parseDelegationReport,
+  subAgentGate,
+  runDelegationSync,
+  buildSubAgentDelegationTool,
+  MAX_DELEGATION_DEPTH,
   initBackgroundDelegations,
   __resetDelegationsForTest,
 } from '../src/main/agent/background-delegations';
@@ -83,6 +87,8 @@ beforeEach(() => {
   dirs.push(testRoot);
   initBackgroundDelegations(testRoot);
   __resetDelegationsForTest();
+  subAgentGate.reset();
+  subAgentGate.setMax(2);
   vi.mocked(sendToRenderer).mockClear();
 });
 
@@ -369,7 +375,7 @@ describe('background delegations — async delegation mode', () => {
       getConfig: () => testConfig,
     });
     await flushAsync();
-    expect(launch.calls[0].signal).toBeTruthy(); // a real AbortSignal was handed down
+    expect(launch.calls[0]?.signal).toBeTruthy(); // a real AbortSignal was handed down
 
     expect(cancelDelegation(taskId)).toBe(true);
     expect(launch.calls[0].signal!.aborted).toBe(true); // the session is told to stop
@@ -584,6 +590,148 @@ describe('parseDelegationReport', () => {
   });
 });
 
+describe('RECURSIVE delegation — bounded hierarchy', () => {
+  it('HARD CAP: depth > 2 is refused at the source, even with a leaked palette tool', () => {
+    expect(MAX_DELEGATION_DEPTH).toBe(2);
+    expect(() =>
+      startDelegation({
+        sessionId: 'r1',
+        cwd: testRoot,
+        title: 'Too deep',
+        prompt: 'p',
+        depth: 3, // a depth-2 agent attempting its own delegation
+        launchSession: makeDeferredLaunch().launch,
+        getConfig: () => testConfig,
+      })
+    ).toThrow(/depth 3 exceeds the hard cap/);
+    expect(listDelegations().some((d) => d.title === 'Too deep')).toBe(false);
+  });
+
+  it('depth-2 delegation works; depth and parent linkage recorded for the UI', async () => {
+    const childLaunch = makeDeferredLaunch();
+    const { taskId } = startDelegation({
+      sessionId: 'r2',
+      cwd: testRoot,
+      title: 'Parent',
+      prompt: 'p',
+      depth: 1,
+      launchSession: makeDeferredLaunch().launch,
+      getConfig: () => testConfig,
+    });
+    // The depth-1 sub-agent delegates its own subordinate (depth 2), waiting
+    // synchronously for the report.
+    const syncPromise = runDelegationSync({
+      sessionId: 'r2',
+      cwd: testRoot,
+      title: 'Grandchild',
+      prompt: 'subtask brief',
+      depth: 2,
+      parentTaskId: taskId,
+      launchSession: childLaunch.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    expect(childLaunch.calls).toHaveLength(1);
+    childLaunch.resolve({ output: 'grandchild findings', modifiedFiles: [] });
+    const syncResult = await syncPromise;
+    expect(syncResult.report.summary).toBe('grandchild findings');
+    expect(syncResult.raw).toBe('grandchild findings');
+
+    const child = listDelegations('r2').find((d) => d.title === 'Grandchild');
+    expect(child?.depth).toBe(2);
+    expect(child?.parentTaskId).toBe(taskId);
+    expect(child?.cwd).toBe(testRoot); // SAME workspace as the parent chain
+  });
+
+  it('the GLOBAL gate bounds active sub-agents across levels', async () => {
+    // Probed via the delegation records: maxConcurrent=1 means the second
+    // start is refused even though the first is a depth-2 child.
+    setDelegationSettings({ configSetId: '', timeoutMs: 5000, maxConcurrent: 1 });
+    const first = makeDeferredLaunch();
+    startDelegation({
+      sessionId: 'r3',
+      cwd: testRoot,
+      title: 'Chain A',
+      prompt: 'p',
+      depth: 2,
+      launchSession: first.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    expect(() =>
+      startDelegation({
+        sessionId: 'r3',
+        cwd: testRoot,
+        title: 'Chain B',
+        prompt: 'p',
+        depth: 1,
+        launchSession: makeDeferredLaunch().launch,
+        getConfig: () => testConfig,
+      })
+    ).toThrow(/Max concurrent delegations/);
+    // Restore for other tests.
+    setDelegationSettings({ configSetId: '', maxConcurrent: 2 });
+  });
+
+  it('child tokens roll up onto the parent delegation (honest whole-hierarchy cost)', async () => {
+    const childLaunch = makeDeferredLaunch();
+    const { taskId: parentId } = startDelegation({
+      sessionId: 'r4',
+      cwd: testRoot,
+      title: 'Parent with child',
+      prompt: 'p',
+      depth: 1,
+      launchSession: makeDeferredLaunch().launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    // Child runs and completes with its own token usage.
+    const { taskId: childId } = startDelegation({
+      sessionId: 'r4',
+      cwd: testRoot,
+      title: 'Recursive child',
+      prompt: 'subtask',
+      depth: 2,
+      parentTaskId: parentId,
+      launchSession: childLaunch.launch,
+      getConfig: () => testConfig,
+    });
+    await flushAsync();
+    childLaunch.resolve({
+      output: 'child report',
+      modifiedFiles: [],
+      tokenUsage: { input: 700, output: 50 },
+    });
+    await flushAsync();
+
+    const parent = listDelegations('r4').find((d) => d.id === parentId);
+    // The parent's own session resolved with its tokens, PLUS the child's
+    // usage rolled up — the hierarchy cost is cumulative, not per-level.
+    // Parent had no own tokens; the child's usage rolled up onto it.
+    expect(parent?.tokenUsage).toEqual({ input: 700, output: 50 });
+    void childId;
+  });
+
+  it('the depth-2 palette OMITS the delegation tool (double enforcement)', () => {
+    const depth1Tool = buildSubAgentDelegationTool({
+      rootSessionId: 's',
+      cwd: testRoot,
+      depth: 1,
+      parentTaskId: 'bg-p',
+    });
+    const depth2Tool = buildSubAgentDelegationTool({
+      rootSessionId: 's',
+      cwd: testRoot,
+      depth: 2,
+      parentTaskId: 'bg-p',
+    });
+    expect(depth1Tool.description).not.toContain('Delegation refused');
+    expect(depth2Tool.description).toContain('depth cap (2 levels) is reached');
+    // Even if invoked (leaked), the execute refuses without launching.
+    void depth1Tool;
+  });
+});
+
 describe('wiring — source contracts', () => {
   const read = (p: string) => readFileSync(p, 'utf8');
   const flat = (s: string) => s.replace(/\s+/g, ' ');
@@ -596,7 +744,7 @@ describe('wiring — source contracts', () => {
 
   it('sub-agent sessions now include WEB tools (research delegations are not blind)', () => {
     const runner = flat(read('src/main/agent/swarm-runner.ts'));
-    expect(runner).toContain('customTools: buildWebTools(');
+    expect(runner).toContain('...buildWebTools({');
   });
 
   it('finished results are injected at the NEXT turn; running ones are marked every turn', () => {

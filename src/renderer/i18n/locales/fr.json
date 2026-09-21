@@ -72,7 +72,14 @@
     "statDelegations": "Délégations terminées",
     "refreshStats": "Actualiser",
     "skillDoctorLink": "Ouvrir le Skill doctor (onglet Skills)",
-    "saveScopeHint": "Enregistrer s'applique aux sections profil et garde-fous ci-dessus ; les réglages des tâches déléguées s'enregistrent instantanément."
+    "saveScopeHint": "Enregistrer s'applique aux sections profil et garde-fous ci-dessus ; les réglages des tâches déléguées s'enregistrent instantanément.",
+    "personaNamePlaceholder": "Nom de la persona (ex. Dev Backend)",
+    "systemPromptPlaceholder": "Instructions du rôle — s'ajoutent aux instructions du projet/agent principal",
+    "openjevTitle": "Routage OpenJev (expérimental)",
+    "openjevDescription": "Un appel léger de décision « System One » évalue chaque requête avant la génération et injecte une indication de routage. Désactivé par défaut ; jamais bloquant (l'indication est ignorée si le serveur est injoignable).",
+    "openjevEnable": "Activer l'indication de routage OpenJev",
+    "openjevUrl": "URL du serveur OpenJev",
+    "openjevHint": "Serveur local par défaut : http://127.0.0.1:8080 (POST /v1/systemone). Chaque décision est tracée (requête → verdict → injection)."
   },
   "common": {
     "save": "Enregistrer",
@@ -1192,5 +1199,17 @@
     "considerDisabling": "À envisager de désactiver",
     "keep": "Conserver",
     "total": "Contexte skills : {{tokens}} tokens {{percent}} de la fenêtre"
+  },
+  "documentPanel": {
+    "title": "Document",
+    "pathPlaceholder": "chemin/dans/le/workspace/fichier.md",
+    "edit": "Modifier",
+    "save": "Enregistrer",
+    "conflictWarning": "Ce fichier a été modifié par l'agent pendant votre édition. Rechargez sa version (vos modifications non enregistrées seront perdues) ou écrasez avec la vôtre.",
+    "reloadAgentVersion": "Recharger la version de l'agent",
+    "overwriteAnyway": "Écraser avec la mienne",
+    "openHint": "Saisissez ci-dessus le chemin d'un fichier du workspace. La vue suit les modifications de l'agent, et vos enregistrements lui sont visibles au tour suivant.",
+    "readError": "Échec de lecture du document",
+    "writeError": "Échec d'enregistrement du document"
   }
 }

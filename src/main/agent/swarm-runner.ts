@@ -35,6 +35,8 @@ import type { AgentTool, AgentToolUpdateCallback } from '@mariozechner/pi-agent-
 import { AuthStorage, ModelRegistry } from './shared-auth';
 import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import { buildWebTools } from './web-tools';
+import { buildSubAgentDelegationTool } from './background-delegations';
+import { SubAgentGate } from './sub-agent-gate';
 import {
   configStore,
   normalizeSubAgentsConfig,
@@ -68,6 +70,10 @@ export interface ResolvedSubAgentProfile {
   source: SubAgentProfileSource;
   /** Human-readable model label used in logs and results. */
   label: string;
+  /** Role persona display name (undefined = generic role name). */
+  personaName?: string;
+  /** Role system prompt — ADDED to project/agent instructions (complement). */
+  systemPrompt?: string;
 }
 
 function profileFromSelection(
@@ -112,7 +118,12 @@ export function resolveSubAgentProfile(
   if (roleSelection?.configSetId) {
     const set = appConfig.configSets.find((s) => s.id === roleSelection.configSetId);
     if (set) {
-      return profileFromSelection(appConfig, set, roleSelection.modelId, 'role');
+      const resolved = profileFromSelection(appConfig, set, roleSelection.modelId, 'role');
+      return {
+        ...resolved,
+        personaName: roleSelection.personaName,
+        systemPrompt: roleSelection.systemPrompt,
+      };
     }
     logWarn(`[SwarmRunner] Per-role configSet "${roleSelection.configSetId}" not found; falling back`);
   }
@@ -450,6 +461,7 @@ export class TaskSlotLimiter {
   }
 }
 
+
 export class SubAgentTaskTimeoutError extends Error {
   constructor(label: string, timeoutMs: number) {
     super(`Sub-agent "${label}" timed out after ${timeoutMs}ms`);
@@ -503,6 +515,16 @@ export interface SubAgentSessionArgs {
   signal?: AbortSignal;
   /** Live progress hook (tool calls) — used by async delegations. */
   onEvent?: (step: SubAgentToolStep) => void;
+  /** Hierarchy depth: 0 = main agent's direct sub-agents, 2 = hard cap. */
+  depth?: number;
+  /** Origin session id (for tracking children in the delegations registry). */
+  rootSessionId?: string;
+  /** Role persona display name (from the per-role profile). */
+  personaName?: string;
+  /** Role system prompt — ADDED to project/agent instructions (complement). */
+  systemPrompt?: string;
+  /** Parent's global-gate slot handle — a synchronous child borrows it. */
+  gateSlot?: { release(): void; reacquire(): Promise<void> };
 }
 
 /** One observed tool call inside a sub-agent session. */
@@ -568,7 +590,48 @@ async function launchSubAgentSession(
     createLsTool(args.cwd),
   ].map((tool) => withConfinement(tool, args.cwd));
 
-  const childSystemPrompt = buildChildSystemPrompt(args.task);
+  // RECURSIVE delegation: a sub-agent below the hard depth cap (2) gets its
+  // own subordinate tool. It borrows the parent's global-gate slot while the
+  // child runs (no deadlock), and the child inherits the SAME workspace.
+  const depth = args.task.depth ?? 0;
+  const subAgentDelegationTool =
+    args.rootSessionId && depth < 2
+      ? [
+          buildSubAgentDelegationTool({
+            rootSessionId: args.rootSessionId,
+            cwd: args.cwd,
+            depth,
+            parentTaskId: args.task.id,
+          }),
+        ].map((tool) => ({
+          ...tool,
+          execute: async (...cbArgs: Parameters<typeof tool.execute>) => {
+            args.gateSlot?.release();
+            try {
+              return await tool.execute(...cbArgs);
+            } finally {
+              await args.gateSlot?.reacquire();
+            }
+          },
+        }))
+      : [];
+
+  // Role persona + system prompt are ADDED to project/agent instructions —
+  // a complement (like project_context alongside AGENTS.md), never a replace.
+  const rolePrompt = args.systemPrompt?.trim() || '';
+  const personaName = args.personaName?.trim() || '';
+  const roleSystemPrompt = [
+    personaName ? `You are "${personaName}", the ${args.task.role} of this swarm.` : '',
+    rolePrompt,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  const childSystemPrompt = [
+    buildChildSystemPrompt(args.task),
+    roleSystemPrompt,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   const resourceLoader = new DefaultResourceLoader({
     cwd: args.cwd,
     appendSystemPrompt: childSystemPrompt,
@@ -580,10 +643,13 @@ async function launchSubAgentSession(
     authStorage,
     modelRegistry,
     tools,
-    customTools: buildWebTools({
-      tavilyApiKey: args.config.tavilyApiKey || '',
-      braveApiKey: args.config.braveApiKey || '',
-    }),
+    customTools: [
+      ...buildWebTools({
+        tavilyApiKey: args.config.tavilyApiKey || '',
+        braveApiKey: args.config.braveApiKey || '',
+      }),
+      ...subAgentDelegationTool,
+    ],
     sessionManager: PiSessionManager.inMemory(),
     settingsManager: PiSettingsManager.inMemory({
       compaction: { enabled: false },
@@ -762,6 +828,10 @@ export interface SwarmRunnerOptions {
   maxConcurrentOverride?: number;
   /** Idle timeout override in ms (default: sub-agents timeoutMs). */
   timeoutMsOverride?: number;
+  /** GLOBAL hierarchy semaphore — acquired around every sub-agent session. */
+  gate?: SubAgentGate;
+  /** Origin session id, propagated so recursive children can report to it. */
+  rootSessionId?: string;
   /**
    * Per-task cancellation signal + live-progress hook, consulted when the
    * session is launched (used by async delegations for cancel/monitoring).
@@ -868,7 +938,14 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
     const timeoutMs = options.timeoutMsOverride ?? baseGuardrails.timeoutMs;
     const profile = resolveSubAgentProfile(task.role, appConfig);
     const extras = options.taskExtras?.(task) ?? {};
+    const personaFields = {
+      ...(profile.personaName ? { personaName: profile.personaName } : {}),
+      ...(profile.systemPrompt ? { systemPrompt: profile.systemPrompt } : {}),
+    };
 
+    // GLOBAL hierarchical semaphore first (all levels combined), then the
+    // local swarm limiter.
+    if (options.gate) await options.gate.acquire();
     await limiter.acquire();
     log(`[SwarmRunner] ${task.role} starting with model "${profile.label}"`);
     try {
@@ -880,8 +957,18 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           cwd: options.cwd,
           label: profile.label,
           timeoutMs,
+          ...(options.rootSessionId ? { rootSessionId: options.rootSessionId } : {}),
           ...(extras.signal ? { signal: extras.signal } : {}),
           ...(extras.onEvent ? { onEvent: extras.onEvent } : {}),
+          ...personaFields,
+          ...(options.gate
+            ? {
+                gateSlot: {
+                  release: () => options.gate!.release(),
+                  reacquire: () => options.gate!.acquire(),
+                },
+              }
+            : {}),
         });
         return await finalizeTaskResult(task, context, result, profile.label, false, profile.config, launchSession, options.cwd, timeoutMs);
       } catch (error) {
@@ -906,13 +993,23 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           cwd: options.cwd,
           label: activeLabel,
           timeoutMs,
+          ...(options.rootSessionId ? { rootSessionId: options.rootSessionId } : {}),
           ...(extras.signal ? { signal: extras.signal } : {}),
           ...(extras.onEvent ? { onEvent: extras.onEvent } : {}),
+          ...(options.gate
+            ? {
+                gateSlot: {
+                  release: () => options.gate!.release(),
+                  reacquire: () => options.gate!.acquire(),
+                },
+              }
+            : {}),
         });
         return await finalizeTaskResult(task, context, result, activeLabel, true, appConfig, launchSession, options.cwd, timeoutMs);
       }
     } finally {
       limiter.release();
+      options.gate?.release();
     }
   };
 }

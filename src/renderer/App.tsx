@@ -54,6 +54,9 @@ const DelegatedTasksPanel = lazy(() =>
     default: module.DelegatedTasksPanel,
   }))
 );
+const DocumentPanel = lazy(() =>
+  import('./components/DocumentPanel').then((module) => ({ default: module.DocumentPanel }))
+);
 
 function MainPanelFallback() {
   return (
@@ -99,6 +102,8 @@ function App() {
   const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
   const projectsPage = useAppStore((s) => s.projectsPage);
   const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
+  const documentPanelVisible = useAppStore((s) => s.documentPanelVisible);
+  const setDocumentPanelVisible = useAppStore((s) => s.setDocumentPanelVisible);
   const delegatedTasksVisible = useAppStore((s) => s.delegatedTasksVisible);
   const setDelegatedTasksVisible = useAppStore((s) => s.setDelegatedTasksVisible);
   const { t } = useTranslation();
@@ -304,6 +309,32 @@ function App() {
               </button>
             ))}
         </div>
+      )}
+
+      {/* Document co-editing panel toggle + render */}
+      {!showSettings && !projectsPage && (
+        <>
+          <button
+            type="button"
+            aria-pressed={documentPanelVisible}
+            aria-label={t('documentPanel.title')}
+            onClick={() => setDocumentPanelVisible(!documentPanelVisible)}
+            className={`fixed bottom-14 right-4 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
+              documentPanelVisible
+                ? 'border-accent bg-accent/10 text-text-primary'
+                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
+            }`}
+          >
+            {t('documentPanel.title')}
+          </button>
+          {documentPanelVisible && (
+            <PanelErrorBoundary name="DocumentPanel" fallback={null}>
+              <Suspense fallback={null}>
+                <DocumentPanel />
+              </Suspense>
+            </PanelErrorBoundary>
+          )}
+        </>
       )}
 
       {/* Delegated-tasks tracking view (list + live detail + actions + settings) */}
