@@ -69,6 +69,10 @@ export interface ApproveSkillResult {
   ok: boolean;
   /** Active path the skill now occupies — set only on success. */
   path?: string;
+  /** Final directory name inside the active skills dir (rename applied). */
+  name?: string;
+  /** Structured failure reason the UI can react to (rename flow). */
+  code?: 'invalid_name' | 'not_found' | 'name_conflict' | 'failed';
   error?: string;
 }
 
@@ -248,12 +252,32 @@ export function getProposal(slug: string): ProposedSkill | undefined {
 /**
  * HUMAN-gated activation: move a pending proposal into the ACTIVE skills
  * directory. Called only from the user-facing IPC handler (Skill doctor
- * Approve button). Refuses to overwrite an existing active skill.
+ * Approve button). Refuses to overwrite an existing active skill; an
+ * optional `renameTo` lets the human approve a conflicting proposal under a
+ * different directory name instead of deleting either side.
  */
-export function approveProposal(slug: string, activeSkillsDir: string): ApproveSkillResult {
+export function approveProposal(
+  slug: string,
+  activeSkillsDir: string,
+  renameTo?: string
+): ApproveSkillResult {
   try {
     const slugCheck = validateProposalSlug(slug);
-    if ('error' in slugCheck) return { ok: false, error: slugCheck.error };
+    if ('error' in slugCheck) {
+      return { ok: false, code: 'invalid_name', error: slugCheck.error };
+    }
+
+    // Optional rename — validated with the SAME strict slug rules, so the
+    // final directory can never escape the active skills dir.
+    let finalName = slugCheck.slug;
+    if (typeof renameTo === 'string' && renameTo.trim()) {
+      const renameCheck = validateProposalSlug(renameTo);
+      if ('error' in renameCheck) {
+        return { ok: false, code: 'invalid_name', error: renameCheck.error };
+      }
+      finalName = renameCheck.slug;
+    }
+
     const resolvedActive = path.resolve(activeSkillsDir);
     if (!fs.existsSync(resolvedActive)) {
       fs.mkdirSync(resolvedActive, { recursive: true });
@@ -262,23 +286,26 @@ export function approveProposal(slug: string, activeSkillsDir: string): ApproveS
     const proposalDir = path.join(getProposedSkillsDir(), slugCheck.slug);
     const skillMd = path.join(proposalDir, 'SKILL.md');
     if (!fs.existsSync(skillMd)) {
-      return { ok: false, error: 'No pending proposal with that name.' };
+      return { ok: false, code: 'not_found', error: 'No pending proposal with that name.' };
     }
 
-    const targetDir = path.join(resolvedActive, slugCheck.slug);
+    const targetDir = path.join(resolvedActive, finalName);
     if (fs.existsSync(targetDir)) {
       return {
         ok: false,
-        error: 'An active skill with that name already exists — rename or remove it first.',
+        code: 'name_conflict',
+        error: 'An active skill with that name already exists — approve it under a different name instead.',
       };
     }
 
     fs.renameSync(proposalDir, targetDir);
-    log(`[SkillProposals] Proposal APPROVED by user — now active: ${path.join(targetDir, 'SKILL.md')}`);
-    return { ok: true, path: path.join(targetDir, 'SKILL.md') };
+    log(
+      `[SkillProposals] Proposal APPROVED by user${finalName !== slugCheck.slug ? ` (renamed to "${finalName}")` : ''} — now active: ${path.join(targetDir, 'SKILL.md')}`
+    );
+    return { ok: true, name: finalName, path: path.join(targetDir, 'SKILL.md') };
   } catch (err) {
     logError('[SkillProposals] Failed to approve proposal:', err);
-    return { ok: false, error: 'Failed to move the proposal into the active skills directory.' };
+    return { ok: false, code: 'failed', error: 'Failed to move the proposal into the active skills directory.' };
   }
 }
 

@@ -62,23 +62,38 @@ function ProposedSkillsSection({ onChanged }: { onChanged: () => void }) {
     void refresh();
   }, [refresh]);
 
-  const act = async (name: string, action: 'approve' | 'reject') => {
+  /** Inline rename flow state — shown when approve hits a name conflict. */
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  const act = async (name: string, action: 'approve' | 'reject', renameTo?: string) => {
     setActionError(null);
     setNotice(null);
     try {
       const result =
         action === 'approve'
-          ? await window.electronAPI.skills.approveProposal(name)
+          ? await window.electronAPI.skills.approveProposal(name, renameTo)
           : await window.electronAPI.skills.rejectProposal(name);
       if (!result.success) {
-        setActionError(result.error ?? t('skillDoctor.proposals.actionFailed'));
+        if (action === 'approve' && result.code === 'name_conflict') {
+          // Offer the approve-as-rename flow instead of failing bluntly.
+          setRenaming(name);
+          setRenameValue(`${name}-2`);
+          setActionError(t('skillDoctor.proposals.conflictHint', { name }));
+        } else {
+          setActionError(result.error ?? t('skillDoctor.proposals.actionFailed'));
+        }
         return;
       }
+      const finalName = action === 'approve' && 'name' in result ? result.name ?? name : name;
       setNotice(
         action === 'approve'
-          ? t('skillDoctor.proposals.approvedNotice', { name })
+          ? t('skillDoctor.proposals.approvedNotice', {
+              name: renameTo?.trim() ? `${name} → ${finalName}` : finalName,
+            })
           : t('skillDoctor.proposals.rejectedNotice', { name })
       );
+      setRenaming(null);
       await refresh();
       onChanged();
     } catch {
@@ -150,12 +165,38 @@ function ProposedSkillsSection({ onChanged }: { onChanged: () => void }) {
               </button>
             </div>
           </div>
-          {proposal.rationale && (
+          {renaming === proposal.name ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-2">
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  placeholder={t('skillDoctor.proposals.renamePlaceholder')}
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[12px] text-text-primary focus:border-accent focus:outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void act(proposal.name, 'approve', renameValue);
+                    if (e.key === 'Escape') setRenaming(null);
+                  }}
+                />
+                <button
+                  onClick={() => void act(proposal.name, 'approve', renameValue)}
+                  className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-500 hover:bg-emerald-500/20 transition-colors"
+                >
+                  {t('skillDoctor.proposals.approveAs')}
+                </button>
+                <button
+                  onClick={() => setRenaming(null)}
+                  className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-text-secondary hover:bg-surface-hover transition-colors"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+          ) : proposal.rationale ? (
             <p className="mt-2 text-[11px] leading-5 text-text-muted">
               <span className="font-medium">{t('skillDoctor.proposals.rationale')}:</span>{' '}
               {proposal.rationale}
             </p>
-          )}
+          ) : null}
           <button
             onClick={() => setExpanded(expanded === proposal.name ? null : proposal.name)}
             className="mt-1.5 flex items-center gap-1 text-[11px] text-accent hover:underline"

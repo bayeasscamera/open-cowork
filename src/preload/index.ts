@@ -467,9 +467,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }>;
     }> => ipcRenderer.invoke('skills.listProposals'),
     approveProposal: (
-      name: string
-    ): Promise<{ success: boolean; path?: string; error?: string }> =>
-      ipcRenderer.invoke('skills.approveProposal', name),
+      name: string,
+      renameTo?: string
+    ): Promise<{
+      success: boolean;
+      name?: string;
+      path?: string;
+      code?: 'invalid_name' | 'not_found' | 'name_conflict' | 'failed';
+      error?: string;
+    }> => ipcRenderer.invoke('skills.approveProposal', name, renameTo),
     rejectProposal: (name: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('skills.rejectProposal', name),
   },
@@ -963,7 +969,16 @@ declare global {
             content: string;
           }>;
         }>;
-        approveProposal: (name: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+        approveProposal: (
+          name: string,
+          renameTo?: string
+        ) => Promise<{
+          success: boolean;
+          name?: string;
+          path?: string;
+          code?: 'invalid_name' | 'not_found' | 'name_conflict' | 'failed';
+          error?: string;
+        }>;
         rejectProposal: (name: string) => Promise<{ success: boolean; error?: string }>;
       };
       plugins: {

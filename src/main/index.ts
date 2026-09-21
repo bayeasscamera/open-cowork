@@ -2246,7 +2246,7 @@ ipcMain.handle('skills.listProposals', async () => {
   }
 });
 
-ipcMain.handle('skills.approveProposal', async (_event, name: unknown) => {
+ipcMain.handle('skills.approveProposal', async (_event, name: unknown, renameTo?: unknown) => {
   try {
     if (typeof name !== 'string' || !name.trim()) {
       return { success: false, error: 'Skill name is required.' };
@@ -2254,11 +2254,14 @@ ipcMain.handle('skills.approveProposal', async (_event, name: unknown) => {
     const activeDir = skillsManager
       ? skillsManager.getGlobalSkillsPath()
       : join(app.getPath('userData'), 'claude', 'skills');
-    const result = approveProposal(name, activeDir);
+    const rename =
+      typeof renameTo === 'string' && renameTo.trim() ? renameTo : undefined;
+    const result = approveProposal(name, activeDir, rename);
     if (!result.ok) {
-      return { success: false, error: result.error };
+      // Structured code lets the UI offer the approve-as-rename flow.
+      return { success: false, code: result.code, error: result.error };
     }
-    return { success: true, path: result.path };
+    return { success: true, name: result.name, path: result.path };
   } catch (error) {
     logError('[IPC] skills.approveProposal failed:', error);
     return { success: false, error: 'Failed to approve the proposed skill.' };

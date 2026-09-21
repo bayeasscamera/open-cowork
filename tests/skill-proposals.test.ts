@@ -137,11 +137,54 @@ describe('skill-proposals — pending store + MANDATORY approval gate', () => {
 
     const refused = approveProposal('code-review-checklist', activeDir);
     expect(refused.ok).toBe(false);
+    // Structured code drives the UI's approve-as-rename flow.
+    expect(refused.code).toBe('name_conflict');
     expect(refused.error).toContain('already exists');
     // The active skill is untouched; the draft is still pending.
     expect(
       fs.readFileSync(path.join(activeDir, 'code-review-checklist', 'SKILL.md'), 'utf-8')
     ).toContain('existing active');
+    expect(listProposals()).toHaveLength(1);
+  });
+
+  it('APPROVE WITH RENAME activates a conflicting draft under a new name', () => {
+    fs.mkdirSync(path.join(activeDir, 'code-review-checklist'), { recursive: true });
+    fs.writeFileSync(
+      path.join(activeDir, 'code-review-checklist', 'SKILL.md'),
+      '---\nname: code-review-checklist\ndescription: existing active\n---\n# Existing',
+      'utf-8'
+    );
+    proposeSkill({
+      name: 'code-review-checklist',
+      description: 'd',
+      content: VALID_SKILL_MD,
+      proposedBy: 'sub-agent',
+    });
+
+    const renamed = approveProposal('code-review-checklist', activeDir, 'code-review-checklist-v2');
+    expect(renamed.ok).toBe(true);
+    expect(renamed.name).toBe('code-review-checklist-v2');
+    expect(fs.existsSync(renamed.path!)).toBe(true);
+    // The pre-existing active skill is untouched.
+    expect(
+      fs.readFileSync(path.join(activeDir, 'code-review-checklist', 'SKILL.md'), 'utf-8')
+    ).toContain('existing active');
+    // The proposal is gone from the pending store.
+    expect(listProposals()).toHaveLength(0);
+  });
+
+  it('approve with an INVALID rename name is refused without touching anything', () => {
+    proposeSkill({
+      name: 'code-review-checklist',
+      description: 'd',
+      content: VALID_SKILL_MD,
+      proposedBy: 'sub-agent',
+    });
+    const refused = approveProposal('code-review-checklist', activeDir, '../escape');
+    expect(refused.ok).toBe(false);
+    expect(refused.code).toBe('invalid_name');
+    expect(fs.existsSync(path.join(activeDir, 'escape'))).toBe(false);
+    // Still pending — nothing moved.
     expect(listProposals()).toHaveLength(1);
   });
 
@@ -290,10 +333,10 @@ describe('wiring — propose_skill is proposal-only, no dynamic tools for sub-ag
     expect(index).toContain("ipcMain.handle('skills.listProposals'");
     expect(index).toContain("ipcMain.handle('skills.approveProposal'");
     expect(index).toContain("ipcMain.handle('skills.rejectProposal'");
-    expect(index).toContain('approveProposal(name, activeDir)');
+    expect(index).toContain('approveProposal(name, activeDir, rename)');
     const preload = read('../src/preload/index.ts');
     expect(preload).toContain("ipcRenderer.invoke('skills.listProposals')");
-    expect(preload).toContain("ipcRenderer.invoke('skills.approveProposal', name)");
+    expect(preload).toContain("ipcRenderer.invoke('skills.approveProposal', name, renameTo)");
     expect(preload).toContain("ipcRenderer.invoke('skills.rejectProposal', name)");
   });
 
