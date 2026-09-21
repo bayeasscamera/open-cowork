@@ -275,7 +275,12 @@
     "logsDesc": "Consulter et exporter les journaux de l’application",
     "panelDesc": "Configurez votre espace de travail, vos outils et le comportement du compte.",
     "general": "Général",
-    "generalDesc": "Apparence, langue et préférences"
+    "generalDesc": "Apparence, langue et préférences",
+    "groupModel": "Modèle & IA",
+    "groupExtensions": "Extensions & Outils",
+    "groupPersonal": "Personnalisation",
+    "groupAutomation": "Automatisation",
+    "groupSystem": "Système"
   },
   "welcome": {
     "title": "Comment puis-je vous aider aujourd’hui ?",

@@ -131,7 +131,7 @@ export function SettingsWebSearch() {
           void handleSave();
         }}
         disabled={isSaving || !appConfig}
-        className="w-full py-3 px-4 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+        className="w-full py-3 px-4 rounded-xl text-white font-medium bg-[image:var(--gradient-accent)] shadow-glow-accent hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
       >
         {isSaving && <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" />}
         {t(isSaving ? 'api.webSearch.saving' : 'api.webSearch.save')}

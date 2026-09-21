@@ -60,6 +60,9 @@ CLAUDE.md
 # codex
 .codex/*
 
+# ZCode agent session artifacts
+.zcode/
+
 dist*
 resources/node
 resources/tools

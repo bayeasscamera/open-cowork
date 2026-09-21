@@ -346,7 +346,7 @@ export function SettingsMemory() {
   return (
     <div className="space-y-6">
       <SettingsContentSection title={t('memory.title')} description={t('memory.description')}>
-        <div className="flex flex-col gap-3 rounded-xl border border-border-muted bg-background-secondary/60 p-4">
+        <div className="flex flex-col gap-3 settings-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-text-primary">
@@ -424,7 +424,7 @@ export function SettingsMemory() {
           '默认继承当前激活的 API 配置。这里主要调节导航深度、embedding 和落盘目录。'
         )}
       >
-        <div className="space-y-4 rounded-xl border border-border-muted bg-background-secondary/60 p-4">
+        <div className="space-y-4 settings-card p-4">
           <div className="grid gap-4 md:grid-cols-2">
             <LabeledField label={t('memory.storageRoot', '存储根目录')}>
               <input
@@ -654,7 +654,7 @@ export function SettingsMemory() {
         title={t('memory.searchTitle')}
         description={t('memory.searchDescription')}
       >
-        <div className="space-y-3 rounded-xl border border-border-muted bg-background-secondary/60 p-4">
+        <div className="space-y-3 settings-card p-4">
           <div className="flex flex-col gap-3 sm:flex-row">
             <input
               value={query}
@@ -730,7 +730,7 @@ export function SettingsMemory() {
               />
             </div>
             <div className="space-y-4">
-              <div className="rounded-xl border border-border-muted bg-background/80 p-4">
+              <div className="rounded-xl border border-border-subtle bg-surface-muted/60 p-4">
                 <p className="text-sm font-semibold text-text-primary">{t('memory.detailTitle')}</p>
                 {selected ? (
                   <div className="mt-3 space-y-3">
@@ -767,7 +767,7 @@ export function SettingsMemory() {
                       </pre>
                     )}
                     {selected.sourceExcerpt && (
-                      <div className="rounded-lg border border-border-muted bg-background-secondary/60 p-3 text-xs text-text-secondary whitespace-pre-wrap">
+                      <div className="rounded-lg border border-border-subtle bg-surface-muted/60 p-3 text-xs text-text-secondary whitespace-pre-wrap">
                         {selected.sourceExcerpt}
                       </div>
                     )}
@@ -777,7 +777,7 @@ export function SettingsMemory() {
                 )}
               </div>
 
-              <div className="rounded-xl border border-border-muted bg-background/80 p-4">
+              <div className="rounded-xl border border-border-subtle bg-surface-muted/60 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-semibold text-text-primary">
                     {t('memory.inspectSession', '查看会话记忆')}
@@ -795,7 +795,7 @@ export function SettingsMemory() {
                 </div>
                 {inspectedSession ? (
                   <div className="mt-3 space-y-3">
-                    <div className="rounded-lg border border-border-muted bg-background-secondary/60 p-3">
+                    <div className="rounded-lg border border-border-subtle bg-surface-muted/60 p-3">
                       <p className="text-xs text-text-muted">
                         {inspectedSession.sourceWorkspace || t('memory.noWorkspace', '暂无工作区')}
                       </p>
@@ -810,7 +810,7 @@ export function SettingsMemory() {
                       {inspectedSession.chunks.map((chunk) => (
                         <div
                           key={chunk.id}
-                          className="rounded-lg border border-border-muted bg-background-secondary/60 p-3"
+                          className="rounded-lg border border-border-subtle bg-surface-muted/60 p-3"
                         >
                           <p className="text-sm font-medium text-text-primary">{chunk.summary}</p>
                           <p className="mt-1 text-xs text-text-muted">
@@ -841,7 +841,7 @@ export function SettingsMemory() {
           '直接查看实际落盘的 core / unified experience / session_state / eval artifacts。'
         )}
       >
-        <div className="grid gap-4 rounded-xl border border-border-muted bg-background-secondary/60 p-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
+        <div className="grid gap-4 settings-card p-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
@@ -885,7 +885,7 @@ export function SettingsMemory() {
             )}
           </div>
 
-          <div className="rounded-xl border border-border-muted bg-background/80 p-4">
+          <div className="rounded-xl border border-border-subtle bg-surface-muted/60 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-text-primary">
@@ -966,7 +966,7 @@ export function SettingsMemory() {
       </SettingsContentSection>
 
       {status && (
-        <div className="rounded-lg border border-border-muted bg-background-secondary/70 px-4 py-3 text-sm text-text-secondary">
+        <div className="rounded-lg border border-border-subtle bg-surface-muted/60 px-4 py-3 text-sm text-text-secondary">
           {status}
         </div>
       )}

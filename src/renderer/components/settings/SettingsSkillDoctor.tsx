@@ -61,7 +61,7 @@ export function SettingsSkillDoctor() {
 
   return (
     <SettingsContentSection title={t('skillDoctor.title')} description={t('skillDoctor.description')}>
-      <div className="space-y-3 rounded-xl border border-border-muted bg-background-secondary/60 p-4" aria-busy={busy}>
+      <div className="space-y-3 settings-card p-4" aria-busy={busy}>
         <div className="flex items-center justify-between gap-3">
           {report && (
             <p className="text-xs text-text-muted">

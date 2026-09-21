@@ -18,7 +18,9 @@ module.exports = {
           hover: 'var(--color-surface-hover)',
           active: 'var(--color-surface-active)',
           muted: 'var(--color-surface-muted)',
+          glass: 'var(--color-surface-glass)',
         },
+        sidebar: 'var(--color-sidebar)',
         border: {
           DEFAULT: 'var(--color-border)',
           muted: 'var(--color-border-muted)',
@@ -49,6 +51,9 @@ module.exports = {
         'soft': 'var(--shadow-soft)',
         'card': 'var(--shadow-card)',
         'elevated': 'var(--shadow-elevated)',
+        'premium': 'var(--shadow-premium)',
+        'premium-lg': 'var(--shadow-premium-lg)',
+        'glow-accent': 'var(--shadow-glow-accent)',
       },
       borderRadius: {
         'lg': '8px',
@@ -64,6 +69,7 @@ module.exports = {
         'slide-up': 'slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         'spin-slow': 'spin 2s linear infinite',
         'expand': 'expand 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        'scale-in': 'scaleIn 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
       },
       keyframes: {
         fadeIn: {
@@ -77,6 +83,10 @@ module.exports = {
         expand: {
           '0%': { opacity: '0', maxHeight: '0' },
           '100%': { opacity: '1', maxHeight: '500px' },
+        },
+        scaleIn: {
+          '0%': { opacity: '0', transform: 'scale(0.96)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
         },
       },
     },

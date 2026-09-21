@@ -120,7 +120,7 @@ export function SettingsPersonalFiles() {
       description={t('personalFiles.description')}
     >
       <div
-        className="space-y-3 rounded-xl border border-border-muted bg-background-secondary/60 p-4"
+        className="space-y-3 settings-card p-4"
         aria-busy={busy}
       >
         <div className="flex items-center justify-between gap-3">

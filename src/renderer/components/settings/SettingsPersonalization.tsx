@@ -94,7 +94,7 @@ export function SettingsPersonalization() {
         title={t('personalization.memorySectionTitle')}
         description={t('personalization.memorySectionDesc')}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-muted bg-background-secondary/60 p-4">
+        <div className="settings-card flex flex-wrap items-center justify-between gap-3 p-4">
           <div className="min-w-0">
             <p className="text-sm font-medium text-text-primary">
               {t('personalization.memoryToggleLabel')}
@@ -138,7 +138,7 @@ export function SettingsPersonalization() {
         title={t('personalization.instructionsTitle')}
         description={t('personalization.instructionsDesc')}
       >
-        <div className="space-y-3 rounded-xl border border-border-muted bg-background-secondary/60 p-4">
+        <div className="space-y-3 settings-card space-y-3 p-4">
           <div className="flex flex-wrap gap-2">
             {INSTRUCTION_PRESETS.map((preset) => (
               <button
@@ -177,7 +177,7 @@ export function SettingsPersonalization() {
       </SettingsContentSection>
 
       {status && (
-        <div className="rounded-lg border border-border-muted bg-background-secondary/70 px-4 py-3 text-sm text-text-secondary">
+        <div className="rounded-lg border border-border-subtle bg-surface-muted/60 px-4 py-3 text-sm text-text-secondary">
           {status}
         </div>
       )}

@@ -88,9 +88,9 @@ export function SettingsContentSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-3 py-5 border-b border-border-muted">
+    <section className="space-y-3 py-5 border-b border-border-muted last:border-b-0">
       <div className="space-y-1">
-        <h4 className="text-sm font-semibold text-text-primary">{title}</h4>
+        <h4 className="text-[13px] font-semibold tracking-[-0.01em] text-text-primary">{title}</h4>
         {description && <p className="text-xs leading-5 text-text-muted">{description}</p>}
       </div>
       <div className="space-y-3">{children}</div>
@@ -125,12 +125,12 @@ export function ToggleSwitch({
           setBusy(false);
         }
       }}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        checked ? 'bg-accent' : 'bg-surface-muted'
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-60 ${
+        checked ? 'bg-accent shadow-glow-accent' : 'bg-surface-active'
       }`}
     >
       <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-soft transition-transform duration-200 ${
           checked ? 'translate-x-6' : 'translate-x-1'
         }`}
       />

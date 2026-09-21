@@ -69,7 +69,7 @@ export function SettingsMods() {
 
   return (
     <SettingsContentSection title={t('mods.title')} description={t('mods.description')}>
-      <div className="space-y-3 rounded-xl border border-border-muted bg-background-secondary/60 p-4" aria-busy={busy}>
+      <div className="space-y-3 settings-card space-y-3 p-4" aria-busy={busy}>
         {busy && mods.length === 0 && (
           <p role="status" className="text-sm text-text-muted">{t('mods.loading')}</p>
         )}

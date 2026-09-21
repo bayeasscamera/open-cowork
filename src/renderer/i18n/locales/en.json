@@ -152,7 +152,12 @@
     "logsDesc": "View and export application logs",
     "panelDesc": "Configure your workspace, tools, and account behavior.",
     "general": "General",
-    "generalDesc": "Appearance, language & preferences"
+    "generalDesc": "Appearance, language & preferences",
+    "groupModel": "Model & AI",
+    "groupExtensions": "Extensions & Tools",
+    "groupPersonal": "Personalization",
+    "groupAutomation": "Automation",
+    "groupSystem": "System"
   },
   "general": {
     "appearance": "Appearance",

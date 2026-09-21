@@ -10,7 +10,6 @@ import {
   AlertCircle,
   Globe,
   Sparkles,
-  ChevronRight,
   BrainCircuit,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -68,6 +67,19 @@ const VALID_TABS = new Set<TabId>([
   'logs',
   'general',
 ]);
+
+interface TabGroup {
+  labelKey: string;
+  tabs: TabId[];
+}
+
+const TAB_GROUPS: TabGroup[] = [
+  { labelKey: 'settings.groupModel', tabs: ['api', 'sandbox'] },
+  { labelKey: 'settings.groupExtensions', tabs: ['connectors', 'skills'] },
+  { labelKey: 'settings.groupPersonal', tabs: ['personalization', 'memory'] },
+  { labelKey: 'settings.groupAutomation', tabs: ['schedule', 'remote'] },
+  { labelKey: 'settings.groupSystem', tabs: ['logs', 'general'] },
+];
 
 export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProps) {
   const { t } = useTranslation();
@@ -174,56 +186,103 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       description: t('settings.generalDesc'),
     },
   ];
-  const activeTabMeta = tabs.find((tab) => tab.id === activeTab);
+  const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
+  const activeTabMeta = tabsById.get(activeTab);
+  const activeGroupLabel = TAB_GROUPS.find((group) => group.tabs.includes(activeTab));
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-background">
       {/* Sidebar */}
       <div
-        className={`${compactSidebar ? 'w-14' : 'w-52 lg:w-60'} bg-background-secondary/88 border-r border-border-muted flex flex-col flex-shrink-0`}
+        className={`${compactSidebar ? 'w-14' : 'w-56 lg:w-64'} panel-glass border-r border-border-muted flex flex-col flex-shrink-0`}
       >
         {!compactSidebar && (
-          <div className="px-4 pt-5 pb-4 border-b border-border-muted">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
-              {t('settings.title')}
-            </p>
-            <h2 className="mt-1 text-[1.24rem] font-semibold tracking-[-0.03em] text-text-primary">
+          <div className="px-5 pt-6 pb-5">
+            <p className="group-eyebrow">{t('settings.title')}</p>
+            <h2 className="mt-1.5 text-[1.3rem] font-semibold tracking-[-0.03em] text-text-primary">
               Open Cowork
             </h2>
-            <p className="mt-1 text-[11px] leading-4 text-text-muted">{t('settings.panelDesc')}</p>
+            <div className="accent-underline mt-2 w-10" />
           </div>
         )}
-        <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}>
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              title={compactSidebar ? tab.label : undefined}
-              className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-3'} rounded-lg text-left transition-colors active:scale-[0.98] ${
-                activeTab === tab.id
-                  ? 'bg-accent/10 text-text-primary font-medium border-l-2 border-accent'
-                  : 'hover:bg-surface-hover text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
-              {!compactSidebar && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{tab.label}</p>
-                  <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">
-                    {tab.description}
+        <div
+          className={`flex-1 overflow-y-auto ${compactSidebar ? 'p-1.5 space-y-1' : 'px-3 pb-3 space-y-4'}`}
+        >
+          {TAB_GROUPS.map((group) => {
+            const groupTabs = group.tabs
+              .map((id) => tabsById.get(id))
+              .filter((tab): tab is (typeof tabs)[number] => Boolean(tab));
+            if (groupTabs.length === 0) return null;
+            const groupIsActive = group.tabs.includes(activeTab);
+            return (
+              <div key={group.labelKey} className="space-y-1">
+                {!compactSidebar && (
+                  <p
+                    className={`group-eyebrow px-2 pt-3 pb-1 transition-colors ${
+                      groupIsActive ? 'text-accent' : ''
+                    }`}
+                  >
+                    {t(group.labelKey)}
                   </p>
+                )}
+                <div className="space-y-1">
+                  {groupTabs.map((tab) => {
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        title={compactSidebar ? tab.label : undefined}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={`relative w-full flex items-center rounded-xl text-left transition-all duration-150 active:scale-[0.98] ${
+                          compactSidebar
+                            ? 'justify-center p-2.5'
+                            : 'gap-3 px-2.5 py-2.5'
+                        } ${
+                          isActive
+                            ? 'bg-accent/10 text-text-primary'
+                            : 'text-text-secondary hover:bg-surface-hover/60 hover:text-text-primary'
+                        }`}
+                      >
+                        {isActive && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-accent shadow-glow-accent"
+                          />
+                        )}
+                        <span
+                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors ${
+                            isActive
+                              ? 'bg-accent/15 text-accent'
+                              : 'bg-surface-muted/70 text-text-muted'
+                          }`}
+                        >
+                          <tab.icon className="w-4 h-4" />
+                        </span>
+                        {!compactSidebar && (
+                          <span className="flex-1 min-w-0">
+                            <span
+                              className={`block text-sm truncate ${isActive ? 'font-medium' : ''}`}
+                            >
+                              {tab.label}
+                            </span>
+                            <span className="block text-[11px] leading-4 text-text-muted truncate mt-0.5">
+                              {tab.description}
+                            </span>
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-              {!compactSidebar && activeTab === tab.id && (
-                <ChevronRight className="w-4 h-4 flex-shrink-0" />
-              )}
-            </button>
-          ))}
+              </div>
+            );
+          })}
         </div>
         <div className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted`}>
           <button
             onClick={onClose}
-            className={`w-full py-2 ${compactSidebar ? 'px-2' : 'px-4'} rounded-lg bg-background hover:bg-background transition-colors text-text-secondary text-sm`}
+            className={`w-full py-2 ${compactSidebar ? 'px-2' : 'px-4'} rounded-lg bg-background hover:bg-surface-hover transition-colors text-text-secondary text-sm`}
             title={compactSidebar ? t('common.close') : undefined}
           >
             {compactSidebar ? <X className="w-4 h-4 mx-auto" /> : t('common.close')}
@@ -238,16 +297,18 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
 
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 bg-background/88 backdrop-blur-sm">
+        <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 panel-glass">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+            <p className="text-[11px] text-text-muted">
               {t('settings.title')}
+              {activeGroupLabel && <> › {t(activeGroupLabel.labelKey)}</>}
             </p>
-            <h3 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.02em] text-text-primary">
+            <h3 className="mt-1 text-[1.3rem] font-semibold tracking-[-0.03em] text-text-primary">
               {activeTabMeta?.label}
             </h3>
+            <div className="accent-underline mt-1.5 w-14" />
             {activeTabMeta?.description && (
-              <p className="mt-1 text-sm text-text-muted max-w-[36rem]">
+              <p className="mt-2 text-sm text-text-muted max-w-[36rem]">
                 {activeTabMeta.description}
               </p>
             )}
