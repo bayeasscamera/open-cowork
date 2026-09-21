@@ -75,7 +75,8 @@ export function ProposedSkillsSection({ onChanged }: { onChanged?: () => void })
           ? await window.electronAPI.skills.approveProposal(name, renameTo)
           : await window.electronAPI.skills.rejectProposal(name);
       if (!result.success) {
-        if (action === 'approve' && result.code === 'name_conflict') {
+        // 'code' only exists on the approve result, so narrow before reading it.
+        if (action === 'approve' && 'code' in result && result.code === 'name_conflict') {
           // Offer the approve-as-rename flow instead of failing bluntly.
           setRenaming(name);
           setRenameValue(`${name}-2`);
@@ -95,7 +96,7 @@ export function ProposedSkillsSection({ onChanged }: { onChanged?: () => void })
       );
       setRenaming(null);
       await refresh();
-      onChanged();
+      onChanged?.();
     } catch {
       setActionError(t('skillDoctor.proposals.actionFailed'));
     }
