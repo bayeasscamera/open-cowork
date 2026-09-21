@@ -123,6 +123,7 @@ import {
   listProposals,
   rejectProposal,
 } from './skills/skill-proposals';
+
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { SystemNotifier } from './utils/system-notifier';
 import {
@@ -145,7 +146,10 @@ import {
   startRpcLoop,
 } from './cli/headless-io';
 import { CrashGuard } from './utils/crash-guard';
-import { BackgroundJobRegistry } from './tools/dynamic-tool-creator';
+import {
+  BackgroundJobRegistry,
+  migrateLegacyDynamicSkillsToProposals,
+} from './tools/dynamic-tool-creator';
 
 // Initialize Global Crash & Robustness Guardian
 CrashGuard.initialize();
@@ -1392,6 +1396,13 @@ app
         payload: event,
       });
     });
+    // One-time sweep: move every legacy dynamic_skills/ skill into the
+    // PENDING-proposals store (human approval gate) — nothing stays outside it.
+    try {
+      migrateLegacyDynamicSkillsToProposals();
+    } catch (migrateErr) {
+      logError('[Startup] Legacy dynamic-skills migration failed:', migrateErr);
+    }
     // pi-ai handles model routing natively — no proxy warmup needed
 
     // macOS: application menu, dock menu, tray icon + global toggle shortcut

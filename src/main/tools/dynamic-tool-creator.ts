@@ -19,7 +19,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import { Type } from '@sinclair/typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
-import { log, logError } from '../utils/logger';
+import { log, logError, logWarn } from '../utils/logger';
 import { AutoVerificationLoop } from '../agent/auto-verification-loop';
 import { TddOrchestrator } from '../agent/tdd-orchestrator';
 import { AstCodeIntelligence } from '../agent/ast-code-intelligence';
@@ -28,7 +28,7 @@ import { SelfHealingRunner } from '../agent/self-healing-runner';
 import { CodeGraphIndexer } from '../memory/codegraph-indexer';
 import { MultiAgentCoordinator, type AgentRole } from '../agent/multi-agent-coordinator';
 import { buildProposeSkillTool, createSwarmRunner } from '../agent/swarm-runner';
-import { listProposals } from '../skills/skill-proposals';
+import { listProposals, proposeSkill } from '../skills/skill-proposals';
 import { startDelegation, listDelegations, subAgentGate } from '../agent/background-delegations';
 import { recordSwarmExecution } from '../agent/swarm-stats';
 import { configStore } from '../config/config-store';
@@ -135,6 +135,75 @@ export class DynamicSkillRegistry {
   public getSkillsDir(): string {
     return this.skillsDir;
   }
+
+  /**
+   * Remove a legacy skill from disk and memory. Used by the one-time
+   * migration into the PENDING-proposals store (migrateLegacyDynamicSkillsTo
+   * Proposals) — never reachable from any agent tool.
+   */
+  public deleteSkill(slug: string): boolean {
+    if (!this.registry.has(slug)) return false;
+    this.registry.delete(slug);
+    try {
+      fs.rmSync(path.join(this.skillsDir, slug), { recursive: true, force: true });
+    } catch (e) {
+      logWarn(`[DynamicSkillRegistry] Could not remove legacy dir for ${slug}:`, e);
+    }
+    return true;
+  }
+}
+
+/**
+ * ONE-TIME legacy sweep: every skill left in the retired create_dynamic_skill
+ * registry (<userData>/dynamic_skills/) becomes a PENDING proposal in the
+ * skills-proposed store — the same human approval gate as every other
+ * proposed skill — and is then removed from the legacy registry (disk +
+ * memory), so nothing stays outside the gate. Called once at app startup
+ * (GUI path only); never reachable from any agent tool.
+ */
+export function migrateLegacyDynamicSkillsToProposals(): {
+  migrated: number;
+  skipped: Array<{ slug: string; reason: string }>;
+} {
+  const registry = DynamicSkillRegistry.getInstance();
+  const legacy = registry.getAllSkills();
+  const skipped: Array<{ slug: string; reason: string }> = [];
+  let migrated = 0;
+
+  for (const skill of legacy) {
+    try {
+      let content = typeof skill.content === 'string' ? skill.content : '';
+      // Defensive: the legacy writer always added frontmatter, but a
+      // hand-edited file may lack it — regenerate from the stored meta.
+      if (!content.trim().startsWith('---')) {
+        content = `---\nname: ${skill.slug}\ndescription: ${skill.description ?? ''}\n---\n\n${content}`;
+      }
+      const result = proposeSkill({
+        name: skill.slug,
+        description: skill.description || skill.name || skill.slug,
+        content,
+        proposedBy: 'legacy-migration',
+        rationale:
+          'Migrated from the retired create_dynamic_skill registry (dynamic_skills/) — awaiting the same human approval as every other proposed skill.',
+      });
+      if (!result.ok || !result.name) {
+        skipped.push({ slug: skill.slug, reason: result.error || 'unknown' });
+        continue;
+      }
+      registry.deleteSkill(skill.slug);
+      migrated += 1;
+    } catch (e) {
+      skipped.push({ slug: skill.slug, reason: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  if (migrated > 0 || skipped.length > 0) {
+    log(
+      `[LegacySkillMigration] ${migrated} legacy skill(s) migrated to PENDING proposals` +
+        (skipped.length ? `, ${skipped.length} skipped: ${JSON.stringify(skipped)}` : '')
+    );
+  }
+  return { migrated, skipped };
 }
 
 /**
