@@ -1,21 +1,40 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { DynamicToolRegistry, DynamicSkillRegistry, buildAgentMetaTools } from '../src/main/tools/dynamic-tool-creator';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import {
+  DynamicSkillRegistry,
+  buildAgentMetaTools,
+} from '../src/main/tools/dynamic-tool-creator';
+import { initSkillProposals, listProposals } from '../src/main/skills/skill-proposals';
 
-describe('DynamicToolCreator & DeepSeek Eval Harness', () => {
-  let toolRegistry: DynamicToolRegistry;
+describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills', () => {
   let skillRegistry: DynamicSkillRegistry;
+  let proposalsDir: string;
 
   beforeEach(() => {
-    toolRegistry = DynamicToolRegistry.getInstance();
     skillRegistry = DynamicSkillRegistry.getInstance();
+    proposalsDir = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'meta-tools-proposals-')),
+      'skills-proposed'
+    );
+    initSkillProposals(proposalsDir);
   });
 
-  it('provides all 9 meta tools including coding intelligence', () => {
+  afterEach(() => {
+    fs.rmSync(path.dirname(proposalsDir), { recursive: true, force: true });
+  });
+
+  it('ships the meta tools — and NO create_dynamic_tool / create_dynamic_skill', () => {
     const metaTools = buildAgentMetaTools();
     const names = metaTools.map((t) => t.name);
 
-    expect(names).toContain('create_dynamic_tool');
-    expect(names).toContain('create_dynamic_skill');
+    // The executable-code pathway is GONE.
+    expect(names).not.toContain('create_dynamic_tool');
+    expect(names).not.toContain('create_dynamic_skill');
+    // The main agent now proposes skills through the SAME human-gated tool
+    // the sub-agents carry.
+    expect(names).toContain('propose_skill');
     expect(names).toContain('list_agent_capabilities');
     expect(names).toContain('deepseek_eval_harness');
     expect(names).toContain('auto_verify_edits');
@@ -25,90 +44,67 @@ describe('DynamicToolCreator & DeepSeek Eval Harness', () => {
     expect(names).toContain('ast_safe_rename');
   });
 
-  it('allows agent to create a new dynamic tool on the fly and execute it', async () => {
+  it('propose_skill creates a PENDING draft — nothing is auto-activated', async () => {
     const metaTools = buildAgentMetaTools();
-    const createTool = metaTools.find((t) => t.name === 'create_dynamic_tool')!;
+    const propose = metaTools.find((t) => t.name === 'propose_skill')!;
 
-    const createResult = await (createTool as any).execute('call_1', {
-      name: 'math_multiplier',
-      description: 'Multiplies two numbers',
-      implementationCode: 'async (args) => { return { product: args.a * args.b }; }',
-    });
-
-    expect(createResult.content[0].text).toContain('Successfully created and registered dynamic tool: custom_math_multiplier');
-
-    const piTools = toolRegistry.getPiToolDefinitions();
-    const multiplierTool = piTools.find((t) => t.name === 'custom_math_multiplier');
-    expect(multiplierTool).toBeDefined();
-
-    const output = await (multiplierTool as any).execute('call_2', { a: 7, b: 6 });
-    expect(output.content[0].text).toContain('"product": 42');
-  });
-
-  it('allows agent to create a new skill and persist it', async () => {
-    const metaTools = buildAgentMetaTools();
-    const createSkill = metaTools.find((t) => t.name === 'create_dynamic_skill')!;
-
-    const result = await (createSkill as any).execute('call_skill_1', {
-      name: 'Test SQLite Migration',
+    const result = await (propose as unknown as {
+      execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
+    }).execute('call_1', {
+      name: 'sqlite-migration-pattern',
       description: 'Trigger when writing SQLite migrations',
-      content: `---
-name: test-sqlite-migration
-description: Trigger when writing SQLite migrations
----
-
-# SQLite Migration Pattern
-
-## Overview
-Use this when adding new tables to the database.
-
-## Workflow
-1. Add CREATE TABLE IF NOT EXISTS
-2. Add indexes
-3. Run typecheck`,
+      content: [
+        '---',
+        'name: sqlite-migration-pattern',
+        'description: Trigger when writing SQLite migrations',
+        '---',
+        '',
+        '# SQLite Migration Pattern',
+        '',
+        '1. Add CREATE TABLE IF NOT EXISTS',
+      ].join('\n'),
     });
 
-    expect(result.content[0].text).toContain('Skill created');
-    expect(result.content[0].text).toContain('test-sqlite-migration');
-    expect(result.details).toHaveProperty('slug', 'test-sqlite-migration');
-    expect(result.details).toHaveProperty('version', expect.any(Number));
+    expect(result.content[0].text).toContain('PENDING');
+    expect(result.content[0].text).toContain('Skill doctor');
 
-    // Verify it's in the registry
-    const allSkills = skillRegistry.getAllSkills();
-    const created = allSkills.find((s) => s.slug === 'test-sqlite-migration');
-    expect(created).toBeDefined();
-    expect(created!.content).toContain('SQLite Migration Pattern');
+    // Pending in the proposals store — NOT in any active registry.
+    const pending = listProposals();
+    expect(pending.map((p) => p.name)).toContain('sqlite-migration-pattern');
+    expect(
+      skillRegistry.getAllSkills().map((s) => s.slug)
+    ).not.toContain('sqlite-migration-pattern');
   });
 
-  it('list_agent_capabilities shows tools and skills', async () => {
+  it('list_agent_capabilities shows skills and pending proposals (no dynamic tools)', async () => {
     const metaTools = buildAgentMetaTools();
     const listTool = metaTools.find((t) => t.name === 'list_agent_capabilities')!;
 
-    const result = await (listTool as any).execute('call_list_1', {});
+    const result = await (listTool as unknown as {
+      execute: (id: string, params: unknown) => Promise<{
+        content: Array<{ text: string }>;
+        details: { skillCount: number; proposalCount: number };
+      }>;
+    }).execute('call_list_1', {});
     expect(result.content[0].text).toContain('=== Agent Capabilities ===');
-    expect(result.content[0].text).toContain('Dynamic Tools');
     expect(result.content[0].text).toContain('Dynamic Skills');
-    expect(result.details).toHaveProperty('toolCount');
+    expect(result.content[0].text).toContain('Pending Skill Proposals');
+    expect(result.content[0].text).not.toContain('Dynamic Tools');
     expect(result.details).toHaveProperty('skillCount');
+    expect(result.details).toHaveProperty('proposalCount');
   });
 
   it('runs deepseek_eval_harness and computes benchmark scoring', async () => {
     const metaTools = buildAgentMetaTools();
     const evalHarness = metaTools.find((t) => t.name === 'deepseek_eval_harness')!;
 
-    const rawReport = await (evalHarness as any).execute('call_3', {
+    const rawReport = await (evalHarness as unknown as {
+      execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
+    }).execute('call_3', {
       benchmarkName: 'Coding Accuracy Benchmark',
       testCases: [
-        {
-          id: 'case_1',
-          prompt: 'Sort array',
-          expectedOutputs: ['[1, 2, 3]'],
-        },
-        {
-          id: 'case_2',
-          prompt: 'Reverse string',
-          expectedOutputs: ['olleh'],
-        },
+        { id: 'case_1', prompt: 'Sort array', expectedOutputs: ['[1, 2, 3]'] },
+        { id: 'case_2', prompt: 'Reverse string', expectedOutputs: ['olleh'] },
       ],
     });
 
@@ -123,14 +119,28 @@ Use this when adding new tables to the database.
     const metaTools = buildAgentMetaTools();
     const findTool = metaTools.find((t) => t.name === 'find_symbol_usages')!;
 
-    const result = await (findTool as any).execute('call_ast_1', {
-      symbolName: 'DynamicToolRegistry',
-    });
+    const result = await (findTool as unknown as {
+      execute: (id: string, params: unknown) => Promise<{
+        content: Array<{ text: string }>;
+        details: { count: number };
+      }>;
+    }).execute('call_ast_1', { symbolName: 'DynamicSkillRegistry' });
 
     expect(result.content[0].text).toContain('Found');
-    expect(result.content[0].text).toContain('usages of "DynamicToolRegistry"');
+    expect(result.content[0].text).toContain('usages of "DynamicSkillRegistry"');
     expect(result.details.count).toBeGreaterThan(0);
   });
+
+  it('SECURITY — no eval primitive and no dynamic-tool pathway remains in main', () => {
+    const read = (p: string) => fs.readFileSync(p, 'utf-8');
+    const creator = read('src/main/tools/dynamic-tool-creator.ts');
+    expect(creator).not.toContain('new Function');
+    // No TOOL DEFINITION and no agent-supplied executable code parameter.
+    expect(creator).not.toContain("name: 'create_dynamic_tool'");
+    expect(creator).not.toContain('implementationCode');
+    expect(creator).not.toContain('getPiToolDefinitions');
+    const runner = read('src/main/agent/agent-runner.ts');
+    expect(runner).not.toContain('DynamicToolRegistry');
+    expect(runner).not.toContain('getPiToolDefinitions');
+  });
 });
-
-

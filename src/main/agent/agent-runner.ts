@@ -104,7 +104,7 @@ import { createCompactionExtensionFactory } from './compaction-extension';
 import { EliteCodingIntelligence } from './elite-coding-intelligence';
 import { SkillSynthesizer } from '../skills/skill-synthesizer';
 import type { MemoryManager } from '../memory/memory-manager';
-import { DynamicToolRegistry, buildAgentMetaTools } from '../tools/dynamic-tool-creator';
+import { buildAgentMetaTools } from '../tools/dynamic-tool-creator';
 import { buildWebTools } from './web-tools';
 import { AdaptiveStrategyEngine } from './adaptive-strategy-engine';
 import { ActivePreferenceLearner } from '../memory/active-preference-learner';
@@ -2317,8 +2317,9 @@ Tool routing:
       logTiming('before agent session creation', runStartTime);
 
       // Create or reuse agent session
-      // Bridge MCP tools, agent meta-tools (dynamic tool creation + DeepSeek eval harness),
-      // and dynamically created tools into the agent SDK.
+      // Bridge MCP tools and the agent meta-tools (skill proposals, eval
+      // harness, AST helpers…) into the agent SDK. No dynamic tool loading:
+      // the registry that evaluated agent-written code was removed.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
       const extensionCustomTools = extensionResult.customTools || [];
       const metaTools = buildAgentMetaTools({ sessionId: session.id, cwd: effectiveCwd });
@@ -2326,17 +2327,15 @@ Tool routing:
         tavilyApiKey: runtimeConfig.tavilyApiKey || process.env.TAVILY_API_KEY || '',
         braveApiKey: runtimeConfig.braveApiKey || process.env.BRAVE_API_KEY || '',
       });
-      const dynamicTools = DynamicToolRegistry.getInstance().getPiToolDefinitions();
       const customTools = [
         ...mcpCustomTools,
         ...extensionCustomTools,
         ...metaTools,
         ...webTools,
-        ...dynamicTools,
       ];
-      if (mcpCustomTools.length > 0 || dynamicTools.length > 0) {
+      if (mcpCustomTools.length > 0) {
         log(
-          `[CoworkAgentRunner] Registered ${customTools.length} total customTools (MCP: ${mcpCustomTools.length}, Dynamic: ${dynamicTools.length}):`,
+          `[CoworkAgentRunner] Registered ${customTools.length} total customTools (MCP: ${mcpCustomTools.length}):`,
           customTools.map((t) => t.name).join(', ')
         );
       }

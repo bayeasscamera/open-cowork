@@ -28,11 +28,16 @@ describe('SystemController & Omnipotent OS Control (OpenClaw style)', () => {
     expect(procs[0]).toHaveProperty('name');
   });
 
-  it('exposes all 22 meta tools including the 5 advanced pillars and async delegation', () => {
+  it('exposes all 21 meta tools including the 5 advanced pillars and async delegation', () => {
     const tools = buildAgentMetaTools();
     const names = tools.map((t) => t.name);
 
-    expect(tools.length).toBe(22);
+    // 21 after the create_dynamic_tool removal; the human-gated propose_skill
+    // (the shared replacement for create_dynamic_skill) is part of the list.
+    expect(tools.length).toBe(21);
+    expect(names).toContain('propose_skill');
+    expect(names).not.toContain('create_dynamic_tool');
+    expect(names).not.toContain('create_dynamic_skill');
     expect(names).toContain('system_app_control');
     expect(names).toContain('system_clipboard');
     expect(names).toContain('system_notify');

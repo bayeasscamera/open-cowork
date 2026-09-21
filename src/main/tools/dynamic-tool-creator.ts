@@ -1,13 +1,17 @@
 /**
  * @module main/tools/dynamic-tool-creator
  *
- * Autonomous Tool Creator, Skill Creator & DeepSeek Evaluation Harness.
+ * Agent meta-tools & DeepSeek Evaluation Harness.
  *
  * Allows the agent to:
- * 1. Define and hot-load new custom tools on the fly (`create_dynamic_tool`).
- * 2. Create and persist SKILL.md files on demand (`create_dynamic_skill`).
- * 3. List all known tools and skills (`list_agent_capabilities`).
- * 4. Execute a DeepSeek-style evaluation harness (`deepseek_eval_harness`).
+ * 1. Propose reusable SKILL.md drafts (`propose_skill`) — pending human
+ *    approval in the Skill doctor, never auto-activated.
+ * 2. List all known skills and pending proposals (`list_agent_capabilities`).
+ * 3. Execute a DeepSeek-style evaluation harness (`deepseek_eval_harness`).
+ *
+ * SECURITY: the former `create_dynamic_tool` self-extension mechanism (which
+ * evaluated agent-written JavaScript) has been REMOVED — tools stay fixed,
+ * audited and confined. There is no longer any dynamic tool creation path.
  */
 
 import * as fs from 'fs';
@@ -23,7 +27,8 @@ import { SystemController } from '../system/system-controller';
 import { SelfHealingRunner } from '../agent/self-healing-runner';
 import { CodeGraphIndexer } from '../memory/codegraph-indexer';
 import { MultiAgentCoordinator, type AgentRole } from '../agent/multi-agent-coordinator';
-import { createSwarmRunner } from '../agent/swarm-runner';
+import { buildProposeSkillTool, createSwarmRunner } from '../agent/swarm-runner';
+import { listProposals } from '../skills/skill-proposals';
 import { startDelegation, listDelegations, subAgentGate } from '../agent/background-delegations';
 import { recordSwarmExecution } from '../agent/swarm-stats';
 import { configStore } from '../config/config-store';
@@ -132,254 +137,66 @@ export class DynamicSkillRegistry {
   }
 }
 
-export interface DynamicToolDefinition {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-  implementationCode: string; // JavaScript / TypeScript async function (args) => any
-  createdAt: number;
-}
-
-export class DynamicToolRegistry {
-  private static instance: DynamicToolRegistry;
-  private toolsDir: string;
-  private registeredTools: Map<string, DynamicToolDefinition> = new Map();
-
-  private constructor() {
-    const userData = app?.getPath ? app.getPath('userData') : '/tmp';
-    this.toolsDir = path.join(userData, 'dynamic_tools');
-    if (!fs.existsSync(this.toolsDir)) {
-      try {
-        fs.mkdirSync(this.toolsDir, { recursive: true });
-      } catch (e) {
-        logError('[DynamicToolRegistry] Failed to create tools dir:', e);
-      }
-    }
-    this.loadPersistedTools();
-  }
-
-  public static getInstance(): DynamicToolRegistry {
-    if (!DynamicToolRegistry.instance) {
-      DynamicToolRegistry.instance = new DynamicToolRegistry();
-    }
-    return DynamicToolRegistry.instance;
-  }
-
-  private loadPersistedTools(): void {
-    try {
-      if (!fs.existsSync(this.toolsDir)) return;
-      const files = fs.readdirSync(this.toolsDir).filter((f) => f.endsWith('.json'));
-      for (const file of files) {
-        try {
-          const content = fs.readFileSync(path.join(this.toolsDir, file), 'utf-8');
-          const def = JSON.parse(content) as DynamicToolDefinition;
-          this.registeredTools.set(def.name, def);
-        } catch {
-          // ignore corrupted file
-        }
-      }
-    } catch (e) {
-      logError('[DynamicToolRegistry] Error loading persisted tools:', e);
-    }
-  }
-
-  /**
-   * Register and persist a new dynamic tool created by the agent
-   */
-  public registerTool(tool: Omit<DynamicToolDefinition, 'createdAt'>): boolean {
-    try {
-      const sanitizedName = tool.name.replace(/[^a-zA-Z0-9_]/g, '_');
-      const def: DynamicToolDefinition = {
-        ...tool,
-        name: sanitizedName,
-        createdAt: Date.now(),
-      };
-
-      // Validate that implementationCode is evaluable
-      const testFn = new Function(`"use strict"; return (${def.implementationCode});`);
-      if (typeof testFn() !== 'function') {
-        throw new Error('Implementation code must evaluate to a function: async (args) => { ... }');
-      }
-
-      this.registeredTools.set(sanitizedName, def);
-
-      // Persist to disk atomically to prevent partial writes
-      const filePath = path.join(this.toolsDir, `${sanitizedName}.json`);
-      const tempPath = `${filePath}.tmp.${Date.now()}`;
-      fs.writeFileSync(tempPath, JSON.stringify(def, null, 2), 'utf-8');
-      fs.renameSync(tempPath, filePath);
-      log(`[DynamicToolRegistry] Registered and persisted dynamic tool: ${sanitizedName}`);
-      return true;
-    } catch (err) {
-      logError('[DynamicToolRegistry] Failed to register tool:', err);
-      throw err;
-    }
-  }
-
-  /**
-   * Convert dynamic tools into pi SDK ToolDefinition format
-   */
-  public getPiToolDefinitions(): ToolDefinition[] {
-    const definitions: ToolDefinition[] = [];
-
-    for (const [name, def] of this.registeredTools.entries()) {
-      definitions.push({
-        name: `custom_${name}`,
-        label: `Dynamic Tool: ${name}`,
-        description: `[Agent Created Tool] ${def.description}`,
-        parameters: Type.Object({}, { additionalProperties: true }),
-        execute: async (_toolCallId, params) => {
-          try {
-            const fn = new Function(`"use strict"; return (${def.implementationCode});`)();
-            const result = await fn(params || {});
-            const text = typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result);
-            return {
-              content: [{ type: 'text' as const, text }],
-              details: {},
-            };
-          } catch (err) {
-            return {
-              content: [{ type: 'text' as const, text: `Tool execution error: ${err instanceof Error ? err.message : String(err)}` }],
-              details: {},
-            };
-          }
-        },
-      });
-    }
-
-    return definitions;
-  }
-
-  public getAllTools(): DynamicToolDefinition[] {
-    return Array.from(this.registeredTools.values());
-  }
-}
-
 /**
  * Built-in Agent Meta-Tools:
- * 1. `create_dynamic_tool`       — Self-Tool Generation
- * 2. `create_dynamic_skill`      — Self-Skill Creation (SKILL.md)
- * 3. `list_agent_capabilities`   — Discover existing tools + skills
- * 4. `deepseek_eval_harness`     — Evaluation Driven Development & Benchmarking
+ * 1. `propose_skill`            — Propose a SKILL.md draft (human-gated)
+ * 2. `list_agent_capabilities`  — Discover existing skills + pending proposals
+ * 3. `deepseek_eval_harness`    — Evaluation Driven Development & Benchmarking
  */
 export function buildAgentMetaTools(
   options: { sessionId?: string; cwd?: string } = {}
 ): ToolDefinition[] {
-  const toolRegistry = DynamicToolRegistry.getInstance();
   const skillRegistry = DynamicSkillRegistry.getInstance();
 
   return [
-    // 1. Tool Creation
-    {
-      name: 'create_dynamic_tool',
-      label: 'Agent Tool Creator',
-      description:
-        'Create and immediately register a new custom tool for Open Cowork when existing tools are insufficient. The implementation must be an async JavaScript/Node function: async (args) => { ... }',
-      parameters: Type.Object({
-        name: Type.String({ description: 'Unique identifier for the tool in snake_case (e.g. github_release_fetcher)' }),
-        description: Type.String({ description: 'Detailed explanation of what the tool does and parameter usage' }),
-        implementationCode: Type.String({
-          description:
-            'Executable async function body or arrow function taking args and returning a string or JSON object. Example: async (args) => { const res = await fetch(args.url); return await res.text(); }',
-        }),
-      }),
-      execute: async (_toolCallId, params) => {
-        const args = params as { name: string; description: string; implementationCode: string };
-        try {
-          toolRegistry.registerTool({
-            name: args.name,
-            description: args.description,
-            parameters: {},
-            implementationCode: args.implementationCode,
-          });
-          return {
-            content: [{ type: 'text' as const, text: `Successfully created and registered dynamic tool: custom_${args.name}. It is now available for execution.` }],
-            details: {},
-          };
-        } catch (err) {
-          return {
-            content: [{ type: 'text' as const, text: `Failed to create dynamic tool: ${err instanceof Error ? err.message : String(err)}` }],
-            details: {},
-          };
-        }
-      },
-    },
+    // 1. Skill PROPOSAL — the ONLY dynamic-skill path for the main agent:
+    // a static markdown draft that stays PENDING until a human approves it
+    // in the Skill doctor. No executable code, no auto-activation.
+    buildProposeSkillTool(),
 
-    // 2. Skill Creation
-    {
-      name: 'create_dynamic_skill',
-      label: 'Agent Skill Creator',
-      description:
-        'Create a new reusable SKILL.md for Open Cowork. Use this when you discover a novel workflow, best practice, or multi-step pattern that should be codified for future sessions. The skill is persisted to disk and auto-loaded on next startup.',
-      parameters: Type.Object({
-        name: Type.String({ description: 'Human-readable skill name (e.g. "TypeScript Strict Refactor" or "SQLite Migration Pattern")' }),
-        description: Type.String({ description: 'Trigger conditions — when should this skill be activated in future sessions?' }),
-        content: Type.String({
-          description:
-            'Full SKILL.md markdown content. Include a YAML frontmatter block (--- name: ... description: ... ---), an Overview section, a Workflow/Best Practices section with step-by-step instructions, command templates, and pitfalls. You may omit the frontmatter if you want it auto-generated.',
-        }),
-      }),
-      execute: async (_toolCallId, params) => {
-        const args = params as { name: string; description: string; content: string };
-        try {
-          const def = skillRegistry.createSkill({
-            name: args.name,
-            description: args.description,
-            content: args.content,
-          });
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `✅ Skill created (v${def.version}): "${def.slug}"\nPath: ${skillRegistry.getSkillsDir()}/${def.slug}/SKILL.md\nThis skill will be auto-discovered in future sessions.`,
-            }],
-            details: { slug: def.slug, version: def.version, path: `${skillRegistry.getSkillsDir()}/${def.slug}/SKILL.md` },
-          };
-        } catch (err) {
-          return {
-            content: [{ type: 'text' as const, text: `Failed to create skill: ${err instanceof Error ? err.message : String(err)}` }],
-            details: {},
-          };
-        }
-      },
-    },
-
-    // 3. Capability Introspection
+    // 2. Capability Introspection
     {
       name: 'list_agent_capabilities',
       label: 'List Agent Capabilities',
       description:
-        'List all dynamically created tools and skills available to the agent. Use this to avoid creating duplicates and to discover existing custom capabilities before building new ones.',
+        'List existing dynamic skills and PENDING skill proposals (not yet approved). Use this to avoid proposing duplicates and to check whether a capability is awaiting approval.',
       parameters: Type.Object({}),
       execute: async (_toolCallId, _params) => {
-        const tools = toolRegistry.getAllTools();
         const skills = skillRegistry.getAllSkills();
+        const proposals = listProposals();
 
-        const toolLines = tools.length === 0
-          ? ['  (none yet)']
-          : tools.map((t) => `  • custom_${t.name} — ${t.description.slice(0, 80)}`);
+        const skillLines =
+          skills.length === 0
+            ? ['  (none)']
+            : skills.map((s) => `  • ${s.slug} (v${s.version}) — ${s.description.slice(0, 80)}`);
 
-        const skillLines = skills.length === 0
-          ? ['  (none yet)']
-          : skills.map((s) => `  • ${s.slug} (v${s.version}) — ${s.description.slice(0, 80)}`);
+        const proposalLines =
+          proposals.length === 0
+            ? ['  (none)']
+            : proposals.map(
+                (p) =>
+                  `  • ${p.name} (draft v${p.version}, by ${p.proposedBy}) — PENDING approval — ${p.description.slice(0, 60)}`
+              );
 
         const text = [
           `=== Agent Capabilities ===`,
           ``,
-          `Dynamic Tools (${tools.length}):`,
-          ...toolLines,
-          ``,
           `Dynamic Skills (${skills.length}):`,
           ...skillLines,
+          ``,
+          `Pending Skill Proposals (${proposals.length}) — awaiting human approval:`,
+          ...proposalLines,
         ].join('\n');
 
         return {
           content: [{ type: 'text' as const, text }],
-          details: { toolCount: tools.length, skillCount: skills.length },
+          details: { skillCount: skills.length, proposalCount: proposals.length },
         };
       },
     },
 
-    // 4. DeepSeek-Style Evaluation Harness
+
+    // 3. DeepSeek-Style Evaluation Harness
     {
       name: 'deepseek_eval_harness',
       label: 'DeepSeek Eval Benchmark',
@@ -437,7 +254,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 5. Self-Verification Loop
+    // 4. Self-Verification Loop
     {
       name: 'auto_verify_edits',
       label: 'Auto-Verify Code Edits',
@@ -467,7 +284,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 6. Code Search
+    // 5. Code Search
     {
       name: 'search_codebase',
       label: 'Semantic Codebase Search',
@@ -528,7 +345,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 7. TDD Loop
+    // 6. TDD Loop
     {
       name: 'run_tdd_cycle',
       label: 'TDD Red-Green-Refactor Cycle',
@@ -565,7 +382,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 8. AST Symbol Usages
+    // 7. AST Symbol Usages
     {
       name: 'find_symbol_usages',
       label: 'Find Symbol Usages (AST)',
@@ -601,7 +418,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 9. AST Safe Rename
+    // 8. AST Safe Rename
     {
       name: 'ast_safe_rename',
       label: 'Safe Symbol Rename (AST)',
@@ -640,7 +457,7 @@ export function buildAgentMetaTools(
     // PILIER 1 — OMNIPOTENCE SYSTÈME (OPENCLAW STYLE)
     // =========================================================================
 
-    // 10. System App Control
+    // 9. System App Control
     {
       name: 'system_app_control',
       label: 'Control OS Application',
@@ -665,7 +482,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 11. Clipboard Manipulation
+    // 10. Clipboard Manipulation
     {
       name: 'system_clipboard',
       label: 'Read/Write System Clipboard',
@@ -696,7 +513,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 12. Native System Notifications
+    // 11. Native System Notifications
     {
       name: 'system_notify',
       label: 'Send Native OS Notification',
@@ -717,7 +534,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 13. Process Manager
+    // 12. Process Manager
     {
       name: 'system_process_manager',
       label: 'Inspect & Manage Processes',
@@ -751,7 +568,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 14. Native AppleScript Runner (macOS automation)
+    // 13. Native AppleScript Runner (macOS automation)
     {
       name: 'system_run_script',
       label: 'Execute AppleScript / JXA (macOS)',
@@ -775,7 +592,7 @@ export function buildAgentMetaTools(
     // PILIER 2 — VISION GUI & CONTRÔLE ÉCRAN (COMPUTER USE)
     // =========================================================================
 
-    // 15. Screen Capture (Vision GUI)
+    // 14. Screen Capture (Vision GUI)
     {
       name: 'screen_capture',
       label: 'Capture Screen / Window',
@@ -809,7 +626,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 16. Simulate GUI Action (Click / Keystroke)
+    // 15. Simulate GUI Action (Click / Keystroke)
     {
       name: 'gui_interact',
       label: 'Simulate GUI Interaction',
@@ -845,7 +662,7 @@ export function buildAgentMetaTools(
     // PILIER 1 & 4 — SELF-HEALING & CODE GRAPH AST
     // =========================================================================
 
-    // 17. Self-Healing Test Runner
+    // 16. Self-Healing Test Runner
     {
       name: 'auto_test_and_heal',
       label: 'Autonomous Self-Healing Loop',
@@ -880,7 +697,7 @@ export function buildAgentMetaTools(
       },
     },
 
-    // 18. Codebase Symbol & Graph Explorer (AST In-Memory)
+    // 17. Codebase Symbol & Graph Explorer (AST In-Memory)
     {
       name: 'query_codebase_graph',
       label: 'Query Codebase Graph & Symbols',
@@ -916,7 +733,7 @@ export function buildAgentMetaTools(
     // PILIER 3 — BACKGROUND DAEMONS & ASYNC JOBS
     // =========================================================================
 
-    // 19. Background Daemon / Job Manager
+    // 18. Background Daemon / Job Manager
     {
       name: 'background_job_manager',
       label: 'Manage Background Jobs & Daemons',
@@ -962,7 +779,7 @@ export function buildAgentMetaTools(
     // PILIER 5 — MULTI-AGENT SWARM ORCHESTRATION
     // =========================================================================
 
-    // 20. Multi-Agent Swarm Coordinator
+    // 19. Multi-Agent Swarm Coordinator
     {
       name: 'orchestrate_multi_agent_plan',
       label: 'Multi-Agent Swarm Coordinator',
