@@ -1,51 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink, RotateCcw } from 'lucide-react';
-import { SettingsContentSection } from './shared';
+import { ExternalLink, Network, RotateCcw, X } from 'lucide-react';
+import { SettingsContentSection } from '../settings/shared';
 import {
   buildConfigSetLites,
   ConfigSetModelPicker,
   type ConfigSetLite,
 } from '../shared/ConfigSetModelPicker';
-import { DelegationSettingsForm } from './DelegationSettingsForm';
+import { DelegationSettingsForm } from '../settings/DelegationSettingsForm';
 import { useAppStore } from '../../store';
-
-function OpenJevSection() {
-  const { t } = useTranslation();
-  const appConfig = useAppStore((s) => s.appConfig);
-  const config = appConfig?.openjev ?? { enabled: false, baseUrl: 'http://127.0.0.1:8080' };
-
-  const save = async (next: { enabled?: boolean; baseUrl?: string }) => {
-    const merged = { ...config, ...next };
-    await window.electronAPI.config.save({ openjev: merged } as never);
-  };
-
-  return (
-    <SettingsContentSection title={t('subAgents.openjevTitle')} description={t('subAgents.openjevDescription')}>
-      <label className="flex items-center gap-2 text-sm text-text-primary">
-        <input
-          type="checkbox"
-          checked={config.enabled}
-          onChange={(e) => void save({ enabled: e.target.checked })}
-        />
-        {t('subAgents.openjevEnable')}
-      </label>
-      {config.enabled && (
-        <label className="block text-sm text-text-secondary">
-          {t('subAgents.openjevUrl')}
-          <input
-            type="text"
-            defaultValue={config.baseUrl}
-            onBlur={(e) => void save({ baseUrl: e.target.value.trim() })}
-            className={`${inputClass} mt-1 w-full max-w-md`}
-            placeholder="http://127.0.0.1:8080"
-          />
-          <span className="mt-1 block text-xs text-text-muted">{t('subAgents.openjevHint')}</span>
-        </label>
-      )}
-    </SettingsContentSection>
-  );
-}
 import type { DelegationStats, SwarmStats } from '../../types';
 
 export type SubAgentRoleKey = 'architect' | 'developer' | 'reviewer' | 'security';
@@ -138,9 +101,53 @@ function mergeRoleSelection(
 const inputClass =
   'rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none';
 
-/** Configure the multi-agent swarm AND the async delegation mode in one screen. */
-export function SettingsSubAgents() {
+function OpenJevSection() {
   const { t } = useTranslation();
+  const appConfig = useAppStore((s) => s.appConfig);
+  const config = appConfig?.openjev ?? { enabled: false, baseUrl: 'http://127.0.0.1:8080' };
+
+  const save = async (next: { enabled?: boolean; baseUrl?: string }) => {
+    const merged = { ...config, ...next };
+    await window.electronAPI.config.save({ openjev: merged } as never);
+  };
+
+  return (
+    <SettingsContentSection title={t('subAgents.openjevTitle')} description={t('subAgents.openjevDescription')}>
+      <label className="flex items-center gap-2 text-sm text-text-primary">
+        <input
+          type="checkbox"
+          checked={config.enabled}
+          onChange={(e) => void save({ enabled: e.target.checked })}
+        />
+        {t('subAgents.openjevEnable')}
+      </label>
+      {config.enabled && (
+        <label className="block text-sm text-text-secondary">
+          {t('subAgents.openjevUrl')}
+          <input
+            type="text"
+            defaultValue={config.baseUrl}
+            onBlur={(e) => void save({ baseUrl: e.target.value.trim() })}
+            className={`${inputClass} mt-1 w-full max-w-md`}
+            placeholder="http://127.0.0.1:8080"
+          />
+          <span className="mt-1 block text-xs text-text-muted">{t('subAgents.openjevHint')}</span>
+        </label>
+      )}
+    </SettingsContentSection>
+  );
+}
+
+/**
+ * Dedicated full-width Sub-agents view (sidebar entry at the same level as the
+ * projects pages). Groups everything built around sub-agents: role personas,
+ * per-role model selector, guardrails, async delegations, cost transparency.
+ * Persists through the SAME IPC config.get/config.save channel as before —
+ * only the navigation surface changed.
+ */
+export function SubAgentsView() {
+  const { t } = useTranslation();
+  const setSubAgentsVisible = useAppStore((s) => s.setSubAgentsVisible);
   const [sets, setSets] = useState<ConfigSetLite[]>([]);
   const [draft, setDraft] = useState<SubAgentsDraft>({
     configSetId: '',
@@ -227,45 +234,69 @@ export function SettingsSubAgents() {
   };
 
   return (
-    <div className="space-y-0">
-      <ProfileSection
-        t={t}
-        sets={sets}
-        draft={draft}
-        busy={busy}
-        setDraft={setDraft}
-      />
-
-      <GuardrailsSection t={t} draft={draft} busy={busy} setDraft={setDraft} />
-
-      <OpenJevSection />
-
-      <section className="space-y-3 py-5 border-b border-border-muted">
-        <div className="space-y-1">
-          <h4 className="text-sm font-semibold text-text-primary">
-            {t('subAgents.delegationTitle')}
-          </h4>
-          <p className="text-xs leading-5 text-text-muted">{t('subAgents.delegationDescription')}</p>
+    <div className="flex h-full w-full overflow-hidden bg-background">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 panel-glass">
+          <div>
+            <p className="text-[11px] text-text-muted flex items-center gap-1.5">
+              <Network className="w-3 h-3" />
+              {t('subAgentsView.eyebrow')}
+            </p>
+            <h3 className="mt-1 text-[1.3rem] font-semibold tracking-[-0.03em] text-text-primary">
+              {t('subAgentsView.title')}
+            </h3>
+            <div className="accent-underline mt-1.5 w-14" />
+            <p className="mt-2 text-sm text-text-muted max-w-[36rem]">
+              {t('subAgentsView.description')}
+            </p>
+          </div>
+          <button
+            onClick={() => setSubAgentsVisible(false)}
+            className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
+            aria-label={t('common.close')}
+          >
+            <X className="w-5 h-5 text-text-secondary" />
+          </button>
         </div>
-        {/* Same form the tracking panel's gear renders — one implementation. */}
-        <DelegationSettingsForm />
-      </section>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
+          <div className="max-w-[860px] w-full min-w-0 mx-auto">
+            <div className="space-y-0">
+              <ProfileSection t={t} sets={sets} draft={draft} busy={busy} setDraft={setDraft} />
 
-      <CostSection t={t} />
+              <GuardrailsSection t={t} draft={draft} busy={busy} setDraft={setDraft} />
 
-      <div className="flex items-center gap-3 py-5">
-        <button
-          className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={busy}
-          onClick={() => {
-            void save();
-          }}
-        >
-          {t('subAgents.save')}
-        </button>
-        {saved && <span className="text-xs text-text-secondary">{t('subAgents.saved')}</span>}
-        {error && <span className="text-xs text-rose-500">{t(`subAgents.${error}`)}</span>}
-        <span className="text-[11px] text-text-muted">{t('subAgents.saveScopeHint')}</span>
+              <OpenJevSection />
+
+              <section className="space-y-3 py-5 border-b border-border-muted">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-text-primary">
+                    {t('subAgents.delegationTitle')}
+                  </h4>
+                  <p className="text-xs leading-5 text-text-muted">{t('subAgents.delegationDescription')}</p>
+                </div>
+                {/* Same form the tracking panel's gear renders — one implementation. */}
+                <DelegationSettingsForm />
+              </section>
+
+              <CostSection t={t} />
+
+              <div className="flex items-center gap-3 py-5">
+                <button
+                  className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={busy}
+                  onClick={() => {
+                    void save();
+                  }}
+                >
+                  {t('subAgents.save')}
+                </button>
+                {saved && <span className="text-xs text-text-secondary">{t('subAgents.saved')}</span>}
+                {error && <span className="text-xs text-rose-500">{t(`subAgents.${error}`)}</span>}
+                <span className="text-[11px] text-text-muted">{t('subAgents.saveScopeHint')}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -452,6 +483,7 @@ function CostSection({
 }) {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
+  const setSubAgentsVisible = useAppStore((s) => s.setSubAgentsVisible);
   const [stats, setStats] = useState<{ swarm: SwarmStats; delegations: DelegationStats } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -478,6 +510,13 @@ function CostSection({
   const pct = (part: number, total: number) =>
     total > 0 ? `${Math.round((part / total) * 100)} %` : '—';
   const lastRunSeconds = swarm?.lastRunMs ? Math.round(swarm.lastRunMs / 1000) : null;
+
+  const openSkillDoctor = () => {
+    // Leave the dedicated view, land on Settings › Skills (Skill doctor lives there).
+    setSubAgentsVisible(false);
+    setShowSettings(true);
+    setSettingsTab('skills');
+  };
 
   return (
     <>
@@ -547,10 +586,7 @@ function CostSection({
             {t('subAgents.refreshStats')}
           </button>
           <button
-            onClick={() => {
-              setShowSettings(true);
-              setSettingsTab('skills');
-            }}
+            onClick={openSkillDoctor}
             className="flex items-center gap-1.5 text-xs text-accent hover:underline"
           >
             <ExternalLink className="w-3 h-3" />

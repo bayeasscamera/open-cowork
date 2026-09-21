@@ -16,6 +16,7 @@ import {
   Pin,
   Pencil,
   FolderOpen,
+  Network,
   X,
 } from 'lucide-react';
 import type { Session } from '../types';
@@ -42,6 +43,7 @@ export function Sidebar() {
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
+  const setSubAgentsVisible = useAppStore((s) => s.setSubAgentsVisible);
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const activeProjectId = useAppStore((s) => s.activeProjectId);
@@ -291,6 +293,13 @@ export function Sidebar() {
     setShowSettings(false);
   };
 
+  /** Open the dedicated Sub-agents view (same level as the projects pages). */
+  const handleOpenSubAgents = useCallback(() => {
+    setShowSettings(false);
+    setActiveSession(null);
+    setSubAgentsVisible(true);
+  }, [setActiveSession, setShowSettings, setSubAgentsVisible]);
+
   const handleDeleteSession = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     deleteSession(sessionId);
@@ -536,6 +545,13 @@ export function Sidebar() {
           >
             <Plus className="w-4 h-4" />
           </button>
+          <button
+            onClick={handleOpenSubAgents}
+            className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
+            title={t('sidebar.subAgentsTitle')}
+          >
+            <Network className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center px-3 py-4">
@@ -628,6 +644,20 @@ export function Sidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
+        {/* Dedicated Sub-agents view — same navigation level as Projects */}
+        <section className="mb-4">
+          <button
+            onClick={handleOpenSubAgents}
+            className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-surface-hover/60 transition-colors"
+            title={t('sidebar.subAgentsTitle')}
+          >
+            <Network className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
+            <span className="text-[11px] font-medium tracking-[0.04em] text-text-muted group-hover:text-text-primary hover:text-text-primary transition-colors">
+              {t('sidebar.subAgentsTitle')}
+            </span>
+          </button>
+        </section>
+
         {sessions.length === 0 ? (
           <div className="px-3 py-6">
             <p className="text-sm text-text-secondary">{t('sidebar.noTasks')}</p>

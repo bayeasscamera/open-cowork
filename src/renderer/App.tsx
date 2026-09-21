@@ -49,6 +49,9 @@ const ProjectsPanel = lazy(() =>
 const ProjectsPages = lazy(() =>
   import('./components/projects/ProjectsPages').then((module) => ({ default: module.ProjectsPages }))
 );
+const SubAgentsView = lazy(() =>
+  import('./components/subagents/SubAgentsView').then((module) => ({ default: module.SubAgentsView }))
+);
 const DelegatedTasksPanel = lazy(() =>
   import('./components/DelegatedTasksPanel').then((module) => ({
     default: module.DelegatedTasksPanel,
@@ -106,6 +109,7 @@ function App() {
   const setDocumentPanelVisible = useAppStore((s) => s.setDocumentPanelVisible);
   const delegatedTasksVisible = useAppStore((s) => s.delegatedTasksVisible);
   const setDelegatedTasksVisible = useAppStore((s) => s.setDelegatedTasksVisible);
+  const subAgentsVisible = useAppStore((s) => s.subAgentsVisible);
   const { t } = useTranslation();
 
   const { listSessions, isElectron } = useIPC();
@@ -224,6 +228,16 @@ function App() {
                 <SettingsPanel onClose={() => setShowSettings(false)} />
               </Suspense>
             </PanelErrorBoundary>
+          ) : subAgentsVisible ? (
+            <PanelErrorBoundary
+              name="SubAgentsView"
+              resetKey="sub-agents"
+              fallback={<MainPanelFallback />}
+            >
+              <Suspense fallback={<MainPanelFallback />}>
+                <SubAgentsView />
+              </Suspense>
+            </PanelErrorBoundary>
           ) : projectsPage ? (
             <PanelErrorBoundary
               name="ProjectsPages"
@@ -250,7 +264,7 @@ function App() {
         </main>
 
         {/* Context Panel - only show when in session and not in settings/projects pages */}
-        {activeSessionId && !showSettings && !projectsPage && (
+        {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
           <PanelErrorBoundary
             name="ContextPanel"
             resetKey={activeSessionId}
@@ -262,7 +276,7 @@ function App() {
           </PanelErrorBoundary>
         )}
       {/* Diff Panel toggle + live session diff (local mods only) */}
-      {activeSessionId && !showSettings && !projectsPage && (
+      {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
         <>
           <button
             type="button"
@@ -290,7 +304,7 @@ function App() {
       )}
 
       {/* Async delegation badge: background sub-agents running for the active session */}
-      {activeSessionId && !showSettings && !projectsPage && (
+      {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
         <div className="fixed bottom-4 left-4 z-40 flex flex-col gap-1.5">
           {runningBackgroundTasks
             .filter((task) => task.sessionId === activeSessionId)
@@ -312,7 +326,7 @@ function App() {
       )}
 
       {/* Document co-editing panel toggle + render */}
-      {!showSettings && !projectsPage && (
+      {!showSettings && !projectsPage && !subAgentsVisible && (
         <>
           <button
             type="button"
@@ -338,7 +352,7 @@ function App() {
       )}
 
       {/* Delegated-tasks tracking view (list + live detail + actions + settings) */}
-      {!showSettings && !projectsPage && (
+      {!showSettings && !projectsPage && !subAgentsVisible && (
         <>
           <button
             type="button"

@@ -112,6 +112,8 @@ interface AppState {
   delegationsVersion: number;
   /** Delegated-tasks tracking panel visibility. */
   delegatedTasksVisible: boolean;
+  /** Dedicated full-width Sub-agents view (same level as the projects pages). */
+  subAgentsVisible: boolean;
 
   // Per-session state (messages, partials, turns, traces, etc.)
   sessionStates: Record<string, SessionState>;
@@ -180,6 +182,7 @@ interface AppState {
   removeRunningBackgroundTask: (taskId: string) => void;
   bumpDelegationsVersion: () => void;
   setDelegatedTasksVisible: (visible: boolean) => void;
+  setSubAgentsVisible: (visible: boolean) => void;
 
   addMessage: (sessionId: string, message: Message) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
@@ -291,6 +294,7 @@ export const useAppStore = create<AppState>((set) => ({
   runningBackgroundTasks: [],
   delegationsVersion: 0,
   delegatedTasksVisible: false,
+  subAgentsVisible: false,
   sessionStates: {},
   sessionScrollPositions: {},
   isLoading: false,
@@ -342,6 +346,7 @@ export const useAppStore = create<AppState>((set) => ({
     })),
   bumpDelegationsVersion: () => set((state) => ({ delegationsVersion: state.delegationsVersion + 1 })),
   setDelegatedTasksVisible: (visible) => set({ delegatedTasksVisible: visible }),
+  setSubAgentsVisible: (visible) => set({ subAgentsVisible: visible }),
 
   addSession: (session) =>
     set((state) => ({

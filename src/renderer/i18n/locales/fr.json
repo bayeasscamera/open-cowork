@@ -25,6 +25,11 @@
       "failed": "Impossible de charger ou de restaurer les fichiers mémoire. Actualisez puis réessayez."
     }
   },
+  "subAgentsView": {
+    "eyebrow": "Espace de travail",
+    "title": "Sous-agents",
+    "description": "Rôles et personas, sélecteur de modèle par rôle, garde-fous, tâches déléguées et coût mesuré — réunis dans un écran dédié."
+  },
   "subAgents": {
     "title": "Sous-agents",
     "description": "Choisissez le profil de modèle utilisé par les sous-agents du swarm, et réglez les garde-fous d'exécution.",
@@ -409,6 +414,7 @@
     "badge": "tâche de fond en cours"
   },
   "sidebar": {
+    "subAgentsTitle": "Sous-agents",
     "settings": "Paramètres",
     "today": "Aujourd’hui",
     "yesterday": "Hier",

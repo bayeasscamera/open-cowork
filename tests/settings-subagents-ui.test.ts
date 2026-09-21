@@ -38,7 +38,7 @@ vi.mock('electron-store', () => {
   };
 });
 
-import { buildSubAgentsUpdate } from '../src/renderer/components/settings/SettingsSubAgents';
+import { buildSubAgentsUpdate } from '../src/renderer/components/subagents/SubAgentsView';
 import { ConfigStore } from '../src/main/config/config-store';
 
 const root = resolve(__dirname, '..');
@@ -99,7 +99,7 @@ describe('settings sub-agents UI → persisted config', () => {
 
   it('the component saves through the existing config.save IPC with a normalized payload', () => {
     const source = readFileSync(
-      resolve(root, 'src/renderer/components/settings/SettingsSubAgents.tsx'),
+      resolve(root, 'src/renderer/components/subagents/SubAgentsView.tsx'),
       'utf8'
     );
     expect(source).toContain('window.electronAPI.config.save({');
@@ -108,10 +108,9 @@ describe('settings sub-agents UI → persisted config', () => {
     expect(source).not.toContain("ipcRenderer.invoke('config.subAgents");
   });
 
-  it('the API settings tab renders the section', () => {
+  it('the section is NOT rendered inside the API settings tab anymore', () => {
     const panel = readFileSync(resolve(root, 'src/renderer/components/SettingsPanel.tsx'), 'utf8');
-    expect(panel).toContain('import { SettingsSubAgents }');
-    expect(panel).toMatch(/<SettingsAPI \/>\s*<SettingsSubAgents \/>/);
+    expect(panel).not.toContain('SettingsSubAgents');
   });
 
   it('labels exist in en, fr and zh with identical key sets', () => {

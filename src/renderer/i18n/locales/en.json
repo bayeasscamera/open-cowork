@@ -25,6 +25,11 @@
       "failed": "Could not load or restore memory files. Refresh and try again."
     }
   },
+  "subAgentsView": {
+    "eyebrow": "Workspace",
+    "title": "Sub-agents",
+    "description": "Roles and personas, per-role model selection, guardrails, delegated tasks and measured cost — all in one dedicated place."
+  },
   "subAgents": {
     "title": "Sub-agents",
     "description": "Choose which model profile the multi-agent swarm uses for its sub-agents, and tune execution guardrails.",
@@ -815,6 +820,7 @@
     "badge": "background task running"
   },
   "sidebar": {
+    "subAgentsTitle": "Sub-agents",
     "expandToView": "Expand to view tasks",
     "noTasks": "No tasks yet",
     "noTasksHint": "Start a new chat to begin building, researching, or editing files.",
