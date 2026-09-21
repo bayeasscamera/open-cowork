@@ -36,7 +36,7 @@ interface SkillProposal {
  * of those two buttons is pressed, the proposal is inert — nothing loads it
  * and nothing executes it.
  */
-function ProposedSkillsSection({ onChanged }: { onChanged: () => void }) {
+export function ProposedSkillsSection({ onChanged }: { onChanged?: () => void }) {
   const { t } = useTranslation();
   const [proposals, setProposals] = useState<SkillProposal[]>([]);
   const [busy, setBusy] = useState(false);

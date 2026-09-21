@@ -35,6 +35,15 @@ describe('dedicated Sub-agents view navigation', () => {
     expect(app).toContain('!showSettings && !projectsPage && !subAgentsVisible && (');
   });
 
+  it('the dedicated view hosts the pending-proposals section (Skill doctor parity)', () => {
+    const view = read('src/renderer/components/subagents/SubAgentsView.tsx');
+    // Same component the doctor renders — one implementation, two hosts.
+    expect(view).toContain("import { ProposedSkillsSection } from '../settings/SettingsSkillDoctor'");
+    expect(view).toContain('<ProposedSkillsSection />');
+    const doctor = read('src/renderer/components/settings/SettingsSkillDoctor.tsx');
+    expect(doctor).toContain('export function ProposedSkillsSection');
+  });
+
   it('the dedicated view persists through the SAME config IPC as before', () => {
     const view = read('src/renderer/components/subagents/SubAgentsView.tsx');
     expect(view).toContain('window.electronAPI.config.get()');

@@ -8,6 +8,7 @@ import {
   type ConfigSetLite,
 } from '../shared/ConfigSetModelPicker';
 import { DelegationSettingsForm } from '../settings/DelegationSettingsForm';
+import { ProposedSkillsSection } from '../settings/SettingsSkillDoctor';
 import { useAppStore } from '../../store';
 import type { DelegationStats, SwarmStats } from '../../types';
 
@@ -277,6 +278,10 @@ export function SubAgentsView() {
                 {/* Same form the tracking panel's gear renders — one implementation. */}
                 <DelegationSettingsForm />
               </section>
+
+              {/* Pending skill proposals — the same human-gated section the
+                  Skill doctor renders (one implementation, two hosts). */}
+              <ProposedSkillsSection />
 
               <CostSection t={t} />
 
