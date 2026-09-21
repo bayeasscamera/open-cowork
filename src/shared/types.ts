@@ -722,6 +722,7 @@ export type ServerEvent =
   | { type: 'sandbox.progress'; payload: SandboxSetupProgress }
   | { type: 'sandbox.sync'; payload: SandboxSyncStatus }
   | { type: 'skills.storageChanged'; payload: SkillsStorageChangeEvent }
+  | { type: 'skills.proposalsChanged'; payload: { count: number } }
   | {
       type: 'plugins.runtimeApplied';
       payload: { sessionId: string; plugins: Array<{ name: string; path: string }> };

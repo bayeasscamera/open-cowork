@@ -418,6 +418,7 @@
   },
   "sidebar": {
     "subAgentsTitle": "Sous-agents",
+    "pendingProposalsTitle": "{{count}} proposition(s) de skill en attente de votre approbation (Skill doctor)",
     "settings": "Paramètres",
     "today": "Aujourd’hui",
     "yesterday": "Hier",

@@ -114,6 +114,8 @@ interface AppState {
   delegatedTasksVisible: boolean;
   /** Dedicated full-width Sub-agents view (same level as the projects pages). */
   subAgentsVisible: boolean;
+  /** Pending skill proposals awaiting human approval (sidebar badge). */
+  pendingProposalCount: number;
 
   // Per-session state (messages, partials, turns, traces, etc.)
   sessionStates: Record<string, SessionState>;
@@ -183,6 +185,7 @@ interface AppState {
   bumpDelegationsVersion: () => void;
   setDelegatedTasksVisible: (visible: boolean) => void;
   setSubAgentsVisible: (visible: boolean) => void;
+  setPendingProposalCount: (count: number) => void;
 
   addMessage: (sessionId: string, message: Message) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
@@ -295,6 +298,7 @@ export const useAppStore = create<AppState>((set) => ({
   delegationsVersion: 0,
   delegatedTasksVisible: false,
   subAgentsVisible: false,
+  pendingProposalCount: 0,
   sessionStates: {},
   sessionScrollPositions: {},
   isLoading: false,
@@ -347,6 +351,7 @@ export const useAppStore = create<AppState>((set) => ({
   bumpDelegationsVersion: () => set((state) => ({ delegationsVersion: state.delegationsVersion + 1 })),
   setDelegatedTasksVisible: (visible) => set({ delegatedTasksVisible: visible }),
   setSubAgentsVisible: (visible) => set({ subAgentsVisible: visible }),
+  setPendingProposalCount: (count) => set({ pendingProposalCount: Math.max(0, count) }),
 
   addSession: (session) =>
     set((state) => ({

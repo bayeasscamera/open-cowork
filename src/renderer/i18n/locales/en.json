@@ -824,6 +824,7 @@
   },
   "sidebar": {
     "subAgentsTitle": "Sub-agents",
+    "pendingProposalsTitle": "{{count}} skill proposal(s) awaiting your approval (Skill doctor)",
     "expandToView": "Expand to view tasks",
     "noTasks": "No tasks yet",
     "noTasksHint": "Start a new chat to begin building, researching, or editing files.",

@@ -202,6 +202,11 @@ export function useIPC() {
             break;
           }
 
+          case 'skills.proposalsChanged':
+            // Live sidebar badge: pending skill proposals awaiting approval.
+            store.setPendingProposalCount(event.payload.count);
+            break;
+
           case 'stream.message':
             console.log(
               '[useIPC] stream.message received:',

@@ -44,6 +44,8 @@ export function Sidebar() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setSubAgentsVisible = useAppStore((s) => s.setSubAgentsVisible);
+  const pendingProposalCount = useAppStore((s) => s.pendingProposalCount);
+  const setPendingProposalCount = useAppStore((s) => s.setPendingProposalCount);
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const activeProjectId = useAppStore((s) => s.activeProjectId);
@@ -100,6 +102,20 @@ export function Sidebar() {
       // Non-fatal: the sidebar keeps its current state.
     }
   }, []);
+
+  // Initial pending-proposal count (Electron only); live updates then arrive
+  // through the 'skills.proposalsChanged' event handled in useIPC.
+  useEffect(() => {
+    if (!isElectron) return;
+    void window.electronAPI.skills
+      .listProposals()
+      .then((result) => {
+        if (result.success) setPendingProposalCount(result.proposals.length);
+      })
+      .catch(() => {
+        // Sidebar works fine without the badge.
+      });
+  }, [isElectron, setPendingProposalCount]);
 
   // Load projects once on mount (Electron mode only). Archived projects stay
   // visible — otherwise the restore/delete actions become unreachable.
@@ -547,10 +563,15 @@ export function Sidebar() {
           </button>
           <button
             onClick={handleOpenSubAgents}
-            className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
+            className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary relative"
             title={t('sidebar.subAgentsTitle')}
           >
             <Network className="w-4 h-4" />
+            {pendingProposalCount > 0 && (
+              <span className="absolute right-1.5 top-1.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-1 text-[8px] font-bold text-white">
+                {pendingProposalCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -655,6 +676,14 @@ export function Sidebar() {
             <span className="text-[11px] font-medium tracking-[0.04em] text-text-muted group-hover:text-text-primary hover:text-text-primary transition-colors">
               {t('sidebar.subAgentsTitle')}
             </span>
+            {pendingProposalCount > 0 && (
+              <span
+                className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-white"
+                title={t('sidebar.pendingProposalsTitle', { count: pendingProposalCount })}
+              >
+                {pendingProposalCount}
+              </span>
+            )}
           </button>
         </section>
 

@@ -32,7 +32,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { sendToRenderer } from '../events/renderer-sender';
 import { log, logError, logWarn } from '../utils/logger';
+import type { ServerEvent } from '../../shared/types';
 
 /** A proposal draft is capped so a runaway sub-agent cannot flood the disk. */
 const MAX_PROPOSAL_CONTENT_CHARS = 48_000;
@@ -98,6 +100,24 @@ export function getProposedSkillsDir(): string {
 /** Derive the proposals dir for a given ACTIVE skills dir (used by tests/synth). */
 export function proposalsDirForActiveSkillsDir(activeSkillsDir: string): string {
   return path.join(path.dirname(path.resolve(activeSkillsDir)), 'skills-proposed');
+}
+
+/**
+ * Tell the renderer the pending-proposal set changed, so the sidebar badge
+ * stays live while a sub-agent proposes mid-session. Best-effort: during
+ * tests/headless the sender context is absent and the call throws — caught
+ * here, never blocking the store mutation itself.
+ */
+function emitProposalsChanged(): void {
+  try {
+    const event: ServerEvent = {
+      type: 'skills.proposalsChanged',
+      payload: { count: listProposals().length },
+    };
+    sendToRenderer(event);
+  } catch {
+    // Renderer channel not configured (tests, headless) — store still updated.
+  }
 }
 
 /**
@@ -195,6 +215,7 @@ export function proposeSkill(input: {
     atomicWrite(path.join(targetDir, 'SKILL.md'), input.content);
     atomicWrite(metaPath, JSON.stringify(meta, null, 2));
     log(`[SkillProposals] Proposed skill (v${version}, PENDING approval): ${slug.slug}`);
+    emitProposalsChanged();
     return { ok: true, name: slug.slug, path: path.join(targetDir, 'SKILL.md'), version };
   } catch (err) {
     logError('[SkillProposals] Failed to record proposal:', err);
@@ -302,6 +323,7 @@ export function approveProposal(
     log(
       `[SkillProposals] Proposal APPROVED by user${finalName !== slugCheck.slug ? ` (renamed to "${finalName}")` : ''} — now active: ${path.join(targetDir, 'SKILL.md')}`
     );
+    emitProposalsChanged();
     return { ok: true, name: finalName, path: path.join(targetDir, 'SKILL.md') };
   } catch (err) {
     logError('[SkillProposals] Failed to approve proposal:', err);
@@ -320,6 +342,7 @@ export function rejectProposal(slug: string): { ok: boolean; error?: string } {
     }
     fs.rmSync(proposalDir, { recursive: true, force: true });
     log(`[SkillProposals] Proposal REJECTED by user — deleted: ${slugCheck.slug}`);
+    emitProposalsChanged();
     return { ok: true };
   } catch (err) {
     logError('[SkillProposals] Failed to reject proposal:', err);

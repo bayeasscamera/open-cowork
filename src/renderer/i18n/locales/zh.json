@@ -846,6 +846,7 @@
   },
   "sidebar": {
     "subAgentsTitle": "子代理",
+    "pendingProposalsTitle": "{{count}} 个技能提案等待你的审批（Skill doctor）",
     "expandToView": "展开查看任务",
     "noTasks": "暂无任务",
     "noTasksHint": "开始一个新对话，继续构建、调研或编辑文件。",
