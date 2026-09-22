@@ -9,12 +9,19 @@ function readProjectFile(relativePath: string): string {
 describe('memory integration wiring', () => {
   it('registers the memory extension in the main process and exposes IPC handlers', () => {
     const mainIndex = readProjectFile('src/main/index.ts');
+    // The memory IPC channels live in their own module since the structural
+    // refactor; the extension is still wired in the app entry point.
+    const memoryHandlers = readProjectFile('src/main/ipc/memory-handlers.ts');
     expect(mainIndex).toContain('new MemoryExtension(memoryService)');
-    expect(mainIndex).toContain("ipcMain.handle('memory.getOverview'");
-    expect(mainIndex).toContain("'memory.search'");
-    expect(mainIndex).toContain("'memory.listFiles'");
-    expect(mainIndex).toContain("'memory.inspectSession'");
-    expect(mainIndex).toContain("ipcMain.handle('memory.setEnabled'");
+    for (const channel of [
+      'memory.getOverview',
+      'memory.search',
+      'memory.listFiles',
+      'memory.inspectSession',
+      'memory.setEnabled',
+    ]) {
+      expect(memoryHandlers).toContain(`'${channel}'`);
+    }
   });
 
   it('provides the local owner in headless mode without automatic deletion consent', () => {

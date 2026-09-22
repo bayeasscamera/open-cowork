@@ -8,7 +8,15 @@ describe('scheduled task session title wiring', () => {
     const content = readFileSync(indexPath, 'utf8');
     expect(content).toContain('async function resolveScheduledTaskTitle(');
     expect(content).toContain('sessionManager.generateScheduledTaskTitle');
-    expect(content).toContain("ipcMain.handle('schedule.create', async");
-    expect(content).toContain("ipcMain.handle('schedule.update', async");
+    // The schedule.* channels live in their own module since the structural
+    // refactor; the title flow is still injected from the app entry point.
+    const scheduleHandlers = readFileSync(
+      path.resolve(process.cwd(), 'src/main/ipc/schedule-handlers.ts'),
+      'utf8'
+    );
+    expect(content).toContain('resolveScheduledTaskTitle,');
+    for (const channel of ['schedule.create', 'schedule.update']) {
+      expect(scheduleHandlers).toContain(`'${channel}'`);
+    }
   });
 });

@@ -16,7 +16,12 @@ import { configStore, type AppConfig, type AppTheme } from '../config/config-sto
 import { setAutoApproveAll, setPermissionRules } from '../config/permission-rules-store';
 import { eventRequiresSessionManager } from '../client-event-utils';
 import { logError, logWarn } from '../utils/logger';
-import { applyNativeThemePreference, DARK_BG, LIGHT_BG, resolveEffectiveTheme } from '../utils/window-theme';
+import {
+  applyNativeThemePreference,
+  DARK_BG,
+  LIGHT_BG,
+  resolveEffectiveTheme,
+} from '../utils/window-theme';
 import { ProjectValidationError, type ProjectStore } from '../projects/project-store';
 import { computeProjectContextUsage } from '../projects/project-context';
 import {
@@ -53,12 +58,8 @@ export async function handleClientEvent(
   event: ClientEvent,
   context: ClientEventHandlerContext
 ): Promise<unknown> {
-  const {
-    getProjectStore,
-    getWorkingDir,
-    setWorkingDir,
-    getWorkspacePathUnsupportedReason,
-  } = context;
+  const { getProjectStore, getWorkingDir, setWorkingDir, getWorkspacePathUnsupportedReason } =
+    context;
   // Snapshot the mutable window/session handles for the duration of one event.
   const sessionManager = context.getSessionManager();
   const mainWindow = context.getMainWindow();
@@ -153,7 +154,10 @@ export async function handleClientEvent(
       const sessions = sm.listSessions();
       const lastActiveSessionId = configStore.get('lastActiveSessionId') as string | undefined;
       const lastActiveCwd = configStore.get('lastActiveCwd') as string | undefined;
-      sendToRenderer({ type: 'session.list', payload: { sessions, lastActiveSessionId, lastActiveCwd } });
+      sendToRenderer({
+        type: 'session.list',
+        payload: { sessions, lastActiveSessionId, lastActiveCwd },
+      });
       return sessions;
     }
 
@@ -230,9 +234,7 @@ export async function handleClientEvent(
           configStore.switchSet({ id: previousActiveId });
         }
         // NEVER return credentials: only the id and display name of each set.
-        const sets = configStore
-          .getAll()
-          .configSets.map((set) => ({ id: set.id, name: set.name }));
+        const sets = configStore.getAll().configSets.map((set) => ({ id: set.id, name: set.name }));
         return { success: true, sets };
       } catch (error) {
         return {
@@ -274,8 +276,13 @@ export async function handleClientEvent(
         setAutoApproveAll((event.payload as { autoApproveAll: boolean }).autoApproveAll);
       }
 
-      if (typeof (event.payload as { systemNotifications?: unknown }).systemNotifications === 'boolean') {
-        SystemNotifier.setEnabled((event.payload as { systemNotifications: boolean }).systemNotifications);
+      if (
+        typeof (event.payload as { systemNotifications?: unknown }).systemNotifications ===
+        'boolean'
+      ) {
+        SystemNotifier.setEnabled(
+          (event.payload as { systemNotifications: boolean }).systemNotifications
+        );
       }
 
       // Sub-agent swarm settings: non-sensitive (configSet ids, timeouts,
@@ -377,10 +384,7 @@ export async function handleClientEvent(
 
     case 'projects.archive': {
       try {
-        const project = getProjectStore().archive(
-          event.payload.projectId,
-          event.payload.archived
-        );
+        const project = getProjectStore().archive(event.payload.projectId, event.payload.archived);
         return { success: true, project };
       } catch (error) {
         if (error instanceof ProjectValidationError) {

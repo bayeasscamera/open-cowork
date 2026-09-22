@@ -6,7 +6,11 @@ const source = (path: string) => readFileSync(resolve(__dirname, '..', path), 'u
 
 describe('personal memory settings UI and IPC contracts', () => {
   it('exposes exactly four static, guarded channels with a shared renderer API', () => {
-    const main = source('src/main/index.ts');
+    // The personalFiles.* channels live in the memory IPC module since the
+    // structural refactor.
+    const main = [source('src/main/index.ts'), source('src/main/ipc/memory-handlers.ts')].join(
+      '\n'
+    );
     const preload = source('src/preload/index.ts');
     for (const operation of ['list', 'read', 'history', 'restore']) {
       expect(main).toMatch(

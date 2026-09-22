@@ -64,10 +64,7 @@ export function registerConfigIpcHandlers(context: ConfigIpcContext): void {
       memoryRuntime: config.memoryRuntime,
     });
 
-  const syncConfigAfterMutation = async (
-    previousConfig: AppConfig,
-    context: ConfigIpcContext
-  ) => {
+  const syncConfigAfterMutation = async (previousConfig: AppConfig, context: ConfigIpcContext) => {
     const sessionManager = context.getSessionManager();
     // Mark as configured if any config set has usable credentials
     configStore.set('isConfigured', configStore.hasAnyUsableCredentials());
@@ -92,7 +89,10 @@ export function registerConfigIpcHandlers(context: ConfigIpcContext): void {
       if (shouldReloadRunner || shouldReloadSandbox) {
         log(
           '[Config] Session manager config synced:',
-          JSON.stringify({ runnerReloaded: shouldReloadRunner, sandboxReloaded: shouldReloadSandbox })
+          JSON.stringify({
+            runnerReloaded: shouldReloadRunner,
+            sandboxReloaded: shouldReloadSandbox,
+          })
         );
       }
     }

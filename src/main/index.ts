@@ -15,7 +15,17 @@
  * Dependencies: session-manager, config-store, mcp-manager, sandbox-adapter,
  *               skills-manager, scheduled-task-manager, nav-server, remote-manager
  */
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, globalShortcut } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  Menu,
+  nativeTheme,
+  Tray,
+  globalShortcut,
+} from 'electron';
 import { join, resolve } from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
@@ -26,45 +36,35 @@ import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { MemoryService } from './memory/memory-service';
-import { personalFilesHandler } from './memory/personal-files-manager';
 import { MemoryExtension } from './memory/memory-extension';
 import { ConfigExtension } from './config/config-extension';
 import { SubagentExtension } from './agent/subagent-extension';
 import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extension-manager';
-import {
-  configStore,
-  type AppTheme,
-} from './config/config-store';
-import {
-  startConfigFileWatcher,
-  stopConfigFileWatcher,
-} from './config/config-file-watcher';
+import { configStore, type AppTheme } from './config/config-store';
+import { startConfigFileWatcher, stopConfigFileWatcher } from './config/config-file-watcher';
 import { decidePermission } from './config/permission-rules-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
-import type {
-  ClientEvent,
-  ServerEvent,
-} from '../shared/types';
+import type { ClientEvent, ServerEvent } from '../shared/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
-import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
 import { startNavServer, stopNavServer } from './nav-server';
-import {
-  ScheduledTaskManager,
-  type ScheduledTaskCreateInput,
-  type ScheduledTaskUpdateInput,
-} from './schedule/scheduled-task-manager';
+import { ScheduledTaskManager } from './schedule/scheduled-task-manager';
 import { createScheduledTaskStore } from './schedule/scheduled-task-store';
 import {
   buildScheduledTaskFallbackTitle,
   buildScheduledTaskTitle,
 } from '../shared/schedule/task-title';
 import { NavigationUrlPolicy } from './utils/navigation-url-policy';
-import { applyNativeThemePreference, DARK_BG, LIGHT_BG, resolveEffectiveTheme } from './utils/window-theme';
+import {
+  applyNativeThemePreference,
+  DARK_BG,
+  LIGHT_BG,
+  resolveEffectiveTheme,
+} from './utils/window-theme';
 import {
   handleClientEvent as dispatchClientEvent,
   type ClientEventHandlerContext,
@@ -86,6 +86,9 @@ import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { registerConfigIpcHandlers } from './ipc/config-handlers';
 import { registerLogsIpcHandlers } from './ipc/logs-handlers';
 import { registerMcpIpcHandlers } from './ipc/mcp-handlers';
+import { registerRemoteIpcHandlers } from './ipc/remote-handlers';
+import { registerScheduleIpcHandlers } from './ipc/schedule-handlers';
+import { registerMemoryIpcHandlers } from './ipc/memory-handlers';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods, getDiffCollector } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore } from './projects/project-store';
@@ -98,21 +101,11 @@ import {
   loadSkillSourcesFromDir,
   type SkillDoctorSkillSource,
 } from './mods/skill-doctor';
-import {
-  approveProposal,
-  listProposals,
-  rejectProposal,
-} from './skills/skill-proposals';
+import { approveProposal, listProposals, rejectProposal } from './skills/skill-proposals';
 
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
-import {
-  sendToRenderer,
-  setRendererSenderContext,
-} from './events/renderer-sender';
-import {
-  revealFileInFolder,
-  setRevealContext,
-} from './utils/reveal-in-folder';
+import { sendToRenderer, setRendererSenderContext } from './events/renderer-sender';
+import { revealFileInFolder, setRevealContext } from './utils/reveal-in-folder';
 
 import {
   parseHeadlessArgs,
@@ -323,9 +316,7 @@ if (isDev) {
 // COWORK_MULTI_INSTANCE=1 bypasses the lock for measurement/automation runs
 // (headless benchmarks beside an active GUI session). Never the default.
 const hasSingleInstanceLock =
-  isDev ||
-  process.env.COWORK_MULTI_INSTANCE === '1' ||
-  app.requestSingleInstanceLock();
+  isDev || process.env.COWORK_MULTI_INSTANCE === '1' || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   logWarn('[App] Another instance is already running, quitting this instance');
   app.quit();
@@ -524,7 +515,9 @@ function registerWindowToggleShortcut(): void {
       windowToggleAccelerator = 'CommandOrControl+Alt+Space';
       log('[Shortcut] Registered CommandOrControl+Alt+Space global toggle shortcut');
     } else {
-      logWarn('[Shortcut] CommandOrControl+Alt+Space occupied, trying CommandOrControl+Shift+Space');
+      logWarn(
+        '[Shortcut] CommandOrControl+Alt+Space occupied, trying CommandOrControl+Shift+Space'
+      );
       if (globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow)) {
         windowToggleAccelerator = 'CommandOrControl+Shift+Space';
       }
@@ -1355,13 +1348,27 @@ app
       personalHost: {
         // Stable account within this installation's userData DB, not remote authentication.
         owner: 'local-installation',
-        isSessionEnabled: (sessionId) => !remoteManager.isRemoteSession(sessionId) &&
+        isSessionEnabled: (sessionId) =>
+          !remoteManager.isRemoteSession(sessionId) &&
           db.sessions.get(sessionId)?.memory_enabled === 1,
         confirmDelete: async (sessionId, toolUseId, path, version) => {
           try {
-            if (!mainWindow || mainWindow.isDestroyed() || remoteManager.isRemoteSession(sessionId) || !sessionManager) return false;
-            return (await sessionManager.requestPermission(sessionId, toolUseId, 'memory_delete', { path, if_version: version })) === 'allow';
-          } catch { return false; }
+            if (
+              !mainWindow ||
+              mainWindow.isDestroyed() ||
+              remoteManager.isRemoteSession(sessionId) ||
+              !sessionManager
+            )
+              return false;
+            return (
+              (await sessionManager.requestPermission(sessionId, toolUseId, 'memory_delete', {
+                path,
+                if_version: version,
+              })) === 'allow'
+            );
+          } catch {
+            return false;
+          }
         },
       },
     });
@@ -1567,7 +1574,10 @@ app
   .catch((error) => {
     logError('[App] Startup failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown startup error';
-    dialog.showErrorBox('Open Cowork failed to start', `${message}\n\nCheck the logs for more information.`);
+    dialog.showErrorBox(
+      'Open Cowork failed to start',
+      `${message}\n\nCheck the logs for more information.`
+    );
     app.quit();
   });
 
@@ -2035,8 +2045,7 @@ ipcMain.handle('skills.approveProposal', async (_event, name: unknown, renameTo?
     const activeDir = skillsManager
       ? skillsManager.getGlobalSkillsPath()
       : join(app.getPath('userData'), 'claude', 'skills');
-    const rename =
-      typeof renameTo === 'string' && renameTo.trim() ? renameTo : undefined;
+    const rename = typeof renameTo === 'string' && renameTo.trim() ? renameTo : undefined;
     const result = approveProposal(name, activeDir, rename);
     if (!result.ok) {
       // Structured code lets the UI offer the approve-as-rename flow.
@@ -2513,349 +2522,21 @@ ipcMain.handle('logs.export', async () => {
   }
 });
 
-// ============================================================================
-// 远程控制 IPC 处理
-// ============================================================================
-
-ipcMain.handle('remote.getConfig', () => {
-  try {
-    return remoteConfigStore.getAll();
-  } catch (error) {
-    logError('[Remote] Error getting config:', error);
-    return null;
-  }
+// Remote control IPC handlers (see main/ipc/remote-handlers.ts)
+registerRemoteIpcHandlers();
+// Scheduled task IPC handlers (see main/ipc/schedule-handlers.ts)
+registerScheduleIpcHandlers({
+  getScheduledTaskManager: () => scheduledTaskManager,
+  getWorkspacePathUnsupportedReason,
+  resolveScheduledTaskTitle,
 });
 
-ipcMain.handle('remote.getStatus', () => {
-  try {
-    return remoteManager.getStatus();
-  } catch (error) {
-    logError('[Remote] Error getting status:', error);
-    return { running: false, channels: [], activeSessions: 0, pendingPairings: 0 };
-  }
+// Memory and personal-files IPC handlers (see main/ipc/memory-handlers.ts)
+registerMemoryIpcHandlers({
+  getMemoryService: () => memoryService,
+  getMainWindow: () => mainWindow,
+  getSessionManager: () => sessionManager,
 });
-
-ipcMain.handle('remote.setEnabled', async (_event, enabled: boolean) => {
-  try {
-    remoteConfigStore.setEnabled(enabled);
-
-    if (enabled) {
-      await remoteManager.start();
-    } else {
-      await remoteManager.stop();
-    }
-
-    return { success: true };
-  } catch (error) {
-    logError('[Remote] Error setting enabled:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('remote.updateGatewayConfig', async (_event, config: Partial<GatewayConfig>) => {
-  try {
-    await remoteManager.updateGatewayConfig(config);
-    return { success: true };
-  } catch (error) {
-    logError('[Remote] Error updating gateway config:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('remote.updateFeishuConfig', async (_event, config: FeishuChannelConfig) => {
-  try {
-    await remoteManager.updateFeishuConfig(config);
-    return { success: true };
-  } catch (error) {
-    logError('[Remote] Error updating Feishu config:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('remote.getPairedUsers', () => {
-  try {
-    return remoteManager.getPairedUsers();
-  } catch (error) {
-    logError('[Remote] Error getting paired users:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('remote.getPendingPairings', () => {
-  try {
-    return remoteManager.getPendingPairings();
-  } catch (error) {
-    logError('[Remote] Error getting pending pairings:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('remote.approvePairing', (_event, channelType: ChannelType, userId: string) => {
-  try {
-    const success = remoteManager.approvePairing(channelType, userId);
-    return { success };
-  } catch (error) {
-    logError('[Remote] Error approving pairing:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('remote.revokePairing', (_event, channelType: ChannelType, userId: string) => {
-  try {
-    const success = remoteManager.revokePairing(channelType, userId);
-    return { success };
-  } catch (error) {
-    logError('[Remote] Error revoking pairing:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('remote.rejectPairing', (_event, channelType: ChannelType, userId: string) => {
-  try {
-    const success = remoteManager.rejectPairing(channelType, userId);
-    return { success };
-  } catch (error) {
-    logError('[Remote] Error rejecting pairing:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('remote.getRemoteSessions', () => {
-  try {
-    return remoteManager.getRemoteSessions();
-  } catch (error) {
-    logError('[Remote] Error getting remote sessions:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('remote.clearRemoteSession', (_event, sessionId: string) => {
-  try {
-    const success = remoteManager.clearRemoteSession(sessionId);
-    return { success };
-  } catch (error) {
-    logError('[Remote] Error clearing remote session:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('remote.getTunnelStatus', () => {
-  try {
-    return remoteManager.getTunnelStatus();
-  } catch (error) {
-    logError('[Remote] Error getting tunnel status:', error);
-    return { connected: false, url: null, provider: 'none' };
-  }
-});
-
-ipcMain.handle('remote.getWebhookUrl', () => {
-  try {
-    return remoteManager.getFeishuWebhookUrl();
-  } catch (error) {
-    logError('[Remote] Error getting webhook URL:', error);
-    return null;
-  }
-});
-
-ipcMain.handle('remote.restart', async () => {
-  try {
-    await remoteManager.restart();
-    return { success: true };
-  } catch (error) {
-    logError('[Remote] Error restarting:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('schedule.list', () => {
-  try {
-    if (!scheduledTaskManager) return [];
-    return scheduledTaskManager.list();
-  } catch (error) {
-    logError('[Schedule] Error listing tasks:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('schedule.create', async (_event, payload: ScheduledTaskCreateInput) => {
-  if (!scheduledTaskManager) {
-    throw new Error('Scheduled task manager not initialized');
-  }
-  const unsupportedReason = getWorkspacePathUnsupportedReason(payload.cwd);
-  if (unsupportedReason) {
-    throw new Error(unsupportedReason);
-  }
-  const normalizedPrompt = payload.prompt.trim();
-  const title = await resolveScheduledTaskTitle(normalizedPrompt, payload.cwd, payload.title);
-  return scheduledTaskManager.create({
-    ...payload,
-    prompt: normalizedPrompt,
-    title,
-  });
-});
-
-ipcMain.handle('schedule.update', async (_event, id: string, updates: ScheduledTaskUpdateInput) => {
-  if (!scheduledTaskManager) {
-    throw new Error('Scheduled task manager not initialized');
-  }
-  const existing = scheduledTaskManager.get(id);
-  if (!existing) return null;
-  const nextCwd = updates.cwd ?? existing.cwd;
-  const unsupportedReason = getWorkspacePathUnsupportedReason(nextCwd);
-  if (unsupportedReason) {
-    throw new Error(unsupportedReason);
-  }
-  const normalizedPrompt = updates.prompt === undefined ? existing.prompt : updates.prompt.trim();
-  const normalizedUpdates: ScheduledTaskUpdateInput = {
-    ...updates,
-    prompt: normalizedPrompt,
-  };
-
-  if (updates.prompt !== undefined) {
-    normalizedUpdates.title = await resolveScheduledTaskTitle(
-      normalizedPrompt,
-      updates.cwd ?? existing.cwd,
-      updates.title ?? existing.title
-    );
-  } else if (updates.title !== undefined) {
-    normalizedUpdates.title = buildScheduledTaskTitle(updates.title);
-  }
-
-  return scheduledTaskManager.update(id, normalizedUpdates);
-});
-
-ipcMain.handle('schedule.delete', (_event, id: string) => {
-  if (!scheduledTaskManager) {
-    throw new Error('Scheduled task manager not initialized');
-  }
-  return { success: scheduledTaskManager.delete(id) };
-});
-
-ipcMain.handle('schedule.toggle', (_event, id: string, enabled: boolean) => {
-  if (!scheduledTaskManager) {
-    throw new Error('Scheduled task manager not initialized');
-  }
-  return scheduledTaskManager.toggle(id, enabled);
-});
-
-ipcMain.handle('schedule.runNow', async (_event, id: string) => {
-  if (!scheduledTaskManager) {
-    throw new Error('Scheduled task manager not initialized');
-  }
-  return scheduledTaskManager.runNow(id);
-});
-
-ipcMain.handle('memory.getOverview', (_event, cwd?: string) => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.getOverview(cwd);
-});
-
-ipcMain.handle(
-  'memory.search',
-  (
-    _event,
-    payload: {
-      query: string;
-      cwd?: string;
-      sourceWorkspace?: string | null;
-      scope?: 'workspace' | 'global' | 'all';
-      limit?: number;
-    }
-  ) => {
-    if (!memoryService) {
-      throw new Error('Memory service not initialized');
-    }
-    return memoryService.search(payload);
-  }
-);
-
-ipcMain.handle('memory.read', (_event, id: string) => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.read(id);
-});
-
-ipcMain.handle('memory.rebuildWorkspace', async (_event, cwd: string) => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.rebuildWorkspace(cwd);
-});
-
-ipcMain.handle('memory.clearWorkspace', (_event, cwd: string) => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.clearWorkspace(cwd);
-});
-
-ipcMain.handle('memory.clearCoreMemory', () => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.clearCoreMemory();
-});
-
-ipcMain.handle('memory.rebuildAll', async () => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.rebuildAll();
-});
-
-ipcMain.handle('personalFiles.list', personalFilesHandler(() => mainWindow, () =>
-  memoryService?.personalFiles.list() ?? { success: false, error: 'unavailable' }
-));
-ipcMain.handle('personalFiles.read', personalFilesHandler(() => mainWindow, (input) =>
-  memoryService?.personalFiles.read(input) ?? { success: false, error: 'unavailable' }
-));
-ipcMain.handle('personalFiles.history', personalFilesHandler(() => mainWindow, (input) =>
-  memoryService?.personalFiles.history(input) ?? { success: false, error: 'unavailable' }
-));
-ipcMain.handle('personalFiles.restore', personalFilesHandler(() => mainWindow, (input) =>
-  memoryService?.personalFiles.restore(input) ?? { success: false, error: 'unavailable' }
-));
-
-ipcMain.handle('memory.listFiles', () => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.listFiles();
-});
-
-ipcMain.handle('memory.readFile', (_event, filePath: string) => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.readFile(filePath);
-});
-
-ipcMain.handle('memory.inspectSession', (_event, sessionId: string, workspaceKey?: string) => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  return memoryService.inspectSession(sessionId, workspaceKey);
-});
-
-ipcMain.handle('memory.setEnabled', (_event, enabled: boolean) => {
-  if (!memoryService) {
-    throw new Error('Memory service not initialized');
-  }
-  const result = memoryService.setEnabled(enabled);
-  sessionManager?.clearAllCachedAgentSessions();
-  sendToRenderer({
-    type: 'config.status',
-    payload: {
-      isConfigured: configStore.isConfigured(),
-      config: configStore.getAll(),
-    },
-  });
-  return result;
-});
-
 
 ipcMain.handle('sandbox.retryLimaSetup', async () => {
   if (process.platform !== 'darwin') {
