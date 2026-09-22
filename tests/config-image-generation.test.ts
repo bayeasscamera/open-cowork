@@ -62,6 +62,31 @@ describe('image generation config normalization', () => {
     ).toBe(0.05);
   });
 
+  it('keeps an explicit provider profile so ANY provider can serve images', () => {
+    const config = normalizeImageGenerationConfig({
+      configSetId: '',
+      provider: 'custom',
+      customProtocol: 'openai',
+      apiKey: '  vendor-key  ',
+      baseUrl: ' https://images.example.com/v1 ',
+      model: ' vendor-image-1 ',
+    });
+    expect(config.provider).toBe('custom');
+    expect(config.customProtocol).toBe('openai');
+    expect(config.apiKey).toBe('vendor-key');
+    expect(config.baseUrl).toBe('https://images.example.com/v1');
+    expect(config.model).toBe('vendor-image-1');
+  });
+
+  it('drops an unknown provider or protocol instead of trusting it', () => {
+    const config = normalizeImageGenerationConfig({
+      provider: 'not-a-provider' as unknown as 'openai',
+      customProtocol: 'soap' as unknown as 'openai',
+    });
+    expect(config.provider).toBeUndefined();
+    expect(config.customProtocol).toBeUndefined();
+  });
+
   it('tolerates a non-object payload', () => {
     expect(normalizeImageGenerationConfig('nope' as unknown)).toEqual({
       configSetId: '',

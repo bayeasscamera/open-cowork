@@ -644,22 +644,53 @@ export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
   };
 }
 
+const IMAGE_PROVIDER_VALUES: ReadonlySet<string> = new Set([
+  'openrouter',
+  'anthropic',
+  'custom',
+  'openai',
+  'gemini',
+  'ollama',
+]);
+
+const IMAGE_CUSTOM_PROTOCOLS: ReadonlySet<string> = new Set(['anthropic', 'openai', 'gemini']);
+
+function optionalTrimmedString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
 /**
- * Normalize the dedicated image profile. An unknown/absent field inherits the
- * active ConfigSet (configSetId: ''), which keeps the feature usable with zero
- * configuration while still allowing a pinned image-only profile.
+ * Normalize the dedicated image profile.
+ *
+ * Three resolution modes, in order of precedence:
+ *   1. explicit provider + model  → any provider, own credentials (no ConfigSet)
+ *   2. pinned ConfigSet           → that set's provider/model
+ *   3. nothing                    → inherit the active ConfigSet (configSetId: '')
+ *
+ * Unknown/invalid provider or protocol values are dropped rather than trusted,
+ * so a corrupted config can never select a bogus route.
  */
 export function normalizeImageGenerationConfig(raw: unknown): ImageGenerationConfig {
   const value = typeof raw === 'object' && raw !== null ? (raw as Partial<ImageGenerationConfig>) : {};
   const threshold = value.costConfirmThresholdUsd;
+  const provider = optionalTrimmedString(value.provider);
+  const customProtocol = optionalTrimmedString(value.customProtocol);
   return {
     configSetId: typeof value.configSetId === 'string' ? value.configSetId.trim() : '',
-    modelId:
-      typeof value.modelId === 'string' && value.modelId.trim() ? value.modelId.trim() : undefined,
+    modelId: optionalTrimmedString(value.modelId),
     costConfirmThresholdUsd:
       typeof threshold === 'number' && Number.isFinite(threshold)
         ? Math.max(0, Math.min(100, threshold))
         : DEFAULT_IMAGE_GENERATION.costConfirmThresholdUsd,
+    provider:
+      provider && IMAGE_PROVIDER_VALUES.has(provider) ? (provider as ProviderType) : undefined,
+    customProtocol:
+      customProtocol && IMAGE_CUSTOM_PROTOCOLS.has(customProtocol)
+        ? (customProtocol as CustomProtocolType)
+        : undefined,
+    apiKey: optionalTrimmedString(value.apiKey),
+    baseUrl: optionalTrimmedString(value.baseUrl),
+    model: optionalTrimmedString(value.model),
   };
 }
 

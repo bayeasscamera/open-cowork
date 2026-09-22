@@ -914,6 +914,22 @@ export interface ImageGenerationConfig {
    * once and asks for an explicit acknowledgement. Undefined = built-in default.
    */
   costConfirmThresholdUsd?: number;
+  /**
+   * Explicit provider for image work. When set together with `model`, image
+   * read/generation runs on THIS provider with its own credentials, independent
+   * of any text ConfigSet — so any provider (first-party or an OpenAI/Gemini/
+   * Anthropic-compatible endpoint) can serve image models. Takes precedence
+   * over `configSetId`.
+   */
+  provider?: ProviderType;
+  /** Wire protocol when `provider` is 'custom' (or to force one explicitly). */
+  customProtocol?: CustomProtocolType;
+  /** API key for the explicit provider (empty = reuse the active key when the provider matches). */
+  apiKey?: string;
+  /** Base URL for the explicit provider (required for 'custom' and 'ollama'). */
+  baseUrl?: string;
+  /** Model id on the explicit provider (e.g. gpt-image-1.5, gemini-3-pro-image-preview). */
+  model?: string;
 }
 
 export interface AppConfig {

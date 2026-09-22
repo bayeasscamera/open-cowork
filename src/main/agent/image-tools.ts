@@ -52,6 +52,12 @@ export interface ImageConfigSource {
     configSetId: string;
     modelId?: string;
     costConfirmThresholdUsd?: number;
+    /** Explicit provider override — any provider, independent of ConfigSets. */
+    provider?: string;
+    customProtocol?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
   };
 }
 
@@ -278,19 +284,30 @@ export async function readWorkspaceImage(
 // Provider / cost resolution
 // ---------------------------------------------------------------------------
 
+/**
+ * Map ANY provider id to the wire protocol we speak to it.
+ *
+ * 'anthropic'/'gemini' are first-party; 'custom' follows its declared protocol
+ * (defaulting to OpenAI-compatible, the safe modern default); every other id
+ * — openai, openrouter, ollama, and third-party vendors (Groq, Mistral,
+ * Together, DeepSeek, xAI, …) — resolves to the OpenAI wire protocol, which is
+ * the de-facto standard. The provider itself rejects a model it does not host.
+ */
 export function protocolForProvider(
   provider: string,
   customProtocol?: string
 ): ImageProtocol | null {
-  if (provider === 'anthropic') return 'anthropic';
-  if (provider === 'gemini') return 'gemini';
-  if (provider === 'openai' || provider === 'openrouter' || provider === 'ollama') return 'openai';
-  if (provider === 'custom') {
+  const normalized = provider?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'anthropic') return 'anthropic';
+  if (normalized === 'gemini' || normalized === 'google') return 'gemini';
+  if (normalized === 'custom') {
     if (customProtocol === 'gemini') return 'gemini';
     if (customProtocol === 'openai') return 'openai';
+    // Historical default for a custom endpoint that declares no protocol.
     return 'anthropic';
   }
-  return null;
+  return 'openai';
 }
 
 export function toProviderConfig(source: ImageConfigSource): ImageProviderConfig | null {
@@ -621,11 +638,32 @@ export function buildImageTools(deps: ImageToolsDeps): ToolDefinition[] {
   const resolveProvider = (): ImageProviderConfig | null => {
     const app = getAppConfig();
     const pinned = app.imageGeneration;
+
+    // 1. Explicit provider + model — ANY provider, with its own credentials,
+    //    no ConfigSet required. Highest precedence.
+    const explicitModel = pinned?.model?.trim();
+    if (pinned?.provider && explicitModel) {
+      const sameAsActive = pinned.provider === app.provider;
+      const explicit = toProviderConfig({
+        provider: pinned.provider,
+        customProtocol: pinned.customProtocol,
+        model: explicitModel,
+        // Only borrow the active key/URL when it is the SAME provider; using
+        // another provider's key against a different endpoint would be wrong.
+        apiKey: pinned.apiKey?.trim() || (sameAsActive ? app.apiKey : '') || '',
+        baseUrl: pinned.baseUrl?.trim() || (sameAsActive ? app.baseUrl : undefined),
+      });
+      if (explicit) return explicit;
+    }
+
+    // 2. Pinned ConfigSet.
     if (pinned?.configSetId) {
       const projected = projectConfigSet(pinned.configSetId, pinned.modelId);
       const fromSet = projected ? toProviderConfig(projected) : null;
       if (fromSet) return fromSet;
     }
+
+    // 3. Active profile (zero-config default).
     return toProviderConfig(app);
   };
 

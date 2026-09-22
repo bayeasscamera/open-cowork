@@ -63,6 +63,47 @@ describe('shouldAutoExpandToolResult', () => {
   });
 });
 
+describe('the images settings expose ANY provider', () => {
+  it('offers an any-provider source with provider, protocol, base URL, key and model fields', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/renderer/components/settings/SettingsImages.tsx'),
+      'utf8'
+    );
+    expect(source).toContain("sourceCustom");
+    expect(source).toContain('PROVIDER_OPTIONS');
+    expect(source).toContain('api.images.providerLabel');
+    expect(source).toContain('api.images.protocolLabel');
+    expect(source).toContain('api.images.baseUrlLabel');
+    expect(source).toContain('api.images.apiKeyLabel');
+    expect(source).toContain('api.images.modelLabel');
+  });
+
+  it('has every new string translated in en, fr and zh', () => {
+    const keys = [
+      'sourceLabel',
+      'sourceInherit',
+      'sourceConfigSet',
+      'sourceCustom',
+      'providerLabel',
+      'protocolLabel',
+      'baseUrlLabel',
+      'apiKeyLabel',
+      'apiKeyPlaceholder',
+      'modelLabel',
+      'modelPlaceholder',
+      'providerHint',
+    ];
+    for (const locale of ['en', 'fr', 'zh']) {
+      const json = JSON.parse(
+        readFileSync(join(process.cwd(), 'src/renderer/i18n/locales', locale + '.json'), 'utf8')
+      ) as { api: { images: Record<string, string> } };
+      for (const key of keys) {
+        expect(json.api.images[key], locale + '.' + key).toBeTruthy();
+      }
+    }
+  });
+});
+
 describe('the agent runtime actually exposes the image tools', () => {
   it('registers analyze_image + generate_image as native custom tools', () => {
     const source = readFileSync(

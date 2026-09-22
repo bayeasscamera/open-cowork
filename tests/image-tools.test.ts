@@ -133,7 +133,14 @@ describe('provider resolution', () => {
     expect(protocolForProvider('openai')).toBe('openai');
     expect(protocolForProvider('openrouter')).toBe('openai');
     expect(protocolForProvider('custom', 'gemini')).toBe('gemini');
-    expect(protocolForProvider('unknown-provider')).toBeNull();
+    expect(protocolForProvider('custom', 'anthropic')).toBe('anthropic');
+    expect(protocolForProvider('custom')).toBe('anthropic');
+    // Any provider id: third-party vendors speak the OpenAI wire protocol.
+    expect(protocolForProvider('groq')).toBe('openai');
+    expect(protocolForProvider('mistral')).toBe('openai');
+    expect(protocolForProvider('together')).toBe('openai');
+    expect(protocolForProvider('some-future-vendor')).toBe('openai');
+    expect(protocolForProvider('  ')).toBeNull();
   });
 
   it('knows which routes can actually create images', () => {
@@ -273,6 +280,72 @@ describe('analyze_image (vision read)', () => {
     expect(seen?.protocol).toBe('gemini');
     expect(seen?.model).toBe('gemini-2.5-flash-image');
     expect(seen?.apiKey).toBe('gemini-key');
+  });
+
+  it('runs on ANY provider when the images profile pins one explicitly', async () => {
+    writeFileSync(join(workspace, 'photo.png'), PNG_1X1);
+    let seen: VisionRequest['config'] | undefined;
+    const tool = toolByName(
+      buildImageTools({
+        sessionId: 's-explicit-vision',
+        cwd: workspace,
+        getAppConfig: () =>
+          imageConfig({
+            provider: 'openai',
+            model: 'gpt-4o',
+            imageGeneration: {
+              configSetId: '',
+              provider: 'custom',
+              customProtocol: 'openai',
+              baseUrl: 'https://images.example.com/v1',
+              apiKey: 'vendor-key',
+              model: 'vendor-vision-1',
+            },
+          }),
+        vision: async (request) => {
+          seen = request.config;
+          return 'ok';
+        },
+      }),
+      'analyze_image'
+    );
+
+    await runTool(tool, { path: 'photo.png' });
+    expect(seen?.protocol).toBe('openai');
+    expect(seen?.model).toBe('vendor-vision-1');
+    expect(seen?.apiKey).toBe('vendor-key');
+    expect(seen?.baseUrl).toBe('https://images.example.com/v1');
+  });
+
+  it('reuses the active key when the explicit provider is the same provider', async () => {
+    writeFileSync(join(workspace, 'photo.png'), PNG_1X1);
+    let seen: VisionRequest['config'] | undefined;
+    const tool = toolByName(
+      buildImageTools({
+        sessionId: 's-same-provider',
+        cwd: workspace,
+        getAppConfig: () =>
+          imageConfig({
+            provider: 'openai',
+            model: 'gpt-4o',
+            apiKey: 'active-key',
+            imageGeneration: {
+              configSetId: '',
+              provider: 'openai',
+              model: 'gpt-4o-mini',
+            },
+          }),
+        vision: async (request) => {
+          seen = request.config;
+          return 'ok';
+        },
+      }),
+      'analyze_image'
+    );
+
+    await runTool(tool, { path: 'photo.png' });
+    expect(seen?.apiKey).toBe('active-key');
+    expect(seen?.model).toBe('gpt-4o-mini');
   });
 
   it('never calls the vision model for a path outside the workspace', async () => {
@@ -416,6 +489,44 @@ describe('generate_image', () => {
     expect(textOf(confirmed)).toContain('Estimated cost:');
     expect(textOf(confirmed)).toContain('generated-images/');
     expect(imagesOf(confirmed)).toHaveLength(1);
+  });
+
+  it('generates on an explicitly selected provider (gemini protocol, own key)', async () => {
+    let seen: GenerationRequest['config'] | undefined;
+    const tool = toolByName(
+      buildImageTools({
+        sessionId: 's-explicit-generate',
+        cwd: workspace,
+        getAppConfig: () =>
+          imageConfig({
+            provider: 'openai',
+            model: 'gpt-4o',
+            imageGeneration: {
+              configSetId: '',
+              provider: 'gemini',
+              model: 'gemini-3-pro-image-preview',
+              apiKey: 'gemini-key',
+              costConfirmThresholdUsd: 1,
+            },
+          }),
+        generate: async (request) => {
+          seen = request.config;
+          return {
+            base64: PNG_1X1.toString('base64'),
+            mimeType: 'image/png',
+            model: request.config.model,
+            provider: request.config.provider,
+          };
+        },
+      }),
+      'generate_image'
+    );
+
+    const result = await runTool(tool, { prompt: 'A red cube' });
+    expect(seen?.protocol).toBe('gemini');
+    expect(seen?.model).toBe('gemini-3-pro-image-preview');
+    expect(seen?.apiKey).toBe('gemini-key');
+    expect(imagesOf(result)).toHaveLength(1);
   });
 
   it('explains that Anthropic cannot generate images instead of calling a transport', async () => {
