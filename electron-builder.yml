@@ -84,6 +84,9 @@ win:
     # Tray icons — setupTray() looks for these in the Resources root
     - from: resources/tray-icon.png
       to: tray-icon.png
+    # Headless CLI launcher (scripts/deploy-local.sh links it on PATH)
+    - from: bin/open-cowork.mjs
+      to: bin/open-cowork.mjs
 
 mac:
   icon: resources/icon.icns
@@ -123,6 +126,9 @@ mac:
       to: tray-iconTemplate.png
     - from: resources/tray-icon.png
       to: tray-icon.png
+    # Headless CLI launcher (scripts/deploy-local.sh links it on PATH)
+    - from: bin/open-cowork.mjs
+      to: bin/open-cowork.mjs
 
 linux:
   icon: resources/icon.png
@@ -145,6 +151,9 @@ linux:
     # Tray icons — setupTray() looks for these in the Resources root
     - from: resources/tray-icon.png
       to: tray-icon.png
+    # Headless CLI launcher
+    - from: bin/open-cowork.mjs
+      to: bin/open-cowork.mjs
 
 nsis:
   oneClick: false

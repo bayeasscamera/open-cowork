@@ -129,6 +129,52 @@ npm run dev
 
 To build the installer locally: `npm run build`
 
+### Headless CLI (no GUI) 🤖
+
+Open Cowork bundles a launcher that runs the agent without opening a window — useful for
+automation, CI, and for driving Open Cowork from another agent. It starts the real Electron
+runtime (so the database, sandbox adapters, and native modules behave exactly as in the GUI)
+with `--headless`.
+
+After installing the app:
+
+```bash
+open-cowork -p "list the files in src/" --cwd ~/project
+open-cowork --mode rpc                       # JSONL events on stdin/stdout
+echo "summarise the README" | open-cowork
+open-cowork -p "fix the failing tests" --auto-approve
+```
+
+If `open-cowork` is not on your PATH, either point the launcher at the bundle or link it:
+
+```bash
+# macOS: link the bundled launcher (scripts/deploy-local.sh does this automatically)
+sudo ln -sf "/Applications/Open Cowork.app/Contents/Resources/bin/open-cowork.mjs" /usr/local/bin/open-cowork
+
+# or call the bundled launcher directly
+node "/Applications/Open Cowork.app/Contents/Resources/bin/open-cowork.mjs" -p "hi"
+```
+
+From a git checkout (a build is required first: `npm run dev` or `npm run build` generates
+`dist-electron/`):
+
+```bash
+node bin/open-cowork.mjs -p "list the files in src/"
+node bin/open-cowork.mjs --print-target   # show the command that would be launched
+```
+
+| Flag                      | Effect                                                        |
+| ------------------------- | ------------------------------------------------------------- |
+| `-p, --prompt <text>`     | Run one prompt, then exit                                     |
+| `--cwd <dir>`             | Working directory (default: current directory)                |
+| `--auto-approve`          | Approve every tool call without confirmation                  |
+| `--mode json\|rpc\|stdio` | Output and transport mode (JSONL stream on stdout by default) |
+| `--app <path>`            | Launcher: use this app bundle instead of auto-detecting       |
+| `--print-target`          | Launcher: print the resolved command, then exit               |
+
+Headless stdout carries JSONL events only: logs go to stderr, and credentials are redacted
+before any event is written.
+
 ### Security Configuration: 🔒 Sandbox Support
 
 Open Cowork provides **multi-level sandbox protection** to keep your system safe:

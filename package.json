@@ -36,6 +36,9 @@
     "node": ">=22"
   },
   "main": "dist-electron/main/index.js",
+  "bin": {
+    "open-cowork": "bin/open-cowork.mjs"
+  },
   "scripts": {
     "dev": "npm run download:node && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && vite",
     "dev:with-python": "npm run download:node && npm run prepare:python && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && vite",

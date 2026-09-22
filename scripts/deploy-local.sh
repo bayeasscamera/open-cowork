@@ -94,6 +94,23 @@ cp -R "$APP_BUNDLE" "$APP_PATH"
 # Remove quarantine flag
 xattr -rd com.apple.quarantine "$APP_PATH" 2>/dev/null || true
 
+# Expose the headless CLI on PATH. The launcher resolves the installed .app
+# itself, so a symlink is enough; it needs no write access at run time.
+CLI_LINK="/usr/local/bin/open-cowork"
+CLI_TARGET="$APP_PATH/Contents/Resources/bin/open-cowork.mjs"
+if [ -f "$CLI_TARGET" ]; then
+  if [ -w /usr/local/bin ] || [ -w "$CLI_LINK" ]; then
+    if ln -sf "$CLI_TARGET" "$CLI_LINK"; then
+      echo "==> Linked headless CLI: $CLI_LINK"
+    fi
+  else
+    echo "==> Headless CLI bundled at: $CLI_TARGET"
+    echo "    Add it to PATH with: sudo ln -sf \"$CLI_TARGET\" $CLI_LINK"
+  fi
+else
+  echo "==> WARNING: headless CLI launcher missing from the app bundle ($CLI_TARGET)"
+fi
+
 echo "==> Launching $APP_NAME..."
 open -a "$APP_NAME"
 
