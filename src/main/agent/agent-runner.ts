@@ -46,6 +46,7 @@ import { buildColdStartHistoryPreamble } from './cold-start-history';
 import { createStreamLivenessWatcher } from './stream-liveness';
 import { buildMcpServersConfig, type McpServersCache } from './mcp-servers-config';
 import { buildCoworkAppendPrompt } from './runtime-config-summary';
+import { setupSkillsDirectories } from './skills-directory-setup';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -886,69 +887,15 @@ export class CoworkAgentRunner {
       if (!this._skillsSetupDone) {
         // Set flag at start to prevent re-entrant calls from concurrent queries
         this._skillsSetupDone = true;
-
-        // Ensure app Claude config directory exists
-        if (!fs.existsSync(userAgentDir)) {
-          fs.mkdirSync(userAgentDir, { recursive: true });
-        }
-
-        // Ensure app Claude skills directory exists
-        const appSkillsDir = this.getRuntimeSkillsDir();
-        if (!fs.existsSync(appSkillsDir)) {
-          fs.mkdirSync(appSkillsDir, { recursive: true });
-        }
-
-        // Copy built-in skills to app Claude skills directory if they don't exist
-        const builtinSkillsPath = this.getBuiltinSkillsPath();
-        if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-          // Symlinks into .asar archives don't work at the OS level (ENOTDIR),
-          // so always copy when the source is inside an asar archive.
-          // Use regex to match .asar/ but NOT .asar.unpacked/ (which is a real directory).
-          const sourceInsideAsar = /\.asar[/\\]/.test(builtinSkillsPath);
-          const builtinSkills = fs.readdirSync(builtinSkillsPath);
-          for (const skillName of builtinSkills) {
-            const builtinSkillPath = path.join(builtinSkillsPath, skillName);
-            const userSkillPath = path.join(appSkillsDir, skillName);
-
-            // Clean up broken symlinks pointing into .asar from previous versions
-            try {
-              const lstat = fs.lstatSync(userSkillPath);
-              if (lstat.isSymbolicLink()) {
-                const linkTarget = fs.readlinkSync(userSkillPath);
-                if (/\.asar[/\\]/.test(linkTarget)) {
-                  fs.unlinkSync(userSkillPath);
-                  log(`[CoworkAgentRunner] Removed broken asar symlink: ${userSkillPath}`);
-                }
-              }
-            } catch {
-              // Path doesn't exist — fine, we'll create it below
-            }
-
-            // Only set up if it's a directory and doesn't exist in app directory
-            if (fs.statSync(builtinSkillPath).isDirectory() && !fs.existsSync(userSkillPath)) {
-              if (sourceInsideAsar) {
-                // Source is inside .asar — must copy (symlinks to asar paths fail at OS level)
-                this.copyDirectorySync(builtinSkillPath, userSkillPath);
-                log(`[CoworkAgentRunner] Copied built-in skill from asar: ${skillName}`);
-              } else {
-                // Source is a real directory — symlink for space efficiency
-                try {
-                  fs.symlinkSync(builtinSkillPath, userSkillPath, 'dir');
-                  log(`[CoworkAgentRunner] Linked built-in skill: ${skillName}`);
-                } catch (err) {
-                  logWarn(
-                    `[CoworkAgentRunner] Failed to symlink ${skillName}, copying instead:`,
-                    err
-                  );
-                  this.copyDirectorySync(builtinSkillPath, userSkillPath);
-                }
-              }
-            }
-          }
-        }
-
-        this.syncUserSkillsToAppDir(appSkillsDir);
-        this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
+        setupSkillsDirectories({
+          appAgentDir: userAgentDir,
+          runtimeSkillsDir: this.getRuntimeSkillsDir(),
+          builtinSkillsPath: this.getBuiltinSkillsPath(),
+          copyDirectorySync: (source, target) => this.copyDirectorySync(source, target),
+          syncUserSkillsToAppDir: (appSkillsDir) => this.syncUserSkillsToAppDir(appSkillsDir),
+          syncConfiguredSkillsToRuntimeDir: (runtimeSkillsDir) =>
+            this.syncConfiguredSkillsToRuntimeDir(runtimeSkillsDir),
+        });
       }
 
       // Build available skills section dynamically — now handled by pi's DefaultResourceLoader
