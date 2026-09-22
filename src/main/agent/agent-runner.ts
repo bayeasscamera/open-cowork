@@ -45,6 +45,7 @@ import {
 import { buildColdStartHistoryPreamble } from './cold-start-history';
 import { createStreamLivenessWatcher } from './stream-liveness';
 import { buildMcpServersConfig, type McpServersCache } from './mcp-servers-config';
+import { buildCoworkAppendPrompt } from './runtime-config-summary';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -1120,67 +1121,38 @@ export class CoworkAgentRunner {
 
       logTiming('after building MCP servers config', runStartTime);
 
-      const workspaceInfoPrompt =
-        useSandboxIsolation && sandboxPath
-          ? `<workspace_info>
-Your current workspace is located at: ${VIRTUAL_WORKSPACE_PATH}
-This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the root path for file operations.
-</workspace_info>`
-          : workingDir
-            ? `<workspace_info>Your current workspace is: ${workingDir}</workspace_info>`
-            : '';
-
-      // Build a concise summary of the agent's own runtime configuration.
-      // Intentionally excludes API keys, base URLs, and any other sensitive data.
-      const configSummaryPrompt = `<your_configuration>
-- Model: ${piModel.id}
-- Provider: ${provider}
-- Context Window: ${piModel.contextWindow || 'unknown'} tokens
-- Max Output Tokens: ${piModel.maxTokens || 'default'}
-- Thinking: ${enableThinking ? 'enabled' : 'disabled'}
-- Sandbox: ${runtimeConfig.sandboxEnabled ? 'enabled' : 'disabled'}
-- Memory: ${runtimeConfig.memoryEnabled ? 'enabled' : 'disabled'}
-</your_configuration>`;
-
-      const userInstructionsPrompt =
-        typeof runtimeConfig.coworkInstructions === 'string' &&
-        runtimeConfig.coworkInstructions.trim()
-          ? `<user_instructions>
-The user has provided the following personal instructions. Follow them consistently across the conversation:
-${runtimeConfig.coworkInstructions.trim()}
-</user_instructions>`
-          : '';
-
-      const coworkAppendPrompt = [
-        'You are an Open Cowork assistant. Be concise, accurate, and tool-capable.',
-        `CRITICAL BEHAVIORAL RULES:
-1. CHAT FIRST: By default, respond to the user in plain text within the conversation. Do NOT create, write, or edit files unless the user explicitly asks you to (e.g., "create a file", "write this to...", "edit the code", "save as...", mentions a specific file path, or describes code changes they want applied). For questions, summaries, explanations, analysis, and general conversation — always reply directly in chat text.
-2. When a request is actionable, proceed immediately with reasonable assumptions. If you need clarification, ask briefly in plain text.
-3. For relative time windows like "within two days" in browsing or research tasks, assume the most recent two relevant publication days unless the user explicitly defines another date range.
-4. For bracketed placeholders like [Agent], [Topic], etc., treat the word inside brackets as the literal search keyword unless the user says otherwise.
-5. When given a task, START DOING IT. Do not restate the task, do not list what you will do, do not ask for confirmation. Just execute.`,
-        configSummaryPrompt,
-        workspaceInfoPrompt,
-        userInstructionsPrompt,
-        `<citation_requirements>
-If your answer uses linkable content from MCP tools, include a "Sources:" section and otherwise use standard Markdown links: [Title](https://claude.ai/chat/URL).
-</citation_requirements>`,
-        `<tool_behavior>
-Tool routing:
-- web_search and web_fetch are NATIVE built-in tools, always available. Use web_search for general lookups, then web_fetch to read a result in full.
-- If user explicitly asks to use Chrome/browser/web navigation, prioritize Chrome MCP tools (mcp__Chrome__*) over the native web tools.
-</tool_behavior>`,
-        EliteCodingIntelligence.getElitePrompt(),
-        AdaptiveStrategyEngine.getStrategicPrompt(),
-        this.getBundledPathHints(),
-        extensionResult.systemContext || '',
-        projectContext.systemPromptBlock,
-        memoryEnabled ? this.memoryManager?.formatUserPreferencesForContext() || '' : '',
-        memoryEnabled ? this.memoryManager?.formatErrorPatternsForContext(prompt) || '' : '',
-        memoryEnabled ? this.memoryManager?.formatProjectResumptionContext(session.id) || '' : '',
-      ]
-        .filter((section): section is string => Boolean(section && section.trim()))
-        .join('\n\n');
+      const coworkAppendPrompt = buildCoworkAppendPrompt({
+        config: {
+          modelId: piModel.id,
+          provider,
+          contextWindow: piModel.contextWindow,
+          maxTokens: piModel.maxTokens,
+          thinkingEnabled: enableThinking,
+          sandboxEnabled: runtimeConfig.sandboxEnabled,
+          memoryEnabled: runtimeConfig.memoryEnabled,
+        },
+        workspace: {
+          sandboxIsolated: useSandboxIsolation,
+          sandboxPath,
+          workingDir,
+          virtualWorkspacePath: VIRTUAL_WORKSPACE_PATH,
+        },
+        coworkInstructions: runtimeConfig.coworkInstructions,
+        elitePrompt: EliteCodingIntelligence.getElitePrompt(),
+        strategicPrompt: AdaptiveStrategyEngine.getStrategicPrompt(),
+        bundledPathHints: this.getBundledPathHints(),
+        extensionSystemContext: extensionResult.systemContext,
+        projectSystemPromptBlock: projectContext.systemPromptBlock,
+        userPreferences: memoryEnabled
+          ? this.memoryManager?.formatUserPreferencesForContext() || ''
+          : '',
+        errorPatterns: memoryEnabled
+          ? this.memoryManager?.formatErrorPatternsForContext(prompt) || ''
+          : '',
+        projectResumption: memoryEnabled
+          ? this.memoryManager?.formatProjectResumptionContext(session.id) || ''
+          : '',
+      });
 
       logTiming('before agent session creation', runStartTime);
 

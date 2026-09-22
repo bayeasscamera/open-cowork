@@ -8,13 +8,15 @@ const formattingPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner-
 const formattingContent = readFileSync(formattingPath, 'utf8');
 const mcpToolsPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner-mcp-tools.ts');
 const mcpToolsContent = readFileSync(mcpToolsPath, 'utf8');
-const coldStartHistoryPath = path.resolve(
-  process.cwd(),
-  'src/main/agent/cold-start-history.ts'
-);
+const coldStartHistoryPath = path.resolve(process.cwd(), 'src/main/agent/cold-start-history.ts');
 const coldStartHistoryContent = readFileSync(coldStartHistoryPath, 'utf8');
 const mcpServersConfigPath = path.resolve(process.cwd(), 'src/main/agent/mcp-servers-config.ts');
 const mcpServersConfigContent = readFileSync(mcpServersConfigPath, 'utf8');
+const runtimeConfigSummaryPath = path.resolve(
+  process.cwd(),
+  'src/main/agent/runtime-config-summary.ts'
+);
+const runtimeConfigSummaryContent = readFileSync(runtimeConfigSummaryPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -34,19 +36,24 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
     expect(agentRunnerContent).toContain("from './agent-runner-formatting'");
     expect(formattingContent).toContain('function safeStringify');
     // The MCP payload build now lives in its own module; the guard follows it.
-    expect(mcpServersConfigContent).toContain('Failed to prepare MCP server config, skipping server');
+    expect(mcpServersConfigContent).toContain(
+      'Failed to prepare MCP server config, skipping server'
+    );
     expect(agentRunnerContent).toContain('buildMcpServersConfig({');
   });
 
   it('uses standard markdown link guidance for sources citations', () => {
-    expect(agentRunnerContent).toContain(
+    // The append-system-prompt templates now live in their own module; the guard follows them.
+    expect(runtimeConfigSummaryContent).toContain(
       'otherwise use standard Markdown links: [Title](https://claude.ai/chat/URL)'
     );
   });
 
   it('avoids duplicating the current user prompt in contextual history assembly', () => {
     // The cold-start assembly now lives in its own module; the guard follows it.
-    expect(coldStartHistoryContent).toContain('const conversationMessages = options.messages.filter(');
+    expect(coldStartHistoryContent).toContain(
+      'const conversationMessages = options.messages.filter('
+    );
     // Image-containing messages are filtered out individually (not skipping entire history)
     expect(coldStartHistoryContent).toContain('const textOnlyMessages = conversationMessages');
     expect(coldStartHistoryContent).toContain('textOnlyMessages.slice(0, -1)');
@@ -56,8 +63,12 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('keeps MCP server logging compact unless full debug logging is enabled', () => {
-    expect(mcpServersConfigContent).toContain("log('[CoworkAgentRunner] Final mcpServers summary:'");
-    expect(mcpServersConfigContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
+    expect(mcpServersConfigContent).toContain(
+      "log('[CoworkAgentRunner] Final mcpServers summary:'"
+    );
+    expect(mcpServersConfigContent).toContain(
+      "if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {"
+    );
     expect(mcpServersConfigContent).toContain("log('[CoworkAgentRunner] Final mcpServers config:'");
   });
 
@@ -69,7 +80,9 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
       "if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {"
     );
     expect(agentRunnerContent).toContain("'[CoworkAgentRunner] Event: message_end'");
-    expect(agentRunnerContent).toContain('messageUpdateCounts: streamLiveness.getStreamEventSummary()');
+    expect(agentRunnerContent).toContain(
+      'messageUpdateCounts: streamLiveness.getStreamEventSummary()'
+    );
     expect(agentRunnerContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
     expect(agentRunnerContent).toContain("'[CoworkAgentRunner] message_end raw message:'");
   });
@@ -110,9 +123,11 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('nudges the model to proceed with reasonable assumptions', () => {
-    expect(agentRunnerContent).toContain('proceed immediately with reasonable assumptions');
-    expect(agentRunnerContent).toContain('within two days');
-    expect(agentRunnerContent).toContain('most recent two relevant publication days');
+    expect(runtimeConfigSummaryContent).toContain(
+      'proceed immediately with reasonable assumptions'
+    );
+    expect(runtimeConfigSummaryContent).toContain('within two days');
+    expect(runtimeConfigSummaryContent).toContain('most recent two relevant publication days');
   });
 
   it('routes MCP image results through structured helpers instead of stringifying base64 into text', () => {
@@ -145,10 +160,12 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('chat-first behavioral rules are present', () => {
-    expect(agentRunnerContent).toContain('CHAT FIRST');
-    expect(agentRunnerContent).toContain(
+    expect(runtimeConfigSummaryContent).toContain('CHAT FIRST');
+    expect(runtimeConfigSummaryContent).toContain(
       'Do NOT create, write, or edit files unless the user explicitly asks'
     );
-    expect(agentRunnerContent).toContain('START DOING IT');
+    expect(runtimeConfigSummaryContent).toContain('START DOING IT');
+    // The runner keeps wiring the assembled block into the pi session.
+    expect(agentRunnerContent).toContain('const coworkAppendPrompt = buildCoworkAppendPrompt({');
   });
 });
