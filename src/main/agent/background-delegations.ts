@@ -48,6 +48,7 @@ import {
   parseResearchContradictions,
   type CrossVerificationResult,
 } from './cross-verification';
+import { groupResearchByTopic } from './research-topic';
 import { log, logError, logWarn } from '../utils/logger';
 import type { ServerEvent } from '../../shared/types';
 import { configStore, type AppConfig as StoreAppConfig } from '../config/config-store';
@@ -719,9 +720,19 @@ function scheduleResearchCrossVerification(
   );
   // A cross-check needs at least TWO independent reports to contradict.
   if (pendingCrossVerify.length < 2) return;
-  const ids = pendingCrossVerify.map((d) => d.id).sort();
+  // Same-SUBJECT grouping: parallel delegations on unrelated subjects cannot
+  // factually contradict, and cross-checking them would waste a model call.
+  const topicGroups = groupResearchByTopic(
+    pendingCrossVerify,
+    (d) => `${d.title}\n${d.prompt}`
+  );
+  const batch = topicGroups[0];
+  if (!batch || batch.length < 2) return;
+  const ids = batch.map((d) => d.id).sort();
   const existing = researchCrossChecks.get(sessionId);
-  if (existing && existing.delegationIds.join('|') === ids.join('|')) return;
+  // Never re-run an identical batch, and never re-cover a report already
+  // cross-checked (a later arrival must not re-bill the same reports).
+  if (existing && ids.every((id) => existing.delegationIds.includes(id))) return;
   const covered = ids
     .map((id) => delegations.get(id))
     .filter((d): d is BackgroundDelegation => d !== undefined);

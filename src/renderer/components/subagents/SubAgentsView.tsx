@@ -560,6 +560,11 @@ function CostSection({ t }: { t: (key: string, options?: Record<string, unknown>
   const pct = (part: number, total: number) =>
     total > 0 ? `${Math.round((part / total) * 100)} %` : '—';
   const lastRunSeconds = swarm?.lastRunMs ? Math.round(swarm.lastRunMs / 1000) : null;
+  // Measured cross-verification cost: absent/0 on every standard swarm, so the
+  // section says so explicitly instead of showing a misleading "0".
+  const crossSwarms = swarm?.crossVerificationSwarms ?? 0;
+  const crossCalls = swarm?.crossVerificationCalls ?? 0;
+  const crossPerSwarm = crossSwarms > 0 ? (crossCalls / crossSwarms).toFixed(1) : null;
 
   const openSkillDoctor = () => {
     // Leave the dedicated view, land on Settings › Skills (Skill doctor lives there).
@@ -603,6 +608,15 @@ function CostSection({ t }: { t: (key: string, options?: Record<string, unknown>
             ) : (
               <p>{t('subAgents.noSwarmRunYet')}</p>
             )}
+            <p className="mt-2 border-t border-border-subtle pt-2">
+              {crossSwarms > 0
+                ? t('subAgents.crossVerificationMeasured', {
+                    swarms: crossSwarms,
+                    calls: crossCalls,
+                    perSwarm: crossPerSwarm ?? '0',
+                  })
+                : t('subAgents.crossVerificationNever')}
+            </p>
           </div>
         )}
       </SettingsContentSection>
@@ -632,6 +646,11 @@ function CostSection({ t }: { t: (key: string, options?: Record<string, unknown>
             value={
               deleg ? `${deleg.completed + deleg.failed + deleg.cancelled}/${deleg.total}` : '—'
             }
+            loading={loading}
+          />
+          <Stat
+            label={t('subAgents.statCrossVerification')}
+            value={swarm ? String(crossCalls) : '—'}
             loading={loading}
           />
         </div>

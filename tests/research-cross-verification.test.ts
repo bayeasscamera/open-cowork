@@ -150,7 +150,7 @@ describe('research cross-verification — Zone 2 (parallel delegations)', () => 
       sessionId: 'x1',
       cwd: testRoot,
       title: 'Report A',
-      prompt: 'Research the 2026 market size',
+      prompt: 'Research the 2026 electric vehicle market size',
       crossVerify: true,
       launchSession,
       getConfig: () => testConfig,
@@ -159,7 +159,7 @@ describe('research cross-verification — Zone 2 (parallel delegations)', () => 
       sessionId: 'x1',
       cwd: testRoot,
       title: 'Report B',
-      prompt: 'Research the 2026 market size',
+      prompt: 'Research the 2026 electric vehicle market size',
       crossVerify: true,
       launchSession,
       getConfig: () => testConfig,
@@ -241,7 +241,7 @@ describe('research cross-verification — Zone 2 (parallel delegations)', () => 
       sessionId: 'x4',
       cwd: testRoot,
       title: 'A',
-      prompt: 'p',
+      prompt: 'Research the electric vehicle market size',
       crossVerify: true,
       launchSession,
       getConfig: () => testConfig,
@@ -250,7 +250,7 @@ describe('research cross-verification — Zone 2 (parallel delegations)', () => 
       sessionId: 'x4',
       cwd: testRoot,
       title: 'B',
-      prompt: 'p',
+      prompt: 'Research the electric vehicle market share',
       crossVerify: true,
       launchSession,
       getConfig: () => testConfig,
@@ -259,6 +259,38 @@ describe('research cross-verification — Zone 2 (parallel delegations)', () => 
     const block = takePendingDelegationResults('x4');
     expect(block).toContain('A');
     expect(block).not.toContain('<research_cross_verification>');
+  });
+
+  it('does NOT cross-check flagged reports on clearly different subjects', async () => {
+    const { launchSession, launches } = makeLauncher('NONE');
+    startDelegation({
+      sessionId: 'x6',
+      cwd: testRoot,
+      title: 'Kubernetes costs',
+      prompt: 'Research Kubernetes cluster cost optimization',
+      crossVerify: true,
+      launchSession,
+      getConfig: () => testConfig,
+    });
+    startDelegation({
+      sessionId: 'x6',
+      cwd: testRoot,
+      title: 'Chip market',
+      prompt: 'Research the 2026 semiconductor market size',
+      crossVerify: true,
+      launchSession,
+      getConfig: () => testConfig,
+    });
+    await flush();
+    await flush();
+    await flush();
+
+    // Both flagged, but no shared subject → no wasteful verification call.
+    expect(launches.filter((l) => l.task.id.startsWith('research-cross-check-'))).toHaveLength(0);
+    expect(getResearchCrossCheck('x6')).toBeUndefined();
+    const block = takePendingDelegationResults('x6');
+    expect(block).toContain('Kubernetes costs');
+    expect(block).toContain('Chip market');
   });
 
   it('a failed cross-check never loses the reports nor throws', async () => {
@@ -272,7 +304,7 @@ describe('research cross-verification — Zone 2 (parallel delegations)', () => 
       sessionId: 'x5',
       cwd: testRoot,
       title: 'A',
-      prompt: 'p',
+      prompt: 'Research the electric vehicle market size',
       crossVerify: true,
       launchSession,
       getConfig: () => testConfig,
@@ -281,7 +313,7 @@ describe('research cross-verification — Zone 2 (parallel delegations)', () => 
       sessionId: 'x5',
       cwd: testRoot,
       title: 'B',
-      prompt: 'p',
+      prompt: 'Research the electric vehicle market share',
       crossVerify: true,
       launchSession,
       getConfig: () => testConfig,
