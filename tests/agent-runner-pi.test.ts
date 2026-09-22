@@ -13,6 +13,8 @@ const coldStartHistoryPath = path.resolve(
   'src/main/agent/cold-start-history.ts'
 );
 const coldStartHistoryContent = readFileSync(coldStartHistoryPath, 'utf8');
+const mcpServersConfigPath = path.resolve(process.cwd(), 'src/main/agent/mcp-servers-config.ts');
+const mcpServersConfigContent = readFileSync(mcpServersConfigPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -31,7 +33,9 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
     // The resilient serializer now lives in the formatting module
     expect(agentRunnerContent).toContain("from './agent-runner-formatting'");
     expect(formattingContent).toContain('function safeStringify');
-    expect(agentRunnerContent).toContain('Failed to prepare MCP server config, skipping server');
+    // The MCP payload build now lives in its own module; the guard follows it.
+    expect(mcpServersConfigContent).toContain('Failed to prepare MCP server config, skipping server');
+    expect(agentRunnerContent).toContain('buildMcpServersConfig({');
   });
 
   it('uses standard markdown link guidance for sources citations', () => {
@@ -52,9 +56,9 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('keeps MCP server logging compact unless full debug logging is enabled', () => {
-    expect(agentRunnerContent).toContain("log('[CoworkAgentRunner] Final mcpServers summary:'");
-    expect(agentRunnerContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
-    expect(agentRunnerContent).toContain("log('[CoworkAgentRunner] Final mcpServers config:'");
+    expect(mcpServersConfigContent).toContain("log('[CoworkAgentRunner] Final mcpServers summary:'");
+    expect(mcpServersConfigContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
+    expect(mcpServersConfigContent).toContain("log('[CoworkAgentRunner] Final mcpServers config:'");
   });
 
   it('summarizes noisy SDK message updates instead of logging every text delta', () => {
