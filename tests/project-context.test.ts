@@ -219,6 +219,9 @@ describe('agent runner wiring — source contract', () => {
 describe('IPC surface — source contract', () => {
   const preloadSource = readFileSync('src/preload/index.ts', 'utf-8');
   const indexSource = readFileSync('src/main/index.ts', 'utf-8');
+  // The client event dispatch table lives in its own module since the
+  // structural refactor; projects.* events are handled there.
+  const dispatcherSource = readFileSync('src/main/ipc/client-event-handler.ts', 'utf-8');
 
   it('exposes every projects.* channel in the preload allowlist and helpers', () => {
     for (const channel of [
@@ -251,12 +254,12 @@ describe('IPC surface — source contract', () => {
       'projects.linkSession',
       'projects.unlinkSession',
     ]) {
-      expect(indexSource).toContain(`case '${channel}'`);
+      expect(dispatcherSource).toContain(`case '${channel}'`);
     }
   });
 
   it('session.start carries the projectId and defaults cwd to the project workdir', () => {
-    expect(indexSource).toContain('event.payload.projectId');
-    expect(indexSource).toContain('if (!cwd) cwd = project.workdir;');
+    expect(dispatcherSource).toContain('event.payload.projectId');
+    expect(dispatcherSource).toContain('if (!cwd) cwd = project.workdir;');
   });
 });

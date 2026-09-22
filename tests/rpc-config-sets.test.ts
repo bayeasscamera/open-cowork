@@ -3,7 +3,9 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(__dirname, '..');
-const indexPath = resolve(root, 'src/main/index.ts');
+// The client event dispatch table (config.createSet, settings.update, …) lives
+// in its own module since the structural refactor.
+const indexPath = resolve(root, 'src/main/ipc/client-event-handler.ts');
 const typesPath = resolve(root, 'src/shared/types.ts');
 
 function source(file: string): string {

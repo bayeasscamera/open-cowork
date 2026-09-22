@@ -3,16 +3,24 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 const mainIndexPath = path.resolve(process.cwd(), 'src/main/index.ts');
+const dispatcherPath = path.resolve(process.cwd(), 'src/main/ipc/client-event-handler.ts');
+const windowThemePath = path.resolve(process.cwd(), 'src/main/utils/window-theme.ts');
 const useIPCPath = path.resolve(process.cwd(), 'src/renderer/hooks/useIPC.ts');
 const storePath = path.resolve(process.cwd(), 'src/renderer/store/index.ts');
 
 describe('theme settings persistence', () => {
   it('persists theme updates in the main process and applies them to native window state', () => {
-    const source = fs.readFileSync(mainIndexPath, 'utf8');
+    // Theme application spans the app entry point, the client event dispatcher
+    // and the shared window-theme helpers since the structural refactor.
+    const source = [
+      fs.readFileSync(mainIndexPath, 'utf8'),
+      fs.readFileSync(dispatcherPath, 'utf8'),
+      fs.readFileSync(windowThemePath, 'utf8'),
+    ].join('\n');
 
     expect(source).toContain("const DARK_BG = '#171614';");
     expect(source).toContain("const LIGHT_BG = '#f5f3ee';");
-    expect(source).toContain("configStore.update({ theme: nextTheme });");
+    expect(source).toContain('configStore.update({ theme: nextTheme });');
     expect(source).toContain('nativeTheme.themeSource = theme;');
     expect(source).toContain('mainWindow.setBackgroundColor(');
     expect(source).toContain("getSavedThemePreference() === 'system'");

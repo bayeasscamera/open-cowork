@@ -16,7 +16,7 @@
  *               skills-manager, scheduled-task-manager, nav-server, remote-manager
  */
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, globalShortcut } from 'electron';
-import { join, resolve, isAbsolute } from 'path';
+import { join, resolve } from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
 import { config } from 'dotenv';
@@ -45,7 +45,7 @@ import {
 } from './config/config-file-watcher';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
-import { setPermissionRules, decidePermission, setAutoApproveAll } from './config/permission-rules-store';
+import { decidePermission } from './config/permission-rules-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
@@ -58,7 +58,6 @@ import type {
   ApiTestResult,
   DiagnosticInput,
   ProviderModelInfo,
-  PermissionRule,
 } from '../shared/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
@@ -75,7 +74,11 @@ import {
   buildScheduledTaskTitle,
 } from '../shared/schedule/task-title';
 import { NavigationUrlPolicy } from './utils/navigation-url-policy';
-import { eventRequiresSessionManager } from './client-event-utils';
+import { applyNativeThemePreference, DARK_BG, LIGHT_BG, resolveEffectiveTheme } from './utils/window-theme';
+import {
+  handleClientEvent as dispatchClientEvent,
+  type ClientEventHandlerContext,
+} from './ipc/client-event-handler';
 import { getUnsupportedWorkspacePathReason } from './workspace-path-constraints';
 
 import {
@@ -94,26 +97,11 @@ import { registerLogsIpcHandlers } from './ipc/logs-handlers';
 import { registerMcpIpcHandlers } from './ipc/mcp-handlers';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods, getDiffCollector } from './mods/builtin-mods';
-import { createProjectStore, ProjectStore, ProjectValidationError } from './projects/project-store';
-import { computeProjectContextUsage } from './projects/project-context';
+import { createProjectStore, ProjectStore } from './projects/project-store';
 import {
-  listDelegations,
-  getDelegation,
-  cancelDelegation,
-  retryDelegation,
-  deleteDelegation,
-  getDelegationSettings,
-  setDelegationSettings,
   delegationNotifyEnabled,
-  getDelegationStats,
   resumeInterruptedDelegations,
 } from './agent/background-delegations';
-import { getSwarmStats } from './agent/swarm-stats';
-import {
-  readWorkspaceDoc,
-  writeWorkspaceDoc,
-  listWorkspaceDocs,
-} from './documents/document-doc';
 import {
   buildSkillDoctorReport,
   loadSkillSourcesFromDir,
@@ -126,7 +114,6 @@ import {
 } from './skills/skill-proposals';
 
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
-import { SystemNotifier } from './utils/system-notifier';
 import {
   sendToRenderer,
   setRendererSenderContext,
@@ -378,8 +365,6 @@ if (!hasSingleInstanceLock) {
 
 // Tray instance (kept alive to prevent GC)
 let tray: Tray | null = null;
-const DARK_BG = '#171614';
-const LIGHT_BG = '#f5f3ee';
 
 function buildMacMenu() {
   if (process.platform !== 'darwin') return;
@@ -583,17 +568,6 @@ function applyBackgroundAccessSetting(enabled: boolean): void {
 function getSavedThemePreference(): AppTheme {
   const theme = configStore.get('theme');
   return theme === 'dark' || theme === 'system' ? theme : 'light';
-}
-
-function resolveEffectiveTheme(theme: AppTheme): 'dark' | 'light' {
-  if (theme === 'system') {
-    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
-  }
-  return theme;
-}
-
-function applyNativeThemePreference(theme: AppTheme): void {
-  nativeTheme.themeSource = theme;
 }
 
 function createWindow() {
@@ -3140,536 +3114,18 @@ ipcMain.handle('sandbox.retrySetup', async () => {
   }
 });
 
+// Client event dispatch lives in its own module; wire the app-level state it
+// needs here so the dependency surface stays explicit.
+const clientEventHandlerContext: ClientEventHandlerContext = {
+  getSessionManager: () => sessionManager,
+  getMainWindow: () => mainWindow,
+  getCurrentWorkingDir: () => currentWorkingDir,
+  getProjectStore,
+  getWorkingDir,
+  setWorkingDir,
+  getWorkspacePathUnsupportedReason,
+};
+
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {
-  // Check if configured before starting sessions
-  if (event.type === 'session.start' && !configStore.hasUsableCredentialsForActiveSet()) {
-    sendToRenderer({
-      type: 'error',
-      payload: {
-        message: 'No usable API credentials configured. Run the GUI to set up API keys.',
-        code: 'CONFIG_REQUIRED_ACTIVE_SET',
-        action: 'open_api_settings',
-      },
-    });
-    return null;
-  }
-
-  if (eventRequiresSessionManager(event) && !sessionManager) {
-    throw new Error('Session manager not initialized');
-  }
-  // After the guard above, sessionManager is guaranteed non-null for session.* events.
-  // Use a local alias to satisfy TypeScript's control-flow narrowing.
-  const sm = sessionManager!;
-
-  switch (event.type) {
-    case 'session.start': {
-      // When the session starts inside a project, the project's workdir is the
-      // workspace unless the caller explicitly overrode cwd.
-      let cwd = event.payload.cwd;
-      if (event.payload.projectId) {
-        const project = getProjectStore().get(event.payload.projectId);
-        if (!project) {
-          throw new Error(`Project not found: ${event.payload.projectId}`);
-        }
-        if (!cwd) cwd = project.workdir;
-      }
-      if (getWorkspacePathUnsupportedReason(cwd)) {
-        sendToRenderer({
-          type: 'error',
-          payload: {
-            message: getWorkspacePathUnsupportedReason(cwd)!,
-          },
-        });
-        return null;
-      }
-      return sm.startSession(
-        event.payload.title,
-        event.payload.prompt,
-        cwd,
-        event.payload.allowedTools,
-        event.payload.content,
-        event.payload.memoryEnabled,
-        event.payload.projectId
-      );
-    }
-
-    case 'session.continue':
-      return sm.continueSession(
-        event.payload.sessionId,
-        event.payload.prompt,
-        event.payload.content
-      );
-
-    case 'session.stop':
-      return sm.stopSession(event.payload.sessionId);
-
-    case 'session.delete':
-      return sm.deleteSession(event.payload.sessionId);
-
-    case 'session.batchDelete':
-      return sm.batchDeleteSessions(event.payload.sessionIds);
-
-    case 'session.rename':
-      return sm.renameSession(event.payload.sessionId, event.payload.title);
-
-    case 'session.togglePin':
-      return sm.togglePinSession(event.payload.sessionId, event.payload.isPinned);
-
-    case 'session.activate': {
-      const { sessionId, cwd } = event.payload;
-      if (sessionId) {
-        configStore.set('lastActiveSessionId', sessionId);
-        configStore.set('lastActiveSessionUpdatedAt', Date.now());
-        if (cwd) configStore.set('lastActiveCwd', cwd);
-      } else {
-        // Session deselected — keep the last known session for resumption
-      }
-      return { ok: true };
-    }
-
-    case 'session.list': {
-      const sessions = sm.listSessions();
-      const lastActiveSessionId = configStore.get('lastActiveSessionId') as string | undefined;
-      const lastActiveCwd = configStore.get('lastActiveCwd') as string | undefined;
-      sendToRenderer({ type: 'session.list', payload: { sessions, lastActiveSessionId, lastActiveCwd } });
-      return sessions;
-    }
-
-    case 'session.getMessages':
-      return sm.getMessages(event.payload.sessionId);
-
-    case 'session.getTraceSteps':
-      return sm.getTraceSteps(event.payload.sessionId);
-
-    case 'session.compact':
-      return sm.compactSession(event.payload.sessionId, event.payload.customInstructions);
-
-    case 'session.getContextUsage':
-      return sm.getContextUsage(event.payload.sessionId);
-
-    case 'permission.response':
-      return sm.handlePermissionResponse(event.payload.toolUseId, event.payload.result);
-
-    case 'sudo.password.response':
-      return sm.handleSudoPasswordResponse(event.payload.toolUseId, event.payload.password);
-
-    case 'folder.select': {
-      const folderResult = await dialog.showOpenDialog(mainWindow!, {
-        properties: ['openDirectory'],
-      });
-      if (!folderResult.canceled && folderResult.filePaths.length > 0) {
-        sendToRenderer({
-          type: 'folder.selected',
-          payload: { path: folderResult.filePaths[0] },
-        });
-        return folderResult.filePaths[0];
-      }
-      return null;
-    }
-
-    case 'workdir.get':
-      return getWorkingDir();
-
-    case 'workdir.set':
-      return setWorkingDir(event.payload.path, event.payload.sessionId);
-
-    case 'workdir.select': {
-      const dialogDefaultPath =
-        event.payload.currentPath && isAbsolute(event.payload.currentPath)
-          ? event.payload.currentPath
-          : currentWorkingDir || undefined;
-      const workdirResult = await dialog.showOpenDialog(mainWindow!, {
-        properties: ['openDirectory'],
-        title: 'Select Working Directory',
-        defaultPath: dialogDefaultPath,
-      });
-      if (!workdirResult.canceled && workdirResult.filePaths.length > 0) {
-        const selectedPath = workdirResult.filePaths[0];
-        return setWorkingDir(selectedPath, event.payload.sessionId);
-      }
-      return { success: false, path: '', error: 'User cancelled' };
-    }
-
-    case 'config.createSet': {
-      const payload = event.payload as { name?: unknown; mode?: unknown; fromSetId?: unknown };
-      if (typeof payload.name !== 'string' || !payload.name.trim()) {
-        return { success: false, error: 'name is required' };
-      }
-      try {
-        const previousActiveId = configStore.getAll().activeConfigSetId;
-        configStore.createSet({
-          name: payload.name.trim(),
-          mode: payload.mode === 'blank' ? 'blank' : 'clone',
-          fromSetId: typeof payload.fromSetId === 'string' ? payload.fromSetId : undefined,
-        });
-        // createSet activates the new set: restore the user's previous active
-        // set so creating one from RPC never changes the running profile.
-        if (previousActiveId && configStore.getAll().activeConfigSetId !== previousActiveId) {
-          configStore.switchSet({ id: previousActiveId });
-        }
-        // NEVER return credentials: only the id and display name of each set.
-        const sets = configStore
-          .getAll()
-          .configSets.map((set) => ({ id: set.id, name: set.name }));
-        return { success: true, sets };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'createSet failed',
-        };
-      }
-    }
-
-    case 'settings.update': {
-      if (
-        event.payload.theme === 'dark' ||
-        event.payload.theme === 'light' ||
-        event.payload.theme === 'system'
-      ) {
-        const nextTheme = event.payload.theme as AppTheme;
-        configStore.update({ theme: nextTheme });
-        applyNativeThemePreference(nextTheme);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          const effectiveTheme = resolveEffectiveTheme(nextTheme);
-          mainWindow.setBackgroundColor(effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG);
-        }
-        sendToRenderer({
-          type: 'config.status',
-          payload: {
-            isConfigured: configStore.isConfigured(),
-            config: configStore.getAll(),
-          },
-        });
-      }
-
-      if (Array.isArray((event.payload as { permissionRules?: unknown }).permissionRules)) {
-        setPermissionRules(
-          (event.payload as { permissionRules: PermissionRule[] }).permissionRules
-        );
-      }
-
-      if (typeof (event.payload as { autoApproveAll?: unknown }).autoApproveAll === 'boolean') {
-        setAutoApproveAll((event.payload as { autoApproveAll: boolean }).autoApproveAll);
-      }
-
-      if (typeof (event.payload as { systemNotifications?: unknown }).systemNotifications === 'boolean') {
-        SystemNotifier.setEnabled((event.payload as { systemNotifications: boolean }).systemNotifications);
-      }
-
-      // Sub-agent swarm settings: non-sensitive (configSet ids, timeouts,
-      // concurrency) and normalized by configStore.update.
-      const subAgents = (event.payload as { subAgents?: unknown }).subAgents;
-      if (typeof subAgents === 'object' && subAgents !== null) {
-        configStore.update({ subAgents: subAgents as Partial<AppConfig>['subAgents'] });
-        sendToRenderer({
-          type: 'config.status',
-          payload: {
-            isConfigured: configStore.isConfigured(),
-            config: configStore.getAll(),
-          },
-        });
-      }
-      return null;
-    }
-
-    // ── Projects ────────────────────────────────────────────────────────────
-    // Validation errors (bad name, missing workdir, unknown id) come back as
-    // { success: false, error } so the renderer can show them; internal errors
-    // surface the same shape after logging, never an uncaught IPC throw.
-    case 'projects.create': {
-      try {
-        const project = getProjectStore().create({
-          name: event.payload.name,
-          workdir: event.payload.workdir,
-          description: event.payload.description,
-          configSetId: event.payload.configSetId,
-          modelId: event.payload.modelId,
-          pipelineMode: event.payload.pipelineMode,
-          draftConfigSetId: event.payload.draftConfigSetId,
-          draftModelId: event.payload.draftModelId,
-          refineConfigSetId: event.payload.refineConfigSetId,
-          refineModelId: event.payload.refineModelId,
-          instructions: event.payload.instructions,
-        });
-        return { success: true, project };
-      } catch (error) {
-        if (error instanceof ProjectValidationError) {
-          return { success: false, error: error.message };
-        }
-        logError('[IPC] projects.create failed:', error);
-        return { success: false, error: 'Failed to create project' };
-      }
-    }
-
-    case 'projects.list': {
-      try {
-        const projects = getProjectStore().list(event.payload.includeArchived === true);
-        return { success: true, projects };
-      } catch (error) {
-        logError('[IPC] projects.list failed:', error);
-        return { success: false, error: 'Failed to list projects', projects: [] };
-      }
-    }
-
-    case 'projects.get': {
-      try {
-        const project = getProjectStore().get(event.payload.projectId);
-        if (!project) return { success: false, error: 'Project not found' };
-        const sessions = getProjectStore().getSessions(project.id);
-        return {
-          success: true,
-          project,
-          sessions,
-          usage: computeProjectContextUsage(project),
-        };
-      } catch (error) {
-        logError('[IPC] projects.get failed:', error);
-        return { success: false, error: 'Failed to load project' };
-      }
-    }
-
-    case 'projects.update': {
-      try {
-        const project = getProjectStore().update(event.payload.projectId, {
-          name: event.payload.name,
-          description: event.payload.description,
-          workdir: event.payload.workdir,
-          configSetId: event.payload.configSetId,
-          modelId: event.payload.modelId,
-          pipelineMode: event.payload.pipelineMode,
-          draftConfigSetId: event.payload.draftConfigSetId,
-          draftModelId: event.payload.draftModelId,
-          refineConfigSetId: event.payload.refineConfigSetId,
-          refineModelId: event.payload.refineModelId,
-          instructions: event.payload.instructions,
-        });
-        return { success: true, project };
-      } catch (error) {
-        if (error instanceof ProjectValidationError) {
-          return { success: false, error: error.message };
-        }
-        logError('[IPC] projects.update failed:', error);
-        return { success: false, error: 'Failed to update project' };
-      }
-    }
-
-    case 'projects.archive': {
-      try {
-        const project = getProjectStore().archive(
-          event.payload.projectId,
-          event.payload.archived
-        );
-        return { success: true, project };
-      } catch (error) {
-        if (error instanceof ProjectValidationError) {
-          return { success: false, error: error.message };
-        }
-        logError('[IPC] projects.archive failed:', error);
-        return { success: false, error: 'Failed to archive project' };
-      }
-    }
-
-    case 'projects.attachFile': {
-      try {
-        const project = getProjectStore().attachFile(event.payload.projectId, event.payload.path);
-        return { success: true, project };
-      } catch (error) {
-        if (error instanceof ProjectValidationError) {
-          return { success: false, error: error.message };
-        }
-        logError('[IPC] projects.attachFile failed:', error);
-        return { success: false, error: 'Failed to attach file' };
-      }
-    }
-
-    case 'projects.detachFile': {
-      try {
-        const project = getProjectStore().detachFile(event.payload.projectId, event.payload.path);
-        return { success: true, project };
-      } catch (error) {
-        if (error instanceof ProjectValidationError) {
-          return { success: false, error: error.message };
-        }
-        logError('[IPC] projects.detachFile failed:', error);
-        return { success: false, error: 'Failed to detach file' };
-      }
-    }
-
-    case 'projects.linkSession': {
-      try {
-        getProjectStore().linkSession(event.payload.projectId, event.payload.sessionId);
-        return { success: true };
-      } catch (error) {
-        if (error instanceof ProjectValidationError) {
-          return { success: false, error: error.message };
-        }
-        logError('[IPC] projects.linkSession failed:', error);
-        return { success: false, error: 'Failed to link session' };
-      }
-    }
-
-    case 'projects.unlinkSession': {
-      try {
-        getProjectStore().unlinkSession(event.payload.sessionId);
-        return { success: true };
-      } catch (error) {
-        logError('[IPC] projects.unlinkSession failed:', error);
-        return { success: false, error: 'Failed to unlink session' };
-      }
-    }
-
-    case 'projects.delete': {
-      try {
-        const outcome = getProjectStore().delete(event.payload.projectId);
-        return { success: true, ...outcome };
-      } catch (error) {
-        if (error instanceof ProjectValidationError) {
-          return { success: false, error: error.message };
-        }
-        logError('[IPC] projects.delete failed:', error);
-        return { success: false, error: 'Failed to delete project' };
-      }
-    }
-
-    // ── Background delegations (tracking view) ─────────────────────────────
-    case 'backgroundTasks.list': {
-      try {
-        return { success: true, tasks: listDelegations(event.payload.sessionId) };
-      } catch (error) {
-        logError('[IPC] backgroundTasks.list failed:', error);
-        return { success: false, tasks: [] };
-      }
-    }
-
-    case 'backgroundTasks.get': {
-      try {
-        const task = getDelegation(event.payload.taskId);
-        if (!task) return { success: false, error: 'Task not found' };
-        return { success: true, task };
-      } catch (error) {
-        logError('[IPC] backgroundTasks.get failed:', error);
-        return { success: false, error: 'Failed to load task' };
-      }
-    }
-
-    case 'backgroundTasks.cancel': {
-      try {
-        const cancelled = cancelDelegation(event.payload.taskId);
-        return {
-          success: true,
-          cancelled,
-          error: cancelled ? undefined : 'Task not found or not running',
-        };
-      } catch (error) {
-        logError('[IPC] backgroundTasks.cancel failed:', error);
-        return { success: false, error: 'Failed to cancel task' };
-      }
-    }
-
-    case 'backgroundTasks.retry': {
-      try {
-        const retried = retryDelegation(event.payload.taskId);
-        if (!retried) {
-          return { success: false, error: 'Task not found or still running' };
-        }
-        return { success: true, taskId: retried.taskId };
-      } catch (error) {
-        logError('[IPC] backgroundTasks.retry failed:', error);
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to retry task',
-        };
-      }
-    }
-
-    case 'backgroundTasks.delete': {
-      try {
-        const deleted = deleteDelegation(event.payload.taskId);
-        return {
-          success: true,
-          deleted,
-          error: deleted ? undefined : 'Task not found or still running',
-        };
-      } catch (error) {
-        logError('[IPC] backgroundTasks.delete failed:', error);
-        return { success: false, error: 'Failed to delete task' };
-      }
-    }
-
-    case 'backgroundTasks.getSettings': {
-      try {
-        return { success: true, settings: getDelegationSettings() };
-      } catch (error) {
-        logError('[IPC] backgroundTasks.getSettings failed:', error);
-        return { success: false, error: 'Failed to load settings' };
-      }
-    }
-
-    // Single round-trip for the Sub-agents transparency sections.
-    case 'backgroundTasks.getStats': {
-      try {
-        return {
-          success: true,
-          swarm: getSwarmStats(),
-          delegations: getDelegationStats(),
-        };
-      } catch (error) {
-        logError('[IPC] backgroundTasks.getStats failed:', error);
-        return { success: false, error: 'Failed to load stats' };
-      }
-    }
-
-    // ── Live document co-editing (workspace-confined) ──────────────────────
-    case 'document.read': {
-      try {
-        return { success: true, ...readWorkspaceDoc(event.payload.cwd, event.payload.path) };
-      } catch (error) {
-        logError('[IPC] document.read failed:', error);
-        return { success: false, error: 'Failed to read document' };
-      }
-    }
-
-    case 'document.write': {
-      try {
-        const result = writeWorkspaceDoc(
-          event.payload.cwd,
-          event.payload.path,
-          event.payload.content,
-          { baseMtimeMs: event.payload.baseMtimeMs, force: event.payload.force }
-        );
-        return { success: result.ok, ...result };
-      } catch (error) {
-        logError('[IPC] document.write failed:', error);
-        return { success: false, status: 'error', error: 'Failed to write document' };
-      }
-    }
-
-    case 'document.list': {
-      try {
-        return { success: true, files: listWorkspaceDocs(event.payload.cwd) };
-      } catch (error) {
-        logError('[IPC] document.list failed:', error);
-        return { success: false, files: [], error: 'Failed to list documents' };
-      }
-    }
-
-    case 'backgroundTasks.setSettings': {
-      try {
-        // modelId null (UI "clear the pin") normalizes to undefined internally.
-        const { modelId, ...rest } = event.payload;
-        const settings = setDelegationSettings({
-          ...rest,
-          ...(modelId === null ? { modelId: undefined } : { modelId }),
-        });
-        return { success: true, settings };
-      } catch (error) {
-        logError('[IPC] backgroundTasks.setSettings failed:', error);
-        return { success: false, error: 'Failed to save settings' };
-      }
-    }
-
-    default:
-      logWarn('Unknown event type:', event);
-      return null;
-  }
+  return dispatchClientEvent(event, clientEventHandlerContext);
 }

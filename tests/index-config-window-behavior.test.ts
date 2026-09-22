@@ -16,7 +16,12 @@ describe('Main process window/config behavior', () => {
   });
 
   it('session.start blocked by active set emits structured error without forcing config.status', () => {
-    const source = fs.readFileSync(indexPath, 'utf8');
+    // The client event dispatch table lives in its own module since the
+    // structural refactor; session.start is handled there.
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/main/ipc/client-event-handler.ts'),
+      'utf8'
+    );
     const sessionStartGuard = source.match(/if \(event\.type === 'session\.start'[\s\S]*?return null;\n  }/)?.[0] || '';
 
     expect(sessionStartGuard).toContain('hasUsableCredentialsForActiveSet');
