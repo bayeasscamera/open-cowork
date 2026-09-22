@@ -5,7 +5,7 @@
  * 1. sessionId is validated against a strict allowlist pattern
  * 2. WSL distro names are validated before use in shell commands
  * 3. Lima execLimaShellWithRetry uses execFileAsync (no host shell)
- * 4. WSL agent path is checked for shell metacharacters
+ * 4. The in-VM agent path is checked for shell metacharacters
  * 5. rm -rf verifies real path is within sandbox root before deletion
  * 6. SandboxSync.wslExec is async and captures stderr
  */
@@ -17,11 +17,13 @@ import * as path from 'node:path';
 const sandboxSyncPath = path.resolve(process.cwd(), 'src/main/sandbox/sandbox-sync.ts');
 const wslBridgePath = path.resolve(process.cwd(), 'src/main/sandbox/wsl-bridge.ts');
 const limaBridgePath = path.resolve(process.cwd(), 'src/main/sandbox/lima-bridge.ts');
+const sandboxVmBridgePath = path.resolve(process.cwd(), 'src/main/sandbox/sandbox-vm-bridge.ts');
 const limaSyncPath = path.resolve(process.cwd(), 'src/main/sandbox/lima-sync.ts');
 
 const sandboxSyncSrc = fs.readFileSync(sandboxSyncPath, 'utf8');
 const wslBridgeSrc = fs.readFileSync(wslBridgePath, 'utf8');
 const limaBridgeSrc = fs.readFileSync(limaBridgePath, 'utf8');
+const sandboxVmBridgeSrc = fs.readFileSync(sandboxVmBridgePath, 'utf8');
 const limaSyncSrc = fs.readFileSync(limaSyncPath, 'utf8');
 
 describe('sandbox-sync sessionId validation', () => {
@@ -127,15 +129,15 @@ describe('lima-bridge execLimaShellWithRetry uses execFileAsync', () => {
   });
 });
 
-describe('wsl-bridge agent path metacharacter check', () => {
-  it('validates wslAgentPath for shell metacharacters before use', () => {
-    const startAgentStart = wslBridgeSrc.indexOf('private async startAgent()');
-    const startAgentEnd = wslBridgeSrc.indexOf("log('[WSL] Agent is ready')", startAgentStart);
-    const startAgentBody = wslBridgeSrc.substring(startAgentStart, startAgentEnd);
+describe('sandbox vm bridge agent path metacharacter check', () => {
+  it('validates the resolved VM agent path for shell metacharacters before use', () => {
+    const startAgentStart = sandboxVmBridgeSrc.indexOf('async startAgent()');
+    const startAgentEnd = sandboxVmBridgeSrc.indexOf('waitForAgentReady()', startAgentStart);
+    const startAgentBody = sandboxVmBridgeSrc.substring(startAgentStart, startAgentEnd);
 
     // Should check for metacharacters
-    expect(startAgentBody).toContain('/[;&|`$(){}]/.test(wslAgentPath)');
-    expect(startAgentBody).toContain('throw new Error(`Invalid agent path: ${wslAgentPath}`)');
+    expect(startAgentBody).toContain('/[;&|`$(){}]/.test(vmAgentPath)');
+    expect(startAgentBody).toContain('throw new Error(`Invalid agent path: ${vmAgentPath}`)');
   });
 });
 

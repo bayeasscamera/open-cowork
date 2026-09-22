@@ -10,19 +10,9 @@
 
 import { spawn, exec, execFile, ChildProcess } from 'child_process';
 import { promisify } from 'util';
-import * as path from 'path';
-import * as fs from 'fs';
-import { app } from 'electron';
 import { log, logError } from '../utils/logger';
-import { VMJsonRpcTransport } from './vm-jsonrpc-transport';
-import type {
-  LimaStatus,
-  SandboxConfig,
-  SandboxExecutor,
-  ExecutionResult,
-  DirectoryEntry,
-  PathConverter,
-} from './types';
+import { SandboxVmBridge } from './sandbox-vm-bridge';
+import type { LimaStatus, SandboxConfig, PathConverter } from './types';
 
 // Import lazily to avoid circular dependency
 let getSandboxBootstrap: (() => { getCachedLimaStatus(): LimaStatus | null }) | null = null;
@@ -115,22 +105,33 @@ export const pathConverter = limaPathConverter;
 /**
  * Lima Bridge - Manages communication with Lima VM
  */
-export class LimaBridge extends VMJsonRpcTransport implements SandboxExecutor {
+export class LimaBridge extends SandboxVmBridge {
   private limaProcess: ChildProcess | null = null;
-  private config: SandboxConfig | null = null;
-  private isInitialized: boolean = false;
-  private initPromise: Promise<void> | null = null;
 
   protected readonly logTag = '[Lima]';
-
-  protected getAgentStdin(): NodeJS.WritableStream | null {
-    return this.limaProcess?.stdin ?? null;
-  }
+  protected readonly agentPathDirectories = { packaged: 'lima-agent', dev: 'dist-lima-agent' };
 
   protected agentName(): string {
     return 'Lima';
   }
 
+  protected getAgentProcess(): ChildProcess | null {
+    return this.limaProcess;
+  }
+
+  protected setAgentProcess(process: ChildProcess | null): void {
+    this.limaProcess = process;
+  }
+
+  protected getPathConverterInstance(): PathConverter {
+    return limaPathConverter;
+  }
+
+  protected spawnAgentProcess(nodeCommand: string): ChildProcess {
+    return spawn('limactl', ['shell', LIMA_INSTANCE_NAME, '--', 'bash', '-c', nodeCommand], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  }
   /**
    * Check if Lima is available on this system
    */
@@ -566,31 +567,7 @@ export class LimaBridge extends VMJsonRpcTransport implements SandboxExecutor {
     }
   }
 
-  /**
-   * Get path to Lima agent script
-   */
-  private getAgentScriptPath(): string {
-    const isPackaged = app.isPackaged;
-    if (isPackaged) {
-      return path.join(process.resourcesPath || '', 'lima-agent', 'index.js');
-    } else {
-      // Development: __dirname = dist-electron/main, need to go up 2 levels to project root
-      return path.join(__dirname, '..', '..', 'dist-lima-agent', 'index.js');
-    }
-  }
-
-  /**
-   * Initialize the Lima bridge
-   */
-  async initialize(config: SandboxConfig): Promise<void> {
-    if (this.initPromise) {
-      return this.initPromise;
-    }
-    this.initPromise = this._initialize(config);
-    return this.initPromise;
-  }
-
-  private async _initialize(config: SandboxConfig): Promise<void> {
+  protected async _initialize(config: SandboxConfig): Promise<void> {
     this.config = config;
 
     // Try to use cached status from bootstrap first (much faster)
@@ -662,290 +639,5 @@ export class LimaBridge extends VMJsonRpcTransport implements SandboxExecutor {
 
     this.isInitialized = true;
     log('[Lima] Bridge initialized successfully');
-  }
-
-  /**
-   * Start the Lima agent process
-   */
-  private async startAgent(): Promise<void> {
-    const agentPath = this.getAgentScriptPath();
-
-    if (!fs.existsSync(agentPath)) {
-      throw new Error(`Lima agent script not found: ${agentPath}`);
-    }
-
-    log('[Lima] Starting agent from:', agentPath);
-
-    // Start agent inside Lima VM
-    // Need to source nvm.sh first since node is installed via nvm
-    // Validate agentPath doesn't contain shell metacharacters
-    if (/[;&|`$(){}]/.test(agentPath)) {
-      throw new Error(`Invalid agent path: ${agentPath}`);
-    }
-
-    // Verify the path contains expected segments to prevent path injection
-    const normalizedAgentPath = agentPath.replace(/\\/g, '/');
-    const hasExpectedSegment =
-      normalizedAgentPath.includes('/lima-agent/') ||
-      normalizedAgentPath.includes('/dist-lima-agent/');
-    if (!hasExpectedSegment) {
-      throw new Error(`Agent path does not contain expected segments: ${agentPath}`);
-    }
-
-    const escapedAgentPath = agentPath.replace(/[\\$`"!]/g, '\\$&');
-    const nodeCommand = `source ~/.nvm/nvm.sh 2>/dev/null; node "${escapedAgentPath}"`;
-
-    this.limaProcess = spawn(
-      'limactl',
-      ['shell', LIMA_INSTANCE_NAME, '--', 'bash', '-c', nodeCommand],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }
-    );
-
-    // Handle stdout (JSON-RPC responses)
-    this.limaProcess.stdout?.on('data', (data: Buffer) => {
-      try {
-        this.ingestStdout(data, () => this.limaProcess?.kill());
-      } catch (error) {
-        logError('[Lima] Error processing stdout data:', error);
-      }
-    });
-
-    // Handle stderr (logging)
-    this.limaProcess.stderr?.on('data', (data: Buffer) => {
-      log('[Lima Agent]', data.toString().trim());
-    });
-
-    // Handle process exit
-    this.limaProcess.on('exit', (code, signal) => {
-      log('[Lima] Agent process exited:', { code, signal });
-      this.limaProcess = null;
-      this.isInitialized = false;
-      this.failAllPendingRequests();
-    });
-
-    this.limaProcess.on('error', (error) => {
-      logError('[Lima] Agent process error:', error);
-    });
-
-    // Wait for agent to be ready
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Lima agent startup timeout'));
-      }, 30000);
-
-      const checkReady = async () => {
-        try {
-          await this.sendRequest('ping', {});
-          clearTimeout(timeout);
-          resolve();
-        } catch {
-          setTimeout(checkReady, 500);
-        }
-      };
-
-      setTimeout(checkReady, 1000);
-    });
-
-    log('[Lima] Agent is ready');
-  }
-
-  /**
-   * Execute a command in Lima
-   */
-  async executeCommand(
-    command: string,
-    cwd?: string,
-    env?: Record<string, string>
-  ): Promise<ExecutionResult> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    const result = await this.sendRequest<{
-      code: number;
-      stdout: string;
-      stderr: string;
-    }>(
-      'executeCommand',
-      {
-        command,
-        cwd,
-        env,
-      },
-      this.config?.timeout || 60000
-    );
-
-    return {
-      success: result.code === 0,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.code,
-    };
-  }
-
-  /**
-   * Read a file from Lima
-   */
-  async readFile(filePath: string): Promise<string> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    const result = await this.sendRequest<{ content: string }>('readFile', {
-      path: filePath,
-    });
-
-    return result.content;
-  }
-
-  /**
-   * Write a file in Lima
-   */
-  async writeFile(filePath: string, content: string): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    await this.sendRequest('writeFile', {
-      path: filePath,
-      content,
-    });
-  }
-
-  /**
-   * List directory contents
-   */
-  async listDirectory(dirPath: string): Promise<DirectoryEntry[]> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    const result = await this.sendRequest<{ entries: DirectoryEntry[] }>('listDirectory', {
-      path: dirPath,
-    });
-
-    return result.entries;
-  }
-
-  /**
-   * Check if a file exists
-   */
-  async fileExists(filePath: string): Promise<boolean> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    const result = await this.sendRequest<{ exists: boolean }>('fileExists', {
-      path: filePath,
-    });
-
-    return result.exists;
-  }
-
-  /**
-   * Delete a file
-   */
-  async deleteFile(filePath: string): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    await this.sendRequest('deleteFile', { path: filePath });
-  }
-
-  /**
-   * Create a directory
-   */
-  async createDirectory(dirPath: string): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    await this.sendRequest('createDirectory', { path: dirPath });
-  }
-
-  /**
-   * Copy a file
-   */
-  async copyFile(src: string, dest: string): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    await this.sendRequest('copyFile', { src, dest });
-  }
-
-  /**
-   * Run claude-code in Lima
-   */
-  async runClaudeCode(
-    prompt: string,
-    options: {
-      cwd?: string;
-      model?: string;
-      maxTurns?: number;
-      systemPrompt?: string;
-      env?: Record<string, string>;
-    } = {}
-  ): Promise<AsyncIterable<unknown>> {
-    if (!this.isInitialized) {
-      throw new Error('Lima bridge not initialized');
-    }
-
-    const result = await this.sendRequest<{ messages: unknown[] }>(
-      'runClaudeCode',
-      {
-        prompt,
-        cwd: options.cwd,
-        model: options.model,
-        maxTurns: options.maxTurns,
-        systemPrompt: options.systemPrompt,
-        env: options.env,
-      },
-      300000
-    ); // 5 minute timeout for claude-code
-
-    // Convert to async iterable
-    return (async function* () {
-      for (const msg of result.messages) {
-        yield msg;
-      }
-    })();
-  }
-
-  /**
-   * Shutdown the Lima bridge
-   */
-  async shutdown(): Promise<void> {
-    if (this.limaProcess) {
-      try {
-        await this.sendRequest('shutdown', {});
-      } catch {
-        // Ignore errors during shutdown
-      }
-
-      this.limaProcess.kill();
-      this.limaProcess = null;
-    }
-
-    this.isInitialized = false;
-    this.failAllPendingRequests();
-    log('[Lima] Bridge shutdown complete');
-  }
-
-  /**
-   * Get path converter for external use
-   */
-  getPathConverter(): PathConverter {
-    return limaPathConverter;
-  }
-
-  /**
-   * Check if bridge is initialized
-   */
-  get initialized(): boolean {
-    return this.isInitialized;
   }
 }

@@ -10,19 +10,9 @@
 
 import { spawn, execFile, ChildProcess } from 'child_process';
 import { promisify } from 'util';
-import * as path from 'path';
-import * as fs from 'fs';
-import { app } from 'electron';
 import { log, logError, logWarn } from '../utils/logger';
-import { VMJsonRpcTransport } from './vm-jsonrpc-transport';
-import type {
-  WSLStatus,
-  SandboxConfig,
-  SandboxExecutor,
-  ExecutionResult,
-  DirectoryEntry,
-  PathConverter,
-} from './types';
+import { SandboxVmBridge } from './sandbox-vm-bridge';
+import type { WSLStatus, SandboxConfig, PathConverter } from './types';
 
 // Import lazily to avoid circular dependency
 let getSandboxBootstrap: (() => { getCachedWSLStatus(): WSLStatus | null }) | null = null;
@@ -35,10 +25,6 @@ async function loadBootstrap() {
 }
 
 const execFileAsync = promisify(execFile);
-
-function escapeForDoubleQuotes(s: string): string {
-  return s.replace(/[\\$`"!]/g, '\\$&');
-}
 
 /**
  * Path conversion utilities for Windows <-> WSL
@@ -92,7 +78,7 @@ export const pathConverter: PathConverter = {
 /**
  * WSL Bridge - Manages communication with WSL2
  */
-export class WSLBridge extends VMJsonRpcTransport implements SandboxExecutor {
+export class WSLBridge extends SandboxVmBridge {
   /** Validate WSL distro name to prevent command injection */
   private static validateDistroName(distro: string): string {
     if (!/^[a-zA-Z0-9\-_.]+$/.test(distro)) {
@@ -102,21 +88,32 @@ export class WSLBridge extends VMJsonRpcTransport implements SandboxExecutor {
   }
 
   private wslProcess: ChildProcess | null = null;
-  private config: SandboxConfig | null = null;
   private distro: string = 'Ubuntu';
-  private isInitialized: boolean = false;
-  private initPromise: Promise<void> | null = null;
 
   protected readonly logTag = '[WSL]';
-
-  protected getAgentStdin(): NodeJS.WritableStream | null {
-    return this.wslProcess?.stdin ?? null;
-  }
+  protected readonly agentPathDirectories = { packaged: 'wsl-agent', dev: 'dist-wsl-agent' };
 
   protected agentName(): string {
     return 'WSL';
   }
 
+  protected getAgentProcess(): ChildProcess | null {
+    return this.wslProcess;
+  }
+
+  protected setAgentProcess(process: ChildProcess | null): void {
+    this.wslProcess = process;
+  }
+
+  protected getPathConverterInstance(): PathConverter {
+    return pathConverter;
+  }
+
+  protected spawnAgentProcess(nodeCommand: string): ChildProcess {
+    return spawn('wsl', ['-d', this.distro, '--', 'bash', '-c', nodeCommand], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  }
   /**
    * Decode UTF-16LE buffer to string (Windows WSL output)
    */
@@ -703,34 +700,7 @@ export class WSLBridge extends VMJsonRpcTransport implements SandboxExecutor {
     }
   }
 
-  /**
-   * Get the path to the WSL agent script
-   */
-  private getAgentScriptPath(): string {
-    const isPackaged = app.isPackaged;
-
-    if (isPackaged) {
-      // Production: in resources folder
-      return path.join(process.resourcesPath || '', 'wsl-agent', 'index.js');
-    } else {
-      // Development: __dirname = dist-electron/main, need to go up 2 levels to project root
-      return path.join(__dirname, '..', '..', 'dist-wsl-agent', 'index.js');
-    }
-  }
-
-  /**
-   * Initialize the WSL bridge
-   */
-  async initialize(config: SandboxConfig): Promise<void> {
-    if (this.initPromise) {
-      return this.initPromise;
-    }
-
-    this.initPromise = this._initialize(config);
-    return this.initPromise;
-  }
-
-  private async _initialize(config: SandboxConfig): Promise<void> {
+  protected async _initialize(config: SandboxConfig): Promise<void> {
     this.config = config;
 
     // Try to use cached status from bootstrap first (much faster)
@@ -797,310 +767,6 @@ export class WSLBridge extends VMJsonRpcTransport implements SandboxExecutor {
 
     this.isInitialized = true;
     log('[WSL] Bridge initialized successfully');
-  }
-
-  /**
-   * Start the WSL agent process
-   */
-  private async startAgent(): Promise<void> {
-    const agentPath = this.getAgentScriptPath();
-
-    // Validate that agentPath contains an expected path segment
-    const normalizedAgentPath = agentPath.replace(/\\/g, '/');
-    if (
-      !normalizedAgentPath.includes('/wsl-agent/') &&
-      !normalizedAgentPath.includes('/dist-wsl-agent/')
-    ) {
-      throw new Error(`Agent path does not contain expected path segment: ${agentPath}`);
-    }
-
-    // Check if agent script exists
-    if (!fs.existsSync(agentPath)) {
-      // Copy agent to WSL-accessible location
-      log('[WSL] Agent script not found at:', agentPath);
-      throw new Error(`WSL agent script not found: ${agentPath}`);
-    }
-
-    // Convert agent path to WSL path
-    const wslAgentPath = pathConverter.toWSL(agentPath);
-    log('[WSL] Starting agent from:', wslAgentPath);
-
-    // Start WSL process with the agent
-    // Need to source nvm.sh first since node is installed via nvm
-    // Validate agentPath doesn't contain shell metacharacters
-    if (/[;&|`$(){}]/.test(wslAgentPath)) {
-      throw new Error(`Invalid agent path: ${wslAgentPath}`);
-    }
-    const nodeCommand = `source ~/.nvm/nvm.sh 2>/dev/null; node "${escapeForDoubleQuotes(wslAgentPath)}"`;
-    log('[WSL] Agent command:', nodeCommand);
-
-    this.wslProcess = spawn('wsl', ['-d', this.distro, '--', 'bash', '-c', nodeCommand], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    // Handle stdout (JSON-RPC responses)
-    this.wslProcess.stdout?.on('data', (data: Buffer) => {
-      try {
-        this.ingestStdout(data, () => this.wslProcess?.kill());
-      } catch (error) {
-        logError('[WSL] Error processing stdout data:', error);
-      }
-    });
-
-    // Handle stderr (logging)
-    this.wslProcess.stderr?.on('data', (data: Buffer) => {
-      log('[WSL Agent]', data.toString().trim());
-    });
-
-    // Handle process exit
-    this.wslProcess.on('exit', (code, signal) => {
-      log('[WSL] Agent process exited:', { code, signal });
-      this.wslProcess = null;
-      this.isInitialized = false;
-      this.failAllPendingRequests();
-    });
-
-    this.wslProcess.on('error', (error) => {
-      logError('[WSL] Agent process error:', error);
-    });
-
-    // Wait for agent to be ready
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('WSL agent startup timeout'));
-      }, 30000);
-
-      const checkReady = async () => {
-        try {
-          await this.sendRequest('ping', {});
-          clearTimeout(timeout);
-          resolve();
-        } catch {
-          setTimeout(checkReady, 500);
-        }
-      };
-
-      setTimeout(checkReady, 1000);
-    });
-
-    log('[WSL] Agent is ready');
-  }
-
-  /**
-   * Execute a command in WSL
-   */
-  async executeCommand(
-    command: string,
-    cwd?: string,
-    env?: Record<string, string>
-  ): Promise<ExecutionResult> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    // Convert cwd to WSL path if provided
-    const wslCwd = cwd ? pathConverter.toWSL(cwd) : undefined;
-
-    const result = await this.sendRequest<{
-      code: number;
-      stdout: string;
-      stderr: string;
-    }>(
-      'executeCommand',
-      {
-        command,
-        cwd: wslCwd,
-        env,
-      },
-      this.config?.timeout || 60000
-    );
-
-    return {
-      success: result.code === 0,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.code,
-    };
-  }
-
-  /**
-   * Read a file from WSL
-   */
-  async readFile(filePath: string): Promise<string> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    const wslPath = pathConverter.toWSL(filePath);
-    const result = await this.sendRequest<{ content: string }>('readFile', {
-      path: wslPath,
-    });
-
-    return result.content;
-  }
-
-  /**
-   * Write a file in WSL
-   */
-  async writeFile(filePath: string, content: string): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    const wslPath = pathConverter.toWSL(filePath);
-    await this.sendRequest('writeFile', {
-      path: wslPath,
-      content,
-    });
-  }
-
-  /**
-   * List directory contents
-   */
-  async listDirectory(dirPath: string): Promise<DirectoryEntry[]> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    const wslPath = pathConverter.toWSL(dirPath);
-    const result = await this.sendRequest<{ entries: DirectoryEntry[] }>('listDirectory', {
-      path: wslPath,
-    });
-
-    return result.entries;
-  }
-
-  /**
-   * Check if a file exists
-   */
-  async fileExists(filePath: string): Promise<boolean> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    const wslPath = pathConverter.toWSL(filePath);
-    const result = await this.sendRequest<{ exists: boolean }>('fileExists', {
-      path: wslPath,
-    });
-
-    return result.exists;
-  }
-
-  /**
-   * Delete a file
-   */
-  async deleteFile(filePath: string): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    const wslPath = pathConverter.toWSL(filePath);
-    await this.sendRequest('deleteFile', { path: wslPath });
-  }
-
-  /**
-   * Create a directory
-   */
-  async createDirectory(dirPath: string): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    const wslPath = pathConverter.toWSL(dirPath);
-    await this.sendRequest('createDirectory', { path: wslPath });
-  }
-
-  /**
-   * Copy a file
-   */
-  async copyFile(src: string, dest: string): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    const wslSrc = pathConverter.toWSL(src);
-    const wslDest = pathConverter.toWSL(dest);
-    await this.sendRequest('copyFile', { src: wslSrc, dest: wslDest });
-  }
-
-  /**
-   * Run claude-code in WSL
-   */
-  async runClaudeCode(
-    prompt: string,
-    options: {
-      cwd?: string;
-      model?: string;
-      maxTurns?: number;
-      systemPrompt?: string;
-      env?: Record<string, string>;
-    } = {}
-  ): Promise<AsyncIterable<unknown>> {
-    if (!this.isInitialized) {
-      throw new Error('WSL bridge not initialized');
-    }
-
-    const wslCwd = options.cwd ? pathConverter.toWSL(options.cwd) : undefined;
-
-    // Streaming request support can be added here using uuidv4() for request tracking
-
-    // This returns an async iterable that yields claude-code messages
-    // Implementation would involve streaming responses from the agent
-    // For now, we use a simple request/response pattern
-
-    const result = await this.sendRequest<{ messages: unknown[] }>(
-      'runClaudeCode',
-      {
-        prompt,
-        cwd: wslCwd,
-        model: options.model,
-        maxTurns: options.maxTurns,
-        systemPrompt: options.systemPrompt,
-        env: options.env,
-      },
-      300000
-    ); // 5 minute timeout for claude-code
-
-    // Convert to async iterable
-    return (async function* () {
-      for (const msg of result.messages) {
-        yield msg;
-      }
-    })();
-  }
-
-  /**
-   * Shutdown the WSL bridge
-   */
-  async shutdown(): Promise<void> {
-    if (this.wslProcess) {
-      try {
-        await this.sendRequest('shutdown', {});
-      } catch {
-        // Ignore errors during shutdown
-      }
-
-      this.wslProcess.kill();
-      this.wslProcess = null;
-    }
-
-    this.isInitialized = false;
-    this.failAllPendingRequests();
-    log('[WSL] Bridge shutdown complete');
-  }
-
-  /**
-   * Get path converter for external use
-   */
-  getPathConverter(): PathConverter {
-    return pathConverter;
-  }
-
-  /**
-   * Check if bridge is initialized
-   */
-  get initialized(): boolean {
-    return this.isInitialized;
   }
 
   /**
