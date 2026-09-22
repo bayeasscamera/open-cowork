@@ -73,21 +73,38 @@ export function extractTopicKeywords(text: string): string[] {
 }
 
 /**
- * Whether two research briefs clearly share a subject. Requires at least TWO
- * shared topical keywords: a single common word ("market", "model") is not
- * enough evidence to spend a cross-check call on unrelated topics.
+ * Words that are topical in isolation but far too common to prove two briefs
+ * share a SUBJECT. Two reports on "… market size" differ by exactly one such
+ * word, so counting them as evidence bridges unrelated topics ("electric
+ * vehicle market size" ↔ "semiconductor market size"). A shared subject must
+ * be proven by DISTINCTIVE vocabulary, not by this generic layer.
+ */
+const GENERIC_TOPIC_WORDS = new Set([
+  'market', 'marche', 'markets', 'marches', 'size', 'taille', 'share', 'part',
+  'growth', 'croissance', 'price', 'prix', 'prices', 'prix', 'cost', 'cout',
+  'costs', 'couts', 'data', 'donnees', 'value', 'valeur', 'volume', 'volumes',
+  'revenue', 'revenus', 'sales', 'ventes', 'model', 'modele', 'models', 'modeles',
+  'company', 'companies', 'entreprise', 'entreprises', 'sector', 'secteur',
+  'industry', 'industrie', 'forecast', 'prevision', 'previsions', 'analysis',
+  'compare', 'comparison', 'difference', 'differences', 'future', 'avenir',
+]);
+
+/** Shared keywords that actually prove a common subject. */
+export function distinctiveSharedKeywords(a: string, b: string): string[] {
+  const bWords = new Set(extractTopicKeywords(b));
+  return extractTopicKeywords(a).filter(
+    (word) => bWords.has(word) && !GENERIC_TOPIC_WORDS.has(word)
+  );
+}
+
+/**
+ * Whether two research briefs clearly share a subject. Requires at least ONE
+ * DISTINCTIVE shared keyword ("electric", "kubernetes", "semiconductor"): a
+ * single common word ("market", "size") bridges unrelated topics and is not
+ * enough evidence to spend a cross-check call on.
  */
 export function sharesResearchTopic(a: string, b: string): boolean {
-  const aWords = new Set(extractTopicKeywords(a));
-  if (aWords.size === 0) return false;
-  let shared = 0;
-  for (const word of new Set(extractTopicKeywords(b))) {
-    if (aWords.has(word)) {
-      shared += 1;
-      if (shared >= 2) return true;
-    }
-  }
-  return false;
+  return distinctiveSharedKeywords(a, b).length > 0;
 }
 
 /**

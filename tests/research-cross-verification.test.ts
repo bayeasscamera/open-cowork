@@ -56,8 +56,11 @@ import {
   takePendingDelegationResults,
   awaitResearchCrossVerification,
   getResearchCrossCheck,
+  getResearchCrossChecks,
   listDelegations,
   subAgentGate,
+  setDelegationSettings,
+  getResearchEmbeddingCalls,
   initBackgroundDelegations,
   __resetDelegationsForTest,
 } from '../src/main/agent/background-delegations';
@@ -259,6 +262,80 @@ describe('research cross-verification — Zone 2 (parallel delegations)', () => 
     const block = takePendingDelegationResults('x4');
     expect(block).toContain('A');
     expect(block).not.toContain('<research_cross_verification>');
+  });
+
+  it('MULTI-BATCH: two unrelated subjects each get their own cross-check pass', async () => {
+    // 4 parallel delegations: 2 EV briefs, 2 semiconductor briefs. Both subjects
+    // must be served in the same cycle — not just the first group.
+    setDelegationSettings({ configSetId: '', timeoutMs: 5000, maxConcurrent: 4 });
+    const { launchSession, launches } = makeLauncher('NONE');
+    const briefs: Array<[string, string]> = [
+      ['EV size', 'Research the electric vehicle market size'],
+      ['EV share', 'Research the electric vehicle market share'],
+      ['Chip size', 'Research the semiconductor market size'],
+      ['Chip share', 'Research the semiconductor market share'],
+    ];
+    for (const [title, prompt] of briefs) {
+      startDelegation({
+        sessionId: 'x7',
+        cwd: testRoot,
+        title,
+        prompt,
+        crossVerify: true,
+        launchSession,
+        getConfig: () => testConfig,
+      });
+    }
+
+    await flushUntil(() => getResearchCrossChecks('x7').length === 2, 80);
+    await awaitResearchCrossVerification('x7');
+
+    const checks = getResearchCrossChecks('x7');
+    expect(checks).toHaveLength(2); // one pass PER topic group
+    const crossCalls = launches.filter((l) => l.task.id.startsWith('research-cross-check-'));
+    expect(crossCalls).toHaveLength(2); // still one call per group, not per report
+    // Each pass covers exactly the two reports of its own subject.
+    const covered = checks.map((c) => c.delegationIds.length).sort();
+    expect(covered).toEqual([2, 2]);
+
+    // Restore the shared cap for any later test.
+    setDelegationSettings({ configSetId: '', maxConcurrent: 2 });
+  });
+
+  it('SEMANTIC: paraphrases with no shared vocabulary still group and cross-check', async () => {
+    // These two briefs share NO topical keyword (lexical path finds nothing),
+    // but the injected embedder says they are the same subject.
+    const embed = vi.fn(async (text: string): Promise<number[]> =>
+      /voiture|vehicle|\bev\b/i.test(text) ? [1, 0] : [0, 1]
+    );
+    const { launchSession, launches } = makeLauncher('NONE');
+    startDelegation({
+      sessionId: 'x8',
+      cwd: testRoot,
+      title: 'FR brief',
+      prompt: 'Recherche sur la voiture électrique en Europe',
+      crossVerify: true,
+      embed,
+      launchSession,
+      getConfig: () => testConfig,
+    });
+    startDelegation({
+      sessionId: 'x8',
+      cwd: testRoot,
+      title: 'EN brief',
+      prompt: 'Research the EV market in Europe',
+      crossVerify: true,
+      embed,
+      launchSession,
+      getConfig: () => testConfig,
+    });
+
+    await flushUntil(() => getResearchCrossChecks('x8').length === 1);
+    expect(launches.filter((l) => l.task.id.startsWith('research-cross-check-'))).toHaveLength(1);
+    // Each distinct brief embedded exactly once (the shared cache prevents a
+    // second embed on a later grouping pass, so cost stays bounded).
+    expect(embed).toHaveBeenCalledTimes(2);
+    expect(getResearchEmbeddingCalls()).toBe(2);
   });
 
   it('does NOT cross-check flagged reports on clearly different subjects', async () => {

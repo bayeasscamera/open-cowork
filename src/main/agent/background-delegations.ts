@@ -48,7 +48,9 @@ import {
   parseResearchContradictions,
   type CrossVerificationResult,
 } from './cross-verification';
-import { groupResearchByTopic } from './research-topic';
+import { groupResearchByTopic, sharesResearchTopic } from './research-topic';
+import { EmbeddingCache, groupByEmbedding } from './embedding-grouping';
+import { MemoryLLMClient, type MemoryLLMClientLike } from '../memory/memory-llm-client';
 import { log, logError, logWarn } from '../utils/logger';
 import type { ServerEvent } from '../../shared/types';
 import { configStore, type AppConfig as StoreAppConfig } from '../config/config-store';
@@ -193,7 +195,7 @@ const pendingBySession = new Map<string, string[]>();
 /** Live abort controllers — cancel() must reach the running sub-agent. */
 const controllers = new Map<string, AbortController>();
 
-/** Per-session research cross-verification state (opt-in; see crossVerify). */
+/** One research cross-verification pass (opt-in; see crossVerify). */
 interface ResearchCrossCheck {
   status: 'pending' | 'done' | 'failed';
   /** Delegation ids covered by this pass. */
@@ -204,7 +206,14 @@ interface ResearchCrossCheck {
   /** Awaitable handle (tests await it; production never blocks on it). */
   promise: Promise<void>;
 }
-const researchCrossChecks = new Map<string, ResearchCrossCheck>();
+/**
+ * Per-session cross-check BATCHES. One batch per topic group: two unrelated
+ * subjects headed for the same session each get their own pass instead of the
+ * second group silently waiting for a later arrival.
+ */
+const researchCrossChecks = new Map<string, ResearchCrossCheck[]>();
+/** Embedding cache shared across passes: each distinct brief embeds once. */
+const researchEmbeddingCache = new EmbeddingCache();
 let settings: DelegationSettings = { ...DEFAULT_DELEGATION_SETTINGS };
 let storageFile: string | null = null;
 let settingsFile: string | null = null;
@@ -379,10 +388,37 @@ export interface StartDelegationOptions {
    * reports contradictions explicitly. Off by default (adds a model call).
    */
   crossVerify?: boolean;
+  /**
+   * Optional semantic grouping for cross-verification: when provided, close
+   * paraphrases ("voiture électrique" / "VE") group together even without
+   * shared vocabulary. Uses the memory embedding config, so it is inert unless
+   * the user enabled embeddings — the lexical path stays the default.
+   */
+  embed?: (text: string) => Promise<number[]>;
+  /** Injectable embedding client (tests) — defaults to MemoryLLMClient. */
+  llmClient?: MemoryLLMClientLike;
   /** Config source override (tests); defaults to the app config store. */
   getConfig?: () => StoreAppConfig;
   /** Session launcher override (tests): inject a fake sub-agent session. */
   launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
+}
+
+/**
+ * Resolve the embedding function used ONLY for subject grouping. Silent by
+ * design: embeddings are a precision bonus, and an unavailable provider must
+ * leave the lexical grouping untouched rather than surface an error on a
+ * background path the user never asked about.
+ */
+function resolveGroupingEmbedFn(options: StartDelegationOptions): (text: string) => Promise<number[]> {
+  if (options.embed) return options.embed;
+  const client = options.llmClient ?? new MemoryLLMClient();
+  return async (text: string) => {
+    try {
+      return await client.embed(text);
+    } catch {
+      return [];
+    }
+  };
 }
 
 /** Hard hierarchy cap: main agent (0) → sub-agent (1) → sub-sub-agent (2). */
@@ -554,11 +590,11 @@ function launchBackgroundTask(
       // OPT-IN Zone 2: once two parallel cross-verify reports are pending,
       // schedule ONE contradiction cross-check (fire-and-forget).
       if (current.crossVerify) {
-        try {
-          scheduleResearchCrossVerification(current.sessionId, options, effectiveGetConfig);
-        } catch (err) {
-          logError('[BackgroundDelegations] Failed to schedule research cross-verification:', err);
-        }
+        // Fire-and-forget: the delegation is already marked completed and its
+        // report enqueued, so a slow grouping never delays the user's result.
+        void scheduleResearchCrossVerification(current.sessionId, options, effectiveGetConfig).catch(
+          (err) => logError('[BackgroundDelegations] Failed to schedule research cross-verification:', err)
+        );
       }
     })
     .catch((err: unknown) => {
@@ -705,56 +741,67 @@ async function runResearchCrossCheck(
 }
 
 /**
- * After a cross-verify delegation completes, schedule ONE cross-check over the
- * pending cross-verify reports of the session. Fire-and-forget by design: the
- * delegation mode must never block, and a failure only loses the enhancement.
- * Bounded: a single model call per batch (never one per report).
+ * After a cross-verify delegation completes, schedule ONE cross-check PER TOPIC
+ * GROUP over the pending cross-verify reports of the session. Fire-and-forget by
+ * design: the delegation mode must never block, and a failure only loses the
+ * enhancement. Bounded: a single model call per group (never one per report),
+ * and every distinct group is served in the same cycle — a second subject no
+ * longer waits for a later arrival.
  */
-function scheduleResearchCrossVerification(
+async function scheduleResearchCrossVerification(
   sessionId: string,
   options: StartDelegationOptions,
   getConfig: () => StoreAppConfig
-): void {
+): Promise<void> {
   const pendingCrossVerify = Array.from(delegations.values()).filter(
     (d) => d.sessionId === sessionId && d.crossVerify && d.status === 'completed' && !d.delivered
   );
   // A cross-check needs at least TWO independent reports to contradict.
   if (pendingCrossVerify.length < 2) return;
-  // Same-SUBJECT grouping: parallel delegations on unrelated subjects cannot
-  // factually contradict, and cross-checking them would waste a model call.
-  const topicGroups = groupResearchByTopic(
-    pendingCrossVerify,
-    (d) => `${d.title}\n${d.prompt}`
-  );
-  const batch = topicGroups[0];
-  if (!batch || batch.length < 2) return;
-  const ids = batch.map((d) => d.id).sort();
-  const existing = researchCrossChecks.get(sessionId);
-  // Never re-run an identical batch, and never re-cover a report already
-  // cross-checked (a later arrival must not re-bill the same reports).
-  if (existing && ids.every((id) => existing.delegationIds.includes(id))) return;
-  const covered = ids
-    .map((id) => delegations.get(id))
-    .filter((d): d is BackgroundDelegation => d !== undefined);
-  const check: ResearchCrossCheck = {
-    status: 'pending',
-    delegationIds: ids,
-    injected: false,
-    promise: Promise.resolve(),
-  };
-  check.promise = runResearchCrossCheck(covered, options, getConfig)
-    .then((result) => {
-      check.status = 'done';
-      check.result = result;
-      log(
-        `[BackgroundDelegations] Research cross-verification: ${result.contradictions.length} contradiction(s) surfaced (${result.modelCalls} extra model call)`
-      );
-    })
-    .catch((err) => {
-      check.status = 'failed';
-      logError('[BackgroundDelegations] Research cross-verification failed:', err);
+  const textOf = (d: BackgroundDelegation): string => `${d.title}\n${d.prompt}`;
+
+  // Same-SUBJECT grouping: semantic when embeddings are available (catches
+  // paraphrases), lexical otherwise. The lexical predicate stays the per-pair
+  // fallback for any text that has no embedding.
+  let topicGroups: BackgroundDelegation[][];
+  try {
+    topicGroups = await groupByEmbedding(pendingCrossVerify, textOf, resolveGroupingEmbedFn(options), {
+      lexicalFallback: sharesResearchTopic,
+      cache: researchEmbeddingCache,
     });
-  researchCrossChecks.set(sessionId, check);
+  } catch (err) {
+    logError('[BackgroundDelegations] Semantic grouping failed; using lexical grouping:', err);
+    topicGroups = groupResearchByTopic(pendingCrossVerify, textOf);
+  }
+
+  const batches = researchCrossChecks.get(sessionId) ?? [];
+  for (const group of topicGroups) {
+    const ids = group.map((d) => d.id).sort();
+    // A report already covered by an earlier pass is never re-billed.
+    if (batches.some((b) => ids.every((id) => b.delegationIds.includes(id)))) continue;
+    const check: ResearchCrossCheck = {
+      status: 'pending',
+      delegationIds: ids,
+      injected: false,
+      promise: Promise.resolve(),
+    };
+    check.promise = runResearchCrossCheck(group, options, getConfig)
+      .then((result) => {
+        check.status = 'done';
+        check.result = result;
+        log(
+          `[BackgroundDelegations] Research cross-verification (${ids.length} reports): ${result.contradictions.length} contradiction(s) surfaced (${result.modelCalls} extra model call)`
+        );
+      })
+      .catch((err) => {
+        check.status = 'failed';
+        logError('[BackgroundDelegations] Research cross-verification failed:', err);
+      });
+    batches.push(check);
+  }
+  if (batches.length > 0) {
+    researchCrossChecks.set(sessionId, batches);
+  }
 }
 
 /** Render the explicit contradiction block (empty when nothing conflicts). */
@@ -778,16 +825,27 @@ function renderResearchCrossCheckBlock(result: CrossVerificationResult): string 
   );
 }
 
-/** Awaitable handle for tests; production never blocks on the cross-check. */
+/** Awaitable handle for tests; production never blocks on the cross-checks. */
 export function awaitResearchCrossVerification(sessionId: string): Promise<void> {
   ensureLoaded();
-  return researchCrossChecks.get(sessionId)?.promise ?? Promise.resolve();
+  const batches = researchCrossChecks.get(sessionId) ?? [];
+  return Promise.all(batches.map((b) => b.promise)).then(() => undefined);
 }
 
-/** Test/UI hook: the current cross-check state for a session. */
-export function getResearchCrossCheck(sessionId: string): ResearchCrossCheck | undefined {
+/** Test/UI hook: every cross-check batch of a session (one per topic group). */
+export function getResearchCrossChecks(sessionId: string): ResearchCrossCheck[] {
   ensureLoaded();
-  return researchCrossChecks.get(sessionId);
+  return researchCrossChecks.get(sessionId) ?? [];
+}
+
+/** Float embedding calls issued for grouping (measurable cost, for diagnostics). */
+export function getResearchEmbeddingCalls(): number {
+  return researchEmbeddingCache.embedCalls;
+}
+
+/** Back-compat helper: the FIRST batch of a session, if any. */
+export function getResearchCrossCheck(sessionId: string): ResearchCrossCheck | undefined {
+  return getResearchCrossChecks(sessionId)[0];
 }
 
 /**
@@ -799,26 +857,24 @@ export function getResearchCrossCheck(sessionId: string): ResearchCrossCheck | u
 export function takePendingDelegationResults(sessionId: string): string {
   ensureLoaded();
   const queue = pendingBySession.get(sessionId);
-  const check = researchCrossChecks.get(sessionId);
+  const checks = researchCrossChecks.get(sessionId) ?? [];
   const delivering = queue && queue.length > 0;
 
   const crossBlocks: string[] = [];
   let pendingCrossNote = '';
-  if (check && !check.injected) {
-    const relevant = delivering
-      ? check.delegationIds.some((id) => queue!.includes(id))
-      : true;
-    if (relevant) {
-      if (check.status === 'done' && check.result) {
-        const block = renderResearchCrossCheckBlock(check.result);
-        if (block) {
-          crossBlocks.push(block);
-        }
-        check.injected = true;
-      } else if (check.status === 'pending' && delivering) {
-        pendingCrossNote =
-          '<research_cross_verification status="pending">A cross-verification pass over these parallel reports is running; any factual contradiction will be reported on a later turn.</research_cross_verification>';
+  for (const check of checks) {
+    if (check.injected) continue;
+    const relevant = delivering ? check.delegationIds.some((id) => queue!.includes(id)) : true;
+    if (!relevant) continue;
+    if (check.status === 'done' && check.result) {
+      const block = renderResearchCrossCheckBlock(check.result);
+      if (block) {
+        crossBlocks.push(block);
       }
+      check.injected = true;
+    } else if (check.status === 'pending' && delivering) {
+      pendingCrossNote =
+        '<research_cross_verification status="pending">A cross-verification pass over these parallel reports is running; any factual contradiction will be reported on a later turn.</research_cross_verification>';
     }
   }
 
@@ -919,6 +975,7 @@ export function __resetDelegationsForTest(): void {
   controllers.forEach((c) => c.abort());
   controllers.clear();
   researchCrossChecks.clear();
+  researchEmbeddingCache.clear();
   settings = { ...DEFAULT_DELEGATION_SETTINGS };
   loaded = true;
 }

@@ -26,21 +26,38 @@ describe('research topic detection', () => {
     expect(sharesResearchTopic(a, b)).toBe(true);
   });
 
-  it('requires TWO shared keywords, so one generic word is not enough', () => {
-    // Share only "market" — clearly different subjects.
+  it('requires a DISTINCTIVE shared keyword, so generic vocabulary is not enough', () => {
+    // Share only generic terms ("market", "outlook") — different subjects.
     expect(
       sharesResearchTopic(
         'Research the electric vehicle market outlook',
         'Research the cloud software market outlook'
       )
     ).toBe(false);
-    // Two specific shared terms — same subject.
+    // A distinctive shared term — same subject.
     expect(
       sharesResearchTopic(
         'Research the electric vehicle market outlook in Europe',
         'Research the electric vehicle market outlook in Asia'
       )
     ).toBe(true);
+  });
+
+  it('never bridges two subjects through shared GENERIC words alone', () => {
+    // Regression: "market"+"size" used to union these into ONE group, so a
+    // 4-delegation batch produced 3 cross-check passes instead of 2.
+    expect(
+      sharesResearchTopic(
+        'Research the electric vehicle market size',
+        'Research the semiconductor market size'
+      )
+    ).toBe(false);
+    expect(
+      sharesResearchTopic(
+        'Research the electric vehicle market share',
+        'Research the semiconductor market share'
+      )
+    ).toBe(false);
   });
 
   it('never groups two clearly unrelated research briefs', () => {
@@ -52,6 +69,22 @@ describe('research topic detection', () => {
       (d) => `${d.title}\n${d.prompt}`
     );
     expect(groups).toHaveLength(0); // no group of 2+ → no cross-check
+  });
+
+  it('splits 4 briefs into exactly 2 subject groups (no generic-word bridge)', () => {
+    const items = [
+      { t: 'EV size', p: 'Research the electric vehicle market size' },
+      { t: 'EV share', p: 'Research the electric vehicle market share' },
+      { t: 'Chip size', p: 'Research the semiconductor market size' },
+      { t: 'Chip share', p: 'Research the semiconductor market share' },
+    ];
+    const groups = groupResearchByTopic(items, (i) => `${i.t}\n${i.p}`);
+    expect(groups).toHaveLength(2);
+    const labels = groups.map((g) => g.map((x) => x.t).sort()).sort();
+    expect(labels).toEqual([
+      ['Chip share', 'Chip size'],
+      ['EV share', 'EV size'],
+    ]);
   });
 
   it('groups parallel briefs on the SAME subject, including transitively', () => {
@@ -69,10 +102,12 @@ describe('research topic detection', () => {
   });
 
   it('returns no group when the briefs carry no keywords at all', () => {
-    const items = [
-      { p: 'do the thing' },
-      { p: 'do the other thing' },
-    ];
+    // Both briefs are pure function words, so extractTopicKeywords yields [].
+    // (Previously this passed only because the rule required TWO shared
+    // keywords; the shared "thing" was silently doing the work.)
+    const items = [{ p: 'do it now' }, { p: 'be there then' }];
+    expect(extractTopicKeywords(items[0].p)).toHaveLength(0);
+    expect(extractTopicKeywords(items[1].p)).toHaveLength(0);
     expect(groupResearchByTopic(items, (i) => i.p)).toHaveLength(0);
   });
 });
