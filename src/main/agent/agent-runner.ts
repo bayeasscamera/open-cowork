@@ -42,6 +42,7 @@ import {
   resolveSandboxBackend,
   syncSandboxChangesToHost,
 } from './agent-runner-sandbox-session';
+import { buildColdStartHistoryPreamble } from './cold-start-history';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -163,124 +164,6 @@ function resolveProjectContextForRunner(sessionId: string): ProjectContextResolu
       systemPromptBlock: '',
     };
   }
-}
-
-/**
- * Estimate chars-per-token ratio based on content language.
- * CJK characters tokenize at ~1.5 chars/token vs ~4 for English.
- */
-function estimateCharsPerToken(sampleText: string): number {
-  if (!sampleText || sampleText.length === 0) return 4;
-  const sample = sampleText.substring(0, 500);
-  const cjkCount = (sample.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || [])
-    .length;
-  const cjkRatio = cjkCount / sample.length;
-  return 4 - cjkRatio * 2.5; // Range: 1.5 (pure CJK) ~ 4 (pure English)
-}
-
-// Escape characters that would break the cold-start `<conversation_history>`
-// envelope when interpolated into XML tag bodies or attribute values. Raw user
-// text blocks are intentionally not escaped (preserves legacy compatibility);
-// only the new wrapper tags (`<thinking>`, `<tool_use>`, `<tool_result>`) and
-// their attributes pass through these.
-//
-// Attribute values additionally need `"` escaped because attributes are
-// double-quoted. Tag bodies do not (keeping `"` keeps JSON input legible to
-// the model).
-function escapeXmlAttr(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/**
- * Serialize a message's content blocks into the XML representation used inside the
- * cold-start `<conversation_history>` preamble.
- *
- * Why this exists: when the cached pi-coding-agent SDK session is disposed (cwd
- * change or runtime-signature change), agent-runner rebuilds history from
- * DB-persisted messages. The previous implementation only kept `text` blocks,
- * which silently dropped `thinking`, `tool_use`, and `tool_result` blocks.
- * Providers that require previous reasoning/tool-call replay (e.g. DeepSeek V4
- * Flash) then fail with 400 on the next turn, and every other thinking-capable
- * model loses its reasoning trace across cwd switches (issue #162 \u2014 Bug B).
- *
- * Blocks handled:
- *   - text          \u2192 raw text (matches the legacy serializer's output)
- *   - thinking      \u2192 `<thinking>\u2026</thinking>`
- *   - tool_use      \u2192 `<tool_use name="\u2026" id="\u2026">{json input}</tool_use>`
- *   - tool_result   \u2192 `<tool_result tool_use_id="\u2026"[ is_error="true"]>\u2026</tool_result>`
- *   - image         \u2192 skipped (binary, cannot live inside an XML text preamble)
- *   - file_attachment \u2192 skipped (large, would bloat the prompt)
- */
-export function serializeMessageContentForHistory(content: ContentBlock[]): string {
-  const parts: string[] = [];
-  for (const block of content) {
-    switch (block.type) {
-      case 'text': {
-        const text = block.text ?? '';
-        if (text.length > 0) parts.push(text);
-        break;
-      }
-      case 'thinking': {
-        const thinking = block.thinking ?? '';
-        if (thinking.length > 0) parts.push(`<thinking>${escapeXmlText(thinking)}</thinking>`);
-        break;
-      }
-      case 'tool_use': {
-        const name = block.name ?? 'unknown';
-        const id = block.id ?? '';
-        let inputStr: string;
-        try {
-          inputStr = JSON.stringify(block.input ?? {});
-        } catch {
-          inputStr = '{}';
-        }
-        parts.push(
-          `<tool_use name="${escapeXmlAttr(name)}" id="${escapeXmlAttr(id)}">${escapeXmlText(inputStr)}</tool_use>`
-        );
-        break;
-      }
-      case 'tool_result': {
-        const id = block.toolUseId ?? '';
-        const errAttr = block.isError ? ' is_error="true"' : '';
-        // Local type says `content: string`, but Anthropic-style payloads
-        // from older message rows or third-party providers may store an
-        // array of content blocks. Flatten defensively so we never serialize
-        // "[object Object]".
-        const rawContent = (block as { content: unknown }).content;
-        let text: string;
-        if (typeof rawContent === 'string') {
-          text = rawContent;
-        } else if (Array.isArray(rawContent)) {
-          text = rawContent
-            .map((c) =>
-              c && typeof c === 'object' && 'text' in c
-                ? String((c as { text: unknown }).text ?? '')
-                : ''
-            )
-            .join('\n');
-        } else {
-          text = '';
-        }
-        parts.push(
-          `<tool_result tool_use_id="${escapeXmlAttr(id)}"${errAttr}>${escapeXmlText(text)}</tool_result>`
-        );
-        break;
-      }
-      case 'image':
-      case 'file_attachment':
-        // Skip \u2014 not representable as XML text in a history preamble.
-        break;
-    }
-  }
-  return parts.join('\n');
 }
 
 /**
@@ -1152,73 +1035,31 @@ export class CoworkAgentRunner {
 
       let contextualPrompt = prompt;
       if (!cachedSession) {
-        // Cold start: inject recent history into prompt if available
-        const conversationMessages = existingMessages.filter(
-          (msg) => msg.role === 'user' || msg.role === 'assistant'
-        );
-        // Filter out messages that contain images (images can't be serialized into text preamble)
-        const textOnlyMessages = conversationMessages.filter(
-          (msg) => !msg.content.some((c) => (c as { type?: string }).type === 'image')
-        );
-        const historyMessages =
-          textOnlyMessages.length > 0 &&
-          textOnlyMessages[textOnlyMessages.length - 1]?.role === 'user'
-            ? textOnlyMessages.slice(0, -1)
-            : textOnlyMessages;
+        // Cold start: inject recent history into the prompt. The rebuild itself
+        // lives in cold-start-history so it is unit-testable without Electron or
+        // the SDK; only the logging stays here.
+        const preamble = buildColdStartHistoryPreamble({
+          prompt,
+          messages: existingMessages,
+          contextWindow: piModel.contextWindow || 128000,
+          provider,
+        });
 
-        if (historyMessages.length > 0) {
-          // Content-aware chars-per-token estimation (CJK text uses ~1.5 chars/token vs ~4 for English)
-          const contextWindow = piModel.contextWindow || 128000;
-          const historyBudgetRatio = provider === 'ollama' && contextWindow < 16384 ? 0.15 : 0.3;
-          const historyTokenBudget = Math.floor(contextWindow * historyBudgetRatio);
-
-          // Sample recent messages to estimate chars-per-token ratio. Sampling the
-          // full serialized form (text + thinking + tool blocks) gives a better CJK
-          // ratio estimate than sampling text only.
-          const sampleText = historyMessages
-            .slice(-3)
-            .map((m) => serializeMessageContentForHistory(m.content))
-            .join('');
-          const charsPerToken = estimateCharsPerToken(sampleText);
-          const historyCharBudget = Math.floor(historyTokenBudget * charsPerToken);
-
-          const historyItems: string[] = [];
-          let charCount = 0;
-          // Build from newest to oldest, then reverse. We preserve thinking and
-          // tool blocks (not just text) so providers requiring reasoning/tool-call
-          // replay (DeepSeek V4 Flash, and any thinking-capable model after a
-          // cwd switch) continue to function after a cold start. See #162 Bug B.
-          for (let i = historyMessages.length - 1; i >= 0; i--) {
-            const msg = historyMessages[i];
-            const serialized = serializeMessageContentForHistory(msg.content);
-            if (serialized.length === 0) continue;
-            const roleTag = msg.role === 'user' ? 'user' : 'assistant';
-            const entry = `<turn role="${roleTag}">${serialized}</turn>`;
-            if (charCount + entry.length > historyCharBudget) break;
-            charCount += entry.length;
-            historyItems.unshift(entry);
-          }
-
-          if (historyItems.length > 0) {
-            const trimmedCount = historyMessages.length - historyItems.length;
-            const historyNote =
-              trimmedCount > 0 ? `[${trimmedCount} older messages omitted]\n` : '';
-            const preamble = `<conversation_history>\n${historyNote}${historyItems.join('\n')}\n</conversation_history>`;
-            contextualPrompt = `${preamble}\n\n${prompt}`;
-            log(
-              '[CoworkAgentRunner] Cold start: injecting',
-              historyItems.length,
-              'of',
-              historyMessages.length,
-              'history messages (budget:',
-              historyCharBudget,
-              'chars, used:',
-              charCount,
-              ', charsPerToken:',
-              charsPerToken.toFixed(2),
-              ')'
-            );
-          }
+        if (preamble) {
+          contextualPrompt = preamble.prompt;
+          log(
+            '[CoworkAgentRunner] Cold start: injecting',
+            preamble.injectedCount,
+            'of',
+            preamble.totalCount,
+            'history messages (budget:',
+            preamble.charBudget,
+            'chars, used:',
+            preamble.charCount,
+            ', charsPerToken:',
+            preamble.charsPerToken.toFixed(2),
+            ')'
+          );
         }
       } else {
         // Reusing session — SDK already has the full conversation context

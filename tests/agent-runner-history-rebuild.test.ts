@@ -1,36 +1,29 @@
 /**
- * Tests for the cold-start `<conversation_history>` rebuild path in
- * `src/main/agent/agent-runner.ts`.
+ * Tests for the cold-start `<conversation_history>` rebuild
+ * (`src/main/agent/cold-start-history.ts`).
  *
  * The rebuild path is exercised when the cached pi-coding-agent SDK session is
- * disposed (cwd change at `session-manager.ts:~993`, or runtime-signature
- * change at `agent-runner.ts:~1583`) and agent-runner has to reconstruct
- * conversation history from DB-persisted messages.
+ * disposed (cwd change, or runtime-signature change) and agent-runner has to
+ * reconstruct conversation history from DB-persisted messages.
  *
  * Bug #162 (Bug B): the previous implementation filtered to `type === 'text'`
  * only, silently dropping `thinking`, `tool_use`, and `tool_result` blocks.
  * Providers that require previous reasoning/tool-call replay (DeepSeek V4
  * Flash, and any thinking-capable model after a cwd switch) then 400 on the
- * next turn. These tests pin the new serializer behavior so the regression
- * cannot return.
+ * next turn. These tests pin the serializer behavior so the regression cannot
+ * return, plus the token-budgeted preamble assembled from it.
+ *
+ * The module is dependency-free, so no Electron/SDK stubbing is needed here.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-// agent-runner.ts pulls a wide tree of Electron + native deps via its
-// constructor; we only need a pure helper, so stub the heaviest imports.
-vi.mock('@mariozechner/pi-ai', () => ({
-  completeSimple: vi.fn(),
-  getModel: vi.fn(() => undefined),
-}));
-
-vi.mock('../src/main/agent/shared-auth', () => ({
-  getSharedAuthStorage: () => ({ setRuntimeApiKey: vi.fn() }),
-  ModelRegistry: vi.fn(),
-}));
-
-import type { ContentBlock } from '../src/renderer/types';
-import { serializeMessageContentForHistory } from '../src/main/agent/agent-runner';
+import type { ContentBlock, Message } from '../src/shared/types';
+import {
+  buildColdStartHistoryPreamble,
+  estimateCharsPerToken,
+  serializeMessageContentForHistory,
+} from '../src/main/agent/cold-start-history';
 
 describe('serializeMessageContentForHistory', () => {
   it('serializes a single text block as raw text (legacy compatible)', () => {
@@ -152,6 +145,33 @@ describe('serializeMessageContentForHistory', () => {
     expect(serializeMessageContentForHistory(blocks)).toBe('<tool_use name="" id="">{}</tool_use>');
   });
 
+  it('applies the nullish defaults when optional block fields are absent', () => {
+    const blocks = [
+      { type: 'text' } as ContentBlock,
+      { type: 'thinking' } as ContentBlock,
+      { type: 'tool_use' } as ContentBlock,
+      { type: 'tool_result' } as ContentBlock,
+    ];
+
+    expect(serializeMessageContentForHistory(blocks)).toBe(
+      '<tool_use name="unknown" id="">{}</tool_use>\n<tool_result tool_use_id=""></tool_result>'
+    );
+  });
+
+  it('skips array elements that carry no text when flattening tool_result content', () => {
+    const blocks = [
+      {
+        type: 'tool_result',
+        toolUseId: 'call-9',
+        content: [{ text: 'kept' }, { other: true }],
+      },
+    ] as unknown as ContentBlock[];
+
+    expect(serializeMessageContentForHistory(blocks)).toBe(
+      '<tool_result tool_use_id="call-9">kept\n</tool_result>'
+    );
+  });
+
   it('returns an empty string for messages composed entirely of skipped blocks', () => {
     const blocks: ContentBlock[] = [
       {
@@ -242,3 +262,179 @@ describe('serializeMessageContentForHistory', () => {
     );
   });
 });
+
+let messageCounter = 0;
+
+const message = (role: 'user' | 'assistant', content: ContentBlock[]): Message => ({
+  id: `message-${++messageCounter}`,
+  sessionId: 'session-1',
+  role,
+  content,
+  timestamp: messageCounter,
+});
+
+const text = (value: string): ContentBlock[] => [{ type: 'text', text: value }];
+
+describe('estimateCharsPerToken', () => {
+  it('defaults to 4 chars per token for empty or English text', () => {
+    expect(estimateCharsPerToken('')).toBe(4);
+    expect(estimateCharsPerToken('hello world')).toBe(4);
+  });
+
+  it('drops towards 1.5 for pure CJK text', () => {
+    expect(estimateCharsPerToken('你好世界你好世界')).toBeCloseTo(1.5, 5);
+  });
+
+  it('only samples the first 500 characters', () => {
+    expect(estimateCharsPerToken('a'.repeat(600) + '你好')).toBe(4);
+  });
+});
+
+describe('buildColdStartHistoryPreamble', () => {
+  it('returns null without any conversation history', () => {
+    expect(buildColdStartHistoryPreamble({ prompt: 'hello', messages: [] })).toBeNull();
+  });
+
+  it('returns null when the history is a single trailing user message', () => {
+    expect(
+      buildColdStartHistoryPreamble({ prompt: 'next', messages: [message('user', text('first'))] })
+    ).toBeNull();
+  });
+
+  it('returns null when every message carries an image', () => {
+    const imageMessage = message('assistant', [
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+    ]);
+
+    expect(buildColdStartHistoryPreamble({ prompt: 'next', messages: [imageMessage] })).toBeNull();
+  });
+
+  it('wraps past turns in the conversation_history envelope and keeps the prompt last', () => {
+    const preamble = buildColdStartHistoryPreamble({
+      prompt: 'current question',
+      messages: [
+        message('user', text('earlier question')),
+        message('assistant', text('earlier answer')),
+        message('user', text('current question')),
+      ],
+    });
+
+    expect(preamble?.injectedCount).toBe(2);
+    expect(preamble?.totalCount).toBe(2);
+    expect(preamble?.prompt).toContain('<conversation_history>');
+    expect(preamble?.prompt).toContain('<turn role="user">earlier question</turn>');
+    expect(preamble?.prompt).toContain('<turn role="assistant">earlier answer</turn>');
+    expect(preamble?.prompt).toContain('</conversation_history>');
+    expect(preamble?.prompt.endsWith('\n\ncurrent question')).toBe(true);
+  });
+
+  it('skips image-bearing messages but keeps the surrounding text', () => {
+    const withImage = message('assistant', [
+      { type: 'text', text: 'before' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+    ]);
+
+    const preamble = buildColdStartHistoryPreamble({
+      prompt: 'next',
+      messages: [message('user', text('old question')), withImage, message('assistant', text('kept turn'))],
+    });
+
+    expect(preamble?.injectedCount).toBe(2);
+    expect(preamble?.prompt).toContain('old question');
+    expect(preamble?.prompt).toContain('kept turn');
+    expect(preamble?.prompt).not.toContain('before');
+  });
+
+  it('returns null when dropping image messages leaves only the trailing user turn', () => {
+    const withImage = message('assistant', [
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+    ]);
+
+    expect(
+      buildColdStartHistoryPreamble({
+        prompt: 'next',
+        messages: [message('user', text('kept turn')), withImage],
+      })
+    ).toBeNull();
+  });
+
+  it('preserves thinking and tool blocks so reasoning replay keeps working', () => {
+    const preamble = buildColdStartHistoryPreamble({
+      prompt: 'next',
+      messages: [
+        message('assistant', [
+          { type: 'thinking', thinking: 'need the dir first' },
+          { type: 'tool_use', id: 'call-1', name: 'Bash', input: { command: 'ls' } },
+        ]),
+      ],
+    });
+
+    expect(preamble?.prompt).toContain('<thinking>need the dir first</thinking>');
+    expect(preamble?.prompt).toContain('<tool_use name="Bash" id="call-1">');
+  });
+
+  it('trims the oldest turns first and says how many were dropped', () => {
+    const longText = (index: number) => text(`msg-${index}`.padEnd(300, 'x'));
+    const preamble = buildColdStartHistoryPreamble({
+      prompt: 'current question',
+      contextWindow: 1000,
+      messages: [1, 2, 3, 4, 5].map((index) => message('assistant', longText(index))),
+    });
+
+    expect(preamble?.injectedCount).toBe(3);
+    expect(preamble?.totalCount).toBe(5);
+    expect(preamble?.prompt).toContain('[2 older messages omitted]');
+    expect(preamble?.prompt).toContain('msg-5');
+    expect(preamble?.prompt).not.toContain('msg-2');
+    expect(preamble?.prompt).not.toContain('msg-1');
+  });
+
+  it('returns null when even the newest turn does not fit the budget', () => {
+    expect(
+      buildColdStartHistoryPreamble({
+        prompt: 'next',
+        contextWindow: 100,
+        messages: [message('assistant', text('y'.repeat(2000)))],
+      })
+    ).toBeNull();
+  });
+
+  it('uses the tighter budget for a small Ollama context window', () => {
+    const options = {
+      prompt: 'next',
+      contextWindow: 8192,
+      messages: [message('assistant', text('hello'))],
+    };
+
+    expect(buildColdStartHistoryPreamble(options)?.charBudget).toBe(9828);
+    expect(buildColdStartHistoryPreamble({ ...options, provider: 'ollama' })?.charBudget).toBe(
+      4912
+    );
+  });
+
+  it('falls back to a 128k context window when none is given', () => {
+    const preamble = buildColdStartHistoryPreamble({
+      prompt: 'next',
+      messages: [message('assistant', text('hello'))],
+    });
+
+    expect(preamble?.charBudget).toBe(153600);
+  });
+
+  it('skips turns whose blocks serialize to nothing when building the preamble', () => {
+    const attachmentOnly = message('assistant', [
+      { type: 'file_attachment', filename: 'a.bin', relativePath: 'a.bin', size: 1 },
+    ]);
+
+    const preamble = buildColdStartHistoryPreamble({
+      prompt: 'next',
+      messages: [attachmentOnly, message('assistant', text('kept turn'))],
+    });
+
+    expect(preamble?.injectedCount).toBe(1);
+    expect(preamble?.totalCount).toBe(2);
+    expect(preamble?.prompt).toContain('kept turn');
+    expect(preamble?.prompt).toContain('[1 older messages omitted]');
+  });
+});
+

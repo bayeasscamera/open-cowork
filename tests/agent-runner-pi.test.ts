@@ -8,6 +8,11 @@ const formattingPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner-
 const formattingContent = readFileSync(formattingPath, 'utf8');
 const mcpToolsPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner-mcp-tools.ts');
 const mcpToolsContent = readFileSync(mcpToolsPath, 'utf8');
+const coldStartHistoryPath = path.resolve(
+  process.cwd(),
+  'src/main/agent/cold-start-history.ts'
+);
+const coldStartHistoryContent = readFileSync(coldStartHistoryPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -36,11 +41,12 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('avoids duplicating the current user prompt in contextual history assembly', () => {
-    expect(agentRunnerContent).toContain('const conversationMessages = existingMessages');
+    // The cold-start assembly now lives in its own module; the guard follows it.
+    expect(coldStartHistoryContent).toContain('const conversationMessages = options.messages.filter(');
     // Image-containing messages are filtered out individually (not skipping entire history)
-    expect(agentRunnerContent).toContain('const textOnlyMessages = conversationMessages');
-    expect(agentRunnerContent).toContain('textOnlyMessages.slice(0, -1)');
-    expect(agentRunnerContent).toContain(
+    expect(coldStartHistoryContent).toContain('const textOnlyMessages = conversationMessages');
+    expect(coldStartHistoryContent).toContain('textOnlyMessages.slice(0, -1)');
+    expect(coldStartHistoryContent).toContain(
       "textOnlyMessages[textOnlyMessages.length - 1]?.role === 'user'"
     );
   });
