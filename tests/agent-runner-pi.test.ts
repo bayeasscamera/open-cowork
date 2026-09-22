@@ -22,6 +22,11 @@ const sessionEventLoggingPath = path.resolve(
   'src/main/agent/session-event-logging.ts'
 );
 const sessionEventLoggingContent = readFileSync(sessionEventLoggingPath, 'utf8');
+const sessionEventHandlerPath = path.resolve(
+  process.cwd(),
+  'src/main/agent/session-event-handler.ts'
+);
+const sessionEventHandlerContent = readFileSync(sessionEventHandlerPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -89,14 +94,16 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
     expect(sessionEventLoggingContent).toContain(
       'messageUpdateCounts: deps.telemetry.getStreamEventSummary()'
     );
-    // The raw-message dump stays in the runner, gated on full debug logging.
-    expect(agentRunnerContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
-    expect(agentRunnerContent).toContain("'[CoworkAgentRunner] message_end raw message:'");
+    // The raw-message dump now lives in session-event-handler, gated on full debug logging.
+    expect(sessionEventHandlerContent).toContain(
+      "if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {"
+    );
+    expect(sessionEventHandlerContent).toContain("'[CoworkAgentRunner] message_end raw message:'");
   });
 
   it('reuses the shared user-facing error helper', () => {
     expect(agentRunnerContent).toContain("from './agent-runner-message-end'");
-    expect(agentRunnerContent).toContain('resolveMessageEndPayload');
+    expect(sessionEventHandlerContent).toContain('resolveMessageEndPayload');
     expect(agentRunnerContent).toContain('toUserFacingErrorText');
     expect(agentRunnerContent).toContain(
       'const errorText = toUserFacingErrorText(toErrorText(error));'
@@ -147,7 +154,7 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
     expect(mcpToolsContent).toContain(
       'const normalizedResult = normalizeMcpToolResultForModel(result);'
     );
-    expect(agentRunnerContent).toContain(
+    expect(sessionEventHandlerContent).toContain(
       'const normalizedToolResult = normalizeToolExecutionResultForUi(event.result);'
     );
     expect(agentRunnerContent).not.toContain('else textParts.push(JSON.stringify(part));');

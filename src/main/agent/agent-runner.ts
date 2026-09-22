@@ -48,6 +48,11 @@ import { buildMcpServersConfig, type McpServersCache } from './mcp-servers-confi
 import { buildCoworkAppendPrompt } from './runtime-config-summary';
 import { setupSkillsDirectories } from './skills-directory-setup';
 import { logSessionStreamEvent, type SessionEventLoggingDeps } from './session-event-logging';
+import {
+  handlePiSessionEvent,
+  type PiSessionEventContext,
+  type PiSessionEventState,
+} from './session-event-handler';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -70,14 +75,8 @@ import { app } from 'electron';
 import { setMaxListeners } from 'node:events';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
-import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
 import { wrapBashToolForSudo, wrapBashToolWithDefaultTimeout } from './agent-runner-bash-tools';
-import {
-  normalizeTokenUsage,
-  safeStringify,
-  summarizeMessageForLog,
-  toErrorText,
-} from './agent-runner-formatting';
+import { safeStringify, summarizeMessageForLog, toErrorText } from './agent-runner-formatting';
 import { buildMcpCustomTools } from './agent-runner-mcp-tools';
 import {
   getBundledNodePaths,
@@ -109,8 +108,6 @@ import {
   buildTerminalErrorEmissionDetails,
   buildTerminalErrorMessage,
   resolveAbortDisposition,
-  resolveAssistantStreamErrorText,
-  resolveMessageEndPayload,
   shouldPreserveExistingTrace,
   toUserFacingErrorText,
 } from './agent-runner-message-end';
@@ -128,9 +125,7 @@ import {
   buildHaltSteerMessage,
   buildWarnSteerMessage,
   type LoopGuardDecision,
-  type ToolCallDescriptor,
 } from './agent-runner-loop-guard';
-import { normalizeToolExecutionResultForUi } from './tool-result-utils';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
@@ -1511,6 +1506,42 @@ export class CoworkAgentRunner {
         summarizeMessage: summarizeMessageForLog,
       };
 
+      const piSessionEventState: PiSessionEventState = {
+        getStreamedText: () => streamedText,
+        setStreamedText: (text) => {
+          streamedText = text;
+        },
+        isTwoStageArmed: () => twoStageArmed,
+        stashPipelineDraft: (message, text) => {
+          pipelineDraftMessage = message;
+          pipelineDraftText = text;
+        },
+        getCompactionStepId: () => compactionStepId,
+        setCompactionStepId: (id) => {
+          compactionStepId = id;
+        },
+      };
+
+      const piSessionEventContext: PiSessionEventContext = {
+        sessionId: session.id,
+        provider,
+        model: { id: piModel.id, provider: piModel.provider, api: piModel.api },
+        usedSyntheticModel,
+        isAborted: () => controller.signal.aborted,
+        telemetry: streamLiveness,
+        loopGuard,
+        handleLoopGuardDecision,
+        state: piSessionEventState,
+        sendPartial: (delta) => this.sendPartial(session.id, delta),
+        sendToRenderer: (rendererEvent) => this.sendToRenderer(rendererEvent),
+        sendTraceStep: (step) => this.sendTraceStep(session.id, step),
+        sendTraceUpdate: (stepId, updates) => this.sendTraceUpdate(session.id, stepId, updates),
+        sendMessage: (message) => this.sendMessage(session.id, message),
+        getToolDisplayName: (toolName) => this.getToolDisplayName(toolName),
+        emitTerminalError,
+        sanitizeOutputPaths: (content) => sanitizeOutputPaths(content),
+      };
+
       const unsubscribe = piSession.subscribe((event) => {
         try {
           if (controller.signal.aborted) return;
@@ -1520,323 +1551,7 @@ export class CoworkAgentRunner {
 
           logSessionStreamEvent(event, sessionEventLoggingDeps);
 
-          switch (event.type) {
-            case 'message_update': {
-              if (controller.signal.aborted) break;
-              const ame = event.assistantMessageEvent;
-              if (ame.type === 'text_delta') {
-                streamLiveness.markFirstStreamEvent(ame.type);
-                streamedText += ame.delta;
-                // Two-stage draft: the first pass is never presented as the
-                // answer, so its live stream is withheld. The accumulated text
-                // still drives the refine decision after the run.
-                if (!twoStageArmed) this.sendPartial(session.id, ame.delta);
-              } else if (ame.type === 'thinking_delta') {
-                streamLiveness.markFirstStreamEvent(ame.type);
-                // Forward thinking delta to renderer for real-time display
-                if (!twoStageArmed) {
-                  this.sendToRenderer({
-                    type: 'stream.thinking',
-                    payload: { sessionId: session.id, delta: ame.delta },
-                  });
-                }
-              } else if (ame.type === 'toolcall_start') {
-                streamLiveness.markFirstStreamEvent(ame.type);
-                const partial = ame.partial;
-                const toolContent = partial?.content?.[ame.contentIndex];
-                const toolName = toolContent?.type === 'toolCall' ? toolContent.name : 'unknown';
-                const toolCallId = toolContent?.type === 'toolCall' ? toolContent.id : uuidv4();
-                const toolDisplayName = this.getToolDisplayName(toolName);
-                this.sendTraceStep(session.id, {
-                  id: toolCallId,
-                  type: 'tool_call',
-                  status: 'running',
-                  title: toolDisplayName,
-                  toolName,
-                  toolInput:
-                    toolContent?.type === 'toolCall'
-                      ? (toolContent.arguments as Record<string, unknown>) || {}
-                      : undefined,
-                  timestamp: Date.now(),
-                });
-              } else if (ame.type === 'done') {
-                // Some providers emit 'done' via message_update — we handle it
-                // in message_end below as a unified path for all providers.
-                log('[CoworkAgentRunner] message_update done event (handled in message_end)');
-              } else if (ame.type === 'error') {
-                streamLiveness.markFirstStreamEvent(ame.type);
-                const errorDetail = JSON.stringify(ame.error?.content || 'no content');
-                logCtxError('[CoworkAgentRunner] pi-ai stream error:', ame.reason, errorDetail);
-                emitTerminalError(resolveAssistantStreamErrorText(ame), { abort: true });
-              }
-              break;
-            }
-
-            case 'message_end': {
-              // Unified handler: send the final assistant message to the renderer.
-              // Works for all providers (some emit 'done' via message_update, others don't).
-              if (controller.signal.aborted) break;
-
-              const msg = event.message;
-              if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
-                log('[CoworkAgentRunner] message_end raw message:', safeStringify(msg, 2));
-              }
-              const resolvedPayload = resolveMessageEndPayload({
-                message: msg as Parameters<typeof resolveMessageEndPayload>[0]['message'],
-                streamedText,
-              });
-              streamedText = resolvedPayload.nextStreamedText;
-              if (provider === 'ollama') {
-                log(
-                  '[CoworkAgentRunner] Ollama message_end diagnostics',
-                  safeStringify({
-                    sessionId: session.id,
-                    modelId: piModel.id,
-                    modelProvider: piModel.provider,
-                    usedSyntheticModel,
-                    receivedFirstStreamEvent: streamLiveness.hasReceivedFirstStreamEvent(),
-                    firstStreamLatencyMs: streamLiveness.getFirstStreamLatencyMs(),
-                    stopReason: (msg as { stopReason?: unknown })?.stopReason ?? null,
-                    contentBlocks: Array.isArray((msg as { content?: unknown[] })?.content)
-                      ? ((msg as { content?: unknown[] }).content?.length ?? 0)
-                      : 0,
-                    emittedError: Boolean(resolvedPayload.errorText),
-                  })
-                );
-              }
-              if (resolvedPayload.errorText) {
-                emitTerminalError(resolvedPayload.errorText);
-                break;
-              }
-              if (resolvedPayload.shouldEmitMessage) {
-                const contentBlocks: ContentBlock[] = [];
-                for (const block of resolvedPayload.effectiveContent) {
-                  if (block.type === 'text') {
-                    const { cleanText, artifacts } = extractArtifactsFromText(block.text);
-                    if (cleanText) {
-                      contentBlocks.push({ type: 'text', text: sanitizeOutputPaths(cleanText) });
-                    }
-                    if (artifacts.length > 0) {
-                      for (const step of buildArtifactTraceSteps(artifacts)) {
-                        this.sendTraceStep(session.id, step);
-                      }
-                    }
-                  } else if (block.type === 'toolCall') {
-                    const displayName = this.getToolDisplayName(block.name);
-                    contentBlocks.push({
-                      type: 'tool_use',
-                      id: block.id,
-                      name: block.name,
-                      displayName,
-                      input: block.arguments,
-                    });
-                  } else if (block.type === 'thinking') {
-                    // Include thinking blocks in the final message for UI display
-                    contentBlocks.push({
-                      type: 'thinking',
-                      thinking: block.thinking,
-                    });
-                  } else {
-                    // Unknown block type — pass through as text so content isn't silently lost
-                    const unknownBlock = block as { type?: string; text?: string };
-                    log(`[CoworkAgentRunner] Unknown content block type: ${unknownBlock.type}`);
-                    const text = unknownBlock.text || JSON.stringify(block);
-                    if (text) contentBlocks.push({ type: 'text', text });
-                  }
-                }
-                // Always clear partial text; send message even if only artifacts were extracted
-                this.sendToRenderer({
-                  type: 'stream.partial',
-                  payload: { sessionId: session.id, delta: '' },
-                });
-
-                // ── Loop guard layer 1: hash of this message's tool-call group ──
-                const toolUseDescriptors: ToolCallDescriptor[] = [];
-                for (const block of resolvedPayload.effectiveContent) {
-                  if (block.type === 'toolCall') {
-                    toolUseDescriptors.push({
-                      name: block.name || '',
-                      input: (block.arguments as Record<string, unknown>) || undefined,
-                    });
-                  }
-                }
-                if (toolUseDescriptors.length > 0) {
-                  handleLoopGuardDecision(
-                    loopGuard.recordAssistantMessage(toolUseDescriptors),
-                    'message_end'
-                  );
-                  if (controller.signal.aborted) break;
-                }
-
-                if (contentBlocks.length > 0) {
-                  const msgWithUsage = msg as { usage?: unknown };
-                  const tokenUsage = normalizeTokenUsage(msgWithUsage.usage);
-                  if (msgWithUsage.usage) {
-                    log(
-                      '[CoworkAgentRunner] normalized usage:',
-                      safeStringify(
-                        {
-                          raw: msgWithUsage.usage,
-                          normalized: tokenUsage,
-                        },
-                        2
-                      )
-                    );
-                  }
-                  const assistantMsg: Message = {
-                    id: uuidv4(),
-                    sessionId: session.id,
-                    role: 'assistant',
-                    content: contentBlocks,
-                    timestamp: Date.now(),
-                    api: piModel.api,
-                    provider: piModel.provider,
-                    model: piModel.id,
-                    tokenUsage,
-                  };
-                  // Two-stage draft: withhold the terminal text-only answer so
-                  // it is never presented as the final answer. It is kept in
-                  // memory and then either released as-is (pipeline skipped or
-                  // refine failed) or replaced by the refined version. Tool-call
-                  // messages still flow through untouched so tools render live.
-                  const isTerminalTextOnly =
-                    !contentBlocks.some((block) => block.type === 'tool_use') &&
-                    contentBlocks.some((block) => block.type === 'text');
-                  if (twoStageArmed && isTerminalTextOnly) {
-                    pipelineDraftMessage = assistantMsg;
-                    pipelineDraftText = contentBlocks
-                      .filter((block) => block.type === 'text')
-                      .map((block) => ('text' in block ? block.text : ''))
-                      .join('\n\n')
-                      .trim();
-                    break;
-                  }
-                  this.sendMessage(session.id, assistantMsg);
-                }
-              }
-              break;
-            }
-
-            case 'tool_execution_start': {
-              logCtx(`[CoworkAgentRunner] Tool execution start: ${event.toolName}`);
-              // ── Loop guard layer 2: per-tool cumulative frequency ──
-              handleLoopGuardDecision(
-                loopGuard.recordToolInvocation(event.toolName),
-                'tool_execution_start'
-              );
-              break;
-            }
-
-            case 'tool_execution_end': {
-              if (controller.signal.aborted) break;
-              const toolCallId = event.toolCallId;
-              const isError = event.isError;
-              const normalizedToolResult = normalizeToolExecutionResultForUi(event.result);
-              const outputText = normalizedToolResult.content;
-              const toolDisplayName = this.getToolDisplayName(event.toolName);
-              this.sendTraceUpdate(session.id, toolCallId, {
-                status: isError ? 'error' : 'completed',
-                title: toolDisplayName,
-                toolName: event.toolName,
-                toolOutput: sanitizeOutputPaths(outputText).slice(0, 800),
-              });
-
-              // Send tool result message
-              const toolResultMsg: Message = {
-                id: uuidv4(),
-                sessionId: session.id,
-                role: 'assistant',
-                content: [
-                  {
-                    type: 'tool_result',
-                    toolUseId: toolCallId,
-                    content: sanitizeOutputPaths(outputText),
-                    isError,
-                    ...(normalizedToolResult.images.length > 0
-                      ? { images: normalizedToolResult.images }
-                      : {}),
-                  },
-                ],
-                timestamp: Date.now(),
-              };
-              this.sendMessage(session.id, toolResultMsg);
-              break;
-            }
-
-            case 'agent_end': {
-              logCtx('[CoworkAgentRunner] Agent finished');
-              break;
-            }
-
-            case 'auto_compaction_start': {
-              log('[CoworkAgentRunner] Auto-compaction started, reason:', event.reason);
-              compactionStepId = `compaction-${Date.now()}`;
-              this.sendTraceStep(session.id, {
-                id: compactionStepId,
-                type: 'thinking',
-                status: 'running',
-                title: `Compacting context (${event.reason})...`,
-                timestamp: Date.now(),
-              });
-              break;
-            }
-
-            case 'auto_compaction_end': {
-              const status = event.aborted ? 'error' : event.errorMessage ? 'error' : 'completed';
-              const title = event.aborted
-                ? 'Context compaction aborted'
-                : event.errorMessage
-                  ? `Context compaction failed: ${event.errorMessage}`
-                  : 'Context compaction completed';
-              log(
-                '[CoworkAgentRunner] Auto-compaction ended:',
-                title,
-                'willRetry:',
-                event.willRetry
-              );
-
-              // Surface compaction result details to the renderer (skip if retrying)
-              if (event.result && !event.willRetry) {
-                const compactionDetails = event.result.details as
-                  | { readFiles?: string[]; modifiedFiles?: string[] }
-                  | undefined;
-                this.sendToRenderer({
-                  type: 'compaction.result',
-                  payload: {
-                    sessionId: session.id,
-                    summary: event.result.summary,
-                    tokensBefore: event.result.tokensBefore,
-                    readFiles: compactionDetails?.readFiles || [],
-                    modifiedFiles: compactionDetails?.modifiedFiles || [],
-                  },
-                });
-                log(
-                  '[CoworkAgentRunner] Compaction result surfaced:',
-                  JSON.stringify({
-                    summaryLen: event.result.summary.length,
-                    tokensBefore: event.result.tokensBefore,
-                    readFiles: compactionDetails?.readFiles?.length || 0,
-                    modifiedFiles: compactionDetails?.modifiedFiles?.length || 0,
-                  })
-                );
-              }
-
-              if (compactionStepId) {
-                this.sendTraceUpdate(session.id, compactionStepId, { status, title });
-                compactionStepId = undefined;
-              } else {
-                // Fallback: no matching start event, send as new step
-                this.sendTraceStep(session.id, {
-                  id: `compaction-end-${Date.now()}`,
-                  type: 'thinking',
-                  status,
-                  title,
-                  timestamp: Date.now(),
-                });
-              }
-              break;
-            }
-          }
+          handlePiSessionEvent(event, piSessionEventContext);
         } catch (subscribeErr) {
           logError('[CoworkAgentRunner] Error in subscribe callback:', subscribeErr);
           if (compactionStepId) {
