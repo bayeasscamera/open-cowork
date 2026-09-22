@@ -58,6 +58,7 @@ import {
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
 import type { AgentTask, SubAgentRunResult, SubAgentRunnerFn } from './multi-agent-coordinator';
+import { buildCorrectiveContext } from './cross-verification';
 
 // ---------------------------------------------------------------------------
 // Profile resolution
@@ -965,9 +966,11 @@ async function finalizeTaskResult(
       (signal) =>
         launchSession({
           task,
-          context:
-            `${context}\n\n## Your previous changes introduced syntax errors — fix them\n${listed}\n\n` +
-            'Re-apply the changes correctly using write/edit inside the workspace.',
+          context: `${context}\n\n${buildCorrectiveContext({
+            reason: 'Your previous changes introduced syntax errors — fix them',
+            details: listed,
+            instruction: 'Re-apply the changes correctly using write/edit inside the workspace.',
+          })}`,
           config: usedConfig,
           cwd,
           label: modelLabel,

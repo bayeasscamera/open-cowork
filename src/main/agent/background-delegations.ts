@@ -41,6 +41,13 @@ import {
   type SubAgentToolStep,
 } from './swarm-runner';
 import { sendToRenderer } from '../events/renderer-sender';
+import {
+  CROSS_VERIFICATION_COST,
+  buildResearchCrossCheckPrompt,
+  buildResearchCrossCheckResult,
+  parseResearchContradictions,
+  type CrossVerificationResult,
+} from './cross-verification';
 import { log, logError, logWarn } from '../utils/logger';
 import type { ServerEvent } from '../../shared/types';
 import { configStore, type AppConfig as StoreAppConfig } from '../config/config-store';
@@ -87,6 +94,12 @@ export interface BackgroundDelegation {
   parentTaskId?: string;
   /** Cumulative token usage of THIS level only (children roll up separately). */
   tokenUsage?: { input: number; output: number };
+  /**
+   * OPT-IN: when true, this report is cross-checked against the OTHER parallel
+   * cross-verify reports of the same session — factual contradictions are
+   * surfaced explicitly instead of being silently merged.
+   */
+  crossVerify?: boolean;
   report?: DelegationReport;
   rawResult?: string;
   error?: string;
@@ -178,6 +191,19 @@ const delegations = new Map<string, BackgroundDelegation>();
 const pendingBySession = new Map<string, string[]>();
 /** Live abort controllers — cancel() must reach the running sub-agent. */
 const controllers = new Map<string, AbortController>();
+
+/** Per-session research cross-verification state (opt-in; see crossVerify). */
+interface ResearchCrossCheck {
+  status: 'pending' | 'done' | 'failed';
+  /** Delegation ids covered by this pass. */
+  delegationIds: string[];
+  result?: CrossVerificationResult;
+  /** True once the contradiction block was injected. */
+  injected: boolean;
+  /** Awaitable handle (tests await it; production never blocks on it). */
+  promise: Promise<void>;
+}
+const researchCrossChecks = new Map<string, ResearchCrossCheck>();
 let settings: DelegationSettings = { ...DEFAULT_DELEGATION_SETTINGS };
 let storageFile: string | null = null;
 let settingsFile: string | null = null;
@@ -346,6 +372,12 @@ export interface StartDelegationOptions {
   depth?: number;
   /** Delegation id of the parent task, when delegated by a sub-agent. */
   parentTaskId?: string;
+  /**
+   * OPT-IN cross-verification: when this task and at least one other task of
+   * the session carry it, one extra model call cross-checks their reports and
+   * reports contradictions explicitly. Off by default (adds a model call).
+   */
+  crossVerify?: boolean;
   /** Config source override (tests); defaults to the app config store. */
   getConfig?: () => StoreAppConfig;
   /** Session launcher override (tests): inject a fake sub-agent session. */
@@ -396,6 +428,7 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
     startedAt: Date.now(),
     delivered: false,
     log: [],
+    ...(options.crossVerify ? { crossVerify: true } : {}),
   };
   delegations.set(id, delegation);
   pushLog(delegation, 'launched', `Task delegated (role: ${role}, depth: ${depth})`);
@@ -517,6 +550,15 @@ function launchBackgroundTask(
       persist();
       log(`[BackgroundDelegations] Task ${id} (${current.title}) completed`);
       emit(current, 'status', current.report.summary.slice(0, 200));
+      // OPT-IN Zone 2: once two parallel cross-verify reports are pending,
+      // schedule ONE contradiction cross-check (fire-and-forget).
+      if (current.crossVerify) {
+        try {
+          scheduleResearchCrossVerification(current.sessionId, options, effectiveGetConfig);
+        } catch (err) {
+          logError('[BackgroundDelegations] Failed to schedule research cross-verification:', err);
+        }
+      }
     })
     .catch((err: unknown) => {
       controllers.delete(id);
@@ -616,16 +658,166 @@ function truncateResult(text: string): string {
 }
 
 /**
+ * Run the ONE cross-verification model call over a batch of parallel research
+ * reports. Uses the same swarm runner (profile resolution, confinement, idle
+ * timeout, global gate) — no second execution mechanism is introduced.
+ */
+async function runResearchCrossCheck(
+  covered: BackgroundDelegation[],
+  options: StartDelegationOptions,
+  getConfig: () => StoreAppConfig
+): Promise<CrossVerificationResult> {
+  const reports = covered.map((d) => ({
+    id: d.id,
+    title: d.title,
+    findings: d.report?.findings ?? '',
+    summary: d.report?.summary ?? d.rawResult ?? '',
+  }));
+  const task: AgentTask = {
+    id: `research-cross-check-${Date.now()}`,
+    role: 'reviewer',
+    title: 'Cross-verify parallel research reports',
+    prompt: buildResearchCrossCheckPrompt(reports),
+    status: 'pending',
+  };
+  const runnerOptions: {
+    cwd: string;
+    getConfig: () => StoreAppConfig;
+    maxConcurrentOverride: number;
+    timeoutMsOverride: number;
+    gate: SubAgentGate;
+    launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
+  } = {
+    cwd: covered[0]?.cwd ?? options.cwd,
+    getConfig,
+    maxConcurrentOverride: 1,
+    timeoutMsOverride: settings.timeoutMs,
+    gate: subAgentGate,
+  };
+  if (options.launchSession) runnerOptions.launchSession = options.launchSession;
+  const run = await createSwarmRunner(runnerOptions)(task, '');
+  return buildResearchCrossCheckResult({
+    contradictions: parseResearchContradictions(run.output),
+    raw: run.output,
+    modelCalls: CROSS_VERIFICATION_COST.researchPass,
+  });
+}
+
+/**
+ * After a cross-verify delegation completes, schedule ONE cross-check over the
+ * pending cross-verify reports of the session. Fire-and-forget by design: the
+ * delegation mode must never block, and a failure only loses the enhancement.
+ * Bounded: a single model call per batch (never one per report).
+ */
+function scheduleResearchCrossVerification(
+  sessionId: string,
+  options: StartDelegationOptions,
+  getConfig: () => StoreAppConfig
+): void {
+  const pendingCrossVerify = Array.from(delegations.values()).filter(
+    (d) => d.sessionId === sessionId && d.crossVerify && d.status === 'completed' && !d.delivered
+  );
+  // A cross-check needs at least TWO independent reports to contradict.
+  if (pendingCrossVerify.length < 2) return;
+  const ids = pendingCrossVerify.map((d) => d.id).sort();
+  const existing = researchCrossChecks.get(sessionId);
+  if (existing && existing.delegationIds.join('|') === ids.join('|')) return;
+  const covered = ids
+    .map((id) => delegations.get(id))
+    .filter((d): d is BackgroundDelegation => d !== undefined);
+  const check: ResearchCrossCheck = {
+    status: 'pending',
+    delegationIds: ids,
+    injected: false,
+    promise: Promise.resolve(),
+  };
+  check.promise = runResearchCrossCheck(covered, options, getConfig)
+    .then((result) => {
+      check.status = 'done';
+      check.result = result;
+      log(
+        `[BackgroundDelegations] Research cross-verification: ${result.contradictions.length} contradiction(s) surfaced (${result.modelCalls} extra model call)`
+      );
+    })
+    .catch((err) => {
+      check.status = 'failed';
+      logError('[BackgroundDelegations] Research cross-verification failed:', err);
+    });
+  researchCrossChecks.set(sessionId, check);
+}
+
+/** Render the explicit contradiction block (empty when nothing conflicts). */
+function renderResearchCrossCheckBlock(result: CrossVerificationResult): string {
+  if (result.contradictions.length === 0) return '';
+  const lines = result.contradictions.map((c) => {
+    const rationale = c.rationale ? ` — ${c.rationale}` : '';
+    return [
+      `- ${c.topic}`,
+      `  - ${c.sourceA}: ${c.claimA}`,
+      `  - ${c.sourceB}: ${c.claimB}`,
+      `  - preferred (most recent/authoritative): ${c.preferred}${rationale}`,
+    ].join('\n');
+  });
+  return (
+    '<research_cross_verification>\n' +
+    'These parallel research reports were cross-checked. The following factual CONTRADICTIONS were found. ' +
+    'Report them explicitly to the user — do NOT silently merge them into a single claim:\n' +
+    lines.join('\n') +
+    '\n</research_cross_verification>'
+  );
+}
+
+/** Awaitable handle for tests; production never blocks on the cross-check. */
+export function awaitResearchCrossVerification(sessionId: string): Promise<void> {
+  ensureLoaded();
+  return researchCrossChecks.get(sessionId)?.promise ?? Promise.resolve();
+}
+
+/** Test/UI hook: the current cross-check state for a session. */
+export function getResearchCrossCheck(sessionId: string): ResearchCrossCheck | undefined {
+  ensureLoaded();
+  return researchCrossChecks.get(sessionId);
+}
+
+/**
  * Consume the completed background-task reports for a session. Calling twice
- * does not duplicate: results are delivered once.
+ * does not duplicate: results are delivered once. When the delivered batch was
+ * covered by an opt-in research cross-check, its contradiction block is
+ * appended — never merged into the reports themselves.
  */
 export function takePendingDelegationResults(sessionId: string): string {
   ensureLoaded();
   const queue = pendingBySession.get(sessionId);
-  if (!queue || queue.length === 0) return '';
+  const check = researchCrossChecks.get(sessionId);
+  const delivering = queue && queue.length > 0;
+
+  const crossBlocks: string[] = [];
+  let pendingCrossNote = '';
+  if (check && !check.injected) {
+    const relevant = delivering
+      ? check.delegationIds.some((id) => queue!.includes(id))
+      : true;
+    if (relevant) {
+      if (check.status === 'done' && check.result) {
+        const block = renderResearchCrossCheckBlock(check.result);
+        if (block) {
+          crossBlocks.push(block);
+        }
+        check.injected = true;
+      } else if (check.status === 'pending' && delivering) {
+        pendingCrossNote =
+          '<research_cross_verification status="pending">A cross-verification pass over these parallel reports is running; any factual contradiction will be reported on a later turn.</research_cross_verification>';
+      }
+    }
+  }
+
+  if (!delivering) {
+    // The batch was already delivered; only a late cross-check block can remain.
+    return crossBlocks.join('\n\n');
+  }
   pendingBySession.set(sessionId, []);
   const blocks: string[] = [];
-  for (const id of queue) {
+  for (const id of queue!) {
     const delegation = delegations.get(id);
     if (!delegation) continue;
     delegation.delivered = true;
@@ -638,12 +830,14 @@ export function takePendingDelegationResults(sessionId: string): string {
         '\n</background_task_result>'
     );
   }
-  if (blocks.length === 0) return '';
+  if (blocks.length === 0 && crossBlocks.length === 0) return '';
   persist();
+  const extras = [...(pendingCrossNote ? [pendingCrossNote] : []), ...crossBlocks];
   return (
     '<background_task_results>\nThe following delegated background task(s) finished while you were working. ' +
     'Summarize the outcome for the user in your reply (lead with the key finding):\n' +
     blocks.join('\n\n') +
+    (extras.length ? `\n\n${extras.join('\n\n')}` : '') +
     '\n</background_task_results>'
   );
 }
@@ -713,6 +907,7 @@ export function __resetDelegationsForTest(): void {
   pendingBySession.clear();
   controllers.forEach((c) => c.abort());
   controllers.clear();
+  researchCrossChecks.clear();
   settings = { ...DEFAULT_DELEGATION_SETTINGS };
   loaded = true;
 }

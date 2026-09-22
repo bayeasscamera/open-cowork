@@ -106,6 +106,10 @@ export interface SwarmStats {
   lastRunMs?: number;
   lastRunAt?: number;
   lastRunTokens?: { input: number; output: number };
+  /** Swarms run with the OPT-IN cross-verification flag. */
+  crossVerificationSwarms?: number;
+  /** Extra model calls cross-verification actually spent (measured cost). */
+  crossVerificationCalls?: number;
 }
 
 /** Delegated task stats (main screen transparency section). */

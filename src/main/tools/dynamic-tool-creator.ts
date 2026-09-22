@@ -31,6 +31,11 @@ import { buildProposeSkillTool, createSwarmRunner } from '../agent/swarm-runner'
 import { listProposals, proposeSkill } from '../skills/skill-proposals';
 import { startDelegation, listDelegations, subAgentGate } from '../agent/background-delegations';
 import { recordSwarmExecution } from '../agent/swarm-stats';
+import {
+  CROSS_VERIFICATION_COST,
+  renderCrossVerificationSection,
+  summarizeCrossVerification,
+} from '../agent/cross-verification';
 import { configStore } from '../config/config-store';
 import { spawn, type ChildProcess } from 'child_process';
 
@@ -854,12 +859,21 @@ export function buildAgentMetaTools(
       label: 'Multi-Agent Swarm Coordinator',
       description:
         'Decompose complex multi-step tasks into specialized autonomous sub-agents (Architect, Developer, Reviewer, Security) organized in a collaborative DAG. ' +
-        'MEASURED COST: a 4-task swarm took 452s vs 33s for direct execution of the same simple task (13.7x slower) — use ONLY for genuinely complex, multi-disciplinary work; for simple tasks act directly.',
+        'MEASURED COST: a 4-task swarm took 452s vs 33s for direct execution of the same simple task (13.7x slower) — use ONLY for genuinely complex, multi-disciplinary work; for simple tasks act directly. ' +
+        `OPT-IN crossVerification adds up to ${CROSS_VERIFICATION_COST.peerChallenge + CROSS_VERIFICATION_COST.codeReviewRerun} extra model calls (reviewer↔security peer challenge = ${CROSS_VERIFICATION_COST.peerChallenge}; conditional developer re-run on a substantive review point = 0-${CROSS_VERIFICATION_COST.codeReviewRerun}). ` +
+        'It makes agents CHALLENGE each other instead of producing independent reports, and surfaces unresolved disagreements rather than forcing consensus. ' +
+        'OFF by default — enable it only for high-stakes tasks where a wrong conclusion is costly.',
       parameters: Type.Object({
         goal: Type.String({ description: 'Overall project or engineering goal to plan and coordinate' }),
+        crossVerification: Type.Optional(
+          Type.Boolean({
+            description:
+              'OPT-IN debate pass (default false). After the reviewer and security reports exist, each challenges the other and a surviving disagreement is escalated with both positions. Also lets the reviewer raise ONE substantive code point that triggers a single targeted developer re-run. Adds up to 3 extra model calls.',
+          })
+        ),
       }),
       execute: async (_toolCallId, params) => {
-        const args = params as { goal: string };
+        const args = params as { goal: string; crossVerification?: boolean };
         const config = configStore.getAll();
         // Every sub-agent is confined to the default workspace.
         const swarmCwd = config.defaultWorkdir?.trim() || process.cwd();
@@ -870,7 +884,9 @@ export function buildAgentMetaTools(
         // delegations and their recursive children) — parallelism is bounded
         // across ALL sub-agent levels combined, never per level.
         coordinator.setRunner(createSwarmRunner({ cwd: swarmCwd, gate: subAgentGate }));
-        const plan = coordinator.createCollaborativePlan(args.goal);
+        const plan = coordinator.createCollaborativePlan(args.goal, {
+          crossVerification: args.crossVerification === true,
+        });
         const executed = await coordinator.executePlan(plan.id);
         recordSwarmExecution(executed, Date.now() - swarmStartedAt);
 
@@ -893,6 +909,11 @@ export function buildAgentMetaTools(
           })
           .join('\n');
 
+        // Cross-verification outcomes are surfaced EXPLICITLY in the report —
+        // unresolved disagreements keep both positions, never a forced consensus.
+        const crossSection = renderCrossVerificationSection(executed.crossVerificationResults);
+        const crossSummary = summarizeCrossVerification(executed.crossVerificationResults);
+
         return {
           content: [
             {
@@ -901,10 +922,11 @@ export function buildAgentMetaTools(
                 `🚀 Multi-Agent Swarm executed (ID: ${executed.id})\n` +
                 `Goal: "${executed.goal}"\n` +
                 `Status: ${executed.status}\n\n` +
-                `Task Results:\n${taskSummary}`,
+                `Task Results:\n${taskSummary}` +
+                (crossSection ? `\n${crossSection}` : ''),
             },
           ],
-          details: executed,
+          details: { ...executed, crossVerificationSummary: crossSummary },
         };
       },
     },
@@ -921,7 +943,8 @@ export function buildAgentMetaTools(
         'this tool returns a task id right away WITHOUT blocking. The sub-agent works alone (never asks back — assumptions ' +
         'go in its report), produces a structured report (summary/findings/assumptions/limits/modified files) that is ' +
         'injected into this conversation automatically when ready and visible in the Delegated Tasks view. ' +
-        'Use for slow research the user does not need synchronously; do NOT use when the user is waiting for the answer.',
+        'Use for slow research the user does not need synchronously; do NOT use when the user is waiting for the answer. ' +
+        `OPT-IN crossVerification: when TWO OR MORE parallel delegations on the same subject carry it, ONE extra model call cross-checks their reports and surfaces factual contradictions explicitly instead of merging them (${CROSS_VERIFICATION_COST.researchPass} added call per batch). Off by default.`,
       parameters: Type.Object({
         task: Type.String({
           description:
@@ -941,9 +964,20 @@ export function buildAgentMetaTools(
             { description: 'Sub-agent profile; defaults to developer' }
           )
         ),
+        crossVerification: Type.Optional(
+          Type.Boolean({
+            description:
+              'OPT-IN (default false). Flag this research for cross-verification: when another flagged parallel delegation completes, one extra model call reports factual contradictions between the sources (with a preferred source) instead of merging them silently.',
+          })
+        ),
       }),
       execute: async (_toolCallId, params) => {
-        const args = params as { task?: string; title?: string; role?: AgentRole };
+        const args = params as {
+          task?: string;
+          title?: string;
+          role?: AgentRole;
+          crossVerification?: boolean;
+        };
         if (!args.task || !args.task.trim()) {
           return {
             content: [{ type: 'text' as const, text: 'task is required to delegate a background job.' }],
@@ -958,6 +992,7 @@ export function buildAgentMetaTools(
             title: args.title?.trim() || args.task.trim().slice(0, 60),
             prompt: args.task.trim(),
             role: args.role ?? 'developer',
+            ...(args.crossVerification ? { crossVerify: true } : {}),
           }).taskId;
         } catch (delegationError) {
           // Capacity or validation: surface it, the main agent adapts.

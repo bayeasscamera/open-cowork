@@ -21,6 +21,18 @@ import {
   initSwarmStats,
 } from '../src/main/agent/swarm-stats';
 import type { MultiAgentPlan } from '../src/main/agent/multi-agent-coordinator';
+import type { CrossVerificationResult } from '../src/main/agent/cross-verification';
+
+function crossResult(modelCalls: number): CrossVerificationResult {
+  return {
+    kind: 'reviewer_security',
+    modelCalls,
+    divergences: [],
+    blindSpots: [],
+    contradictions: [],
+    hasUnresolvedDisagreement: false,
+  };
+}
 
 afterEach(() => {
   rmSync(testRoot, { recursive: true, force: true });
@@ -112,6 +124,27 @@ describe('swarm-stats', () => {
       2000
     );
     expect(getSwarmStats().lastRunTokens).toEqual({ input: 200, output: 40 });
+  });
+
+  it('measures the OPT-IN cross-verification cost separately from the default path', () => {
+    initSwarmStats(testRoot);
+
+    // Default swarm: zero cross-verification calls.
+    recordSwarmExecution(plan({ tasks: [] }), 100);
+    expect(getSwarmStats().crossVerificationCalls).toBe(0);
+    expect(getSwarmStats().crossVerificationSwarms).toBe(0);
+
+    // Opt-in swarm: the extra calls are summed from the results.
+    recordSwarmExecution(
+      plan({
+        crossVerification: true,
+        crossVerificationResults: [crossResult(2), crossResult(1)],
+      }),
+      200
+    );
+    const stats = getSwarmStats();
+    expect(stats.crossVerificationSwarms).toBe(1);
+    expect(stats.crossVerificationCalls).toBe(3);
   });
 
   it('persists to an atomic JSON file and reloads across a simulated restart', () => {

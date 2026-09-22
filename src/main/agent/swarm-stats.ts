@@ -21,6 +21,8 @@ let stats: SwarmStats = {
   succeededSwarms: 0,
   totalTasks: 0,
   fallbackTasks: 0,
+  crossVerificationSwarms: 0,
+  crossVerificationCalls: 0,
 };
 let file: string | null = null;
 let loaded = false;
@@ -53,7 +55,14 @@ function ensureLoaded(): void {
 /** Test/optional hook: pin the storage location before first use. */
 export function initSwarmStats(userDataDir: string): void {
   file = path.join(userDataDir, 'swarm_stats.json');
-  stats = { totalSwarms: 0, succeededSwarms: 0, totalTasks: 0, fallbackTasks: 0 };
+  stats = {
+    totalSwarms: 0,
+    succeededSwarms: 0,
+    totalTasks: 0,
+    fallbackTasks: 0,
+    crossVerificationSwarms: 0,
+    crossVerificationCalls: 0,
+  };
   loaded = false;
   ensureLoaded();
 }
@@ -86,6 +95,16 @@ export function recordSwarmExecution(plan: MultiAgentPlan, durationMs: number): 
   // Only expose tokens when the provider actually reported usage — a flat
   // 0/0 from a local gateway must not read as "free".
   stats.lastRunTokens = input > 0 || output > 0 ? { input, output } : undefined;
+  // Measured cross-verification cost: how many extra model calls the OPT-IN
+  // debate phase actually spent (0 for every default, non-opt-in swarm).
+  if (plan.crossVerification) {
+    stats.crossVerificationSwarms = (stats.crossVerificationSwarms ?? 0) + 1;
+    const calls = (plan.crossVerificationResults ?? []).reduce(
+      (sum, r) => sum + r.modelCalls,
+      0
+    );
+    stats.crossVerificationCalls = (stats.crossVerificationCalls ?? 0) + calls;
+  }
   persist();
 }
 
@@ -96,6 +115,13 @@ export function getSwarmStats(): SwarmStats {
 
 /** Test hook. */
 export function __resetSwarmStatsForTest(): void {
-  stats = { totalSwarms: 0, succeededSwarms: 0, totalTasks: 0, fallbackTasks: 0 };
+  stats = {
+    totalSwarms: 0,
+    succeededSwarms: 0,
+    totalTasks: 0,
+    fallbackTasks: 0,
+    crossVerificationSwarms: 0,
+    crossVerificationCalls: 0,
+  };
   loaded = true;
 }
