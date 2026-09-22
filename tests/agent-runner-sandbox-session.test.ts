@@ -16,21 +16,35 @@ const mocks = vi.hoisted(() => ({
   initSync: vi.fn(),
   limaHasSession: vi.fn(),
   limaInitSync: vi.fn(),
+  syncToWindows: vi.fn(),
+  syncToMac: vi.fn(),
+  log: vi.fn(),
+  logError: vi.fn(),
 }));
 
 vi.mock('child_process', () => ({ execFileSync: mocks.execFileSync }));
 vi.mock('fs', () => ({ existsSync: mocks.existsSync, mkdirSync: mocks.mkdirSync }));
-vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logError: vi.fn() }));
+vi.mock('../src/main/utils/logger', () => ({ log: mocks.log, logError: mocks.logError }));
 vi.mock('../src/main/sandbox/sandbox-sync', () => ({
-  SandboxSync: { hasSession: mocks.hasSession, initSync: mocks.initSync },
+  SandboxSync: {
+    hasSession: mocks.hasSession,
+    initSync: mocks.initSync,
+    syncToWindows: mocks.syncToWindows,
+  },
 }));
 vi.mock('../src/main/sandbox/lima-sync', () => ({
-  LimaSync: { hasSession: mocks.limaHasSession, initSync: mocks.limaInitSync },
+  LimaSync: {
+    hasSession: mocks.limaHasSession,
+    initSync: mocks.limaInitSync,
+    syncToMac: mocks.syncToMac,
+  },
 }));
 
 import {
   initSandboxSession,
   resolveSandboxBackend,
+  syncSandboxChangesToHost,
+  type SandboxBackSyncDeps,
   type SandboxSessionInitDeps,
 } from '../src/main/agent/agent-runner-sandbox-session';
 import type { SandboxSyncStatus } from '../src/shared/types';
@@ -41,6 +55,7 @@ const WSL_RESULT = {
   fileCount: 12,
   totalSize: 2048,
 };
+const VM_SYNC_OK = { success: true, sandboxPath: '/vm/workspace', fileCount: 0, totalSize: 0 };
 const LIMA_RESULT = {
   success: true,
   sandboxPath: '/lima/workspace',
@@ -97,6 +112,8 @@ beforeEach(() => {
   mocks.limaHasSession.mockReturnValue(false);
   mocks.initSync.mockResolvedValue(WSL_RESULT);
   mocks.limaInitSync.mockResolvedValue(LIMA_RESULT);
+  mocks.syncToWindows.mockResolvedValue(VM_SYNC_OK);
+  mocks.syncToMac.mockResolvedValue(VM_SYNC_OK);
   mocks.execFileSync.mockImplementation((_file: string, args: string[]) =>
     args.includes('ls') ? 'skill-a\nskill-b\n' : ''
   );
@@ -343,5 +360,154 @@ describe('initSandboxSession', () => {
 
     expect(phases(h.notify)).toEqual(['syncing_files', 'error']);
     expect(mocks.initSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('syncSandboxChangesToHost', () => {
+  interface BackSyncHarness {
+    deps: SandboxBackSyncDeps;
+    onWarning: ReturnType<typeof vi.fn>;
+    getPlatform: ReturnType<typeof vi.fn>;
+  }
+
+  const buildBackSync = (over: Partial<SandboxBackSyncDeps> = {}): BackSyncHarness => {
+    const onWarning = vi.fn();
+    const getPlatform = vi.fn(() => ({ isWsl: true, isLima: false }));
+    const deps: SandboxBackSyncDeps = {
+      sessionId: 'session-1',
+      useSandboxIsolation: true,
+      sandboxPath: '/home/u/workspace',
+      getPlatform,
+      onWarning,
+      ...over,
+    };
+    return { deps, onWarning, getPlatform };
+  };
+
+  it('does nothing when the run was not isolated', async () => {
+    const h = buildBackSync({ useSandboxIsolation: false });
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(h.getPlatform).not.toHaveBeenCalled();
+    expect(mocks.syncToWindows).not.toHaveBeenCalled();
+    expect(h.onWarning).not.toHaveBeenCalled();
+  });
+
+  it('does nothing without a sandbox path', async () => {
+    const h = buildBackSync({ sandboxPath: null });
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(h.getPlatform).not.toHaveBeenCalled();
+    expect(mocks.syncToWindows).not.toHaveBeenCalled();
+  });
+
+  it('syncs the sandbox back to Windows in WSL mode', async () => {
+    const h = buildBackSync();
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(mocks.syncToWindows).toHaveBeenCalledWith('session-1');
+    expect(mocks.syncToMac).not.toHaveBeenCalled();
+    expect(h.onWarning).not.toHaveBeenCalled();
+    expect(mocks.log).toHaveBeenCalledWith(
+      '[CoworkAgentRunner] Syncing sandbox changes to Windows...'
+    );
+    expect(mocks.log).toHaveBeenCalledWith('[CoworkAgentRunner] Sync completed successfully');
+  });
+
+  it('logs a failed Windows sync without warning the user', async () => {
+    const h = buildBackSync();
+    mocks.syncToWindows.mockResolvedValue({
+      success: false,
+      sandboxPath: '',
+      fileCount: 0,
+      totalSize: 0,
+      error: 'disk full',
+    });
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(mocks.logError).toHaveBeenCalledWith('[CoworkAgentRunner] Sync failed:', 'disk full');
+    expect(h.onWarning).not.toHaveBeenCalled();
+  });
+
+  it('syncs the sandbox back to macOS in Lima mode', async () => {
+    const h = buildBackSync({ getPlatform: () => ({ isWsl: false, isLima: true }) });
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(mocks.syncToMac).toHaveBeenCalledWith('session-1');
+    expect(mocks.syncToWindows).not.toHaveBeenCalled();
+    expect(mocks.log).toHaveBeenCalledWith(
+      '[CoworkAgentRunner] Syncing sandbox changes to macOS...'
+    );
+  });
+
+  it('logs a failed macOS sync without warning the user', async () => {
+    const h = buildBackSync({ getPlatform: () => ({ isWsl: false, isLima: true }) });
+    mocks.syncToMac.mockResolvedValue({
+      success: false,
+      sandboxPath: '',
+      fileCount: 0,
+      totalSize: 0,
+      error: 'lima down',
+    });
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(mocks.logError).toHaveBeenCalledWith('[CoworkAgentRunner] Sync failed:', 'lima down');
+    expect(h.onWarning).not.toHaveBeenCalled();
+  });
+
+  it('prefers WSL when both platforms report active', async () => {
+    const h = buildBackSync({ getPlatform: () => ({ isWsl: true, isLima: true }) });
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(mocks.syncToWindows).toHaveBeenCalledTimes(1);
+    expect(mocks.syncToMac).not.toHaveBeenCalled();
+  });
+
+  it('stays silent when no platform is active', async () => {
+    const h = buildBackSync({ getPlatform: () => ({ isWsl: false, isLima: false }) });
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(mocks.syncToWindows).not.toHaveBeenCalled();
+    expect(mocks.syncToMac).not.toHaveBeenCalled();
+    expect(h.onWarning).not.toHaveBeenCalled();
+  });
+
+  it('turns a thrown sync into a user warning', async () => {
+    const h = buildBackSync();
+    mocks.syncToWindows.mockRejectedValue(new Error('vm unreachable'));
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(h.onWarning).toHaveBeenCalledWith('Sandbox sync failed: vm unreachable');
+  });
+
+  it('stringifies a non-Error sync failure', async () => {
+    const h = buildBackSync();
+    mocks.syncToWindows.mockRejectedValue('plain failure');
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(h.onWarning).toHaveBeenCalledWith('Sandbox sync failed: plain failure');
+  });
+
+  it('warns when the platform lookup itself fails', async () => {
+    const h = buildBackSync({
+      getPlatform: () => {
+        throw new Error('adapter exploded');
+      },
+    });
+
+    await syncSandboxChangesToHost(h.deps);
+
+    expect(h.onWarning).toHaveBeenCalledWith('Sandbox sync failed: adapter exploded');
+    expect(mocks.syncToWindows).not.toHaveBeenCalled();
   });
 });

@@ -252,3 +252,59 @@ export async function initSandboxSession(
 
   return { sandboxPath, useSandboxIsolation: true };
 }
+
+/** Everything the host back-sync needs; all effects are injected. */
+export interface SandboxBackSyncDeps {
+  sessionId: string;
+  /** True only when this run actually synced into a VM. */
+  useSandboxIsolation: boolean;
+  sandboxPath: string | null;
+  /** Resolved lazily, inside the guarded block, exactly like the inline code did. */
+  getPlatform: () => { isWsl: boolean; isLima: boolean };
+  /** Called with the user-facing failure sentence; the caller owns the wording around it. */
+  onWarning: (text: string) => void;
+}
+
+/**
+ * Copies VM changes back to the host when the run happened inside a sandbox.
+ *
+ * The sandbox is deliberately left alive (no cleanup): the next message of the
+ * session reuses it. Any failure - including a broken adapter lookup - becomes a
+ * user warning instead of failing the run.
+ */
+export async function syncSandboxChangesToHost(deps: SandboxBackSyncDeps): Promise<void> {
+  if (!deps.useSandboxIsolation || !deps.sandboxPath) return;
+
+  const { sessionId } = deps;
+
+  try {
+    const { isWsl, isLima } = deps.getPlatform();
+
+    if (isWsl) {
+      log('[CoworkAgentRunner] Syncing sandbox changes to Windows...');
+      const syncResult = await SandboxSync.syncToWindows(sessionId);
+      if (syncResult.success) {
+        log('[CoworkAgentRunner] Sync completed successfully');
+      } else {
+        logError('[CoworkAgentRunner] Sync failed:', syncResult.error);
+      }
+      return;
+    }
+
+    if (isLima) {
+      log('[CoworkAgentRunner] Syncing sandbox changes to macOS...');
+      const { LimaSync } = await import('../sandbox/lima-sync');
+      const syncResult = await LimaSync.syncToMac(sessionId);
+      if (syncResult.success) {
+        log('[CoworkAgentRunner] Sync completed successfully');
+      } else {
+        logError('[CoworkAgentRunner] Sync failed:', syncResult.error);
+      }
+    }
+  } catch (syncErr) {
+    logError('[CoworkAgentRunner] Sandbox sync error:', syncErr);
+    deps.onWarning(
+      `Sandbox sync failed: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`
+    );
+  }
+}

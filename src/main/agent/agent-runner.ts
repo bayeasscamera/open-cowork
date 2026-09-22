@@ -40,6 +40,7 @@ import { installPiPayloadHook } from './openai-payload-sanitizer';
 import {
   initSandboxSession,
   resolveSandboxBackend,
+  syncSandboxChangesToHost,
 } from './agent-runner-sandbox-session';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
@@ -63,7 +64,6 @@ import { app } from 'electron';
 import { setMaxListeners } from 'node:events';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
-import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
 import { wrapBashToolForSudo, wrapBashToolWithDefaultTimeout } from './agent-runner-bash-tools';
 import {
@@ -2629,45 +2629,27 @@ Tool routing:
         }
       }
 
-      // Sync changes from sandbox back to host OS (but don't cleanup - sandbox persists)
-      if (useSandboxIsolation && sandboxPath) {
-        try {
-          const sandbox = getSandboxAdapter();
-
-          if (sandbox.isWSL) {
-            log('[CoworkAgentRunner] Syncing sandbox changes to Windows...');
-            const syncResult = await SandboxSync.syncToWindows(session.id);
-            if (syncResult.success) {
-              log('[CoworkAgentRunner] Sync completed successfully');
-            } else {
-              logError('[CoworkAgentRunner] Sync failed:', syncResult.error);
-            }
-          } else if (sandbox.isLima) {
-            log('[CoworkAgentRunner] Syncing sandbox changes to macOS...');
-            const { LimaSync } = await import('../sandbox/lima-sync');
-            const syncResult = await LimaSync.syncToMac(session.id);
-            if (syncResult.success) {
-              log('[CoworkAgentRunner] Sync completed successfully');
-            } else {
-              logError('[CoworkAgentRunner] Sync failed:', syncResult.error);
-            }
-          }
-        } catch (syncErr) {
-          logError('[CoworkAgentRunner] Sandbox sync error:', syncErr);
+      // Sync changes from sandbox back to the host OS (but don't cleanup - the
+      // sandbox persists). The orchestration lives in
+      // agent-runner-sandbox-session so it is unit-testable without a VM; only the
+      // platform lookup and the user-facing wording stay here.
+      await syncSandboxChangesToHost({
+        sessionId: session.id,
+        useSandboxIsolation,
+        sandboxPath,
+        getPlatform: () => {
+          const adapter = getSandboxAdapter();
+          return { isWsl: adapter.isWSL, isLima: adapter.isLima };
+        },
+        onWarning: (text) =>
           this.sendMessage(session.id, {
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [
-              {
-                type: 'text',
-                text: `**Warning**: Sandbox sync failed: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`,
-              },
-            ],
+            content: [{ type: 'text', text: `**Warning**: ${text}` }],
             timestamp: Date.now(),
-          });
-        }
-      }
+          }),
+      });
     }
   }
 
