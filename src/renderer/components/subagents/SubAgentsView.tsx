@@ -13,12 +13,7 @@ import { useAppStore } from '../../store';
 import type { DelegationStats, SwarmStats } from '../../types';
 
 export type SubAgentRoleKey = 'architect' | 'developer' | 'reviewer' | 'security';
-const SUB_AGENT_ROLES: SubAgentRoleKey[] = [
-  'architect',
-  'developer',
-  'reviewer',
-  'security',
-];
+const SUB_AGENT_ROLES: SubAgentRoleKey[] = ['architect', 'developer', 'reviewer', 'security'];
 
 interface SubAgentsDraft {
   configSetId: string;
@@ -32,6 +27,15 @@ interface SubAgentsDraft {
   >;
   timeoutMs: number;
   maxConcurrent: number;
+  /**
+   * Dynamic criticality tiers (critical-path vs terminal tasks). No dedicated
+   * control yet, but round-tripped so a config-file value is never silently
+   * dropped by a UI save.
+   */
+  criticality?: {
+    critical?: RoleSelection;
+    economical?: RoleSelection;
+  };
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -71,11 +75,25 @@ export function buildSubAgentsUpdate(draft: SubAgentsDraft): SubAgentsDraft {
       };
     }
   }
+  const criticality: NonNullable<SubAgentsDraft['criticality']> = {};
+  for (const tier of ['critical', 'economical'] as const) {
+    const selection = draft.criticality?.[tier];
+    if (selection && typeof selection.configSetId === 'string' && selection.configSetId.trim()) {
+      criticality[tier] = {
+        configSetId: selection.configSetId.trim(),
+        modelId:
+          typeof selection.modelId === 'string' && selection.modelId.trim()
+            ? selection.modelId.trim()
+            : undefined,
+      };
+    }
+  }
   return {
     configSetId: typeof draft.configSetId === 'string' ? draft.configSetId.trim() : '',
     modelId:
       typeof draft.modelId === 'string' && draft.modelId.trim() ? draft.modelId.trim() : undefined,
     perRole,
+    ...(Object.keys(criticality).length > 0 ? { criticality } : {}),
     timeoutMs: clamp(
       Math.round(Number(draft.timeoutMs) || DEFAULT_TIMEOUT_MS),
       MIN_TIMEOUT_MS,
@@ -207,6 +225,7 @@ export function SubAgentsView({ onClose }: { onClose?: () => void } = {}) {
           configSetId: sub?.configSetId ?? '',
           modelId: sub?.modelId,
           perRole: sub?.perRole ?? {},
+          criticality: sub?.criticality,
           timeoutMs: sub?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           maxConcurrent: sub?.maxConcurrent ?? DEFAULT_MAX_CONCURRENT,
         })
@@ -245,6 +264,7 @@ export function SubAgentsView({ onClose }: { onClose?: () => void } = {}) {
           configSetId: sub?.configSetId ?? '',
           modelId: sub?.modelId,
           perRole: sub?.perRole ?? {},
+          criticality: sub?.criticality,
           timeoutMs: sub?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           maxConcurrent: sub?.maxConcurrent ?? DEFAULT_MAX_CONCURRENT,
         })

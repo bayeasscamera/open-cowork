@@ -126,7 +126,10 @@ export interface DelegationSettings {
 /** Swarm execution stats (main screen transparency section). */
 export interface SwarmStats {
   totalSwarms: number;
+  /** Swarms where EVERY task completed (no failure, no skip). */
   succeededSwarms: number;
+  /** Swarms that finished 'done' but with failed/skipped tasks (partial-ok). */
+  partialSwarms?: number;
   totalTasks: number;
   fallbackTasks: number;
   lastRunMs?: number;
@@ -688,7 +691,13 @@ export type ClientEvent =
   | { type: 'document.read'; payload: { cwd: string; path: string } }
   | {
       type: 'document.write';
-      payload: { cwd: string; path: string; content: string; baseMtimeMs?: number; force?: boolean };
+      payload: {
+        cwd: string;
+        path: string;
+        content: string;
+        baseMtimeMs?: number;
+        force?: boolean;
+      };
     }
   | { type: 'document.list'; payload: { cwd: string } }
   | {
@@ -756,7 +765,10 @@ export type ServerEvent =
       payload: { sessionId: string; status: SessionStatus; error?: string };
     }
   | { type: 'session.update'; payload: { sessionId: string; updates: Partial<Session> } }
-  | { type: 'session.list'; payload: { sessions: Session[]; lastActiveSessionId?: string; lastActiveCwd?: string } }
+  | {
+      type: 'session.list';
+      payload: { sessions: Session[]; lastActiveSessionId?: string; lastActiveCwd?: string };
+    }
   | { type: 'permission.request'; payload: PermissionRequest }
   | { type: 'permission.dismiss'; payload: { toolUseId: string } }
   | { type: 'sudo.password.request'; payload: SudoPasswordRequest }

@@ -90,4 +90,36 @@ describe('sub-agents config normalization', () => {
     expect(normalizeSubAgentsConfig({ modelId: '  free-model  ' }).modelId).toBe('free-model');
     expect(normalizeSubAgentsConfig({}).modelId).toBeUndefined();
   });
+
+  it('normalizes the dynamic criticality tiers and trims their ids', () => {
+    const normalized = normalizeSubAgentsConfig({
+      criticality: {
+        critical: { configSetId: ' strong ', modelId: ' big-model ', personaName: ' Lead ' },
+        economical: { configSetId: 'cheap' },
+      },
+    } as unknown as Parameters<typeof normalizeSubAgentsConfig>[0]);
+    expect(normalized.criticality).toEqual({
+      critical: {
+        configSetId: 'strong',
+        modelId: 'big-model',
+        personaName: 'Lead',
+        systemPrompt: undefined,
+      },
+      economical: {
+        configSetId: 'cheap',
+        modelId: undefined,
+        personaName: undefined,
+        systemPrompt: undefined,
+      },
+    });
+  });
+
+  it('drops invalid criticality tiers and omits the key when empty', () => {
+    const invalid = normalizeSubAgentsConfig({
+      criticality: { critical: { configSetId: '   ' }, economical: 'cheap' },
+    } as unknown as Parameters<typeof normalizeSubAgentsConfig>[0]);
+    expect(invalid.criticality).toBeUndefined();
+    expect(normalizeSubAgentsConfig({}).criticality).toBeUndefined();
+    expect(normalizeSubAgentsConfig({ criticality: null }).criticality).toBeUndefined();
+  });
 });

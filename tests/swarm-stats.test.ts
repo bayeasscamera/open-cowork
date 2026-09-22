@@ -15,11 +15,7 @@ vi.mock('electron', () => ({
   app: { getPath: () => testRoot, getVersion: () => 't', isPackaged: false },
 }));
 
-import {
-  recordSwarmExecution,
-  getSwarmStats,
-  initSwarmStats,
-} from '../src/main/agent/swarm-stats';
+import { recordSwarmExecution, getSwarmStats, initSwarmStats } from '../src/main/agent/swarm-stats';
 import type { MultiAgentPlan } from '../src/main/agent/multi-agent-coordinator';
 import type { CrossVerificationResult } from '../src/main/agent/cross-verification';
 
@@ -45,6 +41,7 @@ function plan(overrides: Partial<MultiAgentPlan>): MultiAgentPlan {
     goal: 'g',
     tasks: [],
     status: 'done',
+    aggregationPolicy: 'fail-all',
     createdAt: 0,
     updatedAt: 0,
     ...overrides,
@@ -145,6 +142,28 @@ describe('swarm-stats', () => {
     const stats = getSwarmStats();
     expect(stats.crossVerificationSwarms).toBe(1);
     expect(stats.crossVerificationCalls).toBe(3);
+  });
+
+  it('counts a done-but-partial plan as a partial swarm, never a success', () => {
+    initSwarmStats(testRoot);
+    // partial-ok: the plan finished 'done' but one task never completed.
+    recordSwarmExecution(
+      plan({
+        status: 'done',
+        tasks: [
+          { id: 't1', role: 'developer', title: 'a', prompt: '', status: 'completed' },
+          { id: 't2', role: 'reviewer', title: 'b', prompt: '', status: 'failed' },
+        ],
+      }),
+      1000
+    );
+    // A plan that failed outright is neither a success nor a partial run.
+    recordSwarmExecution(plan({ status: 'failed', tasks: [] }), 500);
+
+    const stats = getSwarmStats();
+    expect(stats.succeededSwarms).toBe(0);
+    expect(stats.partialSwarms).toBe(1);
+    expect(stats.totalSwarms).toBe(2);
   });
 
   it('persists to an atomic JSON file and reloads across a simulated restart', () => {

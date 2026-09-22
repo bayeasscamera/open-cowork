@@ -19,6 +19,7 @@ export type { SwarmStats };
 let stats: SwarmStats = {
   totalSwarms: 0,
   succeededSwarms: 0,
+  partialSwarms: 0,
   totalTasks: 0,
   fallbackTasks: 0,
   crossVerificationSwarms: 0,
@@ -58,6 +59,7 @@ export function initSwarmStats(userDataDir: string): void {
   stats = {
     totalSwarms: 0,
     succeededSwarms: 0,
+    partialSwarms: 0,
     totalTasks: 0,
     fallbackTasks: 0,
     crossVerificationSwarms: 0,
@@ -85,7 +87,16 @@ function persist(): void {
 export function recordSwarmExecution(plan: MultiAgentPlan, durationMs: number): void {
   ensureLoaded();
   stats.totalSwarms += 1;
-  if (plan.status === 'done') stats.succeededSwarms += 1;
+  // Honest success accounting: a plan that finished 'done' but still carries
+  // failed/skipped tasks (partial-ok) is a PARTIAL run, never a success.
+  const hasPartialFailure = plan.tasks.some(
+    (task) => task.status === 'failed' || task.status === 'skipped'
+  );
+  if (plan.status === 'done' && !hasPartialFailure) {
+    stats.succeededSwarms += 1;
+  } else if (plan.status === 'done') {
+    stats.partialSwarms = (stats.partialSwarms ?? 0) + 1;
+  }
   stats.totalTasks += plan.tasks.length;
   stats.fallbackTasks += plan.tasks.filter((t) => t.usedFallback).length;
   const input = plan.tasks.reduce((sum, t) => sum + (t.tokenUsage?.input ?? 0), 0);
@@ -99,10 +110,7 @@ export function recordSwarmExecution(plan: MultiAgentPlan, durationMs: number): 
   // debate phase actually spent (0 for every default, non-opt-in swarm).
   if (plan.crossVerification) {
     stats.crossVerificationSwarms = (stats.crossVerificationSwarms ?? 0) + 1;
-    const calls = (plan.crossVerificationResults ?? []).reduce(
-      (sum, r) => sum + r.modelCalls,
-      0
-    );
+    const calls = (plan.crossVerificationResults ?? []).reduce((sum, r) => sum + r.modelCalls, 0);
     stats.crossVerificationCalls = (stats.crossVerificationCalls ?? 0) + calls;
   }
   persist();
@@ -118,6 +126,7 @@ export function __resetSwarmStatsForTest(): void {
   stats = {
     totalSwarms: 0,
     succeededSwarms: 0,
+    partialSwarms: 0,
     totalTasks: 0,
     fallbackTasks: 0,
     crossVerificationSwarms: 0,

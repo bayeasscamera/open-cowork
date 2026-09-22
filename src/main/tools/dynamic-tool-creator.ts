@@ -26,7 +26,11 @@ import { AstCodeIntelligence } from '../agent/ast-code-intelligence';
 import { SystemController } from '../system/system-controller';
 import { SelfHealingRunner } from '../agent/self-healing-runner';
 import { CodeGraphIndexer } from '../memory/codegraph-indexer';
-import { MultiAgentCoordinator, type AgentRole } from '../agent/multi-agent-coordinator';
+import {
+  MultiAgentCoordinator,
+  type AgentRole,
+  type AggregationPolicy,
+} from '../agent/multi-agent-coordinator';
 import { buildProposeSkillTool, createSwarmRunner } from '../agent/swarm-runner';
 import { listProposals, proposeSkill } from '../skills/skill-proposals';
 import { startDelegation, listDelegations, subAgentGate } from '../agent/background-delegations';
@@ -38,7 +42,6 @@ import {
 } from '../agent/cross-verification';
 import { configStore } from '../config/config-store';
 import { spawn, type ChildProcess } from 'child_process';
-
 
 // ---------------------------------------------------------------------------
 // Dynamic Skill Registry
@@ -62,7 +65,9 @@ export class DynamicSkillRegistry {
     const userData = app?.getPath ? app.getPath('userData') : '/tmp';
     this.skillsDir = path.join(userData, 'dynamic_skills');
     if (!fs.existsSync(this.skillsDir)) {
-      try { fs.mkdirSync(this.skillsDir, { recursive: true }); } catch (e) {
+      try {
+        fs.mkdirSync(this.skillsDir, { recursive: true });
+      } catch (e) {
         logError('[DynamicSkillRegistry] Failed to create skills dir:', e);
       }
     }
@@ -86,10 +91,15 @@ export class DynamicSkillRegistry {
         const skillPath = path.join(this.skillsDir, entry.name, 'SKILL.md');
         if (!fs.existsSync(metaPath) || !fs.existsSync(skillPath)) continue;
         try {
-          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as Omit<DynamicSkillDefinition, 'content'>;
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as Omit<
+            DynamicSkillDefinition,
+            'content'
+          >;
           const content = fs.readFileSync(skillPath, 'utf-8');
           this.registry.set(meta.slug, { ...meta, content });
-        } catch { /* ignore corrupted */ }
+        } catch {
+          /* ignore corrupted */
+        }
       }
       log(`[DynamicSkillRegistry] Loaded ${this.registry.size} persisted skills`);
     } catch (e) {
@@ -97,8 +107,17 @@ export class DynamicSkillRegistry {
     }
   }
 
-  public createSkill(params: { name: string; description: string; content: string }): DynamicSkillDefinition {
-    const slug = params.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').slice(0, 64);
+  public createSkill(params: {
+    name: string;
+    description: string;
+    content: string;
+  }): DynamicSkillDefinition {
+    const slug = params.name
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9_-]/g, '-')
+      .replace(/-+/g, '-')
+      .slice(0, 64);
     const existing = this.registry.get(slug);
     const version = existing ? existing.version + 1 : 1;
 
@@ -129,7 +148,9 @@ export class DynamicSkillRegistry {
     fs.writeFileSync(path.join(skillDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf-8');
     this.registry.set(slug, def);
 
-    log(`[DynamicSkillRegistry] 🎓 Skill ${existing ? 'updated' : 'created'} (v${version}): ${slug}`);
+    log(
+      `[DynamicSkillRegistry] 🎓 Skill ${existing ? 'updated' : 'created'} (v${version}): ${slug}`
+    );
     return def;
   }
 
@@ -269,7 +290,6 @@ export function buildAgentMetaTools(
       },
     },
 
-
     // 3. DeepSeek-Style Evaluation Harness
     {
       name: 'deepseek_eval_harness',
@@ -351,7 +371,12 @@ export function buildAgentMetaTools(
           };
         } catch (err) {
           return {
-            content: [{ type: 'text' as const, text: `Verification error: ${err instanceof Error ? err.message : String(err)}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Verification error: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
             details: {},
           };
         }
@@ -389,10 +414,16 @@ export function buildAgentMetaTools(
             );
             const files = stdout.trim().split('\n').filter(Boolean);
             if (files.length === 0) {
-              return { content: [{ type: 'text' as const, text: `No results found for: "${args.query}"` }], details: {} };
+              return {
+                content: [{ type: 'text' as const, text: `No results found for: "${args.query}"` }],
+                details: {},
+              };
             }
 
-            const results: string[] = [`Found in ${files.length} file(s) for query: "${args.query}"`, ''];
+            const results: string[] = [
+              `Found in ${files.length} file(s) for query: "${args.query}"`,
+              '',
+            ];
             for (const file of files.slice(0, args.topK ?? 5)) {
               const { stdout: lines } = await execAsync(
                 `grep -n "${keywords.split('|')[0]}" "${file}" 2>/dev/null | head -5`,
@@ -408,11 +439,19 @@ export function buildAgentMetaTools(
               details: { fileCount: files.length },
             };
           } catch {
-            return { content: [{ type: 'text' as const, text: `Search failed for: "${args.query}"` }], details: {} };
+            return {
+              content: [{ type: 'text' as const, text: `Search failed for: "${args.query}"` }],
+              details: {},
+            };
           }
         } catch (err) {
           return {
-            content: [{ type: 'text' as const, text: `Search error: ${err instanceof Error ? err.message : String(err)}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Search error: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
             details: {},
           };
         }
@@ -426,7 +465,9 @@ export function buildAgentMetaTools(
       description:
         'Run full Test-Driven Development cycle: generate failing tests (RED), write implementation (GREEN), and suggest refactoring.',
       parameters: Type.Object({
-        featureDescription: Type.String({ description: 'Clear specification of the feature to develop.' }),
+        featureDescription: Type.String({
+          description: 'Clear specification of the feature to develop.',
+        }),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as { featureDescription: string };
@@ -445,11 +486,20 @@ export function buildAgentMetaTools(
           ].join('\n');
           return {
             content: [{ type: 'text' as const, text }],
-            details: { phase: result.phase, testFilePath: result.testFilePath, implFilePath: result.implFilePath },
+            details: {
+              phase: result.phase,
+              testFilePath: result.testFilePath,
+              implFilePath: result.implFilePath,
+            },
           };
         } catch (err) {
           return {
-            content: [{ type: 'text' as const, text: `TDD cycle error: ${err instanceof Error ? err.message : String(err)}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `TDD cycle error: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
             details: {},
           };
         }
@@ -472,20 +522,32 @@ export function buildAgentMetaTools(
           const usages = ast.findSymbolUsages(args.symbolName);
           if (usages.length === 0) {
             return {
-              content: [{ type: 'text' as const, text: `No usages found for symbol: "${args.symbolName}"` }],
+              content: [
+                { type: 'text' as const, text: `No usages found for symbol: "${args.symbolName}"` },
+              ],
               details: { count: 0 },
             };
           }
-          const lines = usages.slice(0, 25).map(
-            (u) => `${u.filePath}:${u.line} [${u.kind}]\n  ${u.context.trim()}`
-          );
+          const lines = usages
+            .slice(0, 25)
+            .map((u) => `${u.filePath}:${u.line} [${u.kind}]\n  ${u.context.trim()}`);
           return {
-            content: [{ type: 'text' as const, text: `Found ${usages.length} usages of "${args.symbolName}":\n\n${lines.join('\n\n')}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Found ${usages.length} usages of "${args.symbolName}":\n\n${lines.join('\n\n')}`,
+              },
+            ],
             details: { count: usages.length },
           };
         } catch (err) {
           return {
-            content: [{ type: 'text' as const, text: `AST search error: ${err instanceof Error ? err.message : String(err)}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `AST search error: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
             details: {},
           };
         }
@@ -496,8 +558,7 @@ export function buildAgentMetaTools(
     {
       name: 'ast_safe_rename',
       label: 'Safe Symbol Rename (AST)',
-      description:
-        'Rename TypeScript symbol across project files with word-boundary safety.',
+      description: 'Rename TypeScript symbol across project files with word-boundary safety.',
       parameters: Type.Object({
         oldName: Type.String({ description: 'Existing symbol name' }),
         newName: Type.String({ description: 'Replacement symbol name' }),
@@ -512,15 +573,24 @@ export function buildAgentMetaTools(
             `Files modified : ${result.filesModified.length}`,
             `Total replacements: ${result.totalReplacements}`,
             result.errors.length > 0 ? `Errors:\n${result.errors.join('\n')}` : '',
-            result.filesModified.length > 0 ? `\nModified files:\n${result.filesModified.join('\n')}` : '',
-          ].filter(Boolean).join('\n');
+            result.filesModified.length > 0
+              ? `\nModified files:\n${result.filesModified.join('\n')}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n');
           return {
             content: [{ type: 'text' as const, text }],
             details: result,
           };
         } catch (err) {
           return {
-            content: [{ type: 'text' as const, text: `Rename error: ${err instanceof Error ? err.message : String(err)}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Rename error: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
             details: {},
           };
         }
@@ -538,10 +608,15 @@ export function buildAgentMetaTools(
       description:
         'Launch, switch to, or close any application installed on the host machine (e.g. "Safari", "Terminal", "Visual Studio Code", "Slack", "Notes").',
       parameters: Type.Object({
-        action: Type.Union([Type.Literal('launch'), Type.Literal('quit'), Type.Literal('force_quit')], {
-          description: 'Action to perform on the target application',
+        action: Type.Union(
+          [Type.Literal('launch'), Type.Literal('quit'), Type.Literal('force_quit')],
+          {
+            description: 'Action to perform on the target application',
+          }
+        ),
+        appName: Type.String({
+          description: 'Name of the application on the system (e.g. "Safari", "Slack")',
         }),
-        appName: Type.String({ description: 'Name of the application on the system (e.g. "Safari", "Slack")' }),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as { action: 'launch' | 'quit' | 'force_quit'; appName: string };
@@ -566,7 +641,11 @@ export function buildAgentMetaTools(
         action: Type.Union([Type.Literal('read'), Type.Literal('write')], {
           description: 'Whether to read from or write to the clipboard',
         }),
-        text: Type.Optional(Type.String({ description: 'Text to copy into clipboard (required when action is write)' })),
+        text: Type.Optional(
+          Type.String({
+            description: 'Text to copy into clipboard (required when action is write)',
+          })
+        ),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as { action: 'read' | 'write'; text?: string };
@@ -574,13 +653,25 @@ export function buildAgentMetaTools(
         if (args.action === 'read') {
           const content = sys.readClipboard();
           return {
-            content: [{ type: 'text' as const, text: content ? `Clipboard Content:\n${content}` : 'Clipboard is empty.' }],
+            content: [
+              {
+                type: 'text' as const,
+                text: content ? `Clipboard Content:\n${content}` : 'Clipboard is empty.',
+              },
+            ],
             details: { hasContent: Boolean(content) },
           };
         } else {
           const success = sys.writeClipboard(args.text || '');
           return {
-            content: [{ type: 'text' as const, text: success ? 'Text copied to clipboard successfully.' : 'Failed to write to clipboard.' }],
+            content: [
+              {
+                type: 'text' as const,
+                text: success
+                  ? 'Text copied to clipboard successfully.'
+                  : 'Failed to write to clipboard.',
+              },
+            ],
             details: { success },
           };
         }
@@ -602,7 +693,14 @@ export function buildAgentMetaTools(
         const sys = SystemController.getInstance();
         const sent = sys.notify(args.title, args.message);
         return {
-          content: [{ type: 'text' as const, text: sent ? `Notification sent: "${args.title}"` : 'Failed to dispatch notification.' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: sent
+                ? `Notification sent: "${args.title}"`
+                : 'Failed to dispatch notification.',
+            },
+          ],
           details: { sent },
         };
       },
@@ -618,23 +716,42 @@ export function buildAgentMetaTools(
         action: Type.Union([Type.Literal('list'), Type.Literal('kill')], {
           description: 'List active processes or kill a specific process',
         }),
-        filter: Type.Optional(Type.String({ description: 'Process name filter when listing (e.g. "node", "python")' })),
+        filter: Type.Optional(
+          Type.String({ description: 'Process name filter when listing (e.g. "node", "python")' })
+        ),
         pid: Type.Optional(Type.Number({ description: 'PID to terminate when action is kill' })),
-        force: Type.Optional(Type.Boolean({ description: 'Force kill (SIGKILL) when action is kill' })),
+        force: Type.Optional(
+          Type.Boolean({ description: 'Force kill (SIGKILL) when action is kill' })
+        ),
       }),
       execute: async (_toolCallId, params) => {
-        const args = params as { action: 'list' | 'kill'; filter?: string; pid?: number; force?: boolean };
+        const args = params as {
+          action: 'list' | 'kill';
+          filter?: string;
+          pid?: number;
+          force?: boolean;
+        };
         const sys = SystemController.getInstance();
         if (args.action === 'list') {
           const procs = await sys.listProcesses(args.filter);
-          const lines = procs.slice(0, 25).map((p) => `PID ${p.pid} | CPU ${p.cpu || 'N/A'} | MEM ${p.mem || 'N/A'} | ${p.name}`);
+          const lines = procs
+            .slice(0, 25)
+            .map((p) => `PID ${p.pid} | CPU ${p.cpu || 'N/A'} | MEM ${p.mem || 'N/A'} | ${p.name}`);
           return {
-            content: [{ type: 'text' as const, text: `Active Processes (${procs.length}):\n${lines.join('\n')}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Active Processes (${procs.length}):\n${lines.join('\n')}`,
+              },
+            ],
             details: { count: procs.length },
           };
         } else {
           if (!args.pid) {
-            return { content: [{ type: 'text' as const, text: 'PID is required for action kill' }], details: {} };
+            return {
+              content: [{ type: 'text' as const, text: 'PID is required for action kill' }],
+              details: {},
+            };
           }
           const res = await sys.killProcess(args.pid, args.force);
           return { content: [{ type: 'text' as const, text: res.output }], details: res };
@@ -649,7 +766,10 @@ export function buildAgentMetaTools(
       description:
         'Run custom AppleScript directly on macOS to automate UI actions, control Finder, query window states, or interact with native apps (Safari, Mail, Calendar, etc.).',
       parameters: Type.Object({
-        script: Type.String({ description: 'AppleScript code to execute (e.g. tell application "Finder" to get name of every window)' }),
+        script: Type.String({
+          description:
+            'AppleScript code to execute (e.g. tell application "Finder" to get name of every window)',
+        }),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as { script: string };
@@ -673,7 +793,9 @@ export function buildAgentMetaTools(
       description:
         'Capture a screenshot of the entire screen or desktop display. Returns file path and base64 image data for visual inspection.',
       parameters: Type.Object({
-        targetPath: Type.Optional(Type.String({ description: 'Optional destination file path for screenshot (.png)' })),
+        targetPath: Type.Optional(
+          Type.String({ description: 'Optional destination file path for screenshot (.png)' })
+        ),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as { targetPath?: string };
@@ -683,17 +805,23 @@ export function buildAgentMetaTools(
           return {
             content: [
               { type: 'text' as const, text: `Screenshot successfully captured: ${res.filePath}` },
-              ...(res.base64 ? [{
-                type: 'image' as const,
-                data: res.base64,
-                mimeType: 'image/png',
-              }] : []),
+              ...(res.base64
+                ? [
+                    {
+                      type: 'image' as const,
+                      data: res.base64,
+                      mimeType: 'image/png',
+                    },
+                  ]
+                : []),
             ],
             details: { filePath: res.filePath },
           };
         } else {
           return {
-            content: [{ type: 'text' as const, text: `Screenshot failed: ${res.error || 'Unknown error'}` }],
+            content: [
+              { type: 'text' as const, text: `Screenshot failed: ${res.error || 'Unknown error'}` },
+            ],
             details: { error: res.error },
           };
         }
@@ -707,12 +835,20 @@ export function buildAgentMetaTools(
       description:
         'Simulate mouse click at coordinates or send keystrokes/shortcuts to active desktop applications.',
       parameters: Type.Object({
-        action: Type.Union([Type.Literal('click'), Type.Literal('type'), Type.Literal('key_combo')]),
+        action: Type.Union([
+          Type.Literal('click'),
+          Type.Literal('type'),
+          Type.Literal('key_combo'),
+        ]),
         x: Type.Optional(Type.Number({ description: 'X screen coordinate for click' })),
         y: Type.Optional(Type.Number({ description: 'Y screen coordinate for click' })),
         text: Type.Optional(Type.String({ description: 'Text to type into focused window' })),
-        key: Type.Optional(Type.String({ description: 'Key name for shortcut (e.g. "c", "v", "return", "tab")' })),
-        modifiers: Type.Optional(Type.Array(Type.String(), { description: 'Modifiers: command, option, control, shift' })),
+        key: Type.Optional(
+          Type.String({ description: 'Key name for shortcut (e.g. "c", "v", "return", "tab")' })
+        ),
+        modifiers: Type.Optional(
+          Type.Array(Type.String(), { description: 'Modifiers: command, option, control, shift' })
+        ),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as {
@@ -743,7 +879,9 @@ export function buildAgentMetaTools(
       description:
         'Run verification tests or linter in a closed-loop. If failure occurs, extracts root errors to provide instant diagnostics for immediate self-correction.',
       parameters: Type.Object({
-        command: Type.String({ description: 'Test command to run (e.g. "npm test", "npm run lint", "npm run typecheck")' }),
+        command: Type.String({
+          description: 'Test command to run (e.g. "npm test", "npm run lint", "npm run typecheck")',
+        }),
         cwd: Type.Optional(Type.String({ description: 'Working directory' })),
       }),
       execute: async (_toolCallId, params) => {
@@ -754,7 +892,12 @@ export function buildAgentMetaTools(
 
         if (res.passed) {
           return {
-            content: [{ type: 'text' as const, text: `✅ Command "${args.command}" PASSED without errors.\n\n${res.stdout}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `✅ Command "${args.command}" PASSED without errors.\n\n${res.stdout}`,
+              },
+            ],
             details: res,
           };
         } else {
@@ -779,7 +922,9 @@ export function buildAgentMetaTools(
         'Scan workspace codebase and query symbols (functions, classes, types, interfaces) with fast in-memory AST lookup without scanning files sequentially.',
       parameters: Type.Object({
         query: Type.String({ description: 'Symbol name or keyword to look for' }),
-        dirPath: Type.Optional(Type.String({ description: 'Root directory to index if not yet scanned' })),
+        dirPath: Type.Optional(
+          Type.String({ description: 'Root directory to index if not yet scanned' })
+        ),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as { query: string; dirPath?: string };
@@ -790,14 +935,26 @@ export function buildAgentMetaTools(
 
         if (matches.length === 0) {
           return {
-            content: [{ type: 'text' as const, text: `No symbols matching "${args.query}" found in ${rootDir}.` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `No symbols matching "${args.query}" found in ${rootDir}.`,
+              },
+            ],
             details: { count: 0 },
           };
         }
 
-        const lines = matches.slice(0, 30).map((m) => `[${m.kind.toUpperCase()}] ${m.name} -> ${m.filePath}:${m.line}`);
+        const lines = matches
+          .slice(0, 30)
+          .map((m) => `[${m.kind.toUpperCase()}] ${m.name} -> ${m.filePath}:${m.line}`);
         return {
-          content: [{ type: 'text' as const, text: `Found ${matches.length} symbol match(es) for "${args.query}":\n\n${lines.join('\n')}` }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Found ${matches.length} symbol match(es) for "${args.query}":\n\n${lines.join('\n')}`,
+            },
+          ],
           details: { matches },
         };
       },
@@ -814,37 +971,69 @@ export function buildAgentMetaTools(
       description:
         'Launch long-running commands in background (dev servers, log watchers, long builds), poll their stdout/stderr, or terminate them cleanly.',
       parameters: Type.Object({
-        action: Type.Union([Type.Literal('start'), Type.Literal('status'), Type.Literal('stop'), Type.Literal('list')]),
+        action: Type.Union([
+          Type.Literal('start'),
+          Type.Literal('status'),
+          Type.Literal('stop'),
+          Type.Literal('list'),
+        ]),
         jobId: Type.Optional(Type.String({ description: 'Unique ID of the job' })),
         command: Type.Optional(Type.String({ description: 'Command to run (e.g. "npm run dev")' })),
         cwd: Type.Optional(Type.String({ description: 'Working directory' })),
       }),
       execute: async (_toolCallId, params) => {
-        const args = params as { action: 'start' | 'status' | 'stop' | 'list'; jobId?: string; command?: string; cwd?: string };
+        const args = params as {
+          action: 'start' | 'status' | 'stop' | 'list';
+          jobId?: string;
+          command?: string;
+          cwd?: string;
+        };
         const mgr = BackgroundJobRegistry.getInstance();
 
         if (args.action === 'start') {
           if (!args.command) {
-            return { content: [{ type: 'text' as const, text: 'Command is required to start a background job.' }], details: {} };
+            return {
+              content: [
+                { type: 'text' as const, text: 'Command is required to start a background job.' },
+              ],
+              details: {},
+            };
           }
           const id = args.jobId || `job-${Date.now()}`;
           const res = mgr.startJob(id, args.command, args.cwd || process.cwd());
           return { content: [{ type: 'text' as const, text: res.message }], details: res };
         } else if (args.action === 'status') {
           if (!args.jobId) {
-            return { content: [{ type: 'text' as const, text: 'jobId is required to query status.' }], details: {} };
+            return {
+              content: [{ type: 'text' as const, text: 'jobId is required to query status.' }],
+              details: {},
+            };
           }
           const st = mgr.getJobStatus(args.jobId);
-          return { content: [{ type: 'text' as const, text: JSON.stringify(st, null, 2) }], details: st };
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(st, null, 2) }],
+            details: st,
+          };
         } else if (args.action === 'stop') {
           if (!args.jobId) {
-            return { content: [{ type: 'text' as const, text: 'jobId is required to stop a job.' }], details: {} };
+            return {
+              content: [{ type: 'text' as const, text: 'jobId is required to stop a job.' }],
+              details: {},
+            };
           }
           const res = mgr.stopJob(args.jobId);
           return { content: [{ type: 'text' as const, text: res.message }], details: res };
         } else {
           const list = mgr.listJobs();
-          return { content: [{ type: 'text' as const, text: `Active background jobs (${list.length}):\n${JSON.stringify(list, null, 2)}` }], details: list };
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Active background jobs (${list.length}):\n${JSON.stringify(list, null, 2)}`,
+              },
+            ],
+            details: list,
+          };
         }
       },
     },
@@ -860,20 +1049,40 @@ export function buildAgentMetaTools(
       description:
         'Decompose complex multi-step tasks into specialized autonomous sub-agents (Architect, Developer, Reviewer, Security) organized in a collaborative DAG. ' +
         'MEASURED COST: a 4-task swarm took 452s vs 33s for direct execution of the same simple task (13.7x slower) — use ONLY for genuinely complex, multi-disciplinary work; for simple tasks act directly. ' +
+        'Partial-failure aggregation is EXPLICIT (aggregationPolicy): fail-all (default), partial-ok, or retry-failed-only — a swarm never silently reports success with skipped tasks. ' +
         `OPT-IN crossVerification adds up to ${CROSS_VERIFICATION_COST.peerChallenge + CROSS_VERIFICATION_COST.codeReviewRerun} extra model calls (reviewer↔security peer challenge = ${CROSS_VERIFICATION_COST.peerChallenge}; conditional developer re-run on a substantive review point = 0-${CROSS_VERIFICATION_COST.codeReviewRerun}). ` +
         'It makes agents CHALLENGE each other instead of producing independent reports, and surfaces unresolved disagreements rather than forcing consensus. ' +
         'OFF by default — enable it only for high-stakes tasks where a wrong conclusion is costly.',
       parameters: Type.Object({
-        goal: Type.String({ description: 'Overall project or engineering goal to plan and coordinate' }),
+        goal: Type.String({
+          description: 'Overall project or engineering goal to plan and coordinate',
+        }),
         crossVerification: Type.Optional(
           Type.Boolean({
             description:
               'OPT-IN debate pass (default false). After the reviewer and security reports exist, each challenges the other and a surviving disagreement is escalated with both positions. Also lets the reviewer raise ONE substantive code point that triggers a single targeted developer re-run. Adds up to 3 extra model calls.',
           })
         ),
+        aggregationPolicy: Type.Optional(
+          Type.Union(
+            [
+              Type.Literal('fail-all'),
+              Type.Literal('partial-ok'),
+              Type.Literal('retry-failed-only'),
+            ],
+            {
+              description:
+                "How to aggregate a partially failed swarm (default 'fail-all'). 'fail-all': any unresolved failure fails the plan. 'partial-ok': the plan succeeds when at least one task completed, and every failure/skip is reported. 'retry-failed-only': retry each failed task once, then any unresolved failure fails the plan.",
+            }
+          )
+        ),
       }),
       execute: async (_toolCallId, params) => {
-        const args = params as { goal: string; crossVerification?: boolean };
+        const args = params as {
+          goal: string;
+          crossVerification?: boolean;
+          aggregationPolicy?: AggregationPolicy;
+        };
         const config = configStore.getAll();
         // Every sub-agent is confined to the default workspace.
         const swarmCwd = config.defaultWorkdir?.trim() || process.cwd();
@@ -886,6 +1095,7 @@ export function buildAgentMetaTools(
         coordinator.setRunner(createSwarmRunner({ cwd: swarmCwd, gate: subAgentGate }));
         const plan = coordinator.createCollaborativePlan(args.goal, {
           crossVerification: args.crossVerification === true,
+          ...(args.aggregationPolicy ? { aggregationPolicy: args.aggregationPolicy } : {}),
         });
         const executed = await coordinator.executePlan(plan.id);
         recordSwarmExecution(executed, Date.now() - swarmStartedAt);
@@ -899,15 +1109,31 @@ export function buildAgentMetaTools(
                 ? `\n   modified: ${t.modifiedFiles.join(', ')}`
                 : '';
             const failure = t.status === 'failed' ? `\n   error: ${t.error || 'unknown'}` : '';
+            const retry = t.retried
+              ? t.recovered
+                ? '\n   retried: recovered on the second attempt'
+                : '\n   retried: still failing after one retry'
+              : '';
             const syntax = t.syntaxIssues?.length
               ? `\n   SYNTAX ISSUES (not fully resolved):\n   ${t.syntaxIssues.join('\n   ')}`
               : '';
             const tokens = t.tokenUsage
               ? `\n   tokens: ${t.tokenUsage.input} in / ${t.tokenUsage.output} out`
               : '';
-            return `• [${t.role.toUpperCase()}] ${t.title} — ${t.status}${model}${fallback}${files}${failure}${syntax}${tokens}`;
+            return `• [${t.role.toUpperCase()}] ${t.title} — ${t.status}${model}${fallback}${files}${failure}${retry}${syntax}${tokens}`;
           })
           .join('\n');
+
+        // The aggregation policy and its outcome are ALWAYS surfaced, so a
+        // partial failure can never be mistaken for a full success.
+        const aggregation = executed.aggregation;
+        const aggregationLine = aggregation
+          ? `Aggregation (${aggregation.policy}): ${aggregation.completed} completed, ${aggregation.failed} failed, ${aggregation.skipped} skipped` +
+            (aggregation.retried
+              ? `, ${aggregation.retried} retried (${aggregation.recovered} recovered)`
+              : '') +
+            `\n`
+          : '';
 
         // Cross-verification outcomes are surfaced EXPLICITLY in the report —
         // unresolved disagreements keep both positions, never a forced consensus.
@@ -921,8 +1147,9 @@ export function buildAgentMetaTools(
               text:
                 `🚀 Multi-Agent Swarm executed (ID: ${executed.id})\n` +
                 `Goal: "${executed.goal}"\n` +
-                `Status: ${executed.status}\n\n` +
-                `Task Results:\n${taskSummary}` +
+                `Status: ${executed.status}\n` +
+                aggregationLine +
+                `\nTask Results:\n${taskSummary}` +
                 (crossSection ? `\n${crossSection}` : ''),
             },
           ],
@@ -980,7 +1207,9 @@ export function buildAgentMetaTools(
         };
         if (!args.task || !args.task.trim()) {
           return {
-            content: [{ type: 'text' as const, text: 'task is required to delegate a background job.' }],
+            content: [
+              { type: 'text' as const, text: 'task is required to delegate a background job.' },
+            ],
             details: {},
           };
         }
@@ -1032,7 +1261,12 @@ export function buildAgentMetaTools(
         const list = listDelegations(options.sessionId ?? 'default');
         if (list.length === 0) {
           return {
-            content: [{ type: 'text' as const, text: 'No background tasks delegated in this conversation.' }],
+            content: [
+              {
+                type: 'text' as const,
+                text: 'No background tasks delegated in this conversation.',
+              },
+            ],
             details: { delegations: [] },
           };
         }
@@ -1061,7 +1295,18 @@ export function buildAgentMetaTools(
 
 export class BackgroundJobRegistry {
   private static instance: BackgroundJobRegistry;
-  private jobs: Map<string, { pid?: number; process?: ChildProcess; output: string[]; status: 'running' | 'stopped' | 'failed'; command: string; startedAt: number; logPath?: string }> = new Map();
+  private jobs: Map<
+    string,
+    {
+      pid?: number;
+      process?: ChildProcess;
+      output: string[];
+      status: 'running' | 'stopped' | 'failed';
+      command: string;
+      startedAt: number;
+      logPath?: string;
+    }
+  > = new Map();
   private stateFilePath: string;
   private logsDir: string;
 
@@ -1086,7 +1331,14 @@ export class BackgroundJobRegistry {
     try {
       if (!fs.existsSync(this.stateFilePath)) return;
       const raw = fs.readFileSync(this.stateFilePath, 'utf-8');
-      const data = JSON.parse(raw) as Array<{ id: string; command: string; status: 'running' | 'stopped' | 'failed'; pid?: number; startedAt: number; logPath?: string }>;
+      const data = JSON.parse(raw) as Array<{
+        id: string;
+        command: string;
+        status: 'running' | 'stopped' | 'failed';
+        pid?: number;
+        startedAt: number;
+        logPath?: string;
+      }>;
       for (const item of data) {
         // Any previously "running" job on startup is marked as "stopped" because process died with app restart
         const status = item.status === 'running' ? 'stopped' : item.status;
@@ -1127,7 +1379,11 @@ export class BackgroundJobRegistry {
     }
   }
 
-  public startJob(id: string, command: string, cwd: string): { success: boolean; message: string; jobId: string } {
+  public startJob(
+    id: string,
+    command: string,
+    cwd: string
+  ): { success: boolean; message: string; jobId: string } {
     try {
       const child = spawn(command, { shell: true, cwd, stdio: ['ignore', 'pipe', 'pipe'] });
       const logPath = path.join(this.logsDir, `${id}.log`);
@@ -1173,13 +1429,27 @@ export class BackgroundJobRegistry {
 
       this.jobs.set(id, jobRecord);
       this.saveState();
-      return { success: true, message: `Background job "${id}" started with PID ${child.pid}`, jobId: id };
+      return {
+        success: true,
+        message: `Background job "${id}" started with PID ${child.pid}`,
+        jobId: id,
+      };
     } catch (err) {
-      return { success: false, message: `Failed to start job: ${err instanceof Error ? err.message : String(err)}`, jobId: id };
+      return {
+        success: false,
+        message: `Failed to start job: ${err instanceof Error ? err.message : String(err)}`,
+        jobId: id,
+      };
     }
   }
 
-  public getJobStatus(id: string): { status: string; command?: string; pid?: number; outputTail: string; logPath?: string } {
+  public getJobStatus(id: string): {
+    status: string;
+    command?: string;
+    pid?: number;
+    outputTail: string;
+    logPath?: string;
+  } {
     const job = this.jobs.get(id);
     if (!job) return { status: 'not_found', outputTail: '' };
     return {
@@ -1202,7 +1472,10 @@ export class BackgroundJobRegistry {
       this.saveState();
       return { success: true, message: `Job ${id} stopped.` };
     } catch (err) {
-      return { success: false, message: `Error stopping job: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        success: false,
+        message: `Error stopping job: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   }
 
@@ -1220,7 +1493,14 @@ export class BackgroundJobRegistry {
     this.saveState();
   }
 
-  public listJobs(): Array<{ id: string; command: string; status: string; pid?: number; startedAt: number; logPath?: string }> {
+  public listJobs(): Array<{
+    id: string;
+    command: string;
+    status: string;
+    pid?: number;
+    startedAt: number;
+    logPath?: string;
+  }> {
     return Array.from(this.jobs.entries()).map(([id, j]) => ({
       id,
       command: j.command,
@@ -1231,5 +1511,3 @@ export class BackgroundJobRegistry {
     }));
   }
 }
-
-

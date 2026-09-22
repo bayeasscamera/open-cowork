@@ -4,8 +4,10 @@
  * Real executor for the multi-agent swarm: each DAG task runs in its own
  * pi-coding-agent session, confined to the session workspace.
  *
- * - Profile resolution: per-role override > sub-agents configSet > inherited
- *   active profile (default — zero surprise).
+ * - Profile resolution: criticality tier (dynamic) > per-role override >
+ *   sub-agents configSet > inherited active profile (default — zero surprise).
+ *   Criticality is structural: a task other tasks depend on is on the critical
+ *   path and can use a stronger profile than a terminal task.
  * - Guardrails: per-task timeout, bounded concurrency, and a path-confinement
  *   hook that blocks any tool call whose target escapes the workspace.
  * - bash is deliberately NOT provided to sub-agents: a free-form shell
@@ -64,7 +66,7 @@ import { buildCorrectiveContext } from './cross-verification';
 // Profile resolution
 // ---------------------------------------------------------------------------
 
-type SubAgentProfileSource = 'role' | 'configSet' | 'inherited';
+type SubAgentProfileSource = 'criticality' | 'role' | 'configSet' | 'inherited';
 
 interface ResolvedSubAgentProfile {
   /** Derived AppConfig the sub-agent session must run with. */
@@ -107,14 +109,40 @@ function profileFromSelection(
 
 /**
  * Resolve the profile a sub-agent task must run with:
- * per-role override > sub-agents configSet > inherited active profile.
- * Unknown configSet ids degrade to inheritance with a warning.
+ * criticality tier (when configured and known) > per-role override >
+ * sub-agents configSet > inherited active profile.
+ *
+ * @param criticalPath Structural criticality of the task (true = other tasks
+ * depend on it). When a matching `subAgents.criticality` tier is configured it
+ * wins, so the same DAG can route blocking work to a strong model and terminal
+ * work to an economical one. Undefined keeps the static per-role behaviour.
+ *
+ * Unknown configSet ids degrade to the next level with a warning.
  */
 export function resolveSubAgentProfile(
   role: string,
-  appConfig: AppConfig
+  appConfig: AppConfig,
+  criticalPath?: boolean
 ): ResolvedSubAgentProfile {
   const subAgents = appConfig.subAgents ?? normalizeSubAgentsConfig(undefined);
+
+  // Dynamic criticality tier first — the whole point is to NOT be limited to a
+  // model fixed per named role.
+  if (typeof criticalPath === 'boolean') {
+    const tier = criticalPath ? subAgents.criticality?.critical : subAgents.criticality?.economical;
+    if (tier?.configSetId) {
+      const set = appConfig.configSets.find((s) => s.id === tier.configSetId);
+      if (set) {
+        const resolved = profileFromSelection(appConfig, set, tier.modelId, 'criticality');
+        return {
+          ...resolved,
+          personaName: tier.personaName,
+          systemPrompt: tier.systemPrompt,
+        };
+      }
+      logWarn(`[SwarmRunner] Criticality configSet "${tier.configSetId}" not found; falling back`);
+    }
+  }
 
   const roleSelection = subAgents.perRole[role as SubAgentRoleKey];
   if (roleSelection?.configSetId) {
@@ -127,7 +155,9 @@ export function resolveSubAgentProfile(
         systemPrompt: roleSelection.systemPrompt,
       };
     }
-    logWarn(`[SwarmRunner] Per-role configSet "${roleSelection.configSetId}" not found; falling back`);
+    logWarn(
+      `[SwarmRunner] Per-role configSet "${roleSelection.configSetId}" not found; falling back`
+    );
   }
 
   if (subAgents.configSetId) {
@@ -306,11 +336,7 @@ export function buildConfinementHook(
 }
 
 /** Record a modified file path when the event is a confined write/edit. */
-export function collectModifiedPath(
-  cwd: string,
-  toolName: string,
-  args: unknown
-): string | null {
+export function collectModifiedPath(cwd: string, toolName: string, args: unknown): string | null {
   const root = resolveRealRoot(cwd);
   if (!WRITE_TOOL_NAMES.has(toolName)) {
     return null;
@@ -404,12 +430,19 @@ async function checkModifiedFilesSyntax(
       const content = fs.readFileSync(file, 'utf-8');
       const ext = path.extname(file).toLowerCase();
       const kind =
-        ext === '.tsx' ? ts.ScriptKind.TSX : ext === '.jsx' ? ts.ScriptKind.JSX : ext === '.js' ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+        ext === '.tsx'
+          ? ts.ScriptKind.TSX
+          : ext === '.jsx'
+            ? ts.ScriptKind.JSX
+            : ext === '.js'
+              ? ts.ScriptKind.JS
+              : ts.ScriptKind.TS;
       const sourceFile = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, kind);
       // parseDiagnostics is an internal but stable SourceFile property; the
       // public checker API would require a full Program for syntax-only checks.
-      const parseDiagnostics = (sourceFile as unknown as { parseDiagnostics: readonly ts.Diagnostic[] })
-        .parseDiagnostics;
+      const parseDiagnostics = (
+        sourceFile as unknown as { parseDiagnostics: readonly ts.Diagnostic[] }
+      ).parseDiagnostics;
       for (const diag of parseDiagnostics.slice(0, 5)) {
         if (diag.start === undefined) continue;
         issues.push({
@@ -419,7 +452,11 @@ async function checkModifiedFilesSyntax(
         });
       }
     } catch (error) {
-      issues.push({ file, line: 0, message: error instanceof Error ? error.message : String(error) });
+      issues.push({
+        file,
+        line: 0,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return issues;
@@ -462,7 +499,6 @@ export class TaskSlotLimiter {
     this.active = Math.max(0, this.active - 1);
   }
 }
-
 
 export class SubAgentTaskTimeoutError extends Error {
   constructor(label: string, timeoutMs: number) {
@@ -573,7 +609,8 @@ export function buildProposeSkillTool(): import('@mariozechner/pi-coding-agent')
       'This is for documentation/playbooks ONLY: never executable code, never tool definitions.',
     parameters: Type.Object({
       name: Type.String({
-        description: 'kebab-case skill name, 3-64 chars, lowercase letters/digits/dashes (used as the directory name)',
+        description:
+          'kebab-case skill name, 3-64 chars, lowercase letters/digits/dashes (used as the directory name)',
       }),
       description: Type.String({
         description: 'One-sentence description of what the skill covers and when to use it',
@@ -583,7 +620,9 @@ export function buildProposeSkillTool(): import('@mariozechner/pi-coding-agent')
           'Full SKILL.md content. MUST start with YAML front-matter ("---\nname: ...\ndescription: ...\n---") followed by procedural guidance in markdown.',
       }),
       rationale: Type.Optional(
-        Type.String({ description: 'Why this pattern is worth reusing (shown to the human reviewer)' })
+        Type.String({
+          description: 'Why this pattern is worth reusing (shown to the human reviewer)',
+        })
       ),
     }),
     execute: async (_toolCallId, params) => {
@@ -595,7 +634,12 @@ export function buildProposeSkillTool(): import('@mariozechner/pi-coding-agent')
       };
       if (!args.name || !args.description || !args.content) {
         return {
-          content: [{ type: 'text' as const, text: 'propose_skill requires name, description and content.' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'propose_skill requires name, description and content.',
+            },
+          ],
           details: {},
         };
       }
@@ -628,9 +672,7 @@ export function buildProposeSkillTool(): import('@mariozechner/pi-coding-agent')
   };
 }
 
-async function launchSubAgentSession(
-  args: SubAgentSessionArgs
-): Promise<SubAgentSessionResult> {
+async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgentSessionResult> {
   const model = resolveSubAgentModel(args.config);
 
   // Isolated AuthStorage per sub-agent: profiles running in parallel never
@@ -702,10 +744,7 @@ async function launchSubAgentSession(
   ]
     .filter(Boolean)
     .join('\n\n');
-  const childSystemPrompt = [
-    buildChildSystemPrompt(args.task),
-    roleSystemPrompt,
-  ]
+  const childSystemPrompt = [buildChildSystemPrompt(args.task), roleSystemPrompt]
     .filter(Boolean)
     .join('\n\n');
   const resourceLoader = new DefaultResourceLoader({
@@ -741,9 +780,10 @@ async function launchSubAgentSession(
   // Confinement hook: block every path-bearing call escaping the workspace.
   const piSession = session as unknown as {
     setBeforeToolCall?: (
-      hook: (call: { toolName: string; args: unknown }) => Promise<
-        { block: boolean; reason?: string } | void
-      >
+      hook: (call: {
+        toolName: string;
+        args: unknown;
+      }) => Promise<{ block: boolean; reason?: string } | void>
     ) => void;
     abort?: () => Promise<void> | void;
     dispose?: () => void;
@@ -753,7 +793,9 @@ async function launchSubAgentSession(
   } else {
     // Tool-level confinement (withConfinement) remains active regardless —
     // this hook would only be an additional, session-level layer.
-    logWarn('[SwarmRunner] Session-level confinement hook unavailable — tool-level confinement active');
+    logWarn(
+      '[SwarmRunner] Session-level confinement hook unavailable — tool-level confinement active'
+    );
   }
 
   const modifiedFiles = new Set<string>();
@@ -866,9 +908,7 @@ async function launchSubAgentSession(
 }
 
 /** Accept the provider usage shapes seen on message_end messages. */
-function normalizeSubAgentUsage(
-  msg: unknown
-): { input: number; output: number } | undefined {
+function normalizeSubAgentUsage(msg: unknown): { input: number; output: number } | undefined {
   if (!msg || typeof msg !== 'object') {
     return undefined;
   }
@@ -1017,7 +1057,7 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
     const appConfig = getConfig();
     const baseGuardrails = resolveGuardrails(appConfig);
     const timeoutMs = options.timeoutMsOverride ?? baseGuardrails.timeoutMs;
-    const profile = resolveSubAgentProfile(task.role, appConfig);
+    const profile = resolveSubAgentProfile(task.role, appConfig, task.criticalPath);
     const extras = options.taskExtras?.(task) ?? {};
     const personaFields = {
       ...(profile.personaName ? { personaName: profile.personaName } : {}),
@@ -1051,7 +1091,17 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
               }
             : {}),
         });
-        return await finalizeTaskResult(task, context, result, profile.label, false, profile.config, launchSession, options.cwd, timeoutMs);
+        return await finalizeTaskResult(
+          task,
+          context,
+          result,
+          profile.label,
+          false,
+          profile.config,
+          launchSession,
+          options.cwd,
+          timeoutMs
+        );
       } catch (error) {
         // A user cancellation must surface as cancelled — NOT be masked by
         // the model fallback retry (which would resurrect the aborted run).
@@ -1086,7 +1136,17 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
               }
             : {}),
         });
-        return await finalizeTaskResult(task, context, result, activeLabel, true, appConfig, launchSession, options.cwd, timeoutMs);
+        return await finalizeTaskResult(
+          task,
+          context,
+          result,
+          activeLabel,
+          true,
+          appConfig,
+          launchSession,
+          options.cwd,
+          timeoutMs
+        );
       }
     } finally {
       limiter.release();

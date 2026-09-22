@@ -190,7 +190,7 @@ export interface OpenJevConfig {
   baseUrl: string;
 }
 
-interface SubAgentProfileSelection {
+export interface SubAgentProfileSelection {
   configSetId: string;
   /** Model id inside the configSet; empty/undefined = the set's active model. */
   modelId?: string;
@@ -210,6 +210,16 @@ export interface SubAgentsConfig {
    * normalizeSubAgentsConfig migrates it to { configSetId } on read.
    */
   perRole: Partial<Record<SubAgentRoleKey, SubAgentProfileSelection>>;
+  /**
+   * Dynamic criticality tiers. A task on the structural critical path (other
+   * tasks depend on it) uses the `critical` selection when configured;
+   * terminal tasks use `economical`. Unconfigured tiers fall back to
+   * perRole > configSet > inherited, so this stays fully opt-in.
+   */
+  criticality?: {
+    critical?: SubAgentProfileSelection;
+    economical?: SubAgentProfileSelection;
+  };
   /** Per-sub-agent execution timeout in ms (default 120s, capped at 300s). */
   timeoutMs: number;
   /** Maximum sub-agents running at once (default 2, capped at 8). */
@@ -490,12 +500,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:openai',
   'custom:gemini',
 ];
-const SUB_AGENT_ROLE_KEYS: SubAgentRoleKey[] = [
-  'architect',
-  'developer',
-  'reviewer',
-  'security',
-];
+const SUB_AGENT_ROLE_KEYS: SubAgentRoleKey[] = ['architect', 'developer', 'reviewer', 'security'];
 const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
 
 function isProviderType(value: unknown): value is ProviderType {
@@ -588,9 +593,35 @@ function normalizeMemoryRuntimeConfig(raw: unknown): MemoryRuntimeConfig {
   };
 }
 
+/** Normalize one { configSetId, modelId?, personaName?, systemPrompt? } selection. */
+function normalizeProfileSelection(raw: unknown): SubAgentProfileSelection | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const selection = raw as {
+    configSetId?: unknown;
+    modelId?: unknown;
+    personaName?: unknown;
+    systemPrompt?: unknown;
+  };
+  if (typeof selection.configSetId !== 'string' || !selection.configSetId.trim()) return undefined;
+  return {
+    configSetId: selection.configSetId.trim(),
+    modelId:
+      typeof selection.modelId === 'string' && selection.modelId.trim()
+        ? selection.modelId.trim()
+        : undefined,
+    personaName:
+      typeof selection.personaName === 'string' && selection.personaName.trim()
+        ? selection.personaName.trim()
+        : undefined,
+    systemPrompt:
+      typeof selection.systemPrompt === 'string' && selection.systemPrompt.trim()
+        ? selection.systemPrompt.trim()
+        : undefined,
+  };
+}
+
 export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
-  const value =
-    typeof raw === 'object' && raw !== null ? (raw as Partial<SubAgentsConfig>) : {};
+  const value = typeof raw === 'object' && raw !== null ? (raw as Partial<SubAgentsConfig>) : {};
   const perRole: Partial<Record<SubAgentRoleKey, SubAgentProfileSelection>> = {};
   if (typeof value.perRole === 'object' && value.perRole !== null) {
     for (const key of SUB_AGENT_ROLE_KEYS) {
@@ -598,33 +629,21 @@ export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
       const entry = (value.perRole as Record<string, unknown>)[key];
       if (typeof entry === 'string' && entry.trim()) {
         perRole[key] = { configSetId: entry.trim() };
-      } else if (typeof entry === 'object' && entry !== null) {
-        const selection = entry as {
-          configSetId?: unknown;
-          modelId?: unknown;
-          personaName?: unknown;
-          systemPrompt?: unknown;
-        };
-        if (typeof selection.configSetId === 'string' && selection.configSetId.trim()) {
-          perRole[key] = {
-            configSetId: selection.configSetId.trim(),
-            modelId:
-              typeof selection.modelId === 'string' && selection.modelId.trim()
-                ? selection.modelId.trim()
-                : undefined,
-            personaName:
-              typeof selection.personaName === 'string' && selection.personaName.trim()
-                ? selection.personaName.trim()
-                : undefined,
-            systemPrompt:
-              typeof selection.systemPrompt === 'string' && selection.systemPrompt.trim()
-                ? selection.systemPrompt.trim()
-                : undefined,
-          };
-        }
+      } else {
+        const selection = normalizeProfileSelection(entry);
+        if (selection) perRole[key] = selection;
       }
     }
   }
+
+  const criticality: NonNullable<SubAgentsConfig['criticality']> = {};
+  if (typeof value.criticality === 'object' && value.criticality !== null) {
+    const critical = normalizeProfileSelection(value.criticality.critical);
+    const economical = normalizeProfileSelection(value.criticality.economical);
+    if (critical) criticality.critical = critical;
+    if (economical) criticality.economical = economical;
+  }
+
   return {
     configSetId:
       typeof value.configSetId === 'string'
@@ -633,6 +652,7 @@ export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
     modelId:
       typeof value.modelId === 'string' && value.modelId.trim() ? value.modelId.trim() : undefined,
     perRole,
+    ...(Object.keys(criticality).length > 0 ? { criticality } : {}),
     timeoutMs:
       typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs)
         ? Math.max(10_000, Math.min(300_000, Math.round(value.timeoutMs)))
@@ -671,7 +691,8 @@ function optionalTrimmedString(value: unknown): string | undefined {
  * so a corrupted config can never select a bogus route.
  */
 export function normalizeImageGenerationConfig(raw: unknown): ImageGenerationConfig {
-  const value = typeof raw === 'object' && raw !== null ? (raw as Partial<ImageGenerationConfig>) : {};
+  const value =
+    typeof raw === 'object' && raw !== null ? (raw as Partial<ImageGenerationConfig>) : {};
   const threshold = value.costConfirmThresholdUsd;
   const provider = optionalTrimmedString(value.provider);
   const customProtocol = optionalTrimmedString(value.customProtocol);
@@ -1726,8 +1747,7 @@ export class ConfigStore {
           : current.coworkInstructions,
       tavilyApiKey:
         updates.tavilyApiKey !== undefined ? updates.tavilyApiKey : current.tavilyApiKey,
-      braveApiKey:
-        updates.braveApiKey !== undefined ? updates.braveApiKey : current.braveApiKey,
+      braveApiKey: updates.braveApiKey !== undefined ? updates.braveApiKey : current.braveApiKey,
       memoryRuntime:
         updates.memoryRuntime !== undefined
           ? normalizeMemoryRuntimeConfig(updates.memoryRuntime)
@@ -1741,9 +1761,7 @@ export class ConfigStore {
           ? normalizeImageGenerationConfig(updates.imageGeneration)
           : current.imageGeneration,
       openjev:
-        updates.openjev !== undefined
-          ? normalizeOpenJevConfig(updates.openjev)
-          : current.openjev,
+        updates.openjev !== undefined ? normalizeOpenJevConfig(updates.openjev) : current.openjev,
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
     });

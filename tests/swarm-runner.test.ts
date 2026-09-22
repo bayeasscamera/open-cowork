@@ -212,6 +212,62 @@ describe('resolveSubAgentProfile', () => {
     expect(profile.source).toBe('inherited');
     expect(mocks.logWarn).toHaveBeenCalled();
   });
+
+  it('routes critical-path tasks to the criticality tier', () => {
+    const config = makeConfig({ criticality: { critical: { configSetId: 'default' } } });
+    const profile = resolveSubAgentProfile('developer', config, true);
+    expect(profile.source).toBe('criticality');
+    expect(profile.label).toBe('default/main-model');
+    expect(profile.config.apiKey).toBe('k-active');
+  });
+
+  it('routes non-critical tasks to the economical tier', () => {
+    const config = makeConfig({ criticality: { economical: { configSetId: 'cheap' } } });
+    const profile = resolveSubAgentProfile('security', config, false);
+    expect(profile.source).toBe('criticality');
+    expect(profile.label).toBe('cheap/cheap-model');
+    expect(profile.config.apiKey).toBe('k-cheap');
+  });
+
+  it('lets the criticality tier override a per-role selection', () => {
+    const config = makeConfig({
+      configSetId: 'cheap',
+      perRole: { reviewer: { configSetId: 'role-set' } },
+      criticality: { critical: { configSetId: 'default' } },
+    });
+    // Reviewer is normally pinned to role-set, but on the critical path the
+    // criticality tier wins.
+    expect(resolveSubAgentProfile('reviewer', config, true).label).toBe('default/main-model');
+    // Off the critical path the per-role selection still applies.
+    expect(resolveSubAgentProfile('reviewer', config, false).source).toBe('role');
+  });
+
+  it('pins the model selected inside a criticality tier', () => {
+    const config = makeConfig({
+      criticality: { critical: { configSetId: 'cheap', modelId: 'strong-model' } },
+    });
+    const profile = resolveSubAgentProfile('architect', config, true);
+    expect(profile.source).toBe('criticality');
+    expect(profile.label).toBe('cheap/strong-model');
+  });
+
+  it('keeps the legacy precedence when no criticality tier is configured', () => {
+    const config = makeConfig({});
+    expect(resolveSubAgentProfile('reviewer', config, true).source).toBe('role');
+    expect(resolveSubAgentProfile('reviewer', config, false).source).toBe('role');
+    expect(resolveSubAgentProfile('developer', config, true).source).toBe('configSet');
+    // Without an explicit criticality flag the static behaviour is unchanged.
+    expect(resolveSubAgentProfile('reviewer', config).source).toBe('role');
+    expect(mocks.logWarn).not.toHaveBeenCalled();
+  });
+
+  it('degrades to the next level when the criticality configSet is unknown', () => {
+    const config = makeConfig({ criticality: { critical: { configSetId: 'ghost' } } });
+    const profile = resolveSubAgentProfile('reviewer', config, true);
+    expect(profile.source).toBe('role');
+    expect(profile.label).toBe('role-set/review-model');
+    expect(mocks.logWarn).toHaveBeenCalled();
+  });
 });
 
 describe('buildConfinementHook', () => {
@@ -353,7 +409,10 @@ describe('withConfinement', () => {
   });
 
   function fakeWriteTool(): { tool: AgentTool; execute: ReturnType<typeof vi.fn> } {
-    const execute = vi.fn(async () => ({ content: [{ type: 'text', text: 'written' }], details: undefined }));
+    const execute = vi.fn(async () => ({
+      content: [{ type: 'text', text: 'written' }],
+      details: undefined,
+    }));
     const tool = {
       name: 'write',
       label: 'write',
@@ -395,12 +454,10 @@ describe('createSwarmRunner', () => {
   });
 
   it('routes the distinct sub-agent model and reports it', async () => {
-    const launchSession = vi.fn(
-      async (args: SubAgentSessionArgs) => ({
-        output: `done:${args.config.model}`,
-        modifiedFiles: [join(args.cwd, 'a.ts')],
-      })
-    );
+    const launchSession = vi.fn(async (args: SubAgentSessionArgs) => ({
+      output: `done:${args.config.model}`,
+      modifiedFiles: [join(args.cwd, 'a.ts')],
+    }));
     writeFileSync(join(cwd, 'a.ts'), 'export const a = 1;\n');
     const runner = createSwarmRunner({
       cwd,
@@ -421,9 +478,10 @@ describe('createSwarmRunner', () => {
   });
 
   it('uses the per-role model for the reviewer role', async () => {
-    const launchSession = vi.fn(
-      async (args: SubAgentSessionArgs) => ({ output: 'ok', modifiedFiles: [] })
-    );
+    const launchSession = vi.fn(async (args: SubAgentSessionArgs) => ({
+      output: 'ok',
+      modifiedFiles: [],
+    }));
     const runner = createSwarmRunner({
       cwd,
       getConfig: () => makeConfig({}),
@@ -496,9 +554,7 @@ describe('createSwarmRunner', () => {
           subscribe: (cb: (event: unknown) => void) => {
             cb({
               type: 'agent_end',
-              messages: [
-                { role: 'assistant', content: [{ type: 'text', text: 'recovered' }] },
-              ],
+              messages: [{ role: 'assistant', content: [{ type: 'text', text: 'recovered' }] }],
             });
             return () => undefined;
           },
@@ -518,9 +574,10 @@ describe('createSwarmRunner', () => {
   });
 
   it('routes a per-role modelId to the exact sub-agent session config', async () => {
-    const launchSession = vi.fn(
-      async (args: SubAgentSessionArgs) => ({ output: `done:${args.config.model}`, modifiedFiles: [] })
-    );
+    const launchSession = vi.fn(async (args: SubAgentSessionArgs) => ({
+      output: `done:${args.config.model}`,
+      modifiedFiles: [],
+    }));
     const runner = createSwarmRunner({
       cwd,
       getConfig: () =>
@@ -588,9 +645,7 @@ describe('createSwarmRunner', () => {
     expect(byRole.get('developer')?.usedFallback).toBeFalsy();
     expect(byRole.get('developer')?.modifiedFiles).toEqual([join(cwd, 'developer.txt')]);
     // The DAG dependency context flows into the sessions.
-    const developerCall = launchSession.mock.calls.find(
-      (c) => c[0].task.role === 'developer'
-    );
+    const developerCall = launchSession.mock.calls.find((c) => c[0].task.role === 'developer');
     expect(developerCall?.[0].context).toContain('architect');
   });
 

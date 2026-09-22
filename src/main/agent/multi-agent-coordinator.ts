@@ -9,6 +9,7 @@
 import { EventEmitter } from 'events';
 import { log, logError } from '../utils/logger';
 import { getCodeGraphIndexer } from '../memory/codegraph-indexer';
+import { markTaskCriticality } from './swarm-criticality';
 import {
   CROSS_VERIFICATION_COST,
   buildCodeReviewResult,
@@ -28,7 +29,7 @@ export interface AgentTask {
   role: AgentRole;
   title: string;
   prompt: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
   result?: string;
   error?: string;
   dependsOn?: string[];
@@ -47,6 +48,16 @@ export interface AgentTask {
   tokenUsage?: { input: number; output: number };
   /** Hierarchy depth: 0 for the main agent's direct sub-agents (hard cap 2). */
   depth?: number;
+  /**
+   * Structural criticality: true when at least one other task depends on this
+   * one (directly or transitively), so its failure blocks downstream work.
+   * Drives the dynamic strong/economical model selection.
+   */
+  criticalPath?: boolean;
+  /** True when the task was retried once under 'retry-failed-only'. */
+  retried?: boolean;
+  /** True when a retry recovered a previously failed task. */
+  recovered?: boolean;
 }
 
 export interface MultiAgentPlan {
@@ -64,12 +75,32 @@ export interface MultiAgentPlan {
   crossVerification?: boolean;
   /** Cross-verification outcomes (peer challenge, code review, research). */
   crossVerificationResults?: CrossVerificationResult[];
+  /** Explicit policy applied when some tasks fail. Defaults to 'fail-all'. */
+  aggregationPolicy: AggregationPolicy;
+  /** Outcome counts computed at the end of executePlan(). */
+  aggregation?: PlanAggregation;
 }
 
-export type SubAgentRunnerFn = (
-  task: AgentTask,
-  context: string
-) => Promise<SubAgentRunResult>;
+/**
+ * How a partially failed swarm is aggregated into a final plan status.
+ *  - 'fail-all' (default): any unresolved failure or skip fails the plan.
+ *  - 'partial-ok': done when at least one task completed; failures/skips are
+ *    reported but do not fail the plan.
+ *  - 'retry-failed-only': retry each failed task once, then apply 'fail-all'.
+ */
+export type AggregationPolicy = 'fail-all' | 'partial-ok' | 'retry-failed-only';
+
+/** Explicit, machine-readable outcome of one plan aggregation. */
+export interface PlanAggregation {
+  policy: AggregationPolicy;
+  completed: number;
+  failed: number;
+  skipped: number;
+  retried: number;
+  recovered: number;
+}
+
+export type SubAgentRunnerFn = (task: AgentTask, context: string) => Promise<SubAgentRunResult>;
 
 /** Result of a sub-agent run: free text plus the files the agent modified. */
 export interface SubAgentRunResult {
@@ -122,9 +153,10 @@ export class MultiAgentCoordinator extends EventEmitter {
    */
   public createCollaborativePlan(
     goal: string,
-    options?: { crossVerification?: boolean }
+    options?: { crossVerification?: boolean; aggregationPolicy?: AggregationPolicy }
   ): MultiAgentPlan {
     const crossVerification = options?.crossVerification === true;
+    const aggregationPolicy = options?.aggregationPolicy ?? 'fail-all';
     const planId = `swarm-${Date.now()}`;
     const tasks: AgentTask[] = [
       {
@@ -162,6 +194,10 @@ export class MultiAgentCoordinator extends EventEmitter {
       },
     ];
 
+    // Stamp the structural critical path before execution so the model
+    // selector can pick a strong vs economical profile per task.
+    markTaskCriticality(tasks);
+
     const plan: MultiAgentPlan = {
       id: planId,
       goal,
@@ -170,6 +206,7 @@ export class MultiAgentCoordinator extends EventEmitter {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       crossVerification,
+      aggregationPolicy,
     };
 
     this.activePlans.set(planId, plan);
@@ -178,7 +215,18 @@ export class MultiAgentCoordinator extends EventEmitter {
   }
 
   /**
-   * Execute all ready tasks in parallel adhering to dependency DAG
+   * Execute all ready tasks in parallel adhering to the dependency DAG, then
+   * aggregate the outcome according to the plan's explicit policy.
+   *
+   * Aggregation policies (see AggregationPolicy):
+   *  - 'fail-all' (default): any unresolved failure or skip fails the plan.
+   *  - 'partial-ok': the plan is done when at least one task completed; every
+   *    failure/skip is still recorded and surfaced, never silently dropped.
+   *  - 'retry-failed-only': retry each failed task ONCE, then apply 'fail-all'.
+   *
+   * Tasks blocked by a failed/skipped dependency are explicitly marked
+   * `skipped` instead of being left `pending` forever — the silent partial
+   * failure this policy was introduced to eliminate.
    */
   public async executePlan(planId: string): Promise<MultiAgentPlan> {
     const plan = this.activePlans.get(planId);
@@ -188,113 +236,21 @@ export class MultiAgentCoordinator extends EventEmitter {
     plan.updatedAt = Date.now();
     this.emit('plan:updated', plan);
 
-    let hadFailure = false;
+    await this.runDag(plan);
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      // Find all pending tasks whose dependencies are satisfied
-      const readyTasks = plan.tasks.filter((task) => {
-        if (task.status !== 'pending') return false;
-        if (!task.dependsOn || task.dependsOn.length === 0) return true;
-        return task.dependsOn.every((depId) => {
-          const depTask = plan.tasks.find((t) => t.id === depId);
-          return depTask?.status === 'completed';
-        });
-      });
-
-      // If no tasks ready, check if all tasks completed or if stuck
-      if (readyTasks.length === 0) {
-        const remaining = plan.tasks.filter((t) => t.status === 'pending' || t.status === 'in_progress');
-        if (remaining.length === 0) {
-          plan.status = hadFailure ? 'failed' : 'done';
-          break;
-        } else {
-          // Deadlock or waiting
-          break;
-        }
-      }
-
-      // Execute ready tasks concurrently
-      await Promise.all(
-        readyTasks.map(async (task) => {
-          task.status = 'in_progress';
-          task.startedAt = Date.now();
-          this.emit('task:started', { planId, task });
-
-          try {
-            // Aggregate results of previous dependencies as context. Each
-            // dependent task receives the full aggregate — reviewer AND
-            // security both get a copy — so an uncapped context multiplies
-            // token cost for long upstream outputs (measured: an architect
-            // run can produce a very large result).
-            const depContext = capDependencyContext(
-              (task.dependsOn || [])
-                .map((depId) => {
-                  const dep = plan.tasks.find((t) => t.id === depId);
-                  return `### [${dep?.role.toUpperCase()}] ${dep?.title}\n${dep?.result || ''}`;
-                })
-                .join('\n\n')
-            );
-
-            let result = '';
-            let modifiedFiles: string[] = [];
-            let usedFallback: boolean | undefined;
-            let modelUsed: string | undefined;
-            let syntaxIssues: string[] | undefined;
-            let tokenUsage: { input: number; output: number } | undefined;
-            if (this.runnerFn) {
-              const run = await this.runnerFn(task, depContext);
-              result = run.output;
-              modifiedFiles = run.modifiedFiles ?? [];
-              usedFallback = run.usedFallback;
-              modelUsed = run.modelUsed;
-              syntaxIssues = run.syntaxIssues;
-              tokenUsage = run.tokenUsage;
-            } else {
-              // Simulated execution for testing / fallback
-              result = `Output for ${task.title} verified.`;
-            }
-
-            task.status = 'completed';
-            task.result = result;
-            task.completedAt = Date.now();
-            task.modifiedFiles = modifiedFiles;
-            task.modelUsed = modelUsed;
-            task.usedFallback = usedFallback;
-            task.syntaxIssues = syntaxIssues;
-            task.tokenUsage = tokenUsage;
-            if (modelUsed) {
-              log(
-                `[MultiAgentCoordinator] Task ${task.role} (${task.id}) completed on model "${modelUsed}"` +
-                  (usedFallback ? ' — via fallback' : '')
-              );
-            }
-            this.emit('task:completed', { planId, task, modifiedFiles, usedFallback, modelUsed, syntaxIssues });
-
-            // Files a sub-agent changed are no longer fresh in the codegraph
-            // index: invalidate exactly those entries instead of waiting for
-            // the TTL or rescanning the whole workspace.
-            for (const file of modifiedFiles) {
-              try {
-                getCodeGraphIndexer().invalidateFile(file);
-              } catch (err) {
-                logError('[MultiAgentCoordinator] Failed to invalidate codegraph file:', file, err);
-              }
-            }
-          } catch (err) {
-            hadFailure = true;
-            task.status = 'failed';
-            task.error = err instanceof Error ? err.message : String(err);
-            this.emit('task:failed', { planId, task });
-            logError(`[MultiAgentCoordinator] Task ${task.id} failed:`, err);
-          }
-        })
-      );
+    if (plan.aggregationPolicy === 'retry-failed-only') {
+      // One recovery round: retry the failed tasks, re-open the dependents they
+      // had blocked, and run the DAG again. Newly failed tasks are NOT retried
+      // a second time — the whole policy stays bounded to one retry per task.
+      await this.retryFailedTasks(plan);
+      this.reopenRecoveredDependents(plan);
+      await this.runDag(plan);
     }
 
-    // OPT-IN cross-verification phase — runs AFTER the DAG, so the reviewer
-    // and security reports already exist and can be confronted. Never on the
-    // default path: it costs extra model calls (see CROSS_VERIFICATION_COST).
+    // OPT-IN cross-verification phase — runs AFTER the DAG (and any retry), so
+    // the reviewer and security reports already exist and can be confronted.
+    // Never on the default path: it costs extra model calls (see
+    // CROSS_VERIFICATION_COST).
     if (plan.crossVerification && this.runnerFn) {
       try {
         plan.crossVerificationResults = await this.runCrossVerification(plan);
@@ -305,9 +261,232 @@ export class MultiAgentCoordinator extends EventEmitter {
       }
     }
 
+    plan.aggregation = this.summarizeAggregation(plan);
+    plan.status = this.resolveAggregatedStatus(plan, plan.aggregation);
     plan.updatedAt = Date.now();
     this.emit('plan:completed', plan);
     return plan;
+  }
+
+  /**
+   * Run the DAG to quiescence: every ready task concurrently, then mark the
+   * tasks that can never become ready as skipped. A genuine cycle (nothing
+   * becomes ready and nothing can be marked) ends the loop instead of hanging.
+   */
+  private async runDag(plan: MultiAgentPlan): Promise<void> {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const readyTasks = this.getReadyTasks(plan);
+      if (readyTasks.length === 0) {
+        const stillPending = plan.tasks.some((task) => task.status === 'pending');
+        if (!stillPending) break;
+        // Pending tasks can no longer become ready: an upstream dependency
+        // failed or was skipped. Mark them skipped; a genuine deadlock (cycle
+        // or self-reference) marks nothing and ends the loop.
+        if (this.markBlockedTasksSkipped(plan) === 0) break;
+        continue;
+      }
+
+      // Execute ready tasks concurrently
+      await Promise.all(readyTasks.map((task) => this.runTask(plan, task)));
+    }
+
+    this.markBlockedTasksSkipped(plan);
+  }
+
+  /**
+   * After a successful retry, put back the tasks that were skipped only
+   * because their dependency had failed, so the DAG can finish the work the
+   * retry unblocked. Tasks whose dependencies are still not completed stay
+   * skipped.
+   */
+  private reopenRecoveredDependents(plan: MultiAgentPlan): void {
+    for (const task of plan.tasks) {
+      if (task.status !== 'skipped') continue;
+      const deps = task.dependsOn ?? [];
+      if (deps.length === 0) continue;
+      const allCompleted = deps.every(
+        (depId) => plan.tasks.find((t) => t.id === depId)?.status === 'completed'
+      );
+      if (!allCompleted) continue;
+      task.status = 'pending';
+      task.error = undefined;
+      task.completedAt = undefined;
+    }
+  }
+
+  /** Pending tasks whose dependencies have all completed. */
+  private getReadyTasks(plan: MultiAgentPlan): AgentTask[] {
+    return plan.tasks.filter((task) => {
+      if (task.status !== 'pending') return false;
+      const deps = task.dependsOn ?? [];
+      if (deps.length === 0) return true;
+      return deps.every((depId) => plan.tasks.find((t) => t.id === depId)?.status === 'completed');
+    });
+  }
+
+  /** Run one task and fold its outcome into the plan (never throws). */
+  private async runTask(plan: MultiAgentPlan, task: AgentTask): Promise<void> {
+    task.status = 'in_progress';
+    task.startedAt = Date.now();
+    this.emit('task:started', { planId: plan.id, task });
+
+    try {
+      // Each dependent task receives the full aggregate of its dependencies —
+      // reviewer AND security both get a copy — capped to keep token cost
+      // bounded for long upstream outputs.
+      const depContext = capDependencyContext(this.buildDependencyContext(plan, task));
+      const run = await this.invokeRunner(task, depContext);
+
+      this.applyTaskSuccess(task, run);
+      this.emit('task:completed', {
+        planId: plan.id,
+        task,
+        modifiedFiles: task.modifiedFiles,
+        usedFallback: task.usedFallback,
+        modelUsed: task.modelUsed,
+        syntaxIssues: task.syntaxIssues,
+      });
+      // Files a sub-agent changed are no longer fresh in the codegraph index:
+      // invalidate exactly those entries instead of rescanning the workspace.
+      this.invalidateModifiedFiles(task.modifiedFiles ?? []);
+    } catch (err) {
+      task.status = 'failed';
+      task.error = err instanceof Error ? err.message : String(err);
+      this.emit('task:failed', { planId: plan.id, task });
+      logError(`[MultiAgentCoordinator] Task ${task.id} failed:`, err);
+    }
+  }
+
+  /** Simulated execution when no runner is configured (tests / fallback). */
+  private async invokeRunner(task: AgentTask, context: string): Promise<SubAgentRunResult> {
+    if (!this.runnerFn) {
+      return { output: `Output for ${task.title} verified.` };
+    }
+    return this.runnerFn(task, context);
+  }
+
+  /** Copy a successful runner result onto the task. */
+  private applyTaskSuccess(task: AgentTask, run: SubAgentRunResult): void {
+    task.status = 'completed';
+    task.result = run.output;
+    task.completedAt = Date.now();
+    task.modifiedFiles = run.modifiedFiles ?? [];
+    task.usedFallback = run.usedFallback;
+    task.modelUsed = run.modelUsed;
+    task.syntaxIssues = run.syntaxIssues;
+    task.tokenUsage = run.tokenUsage;
+    task.error = undefined;
+    if (run.modelUsed) {
+      log(
+        `[MultiAgentCoordinator] Task ${task.role} (${task.id}) completed on model "${run.modelUsed}"` +
+          (run.usedFallback ? ' — via fallback' : '')
+      );
+    }
+  }
+
+  /** Upstream results handed to a dependent task, formatted for the prompt. */
+  private buildDependencyContext(plan: MultiAgentPlan, task: AgentTask): string {
+    return (task.dependsOn ?? [])
+      .map((depId) => {
+        const dep = plan.tasks.find((t) => t.id === depId);
+        return `### [${dep?.role.toUpperCase()}] ${dep?.title}\n${dep?.result || ''}`;
+      })
+      .join('\n\n');
+  }
+
+  /**
+   * Mark every pending task blocked by a failed/skipped (or unknown)
+   * dependency as `skipped`, transitively. Returns how many were marked so the
+   * caller can distinguish a recoverable block from a true cycle deadlock.
+   */
+  private markBlockedTasksSkipped(plan: MultiAgentPlan): number {
+    let marked = 0;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const task of plan.tasks) {
+        if (task.status !== 'pending') continue;
+        const deps = task.dependsOn ?? [];
+        if (deps.length === 0) continue;
+        const blocker = deps.find((depId) => {
+          const dep = plan.tasks.find((t) => t.id === depId);
+          return !dep || dep.status === 'failed' || dep.status === 'skipped';
+        });
+        if (!blocker) continue;
+        task.status = 'skipped';
+        task.error = `Skipped: upstream task ${blocker} did not complete`;
+        task.completedAt = Date.now();
+        this.emit('task:skipped', { planId: plan.id, task });
+        marked++;
+        changed = true;
+      }
+    }
+    return marked;
+  }
+
+  /**
+   * Retry each failed task exactly once, sequentially. Successful retries
+   * become `completed`/`recovered`; the rest stay `failed` with their latest
+   * error. Never re-runs successful work and never loops.
+   */
+  private async retryFailedTasks(plan: MultiAgentPlan): Promise<void> {
+    if (!this.runnerFn) return;
+    const failed = plan.tasks.filter((task) => task.status === 'failed');
+    for (const task of failed) {
+      task.retried = true;
+      task.status = 'in_progress';
+      try {
+        const depContext = capDependencyContext(this.buildDependencyContext(plan, task));
+        const run = await this.runnerFn(task, depContext);
+        this.applyTaskSuccess(task, run);
+        task.recovered = true;
+        this.invalidateModifiedFiles(task.modifiedFiles ?? []);
+        log(`[MultiAgentCoordinator] Retry recovered task ${task.id}`);
+      } catch (err) {
+        task.status = 'failed';
+        task.error = err instanceof Error ? err.message : String(err);
+        logError(`[MultiAgentCoordinator] Retry of task ${task.id} failed:`, err);
+      }
+    }
+  }
+
+  /** Counts every task status for the plan's explicit aggregation report. */
+  private summarizeAggregation(plan: MultiAgentPlan): PlanAggregation {
+    const count = (status: AgentTask['status']): number =>
+      plan.tasks.filter((task) => task.status === status).length;
+    return {
+      policy: plan.aggregationPolicy,
+      completed: count('completed'),
+      failed: count('failed'),
+      skipped: count('skipped'),
+      retried: plan.tasks.filter((task) => task.retried).length,
+      recovered: plan.tasks.filter((task) => task.recovered).length,
+    };
+  }
+
+  /**
+   * Final plan status from the aggregation counts. Total failure is a failure
+   * under every policy; otherwise only 'partial-ok' tolerates failures/skips.
+   */
+  private resolveAggregatedStatus(
+    plan: MultiAgentPlan,
+    aggregation: PlanAggregation
+  ): 'done' | 'failed' {
+    if (aggregation.completed === 0) return 'failed';
+    if (plan.aggregationPolicy === 'partial-ok') return 'done';
+    return aggregation.failed === 0 && aggregation.skipped === 0 ? 'done' : 'failed';
+  }
+
+  /** Drop modified files from the shared codegraph index (best effort). */
+  private invalidateModifiedFiles(files: string[]): void {
+    for (const file of files) {
+      try {
+        getCodeGraphIndexer().invalidateFile(file);
+      } catch (err) {
+        logError('[MultiAgentCoordinator] Failed to invalidate codegraph file:', file, err);
+      }
+    }
   }
 
   /**
@@ -356,13 +535,7 @@ export class MultiAgentCoordinator extends EventEmitter {
           developer.modelUsed = run.modelUsed ?? developer.modelUsed;
           // Same freshness rule as the DAG path: files this re-run touched are
           // no longer fresh in the codegraph index.
-          for (const file of run.modifiedFiles ?? []) {
-            try {
-              getCodeGraphIndexer().invalidateFile(file);
-            } catch (err) {
-              logError('[MultiAgentCoordinator] Failed to invalidate codegraph file:', file, err);
-            }
-          }
+          this.invalidateModifiedFiles(run.modifiedFiles ?? []);
           if (run.tokenUsage) {
             const base = developer.tokenUsage ?? { input: 0, output: 0 };
             developer.tokenUsage = {
