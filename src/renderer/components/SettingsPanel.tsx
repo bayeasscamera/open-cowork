@@ -11,6 +11,7 @@ import {
   Globe,
   Sparkles,
   BrainCircuit,
+  Network,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -26,12 +27,14 @@ import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
 import { SettingsPersonalization } from './settings/SettingsPersonalization';
+import { SubAgentsView } from './subagents/SubAgentsView';
 
 interface SettingsPanelProps {
   onClose: () => void;
   initialTab?:
     | 'api'
     | 'sandbox'
+    | 'subagents'
     | 'connectors'
     | 'skills'
     | 'personalization'
@@ -45,6 +48,7 @@ interface SettingsPanelProps {
 type TabId =
   | 'api'
   | 'sandbox'
+  | 'subagents'
   | 'connectors'
   | 'skills'
   | 'personalization'
@@ -57,6 +61,7 @@ type TabId =
 const VALID_TABS = new Set<TabId>([
   'api',
   'sandbox',
+  'subagents',
   'connectors',
   'skills',
   'personalization',
@@ -73,7 +78,7 @@ interface TabGroup {
 }
 
 const TAB_GROUPS: TabGroup[] = [
-  { labelKey: 'settings.groupModel', tabs: ['api', 'sandbox'] },
+  { labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents'] },
   { labelKey: 'settings.groupExtensions', tabs: ['connectors', 'skills'] },
   { labelKey: 'settings.groupPersonal', tabs: ['personalization', 'memory'] },
   { labelKey: 'settings.groupAutomation', tabs: ['schedule', 'remote'] },
@@ -135,6 +140,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.sandbox'),
       icon: Shield,
       description: t('settings.sandboxDesc'),
+    },
+    {
+      id: 'subagents' as TabId,
+      label: t('settings.subAgents'),
+      icon: Network,
+      description: t('settings.subAgentsDesc'),
     },
     {
       id: 'connectors' as TabId,
@@ -234,9 +245,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
                         title={compactSidebar ? tab.label : undefined}
                         aria-current={isActive ? 'page' : undefined}
                         className={`relative w-full flex items-center rounded-xl text-left transition-all duration-150 active:scale-[0.98] ${
-                          compactSidebar
-                            ? 'justify-center p-2.5'
-                            : 'gap-3 px-2.5 py-2.5'
+                          compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-2.5 py-2.5'
                         } ${
                           isActive
                             ? 'bg-accent/10 text-text-primary'
@@ -296,76 +305,86 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
 
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 panel-glass">
-          <div>
-            <p className="text-[11px] text-text-muted">
-              {t('settings.title')}
-              {activeGroupLabel && <> › {t(activeGroupLabel.labelKey)}</>}
-            </p>
-            <h3 className="mt-1 text-[1.3rem] font-semibold tracking-[-0.03em] text-text-primary">
-              {activeTabMeta?.label}
-            </h3>
-            <div className="accent-underline mt-1.5 w-14" />
-            {activeTabMeta?.description && (
-              <p className="mt-2 text-sm text-text-muted max-w-[36rem]">
-                {activeTabMeta.description}
-              </p>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
-          >
-            <X className="w-5 h-5 text-text-secondary" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
-          <div className="max-w-[860px] w-full min-w-0 mx-auto">
-            <div className="">
-              <div className={activeTab === 'api' ? '' : 'hidden'}>
-                {viewedTabs.has('api') && (
-                  <>
-                    <SettingsAPI />
-                  </>
+        {activeTab === 'subagents' ? (
+          // The interface owns its header and scrolling; skipping the settings
+          // chrome keeps the sidebar view and this tab identical.
+          <SubAgentsView onClose={onClose} />
+        ) : (
+          <>
+            <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 panel-glass">
+              <div>
+                <p className="text-[11px] text-text-muted">
+                  {t('settings.title')}
+                  {activeGroupLabel && <> › {t(activeGroupLabel.labelKey)}</>}
+                </p>
+                <h3 className="mt-1 text-[1.3rem] font-semibold tracking-[-0.03em] text-text-primary">
+                  {activeTabMeta?.label}
+                </h3>
+                <div className="accent-underline mt-1.5 w-14" />
+                {activeTabMeta?.description && (
+                  <p className="mt-2 text-sm text-text-muted max-w-[36rem]">
+                    {activeTabMeta.description}
+                  </p>
                 )}
               </div>
-              <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
-                {viewedTabs.has('sandbox') && <SettingsSandbox />}
-              </div>
-              <div className={activeTab === 'connectors' ? '' : 'hidden'}>
-                {viewedTabs.has('connectors') && (
-                  <SettingsConnectors isActive={activeTab === 'connectors'} />
-                )}
-              </div>
-              <div className={activeTab === 'skills' ? '' : 'hidden'}>
-                <SettingsMods />
-                {viewedTabs.has('skills') && <SettingsSkills isActive={activeTab === 'skills'} />}
-              </div>
-              <div className={activeTab === 'personalization' ? '' : 'hidden'}>
-                {viewedTabs.has('personalization') && <SettingsPersonalization />}
-              </div>
-              <div className={activeTab === 'memory' ? '' : 'hidden'}>
-                {viewedTabs.has('memory') && <SettingsMemory />}
-              </div>
-              <div className={activeTab === 'schedule' ? '' : 'hidden'}>
-                {viewedTabs.has('schedule') && (
-                  <SettingsSchedule isActive={activeTab === 'schedule'} />
-                )}
-              </div>
-              <div className={activeTab === 'remote' ? '' : 'hidden'}>
-                {viewedTabs.has('remote') && (
-                  <RemoteControlPanel isActive={activeTab === 'remote'} />
-                )}
-              </div>
-              <div className={activeTab === 'logs' ? '' : 'hidden'}>
-                {viewedTabs.has('logs') && <SettingsLogs isActive={activeTab === 'logs'} />}
-              </div>
-              <div className={activeTab === 'general' ? '' : 'hidden'}>
-                {viewedTabs.has('general') && <SettingsGeneral />}
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
+              >
+                <X className="w-5 h-5 text-text-secondary" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
+              <div className="max-w-[860px] w-full min-w-0 mx-auto">
+                <div className="">
+                  <div className={activeTab === 'api' ? '' : 'hidden'}>
+                    {viewedTabs.has('api') && (
+                      <>
+                        <SettingsAPI />
+                      </>
+                    )}
+                  </div>
+                  <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
+                    {viewedTabs.has('sandbox') && <SettingsSandbox />}
+                  </div>
+                  <div className={activeTab === 'connectors' ? '' : 'hidden'}>
+                    {viewedTabs.has('connectors') && (
+                      <SettingsConnectors isActive={activeTab === 'connectors'} />
+                    )}
+                  </div>
+                  <div className={activeTab === 'skills' ? '' : 'hidden'}>
+                    <SettingsMods />
+                    {viewedTabs.has('skills') && (
+                      <SettingsSkills isActive={activeTab === 'skills'} />
+                    )}
+                  </div>
+                  <div className={activeTab === 'personalization' ? '' : 'hidden'}>
+                    {viewedTabs.has('personalization') && <SettingsPersonalization />}
+                  </div>
+                  <div className={activeTab === 'memory' ? '' : 'hidden'}>
+                    {viewedTabs.has('memory') && <SettingsMemory />}
+                  </div>
+                  <div className={activeTab === 'schedule' ? '' : 'hidden'}>
+                    {viewedTabs.has('schedule') && (
+                      <SettingsSchedule isActive={activeTab === 'schedule'} />
+                    )}
+                  </div>
+                  <div className={activeTab === 'remote' ? '' : 'hidden'}>
+                    {viewedTabs.has('remote') && (
+                      <RemoteControlPanel isActive={activeTab === 'remote'} />
+                    )}
+                  </div>
+                  <div className={activeTab === 'logs' ? '' : 'hidden'}>
+                    {viewedTabs.has('logs') && <SettingsLogs isActive={activeTab === 'logs'} />}
+                  </div>
+                  <div className={activeTab === 'general' ? '' : 'hidden'}>
+                    {viewedTabs.has('general') && <SettingsGeneral />}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

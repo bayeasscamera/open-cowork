@@ -141,6 +141,8 @@
     "apiSettingsDesc": "配置 API 提供商和密钥",
     "sandbox": "沙盒",
     "sandboxDesc": "隔离执行环境",
+    "subAgents": "子智能体",
+    "subAgentsDesc": "角色人设、按角色分配模型与委派防护",
     "connectors": "MCP 连接器",
     "connectorsDesc": "浏览器和工具集成",
     "skills": "技能",

@@ -25,7 +25,10 @@ export interface SubAgentsDraft {
   /** Model pinned inside the selected configSet (empty = its active model). */
   modelId?: string;
   perRole: Partial<
-    Record<SubAgentRoleKey, { configSetId: string; modelId?: string; personaName?: string; systemPrompt?: string }>
+    Record<
+      SubAgentRoleKey,
+      { configSetId: string; modelId?: string; personaName?: string; systemPrompt?: string }
+    >
   >;
   timeoutMs: number;
   maxConcurrent: number;
@@ -53,7 +56,10 @@ export function buildSubAgentsUpdate(draft: SubAgentsDraft): SubAgentsDraft {
     if (typeof selection?.configSetId === 'string' && selection.configSetId.trim()) {
       perRole[role] = {
         configSetId: selection.configSetId.trim(),
-        modelId: typeof selection.modelId === 'string' && selection.modelId.trim() ? selection.modelId.trim() : undefined,
+        modelId:
+          typeof selection.modelId === 'string' && selection.modelId.trim()
+            ? selection.modelId.trim()
+            : undefined,
         personaName:
           typeof selection.personaName === 'string' && selection.personaName.trim()
             ? selection.personaName.trim()
@@ -67,7 +73,8 @@ export function buildSubAgentsUpdate(draft: SubAgentsDraft): SubAgentsDraft {
   }
   return {
     configSetId: typeof draft.configSetId === 'string' ? draft.configSetId.trim() : '',
-    modelId: typeof draft.modelId === 'string' && draft.modelId.trim() ? draft.modelId.trim() : undefined,
+    modelId:
+      typeof draft.modelId === 'string' && draft.modelId.trim() ? draft.modelId.trim() : undefined,
     perRole,
     timeoutMs: clamp(
       Math.round(Number(draft.timeoutMs) || DEFAULT_TIMEOUT_MS),
@@ -82,7 +89,12 @@ export function buildSubAgentsUpdate(draft: SubAgentsDraft): SubAgentsDraft {
   };
 }
 
-type RoleSelection = { configSetId: string; modelId?: string; personaName?: string; systemPrompt?: string };
+type RoleSelection = {
+  configSetId: string;
+  modelId?: string;
+  personaName?: string;
+  systemPrompt?: string;
+};
 
 /** Merge a partial role patch into the existing selection (empty set id clears the role). */
 function mergeRoleSelection(
@@ -113,7 +125,10 @@ function OpenJevSection() {
   };
 
   return (
-    <SettingsContentSection title={t('subAgents.openjevTitle')} description={t('subAgents.openjevDescription')}>
+    <SettingsContentSection
+      title={t('subAgents.openjevTitle')}
+      description={t('subAgents.openjevDescription')}
+    >
       <label className="flex items-center gap-2 text-sm text-text-primary">
         <input
           type="checkbox"
@@ -140,15 +155,23 @@ function OpenJevSection() {
 }
 
 /**
- * Dedicated full-width Sub-agents view (sidebar entry at the same level as the
- * projects pages). Groups everything built around sub-agents: role personas,
- * per-role model selector, guardrails, async delegations, cost transparency.
- * Persists through the SAME IPC config.get/config.save channel as before —
- * only the navigation surface changed.
+ * The sub-agents interface: role personas, per-role model selector, guardrails,
+ * async delegations, pending skill proposals and cost transparency.
+ *
+ * One implementation, two hosts: the dedicated sidebar view (no onClose, so the
+ * close button clears `subAgentsVisible`) and the Settings → Sub-agents tab,
+ * which passes the settings panel's own close handler. Both persist through the
+ * SAME IPC config.get/config.save channel.
  */
-export function SubAgentsView() {
+export function SubAgentsView({ onClose }: { onClose?: () => void } = {}) {
   const { t } = useTranslation();
   const setSubAgentsVisible = useAppStore((s) => s.setSubAgentsVisible);
+  // Settings hosts this interface too; there the close button must dismiss the
+  // settings panel rather than the sidebar view.
+  const handleClose = (): void => {
+    if (onClose) onClose();
+    else setSubAgentsVisible(false);
+  };
   const [sets, setSets] = useState<ConfigSetLite[]>([]);
   const [draft, setDraft] = useState<SubAgentsDraft>({
     configSetId: '',
@@ -252,7 +275,7 @@ export function SubAgentsView() {
             </p>
           </div>
           <button
-            onClick={() => setSubAgentsVisible(false)}
+            onClick={handleClose}
             className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
             aria-label={t('common.close')}
           >
@@ -273,7 +296,9 @@ export function SubAgentsView() {
                   <h4 className="text-sm font-semibold text-text-primary">
                     {t('subAgents.delegationTitle')}
                   </h4>
-                  <p className="text-xs leading-5 text-text-muted">{t('subAgents.delegationDescription')}</p>
+                  <p className="text-xs leading-5 text-text-muted">
+                    {t('subAgents.delegationDescription')}
+                  </p>
                 </div>
                 {/* Same form the tracking panel's gear renders — one implementation. */}
                 <DelegationSettingsForm />
@@ -295,7 +320,9 @@ export function SubAgentsView() {
                 >
                   {t('subAgents.save')}
                 </button>
-                {saved && <span className="text-xs text-text-secondary">{t('subAgents.saved')}</span>}
+                {saved && (
+                  <span className="text-xs text-text-secondary">{t('subAgents.saved')}</span>
+                )}
                 {error && <span className="text-xs text-rose-500">{t(`subAgents.${error}`)}</span>}
                 <span className="text-[11px] text-text-muted">{t('subAgents.saveScopeHint')}</span>
               </div>
@@ -325,7 +352,10 @@ function ProfileSection({
   setDraft: React.Dispatch<React.SetStateAction<SubAgentsDraft>>;
 }) {
   return (
-    <SettingsContentSection title={t('subAgents.profileTitle')} description={t('subAgents.profileDescription')}>
+    <SettingsContentSection
+      title={t('subAgents.profileTitle')}
+      description={t('subAgents.profileDescription')}
+    >
       <label className="flex items-center gap-2 text-sm text-text-primary">
         <input
           type="checkbox"
@@ -334,7 +364,7 @@ function ProfileSection({
           onChange={(e) =>
             setDraft((prev) => ({
               ...prev,
-              configSetId: e.target.checked ? sets.find((s) => s.id)?.id ?? '' : '',
+              configSetId: e.target.checked ? (sets.find((s) => s.id)?.id ?? '') : '',
             }))
           }
         />
@@ -347,7 +377,11 @@ function ProfileSection({
             sets={sets}
             value={{ configSetId: draft.configSetId, modelId: draft.modelId }}
             onChange={(next) =>
-              setDraft((prev) => ({ ...prev, configSetId: next.configSetId, modelId: next.modelId }))
+              setDraft((prev) => ({
+                ...prev,
+                configSetId: next.configSetId,
+                modelId: next.modelId,
+              }))
             }
             disabled={busy}
             configSetLabel={t('subAgents.configSet')}
@@ -363,7 +397,14 @@ function ProfileSection({
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {SUB_AGENT_ROLES.map((role) => {
             const selection = draft.perRole[role];
-            const patch = (p: Partial<{ configSetId: string; modelId?: string; personaName?: string; systemPrompt?: string }>) =>
+            const patch = (
+              p: Partial<{
+                configSetId: string;
+                modelId?: string;
+                personaName?: string;
+                systemPrompt?: string;
+              }>
+            ) =>
               setDraft((prev) => ({
                 ...prev,
                 perRole: {
@@ -372,7 +413,10 @@ function ProfileSection({
                 },
               }));
             return (
-              <div key={role} className="flex flex-col gap-1.5 rounded-lg border border-border-subtle p-2">
+              <div
+                key={role}
+                className="flex flex-col gap-1.5 rounded-lg border border-border-subtle p-2"
+              >
                 <ConfigSetModelPicker
                   sets={sets}
                   value={{
@@ -431,7 +475,10 @@ function GuardrailsSection({
   setDraft: React.Dispatch<React.SetStateAction<SubAgentsDraft>>;
 }) {
   return (
-    <SettingsContentSection title={t('subAgents.guardrailsTitle')} description={t('subAgents.guardrailsDescription')}>
+    <SettingsContentSection
+      title={t('subAgents.guardrailsTitle')}
+      description={t('subAgents.guardrailsDescription')}
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="text-sm text-text-secondary">
           {t('subAgents.timeout')}
@@ -481,15 +528,13 @@ function GuardrailsSection({
 // Section 5 — diagnostics (execution stats + skill-doctor link)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CostSection({
-  t,
-}: {
-  t: (key: string, options?: Record<string, unknown>) => string;
-}) {
+function CostSection({ t }: { t: (key: string, options?: Record<string, unknown>) => string }) {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
   const setSubAgentsVisible = useAppStore((s) => s.setSubAgentsVisible);
-  const [stats, setStats] = useState<{ swarm: SwarmStats; delegations: DelegationStats } | null>(null);
+  const [stats, setStats] = useState<{ swarm: SwarmStats; delegations: DelegationStats } | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -525,7 +570,10 @@ function CostSection({
 
   return (
     <>
-      <SettingsContentSection title={t('subAgents.costTitle')} description={t('subAgents.costDescription')}>
+      <SettingsContentSection
+        title={t('subAgents.costTitle')}
+        description={t('subAgents.costDescription')}
+      >
         <ul className="list-disc pl-5 text-xs leading-5 text-text-secondary space-y-1">
           <li>{t('subAgents.costMeasured')}</li>
           <li>{t('subAgents.costWhenToUse')}</li>
@@ -537,9 +585,10 @@ function CostSection({
                 <p>
                   {t('subAgents.lastSwarmRun', {
                     seconds: lastRunSeconds,
-                    date: new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
-                      new Date(swarm.lastRunAt)
-                    ),
+                    date: new Intl.DateTimeFormat(undefined, {
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    }).format(new Date(swarm.lastRunAt)),
                   })}
                 </p>
                 <p className="mt-1">
@@ -558,9 +607,16 @@ function CostSection({
         )}
       </SettingsContentSection>
 
-      <SettingsContentSection title={t('subAgents.diagnosticsTitle')} description={t('subAgents.diagnosticsDescription')}>
+      <SettingsContentSection
+        title={t('subAgents.diagnosticsTitle')}
+        description={t('subAgents.diagnosticsDescription')}
+      >
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat label={t('subAgents.statSwarms')} value={swarm ? String(swarm.totalSwarms) : '—'} loading={loading} />
+          <Stat
+            label={t('subAgents.statSwarms')}
+            value={swarm ? String(swarm.totalSwarms) : '—'}
+            loading={loading}
+          />
           <Stat
             label={t('subAgents.statSuccessRate')}
             value={swarm ? pct(swarm.succeededSwarms, swarm.totalSwarms) : '—'}
@@ -574,9 +630,7 @@ function CostSection({
           <Stat
             label={t('subAgents.statDelegations')}
             value={
-              deleg
-                ? `${deleg.completed + deleg.failed + deleg.cancelled}/${deleg.total}`
-                : '—'
+              deleg ? `${deleg.completed + deleg.failed + deleg.cancelled}/${deleg.total}` : '—'
             }
             loading={loading}
           />
@@ -603,21 +657,11 @@ function CostSection({
   );
 }
 
-function Stat({
-  label,
-  value,
-  loading,
-}: {
-  label: string;
-  value: string;
-  loading: boolean;
-}) {
+function Stat({ label, value, loading }: { label: string; value: string; loading: boolean }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-surface-muted/40 px-3 py-2">
       <div className="text-[10px] uppercase tracking-wider text-text-muted">{label}</div>
-      <div className="mt-0.5 text-sm font-semibold text-text-primary">
-        {loading ? '…' : value}
-      </div>
+      <div className="mt-0.5 text-sm font-semibold text-text-primary">{loading ? '…' : value}</div>
     </div>
   );
 }

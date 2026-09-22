@@ -108,9 +108,23 @@ describe('settings sub-agents UI → persisted config', () => {
     expect(source).not.toContain("ipcRenderer.invoke('config.subAgents");
   });
 
-  it('the section is NOT rendered inside the API settings tab anymore', () => {
+  it('the API tab does not embed a duplicate sub-agents section', () => {
+    // The interface is reachable from Settings → Sub-agents, but only through
+    // the shared view; the old inline copy inside the API tab is gone.
     const panel = readFileSync(resolve(root, 'src/renderer/components/SettingsPanel.tsx'), 'utf8');
     expect(panel).not.toContain('SettingsSubAgents');
+    expect(panel).toContain("import { SubAgentsView } from './subagents/SubAgentsView'");
+    expect(panel).toContain("label: t('settings.subAgents')");
+  });
+
+  it('the Settings → Sub-agents labels exist in en, fr and zh', () => {
+    for (const lang of ['en', 'fr', 'zh']) {
+      const settings = JSON.parse(
+        readFileSync(resolve(root, `src/renderer/i18n/locales/${lang}.json`), 'utf8')
+      ).settings as { subAgents?: string; subAgentsDesc?: string };
+      expect(settings.subAgents, `settings.subAgents missing in ${lang}`).toBeTruthy();
+      expect(settings.subAgentsDesc, `settings.subAgentsDesc missing in ${lang}`).toBeTruthy();
+    }
   });
 
   it('labels exist in en, fr and zh with identical key sets', () => {

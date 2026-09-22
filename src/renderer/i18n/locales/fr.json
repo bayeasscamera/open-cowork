@@ -265,6 +265,8 @@
     "apiSettingsDesc": "Configurer le fournisseur et la clé API",
     "sandbox": "Bac à sable (Sandbox)",
     "sandboxDesc": "Environnement d’exécution isolé",
+    "subAgents": "Sous-agents",
+    "subAgentsDesc": "Personas de rôle, modèles par rôle et garde-fous de délégation",
     "connectors": "Connecteurs MCP",
     "connectorsDesc": "Intégrations navigateur et outils",
     "skills": "Compétences (Skills)",

@@ -6,10 +6,29 @@ const root = resolve(__dirname, '..');
 const read = (p: string): string => readFileSync(resolve(root, p), 'utf-8');
 
 describe('dedicated Sub-agents view navigation', () => {
-  it('the old settings tab no longer embeds SettingsSubAgents', () => {
+  it('the duplicated SettingsSubAgents screen is gone for good', () => {
+    // Regression: a second, drifted copy of the interface used to live inline
+    // in the API tab.
     expect(existsSync(resolve(root, 'src/renderer/components/settings/SettingsSubAgents.tsx'))).toBe(false);
     const panel = read('src/renderer/components/SettingsPanel.tsx');
     expect(panel).not.toContain('SettingsSubAgents');
+  });
+
+  it('Settings exposes its own Sub-agents tab, hosting the shared view', () => {
+    // Product requirement: the sub-agents interface must be reachable from
+    // Settings, not only from the sidebar. It reuses the SAME component (one
+    // implementation, two hosts) instead of reintroducing a copy.
+    const panel = read('src/renderer/components/SettingsPanel.tsx');
+    expect(panel).toContain("import { SubAgentsView } from './subagents/SubAgentsView'");
+    expect(panel).toContain("id: 'subagents' as TabId");
+    expect(panel).toContain("label: t('settings.subAgents')");
+    expect(panel).toContain("labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents']");
+    // The host supplies the close action; the sidebar host falls back to the
+    // store flag.
+    expect(panel).toContain('<SubAgentsView onClose={onClose} />');
+    const view = read('src/renderer/components/subagents/SubAgentsView.tsx');
+    expect(view).toContain('export function SubAgentsView({ onClose }');
+    expect(view).toContain('if (onClose) onClose();');
   });
 
   it('the sidebar exposes a Sub-agents entry that opens the dedicated view', () => {

@@ -141,6 +141,8 @@
     "apiSettingsDesc": "Configure API provider and key",
     "sandbox": "Sandbox",
     "sandboxDesc": "Isolated execution environment",
+    "subAgents": "Sub-agents",
+    "subAgentsDesc": "Role personas, per-role models and delegation guardrails",
     "connectors": "MCP Connectors",
     "connectorsDesc": "Browser & tool integrations",
     "skills": "Skills",
