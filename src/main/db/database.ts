@@ -278,6 +278,13 @@ function initializeSchema(database: Database.Database): void {
     database.pragma('synchronous = NORMAL');
     database.pragma('cache_size = -64000'); // 64MB cache
     database.pragma('temp_store = MEMORY');
+    // Multi-process contract: the GUI process, a `--headless` process and a
+    // second app launch can all hold cowork.db open at once. WAL allows one
+    // writer at a time, so every other writer must WAIT for the lock instead
+    // of failing instantly. This is set explicitly rather than inherited from
+    // better-sqlite3's implicit 5000ms constructor default, so a future
+    // `new Database(path, { timeout })` cannot silently drop the guarantee.
+    database.pragma('busy_timeout = 5000');
 
     // Create sessions table
     database.exec(`
@@ -517,6 +524,119 @@ function ensureColumn(
 }
 
 /**
+ * SQLite lock errors that are worth retrying.
+ *
+ * WAL admits one writer at a time; the others wait inside SQLite for
+ * `busy_timeout` milliseconds. When that wait expires the statement throws
+ * SQLITE_BUSY — or SQLITE_BUSY_SNAPSHOT when a deferred read-then-write
+ * transaction holds a stale snapshot, which the busy handler does NOT retry.
+ * Because several Open Cowork processes can share cowork.db, a write that
+ * loses this race must be retried or fail with a clear log, never crash the
+ * main process.
+ */
+function isSqliteLockError(error: unknown): error is { code: string } {
+  const code = (error as { code?: unknown } | null)?.code;
+  return (
+    typeof code === 'string' && (code.startsWith('SQLITE_BUSY') || code.startsWith('SQLITE_LOCKED'))
+  );
+}
+
+/**
+ * Block the calling thread for a short backoff. better-sqlite3 is synchronous,
+ * so there is no awaitable sleep on this path.
+ */
+function sleepSync(milliseconds: number): void {
+  if (milliseconds <= 0) return;
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(signal, 0, 0, milliseconds);
+}
+
+/**
+ * Thrown when a write never obtained the SQLite write lock. Callers can catch
+ * this to report a clean, actionable failure instead of a cryptic driver error.
+ */
+export class DatabaseWriteLockedError extends Error {
+  readonly code: string;
+  readonly operation: string;
+
+  constructor(operation: string, attempts: number, cause: unknown) {
+    super(
+      `Database write "${operation}" could not acquire the SQLite write lock after ${attempts} attempts; another Open Cowork process is holding it.`
+    );
+    this.name = 'DatabaseWriteLockedError';
+    this.operation = operation;
+    this.code = isSqliteLockError(cause) ? cause.code : 'SQLITE_BUSY';
+    this.cause = cause;
+  }
+}
+
+// One retry on top of the 5000ms the connection already waits inside SQLite.
+// Worst case for a contended write is therefore ~10s of in-process blocking,
+// which is only reached when another process holds the lock the whole time;
+// the alternative — dropping the write — is worse for data integrity.
+const WRITE_LOCK_ATTEMPTS = 2;
+const WRITE_LOCK_BACKOFF_MS = 200;
+
+/**
+ * Run a write, retrying only lock contention. Any other error (constraint
+ * violation, bug) propagates immediately so it is never hidden by a retry.
+ */
+export function runWithWriteLockRetry<T>(operation: string, run: () => T): T {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= WRITE_LOCK_ATTEMPTS; attempt += 1) {
+    try {
+      return run();
+    } catch (error) {
+      if (!isSqliteLockError(error)) throw error;
+      lastError = error;
+      if (attempt < WRITE_LOCK_ATTEMPTS) {
+        logWarn(
+          `[Database] Write "${operation}" blocked by another process (${error.code}), retrying after ${WRITE_LOCK_BACKOFF_MS}ms`
+        );
+        sleepSync(WRITE_LOCK_BACKOFF_MS);
+      }
+    }
+  }
+  const locked = new DatabaseWriteLockedError(operation, WRITE_LOCK_ATTEMPTS, lastError);
+  logError(locked.message);
+  throw locked;
+}
+
+/**
+ * Route every statement's `run()` (the INSERT/UPDATE/DELETE path) through
+ * runWithWriteLockRetry. Only `run` is wrapped: reads, `.all()`, `.get()`,
+ * `.exec()` and DDL keep their exact behaviour. Wrapping at the connection
+ * level means a write added later is protected by construction.
+ */
+function createLockResilientDatabase(database: Database.Database): Database.Database {
+  return new Proxy(database, {
+    get(target, property) {
+      if (property === 'prepare') {
+        return (source: string): Database.Statement => {
+          const statement = target.prepare(source);
+          const originalRun = statement.run.bind(statement);
+          const label = source.replace(/\s+/g, ' ').trim().slice(0, 80);
+          return new Proxy(statement, {
+            get(statementTarget, statementProperty) {
+              if (statementProperty === 'run') {
+                return (...parameters: unknown[]) =>
+                  runWithWriteLockRetry(label, () =>
+                    (originalRun as (...args: unknown[]) => unknown)(...parameters)
+                  );
+              }
+              const value = Reflect.get(statementTarget, statementProperty, statementTarget);
+              return typeof value === 'function' ? value.bind(statementTarget) : value;
+            },
+          }) as Database.Statement;
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as Database.Database;
+}
+
+/**
  * Initialize the database
  */
 export function initDatabase(): DatabaseInstance {
@@ -538,6 +658,11 @@ export function initDatabase(): DatabaseInstance {
 
   // Initialize schema
   initializeSchema(rawDb);
+
+  // From here on, every statement prepared through `rawDb` retries write-lock
+  // contention from another process instead of throwing on the first
+  // SQLITE_BUSY (see createLockResilientDatabase).
+  rawDb = createLockResilientDatabase(rawDb);
 
   // Prepare statements for better performance
   const insertSession = rawDb.prepare(`
