@@ -14,7 +14,7 @@
  */
 import { type AgentSession as PiAgentSession } from '@mariozechner/pi-coding-agent';
 import { getSharedAuthStorage } from './shared-auth';
-import { getPiAgentInternals, getPiSessionSteering } from './pi-agent-access';
+import { getPiAgentInternals } from './pi-agent-access';
 import { getSharedProjectStore } from '../projects/project-store';
 import { assembleContextualPrompt } from './contextual-prompt';
 import { buildPiSessionTools } from './pi-session-tools';
@@ -110,13 +110,8 @@ import {
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
-import {
-  LoopGuard,
-  buildAbortUserMessage,
-  buildHaltSteerMessage,
-  buildWarnSteerMessage,
-  type LoopGuardDecision,
-} from './agent-runner-loop-guard';
+import { buildAbortUserMessage } from './agent-runner-loop-guard';
+import { createLoopGuardController } from './loop-guard-controller';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { EliteCodingIntelligence } from './elite-coding-intelligence';
 import { SkillSynthesizer } from '../skills/skill-synthesizer';
@@ -1094,18 +1089,14 @@ export class CoworkAgentRunner {
       // ── Loop guard: protect against runaway tool-call loops ──
       // (e.g. gemini-3.1-pro with thinking=off has been observed producing hundreds
       //  of empty-text + single-tool-call responses in a single turn)
-      // Two layers: hash of whole tool-call group (window=20, warn=3/halt=5/abort=8)
-      //             + per-tool frequency (warn=30/halt=50/abort=80).
-      const loopGuard = new LoopGuard();
-      const handleLoopGuardDecision = (decision: LoopGuardDecision, context: string): void => {
-        if (decision.action === 'none' || controller.signal.aborted) return;
-        logWarn(`[LoopGuard] ${context}: action=${decision.action} reason=${decision.reason}`);
-
-        if (decision.action === 'hash_abort' || decision.action === 'freq_abort') {
-          // Always surface the loop-guard explanation, even if an earlier
-          // error already set hasEmittedError — the user must see why the
-          // session stopped. Mark the flag afterward to suppress duplicate
-          // generic-error chatter from later paths in this turn.
+      const { loopGuard, handleDecision: handleLoopGuardDecision } = createLoopGuardController({
+        piSession,
+        isAborted: () => controller.signal.aborted,
+        emitAbort: (decision) => {
+          // Always surface the loop-guard explanation, even if an earlier error
+          // already set hasEmittedError — the user must see why the session
+          // stopped. Mark the flag afterward to suppress duplicate generic-error
+          // chatter from later paths in this turn.
           this.sendMessage(session.id, {
             id: uuidv4(),
             sessionId: session.id,
@@ -1118,38 +1109,12 @@ export class CoworkAgentRunner {
             status: 'error',
             title: 'Stopped: tool-call loop detected',
           });
-          try {
-            // Mark BEFORE calling abort() so the AbortError handler in the
-            // outer catch can distinguish a loop-guard abort from a user
-            // cancel and skip the "Cancelled" trace overwrite.
-            abortedByLoopGuard = true;
-            controller.abort();
-          } catch (abortErr) {
-            logWarn('[LoopGuard] abort error:', abortErr);
-          }
-          return;
-        }
-
-        const steerText =
-          decision.action === 'hash_halt' || decision.action === 'freq_halt'
-            ? buildHaltSteerMessage(decision)
-            : buildWarnSteerMessage(decision);
-        // fire-and-forget: SDK queues the steering message for the next turn
-        try {
-          const sessionSteering = getPiSessionSteering(piSession);
-          if (typeof sessionSteering.sendUserMessage === 'function') {
-            Promise.resolve(
-              sessionSteering.sendUserMessage(steerText, { deliverAs: 'steer' })
-            ).catch((err: unknown) => {
-              logWarn('[LoopGuard] sendUserMessage(steer) failed:', err);
-            });
-          } else {
-            logWarn('[LoopGuard] piSession.sendUserMessage is not available; skipping steer');
-          }
-        } catch (steerErr) {
-          logWarn('[LoopGuard] sendUserMessage(steer) threw:', steerErr);
-        }
-      };
+        },
+        markAbortedByLoopGuard: () => {
+          abortedByLoopGuard = true;
+        },
+        abort: () => controller.abort(),
+      });
 
       // Stream liveness: warn on a slow Ollama cold start, cancel that warning on
       // the first event, abort after 5 minutes without activity and count event

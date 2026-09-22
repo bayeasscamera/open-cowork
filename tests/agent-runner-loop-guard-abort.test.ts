@@ -4,6 +4,11 @@ import path from 'node:path';
 
 const agentRunnerPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner.ts');
 const agentRunnerContent = readFileSync(agentRunnerPath, 'utf8');
+// The abort sequencing itself now lives in the extracted controller.
+const controllerContent = readFileSync(
+  path.resolve(process.cwd(), 'src/main/agent/loop-guard-controller.ts'),
+  'utf8'
+);
 
 /**
  * These tests pin the post-rescue catch-block disposition for loop-guard
@@ -17,18 +22,21 @@ describe('agent-runner loop-guard abort preserves error trace status', () => {
     expect(agentRunnerContent).toContain('let abortedByLoopGuard = false;');
   });
 
-  it('sets the flag immediately before controller.abort() in handleLoopGuardDecision', () => {
-    // The assignment must appear in the loop-guard block AND must precede the
-    // controller.abort() call so the AbortError handler sees the flag.
-    const setIdx = agentRunnerContent.indexOf('abortedByLoopGuard = true;');
-    expect(setIdx).toBeGreaterThan(-1);
+  it('sets the flag immediately before aborting the turn', () => {
+    // The runner sets the flag in the markAbortedByLoopGuard callback, and the
+    // controller invokes that callback right before deps.abort() so the
+    // AbortError handler sees the flag.
+    expect(agentRunnerContent).toContain('markAbortedByLoopGuard: () => {');
+    expect(agentRunnerContent).toContain('abortedByLoopGuard = true;');
 
-    const abortIdx = agentRunnerContent.indexOf('controller.abort();', setIdx);
-    expect(abortIdx).toBeGreaterThan(setIdx);
+    const markIdx = controllerContent.indexOf('deps.markAbortedByLoopGuard();');
+    const abortIdx = controllerContent.indexOf('deps.abort();', markIdx);
+    expect(markIdx).toBeGreaterThan(-1);
+    expect(abortIdx).toBeGreaterThan(markIdx);
 
     // No other lines should sneak between the flag set and the abort call —
     // keep them adjacent so the intent is obvious.
-    const between = agentRunnerContent.slice(setIdx, abortIdx);
+    const between = controllerContent.slice(markIdx, abortIdx);
     const nonTrivialLines = between
       .split('\n')
       .map((l) => l.trim())
