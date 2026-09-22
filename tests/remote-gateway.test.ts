@@ -11,6 +11,7 @@ import { request } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { WebSocket } from 'ws';
 import { RemoteGateway } from '../src/main/remote/gateway';
+import { logError } from '../src/main/utils/logger';
 import type {
   ChannelType,
   GatewayAuthConfig,
@@ -100,6 +101,8 @@ interface GatewayInternals {
   pairingRequests: Map<string, PairingRequest>;
   pairedUsers: Map<string, PairedUser>;
   wsClients: Map<string, { authenticated: boolean; ip: string }>;
+  authAttempts: Map<string, { count: number; resetTime: number }>;
+  lastAuthAttemptPurge: number;
   httpServer?: { address(): { port: number } | string | null };
 }
 
@@ -390,6 +393,23 @@ describe('RemoteGateway lifecycle', () => {
     const harness = tracked(makeGateway({ mode: 'open' }));
     await harness.gateway.start();
     await expect(harness.gateway.start()).resolves.toBeUndefined();
+    expect(harness.gateway.running).toBe(true);
+  });
+
+  it('logs but survives a channel that fails to start while running', async () => {
+    const harness = tracked(makeGateway({ mode: 'open' }));
+    await harness.gateway.start();
+    const channel = makeChannel('feishu');
+    channel.start.mockRejectedValue(new Error('boot failed'));
+
+    harness.gateway.registerChannel(asChannel(channel));
+
+    await waitFor(() =>
+      expect(logError).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to start channel feishu'),
+        expect.anything()
+      )
+    );
     expect(harness.gateway.running).toBe(true);
   });
 
@@ -910,6 +930,23 @@ describe('RemoteGateway HTTP endpoints', () => {
     expect(JSON.parse(res.body)).toEqual({ echoed: true });
   });
 
+  it('returns 500 when a webhook listener throws', async () => {
+    const harness = tracked(makeGateway({ mode: 'open' }));
+    harness.gateway.registerChannel(asChannel(makeChannel('feishu')));
+    await harness.gateway.start();
+    harness.gateway.on('webhook:feishu', () => {
+      throw new Error('listener exploded');
+    });
+
+    const res = await httpRequest(boundPort(harness.gateway), '/webhook/feishu', {
+      method: 'POST',
+      body: '{}',
+    });
+
+    expect(res.status).toBe(500);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Internal server error' });
+  });
+
   it('rejects an oversized webhook body', async () => {
     const harness = tracked(makeGateway({ mode: 'open' }));
     harness.gateway.registerChannel(asChannel(makeChannel('feishu')));
@@ -1102,6 +1139,43 @@ describe('RemoteGateway WebSocket', () => {
     expect((await authenticated.next('news')).payload).toEqual({ n: 1 });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(anonymous.all().some((entry) => entry.type === 'news')).toBe(false);
+  });
+
+  it('purges expired auth attempts on the next attempt', async () => {
+    const { harness, port } = await startWithAuth({ mode: 'token', token: 'abc123' });
+    const state = internals(harness.gateway);
+    state.authAttempts.set('10.9.9.9', { count: 3, resetTime: Date.now() - 1 });
+    state.lastAuthAttemptPurge = Date.now() - 400000;
+
+    const probe = await WsProbe.connect(port);
+    probes.push(probe);
+    await probe.next('connected');
+    probe.send({ type: 'auth', payload: { token: 'abc123' } });
+    await probe.next('auth_result');
+
+    expect(state.authAttempts.has('10.9.9.9')).toBe(false);
+  });
+
+  it('survives a router failure while handling a client message', async () => {
+    const { harness, port } = await startWithAuth({ mode: 'open' });
+    harness.router.routeMessage.mockRejectedValueOnce(new Error('route exploded'));
+    const probe = await WsProbe.connect(port);
+    probes.push(probe);
+    await probe.next('connected');
+
+    probe.send({ type: 'auth', payload: {} });
+    await probe.next('auth_result');
+    probe.send({ type: 'message', payload: { text: 'boom' } });
+
+    await waitFor(() =>
+      expect(logError).toHaveBeenCalledWith(
+        expect.stringContaining('Error in handleWSClientMessage'),
+        expect.anything()
+      )
+    );
+
+    probe.send({ type: 'ping' });
+    expect((await probe.next('pong')).type).toBe('pong');
   });
 
   it('drops clients from the registry on close', async () => {
