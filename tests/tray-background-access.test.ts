@@ -33,9 +33,14 @@ describe('background quick-access setting (trayEnabled)', () => {
 
   it('startup and config.save both apply tray + shortcut through one helper', () => {
     const index = read('src/main/index.ts');
+    // config.save lives in its own IPC module since the structural refactor.
+    const configHandlers = read('src/main/ipc/config-handlers.ts');
     expect(index).toContain('function applyBackgroundAccessSetting(enabled: boolean)');
     expect(index).toContain("applyBackgroundAccessSetting(configStore.get('trayEnabled'))");
-    const save = index.match(/ipcMain\.handle\('config\.save'[\s\S]*?\n\}\);/)?.[0] ?? '';
+    const save = configHandlers.slice(
+      configHandlers.indexOf("ipcMain.handle('config.save'"),
+      configHandlers.indexOf("ipcMain.handle('config.createSet'")
+    );
     expect(save).toContain("typeof newConfig.trayEnabled === 'boolean'");
     expect(save).toContain('applyBackgroundAccessSetting(newConfig.trayEnabled)');
     // the Alt+Space registration must no longer run unconditionally at startup
