@@ -357,6 +357,21 @@ describe('handlePiSessionEvent — message_end', () => {
     );
   });
 
+  it('records a tool-call descriptor with empty defaults', () => {
+    const h = makeHarness();
+    vi.mocked(resolveMessageEndPayload).mockReturnValue(
+      makePayload({ effectiveContent: [{ type: 'toolCall', name: '', id: 'tc1' }] })
+    );
+    h.run({ type: 'message_end', message });
+    expect(h.loopGuard.recordAssistantMessage).toHaveBeenCalledWith([
+      { name: '', input: undefined },
+    ]);
+    expect(h.effects.handleLoopGuardDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'none' }),
+      'message_end'
+    );
+  });
+
   it('stashes the terminal text-only draft instead of sending it when armed', () => {
     const h = makeHarness();
     h.armTwoStage();
@@ -368,6 +383,17 @@ describe('handlePiSessionEvent — message_end', () => {
     const draft = h.getPipelineDraft();
     expect(draft.text).toBe('draft answer');
     expect(draft.message?.content).toEqual([{ type: 'text', text: 'draft answer' }]);
+  });
+
+  it('drops a text block whose extracted text is empty', () => {
+    const h = makeHarness();
+    h.armTwoStage();
+    vi.mocked(resolveMessageEndPayload).mockReturnValue(
+      makePayload({ effectiveContent: [{ type: 'text' }] })
+    );
+    h.run({ type: 'message_end', message });
+    expect(h.effects.sendMessage).not.toHaveBeenCalled();
+    expect(h.getPipelineDraft().text).toBe('');
   });
 
   it('still sends tool-call messages while two-stage is armed', () => {
@@ -399,6 +425,23 @@ describe('handlePiSessionEvent — message_end', () => {
     expect(mocks.log).toHaveBeenCalledWith(
       '[CoworkAgentRunner] Ollama message_end diagnostics',
       expect.any(String)
+    );
+  });
+
+  it('passes an unknown content block type through as text', () => {
+    const h = makeHarness();
+    vi.mocked(resolveMessageEndPayload).mockReturnValue(
+      makePayload({ effectiveContent: [{ type: 'weird', text: 'fallback' }, { type: 'other' }] })
+    );
+    h.run({ type: 'message_end', message });
+    expect(mocks.log).toHaveBeenCalledWith('[CoworkAgentRunner] Unknown content block type: weird');
+    expect(h.effects.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [
+          { type: 'text', text: 'fallback' },
+          { type: 'text', text: '{"type":"other"}' },
+        ],
+      })
     );
   });
 
@@ -543,6 +586,43 @@ describe('handlePiSessionEvent — auto-compaction', () => {
         modifiedFiles: ['b'],
       },
     });
+  });
+
+  it('surfaces an empty file list when the result carries no details', () => {
+    const h = makeHarness();
+    h.run({ type: 'auto_compaction_start', reason: 'threshold' });
+    h.run({
+      type: 'auto_compaction_end',
+      aborted: false,
+      willRetry: false,
+      result: { summary: 'sum', tokensBefore: 5 },
+    });
+    expect(h.effects.sendToRenderer).toHaveBeenCalledWith({
+      type: 'compaction.result',
+      payload: {
+        sessionId: 'sess-1',
+        summary: 'sum',
+        tokensBefore: 5,
+        readFiles: [],
+        modifiedFiles: [],
+      },
+    });
+    expect(mocks.log).toHaveBeenCalledWith(
+      '[CoworkAgentRunner] Compaction result surfaced:',
+      expect.any(String)
+    );
+  });
+
+  it('skips surfacing the result while a retry is pending', () => {
+    const h = makeHarness();
+    h.run({ type: 'auto_compaction_start', reason: 'threshold' });
+    h.run({
+      type: 'auto_compaction_end',
+      aborted: false,
+      willRetry: true,
+      result: { summary: 'sum', tokensBefore: 9, details: { readFiles: ['x'] } },
+    });
+    expect(h.effects.sendToRenderer).not.toHaveBeenCalled();
   });
 
   it('reports an aborted compaction as an error', () => {
