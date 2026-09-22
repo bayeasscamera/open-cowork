@@ -47,6 +47,7 @@ import { createStreamLivenessWatcher } from './stream-liveness';
 import { buildMcpServersConfig, type McpServersCache } from './mcp-servers-config';
 import { buildCoworkAppendPrompt } from './runtime-config-summary';
 import { setupSkillsDirectories } from './skills-directory-setup';
+import { logSessionStreamEvent, type SessionEventLoggingDeps } from './session-event-logging';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -1504,6 +1505,12 @@ export class CoworkAgentRunner {
         }
       };
 
+      const sessionEventLoggingDeps: SessionEventLoggingDeps = {
+        telemetry: streamLiveness,
+        stringify: safeStringify,
+        summarizeMessage: summarizeMessageForLog,
+      };
+
       const unsubscribe = piSession.subscribe((event) => {
         try {
           if (controller.signal.aborted) return;
@@ -1511,33 +1518,7 @@ export class CoworkAgentRunner {
           // Reset activity timeout on meaningful events
           streamLiveness.resetActivityTimeout();
 
-          if (event.type === 'message_update') {
-            const updateType = event.assistantMessageEvent.type;
-            streamLiveness.recordStreamEvent(updateType);
-            if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {
-              log(`[CoworkAgentRunner] Event: ${event.type} → ${updateType}`);
-            }
-          } else if (event.type === 'message_start') {
-            log(
-              '[CoworkAgentRunner] Event: message_start',
-              safeStringify(summarizeMessageForLog(event.message), 2)
-            );
-          } else if (event.type === 'message_end') {
-            log(
-              '[CoworkAgentRunner] Event: message_end',
-              safeStringify(
-                {
-                  message: summarizeMessageForLog(event.message),
-                  messageUpdateCounts: streamLiveness.getStreamEventSummary(),
-                },
-                2
-              )
-            );
-          } else if (event.type === 'turn_end') {
-            log(`[CoworkAgentRunner] Event: ${event.type}`);
-          } else {
-            log(`[CoworkAgentRunner] Event: ${event.type}`);
-          }
+          logSessionStreamEvent(event, sessionEventLoggingDeps);
 
           switch (event.type) {
             case 'message_update': {

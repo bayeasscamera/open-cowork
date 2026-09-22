@@ -17,6 +17,11 @@ const runtimeConfigSummaryPath = path.resolve(
   'src/main/agent/runtime-config-summary.ts'
 );
 const runtimeConfigSummaryContent = readFileSync(runtimeConfigSummaryPath, 'utf8');
+const sessionEventLoggingPath = path.resolve(
+  process.cwd(),
+  'src/main/agent/session-event-logging.ts'
+);
+const sessionEventLoggingContent = readFileSync(sessionEventLoggingPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -73,16 +78,18 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('summarizes noisy SDK message updates instead of logging every text delta', () => {
-    // The counters now live in stream-liveness; the runner still counts per update
-    // and only logs the aggregated summary at message_end.
-    expect(agentRunnerContent).toContain('streamLiveness.recordStreamEvent(updateType);');
-    expect(agentRunnerContent).toContain(
-      "if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {"
+    // Event classification now lives in session-event-logging; the guard follows it.
+    expect(agentRunnerContent).toContain('logSessionStreamEvent(event, sessionEventLoggingDeps);');
+    expect(sessionEventLoggingContent).toContain('deps.telemetry.recordStreamEvent(updateType);');
+    expect(sessionEventLoggingContent).toContain(
+      "const QUIET_UPDATE_TYPES = new Set(['text_delta', 'thinking_delta']);"
     );
-    expect(agentRunnerContent).toContain("'[CoworkAgentRunner] Event: message_end'");
-    expect(agentRunnerContent).toContain(
-      'messageUpdateCounts: streamLiveness.getStreamEventSummary()'
+    expect(sessionEventLoggingContent).toContain('if (!QUIET_UPDATE_TYPES.has(updateType)) {');
+    expect(sessionEventLoggingContent).toContain("'[CoworkAgentRunner] Event: message_end'");
+    expect(sessionEventLoggingContent).toContain(
+      'messageUpdateCounts: deps.telemetry.getStreamEventSummary()'
     );
+    // The raw-message dump stays in the runner, gated on full debug logging.
     expect(agentRunnerContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
     expect(agentRunnerContent).toContain("'[CoworkAgentRunner] message_end raw message:'");
   });
