@@ -24,8 +24,7 @@ import {
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import { getPiAgentInternals, getPiSessionSteering } from './pi-agent-access';
 import { getSharedProjectStore } from '../projects/project-store';
-import { evaluateRoutingSignal, formatRoutingHint } from './openjev-router';
-import { takePendingDelegationResults, describeRunningDelegations } from './background-delegations';
+import { assembleContextualPrompt } from './contextual-prompt';
 import { resolveProjectContext, type ProjectContextResolution } from '../projects/project-context';
 import {
   buildDraftDetailText,
@@ -42,7 +41,6 @@ import {
   resolveSandboxBackend,
   syncSandboxChangesToHost,
 } from './agent-runner-sandbox-session';
-import { buildColdStartHistoryPreamble } from './cold-start-history';
 import { createStreamLivenessWatcher } from './stream-liveness';
 import { buildMcpServersConfig, type McpServersCache } from './mcp-servers-config';
 import { buildCoworkAppendPrompt } from './runtime-config-summary';
@@ -979,73 +977,16 @@ export class CoworkAgentRunner {
         cachedSession = undefined;
       }
 
-      let contextualPrompt = prompt;
-      if (!cachedSession) {
-        // Cold start: inject recent history into the prompt. The rebuild itself
-        // lives in cold-start-history so it is unit-testable without Electron or
-        // the SDK; only the logging stays here.
-        const preamble = buildColdStartHistoryPreamble({
-          prompt,
-          messages: existingMessages,
-          contextWindow: piModel.contextWindow || 128000,
-          provider,
-        });
-
-        if (preamble) {
-          contextualPrompt = preamble.prompt;
-          log(
-            '[CoworkAgentRunner] Cold start: injecting',
-            preamble.injectedCount,
-            'of',
-            preamble.totalCount,
-            'history messages (budget:',
-            preamble.charBudget,
-            'chars, used:',
-            preamble.charCount,
-            ', charsPerToken:',
-            preamble.charsPerToken.toFixed(2),
-            ')'
-          );
-        }
-      } else {
-        // Reusing session — SDK already has the full conversation context
-        logCtx('[CoworkAgentRunner] Reusing existing SDK session for:', session.id);
-      }
-      if (extensionResult.promptPrefix?.trim()) {
-        contextualPrompt = `${extensionResult.promptPrefix.trim()}\n\n${contextualPrompt}`;
-      }
-
-      // Async delegation: append results of finished background tasks (once)
-      // and mark still-running ones, so the main agent can keep the user
-      // informed without blocking on the delegation.
-      const delegationResults = takePendingDelegationResults(session.id);
-      if (delegationResults) {
-        contextualPrompt = `${contextualPrompt}\n\n${delegationResults}`;
-      }
-      const runningDelegations = describeRunningDelegations(session.id);
-      if (runningDelegations) {
-        contextualPrompt = `${contextualPrompt}\n\n${runningDelegations}`;
-      }
-
-      // OpenJev routing hint (optional, OFF by default): a lightweight
-      // System One call evaluates whether the swarm is warranted. Never
-      // blocking — any failure degrades to no hint, behavior unchanged.
-      if (runtimeConfig.openjev?.enabled) {
-        const routingStarted = Date.now();
-        const verdict = await evaluateRoutingSignal(prompt, runtimeConfig.openjev);
-        const hint = formatRoutingHint(verdict);
-        if (hint) {
-          contextualPrompt = `${contextualPrompt}\n\n${hint}`;
-        }
-        log(
-          `[OpenJev] prompt="${prompt.slice(0, 80)}" → ` +
-            (verdict
-              ? `swarm=${verdict.needsSwarm.toFixed(2)} complexity=${verdict.complexity.toFixed(2)} ` +
-                `confidence=${verdict.confidence.toFixed(2)} latency=${verdict.latencyMs}ms`
-              : `no verdict (unreachable/timeout) after ${Date.now() - routingStarted}ms`) +
-            ` → hint ${hint ? 'injected' : 'skipped'}`
-        );
-      }
+      const contextualPrompt = await assembleContextualPrompt({
+        prompt,
+        existingMessages,
+        contextWindow: piModel.contextWindow || 128000,
+        provider,
+        sessionId: session.id,
+        isColdStart: !cachedSession,
+        extensionPromptPrefix: extensionResult.promptPrefix,
+        openjev: runtimeConfig.openjev,
+      });
 
       logTiming('before building MCP servers config', runStartTime);
 

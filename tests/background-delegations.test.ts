@@ -525,7 +525,9 @@ describe('background delegations — async delegation mode', () => {
           provider: 'custom',
           customProtocol: 'openai',
           activeProfileKey: 'custom:openai',
-          profiles: { 'custom:openai': { apiKey: 'k', baseUrl: 'https://x/v1', model: 'jan-model' } },
+          profiles: {
+            'custom:openai': { apiKey: 'k', baseUrl: 'https://x/v1', model: 'jan-model' },
+          },
         },
       ],
     } as unknown as typeof testConfig;
@@ -749,8 +751,11 @@ describe('wiring — source contracts', () => {
 
   it('finished results are injected at the NEXT turn; running ones are marked every turn', () => {
     const agent = flat(read('src/main/agent/agent-runner.ts'));
-    expect(agent).toContain('takePendingDelegationResults(session.id)');
-    expect(agent).toContain('describeRunningDelegations(session.id)');
+    // Prompt assembly (incl. delegation blocks) now lives in contextual-prompt.ts
+    const promptAssembly = flat(read('src/main/agent/contextual-prompt.ts'));
+    expect(promptAssembly).toContain('takePendingDelegationResults(deps.sessionId)');
+    expect(promptAssembly).toContain('describeRunningDelegations(deps.sessionId)');
+    expect(agent).toContain('assembleContextualPrompt({');
     expect(agent).toContain('buildAgentMetaTools({ sessionId: session.id, cwd: effectiveCwd })');
   });
 
