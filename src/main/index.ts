@@ -5,7 +5,7 @@
  *
  * Responsibilities:
  * - App lifecycle: ready, activate, before-quit, window-will-close
- * - Central IPC hub: ~60 handlers namespaced as config.*, mcp.*, session.*,
+ * - Central IPC hub: ~100 handlers namespaced as config.*, mcp.*, session.*,
  *   sandbox.*, logs.*, remote.*, schedule.*, etc.
  * - BrowserWindow creation and deep-link / protocol handling
  *
@@ -46,13 +46,11 @@ import {
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules, decidePermission, setAutoApproveAll } from './config/permission-rules-store';
-import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
-import type { MCPServerConfig } from './mcp/mcp-manager';
 import type {
   ClientEvent,
   ServerEvent,
@@ -93,6 +91,7 @@ import {
 import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { registerLogsIpcHandlers } from './ipc/logs-handlers';
+import { registerMcpIpcHandlers } from './ipc/mcp-handlers';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods, getDiffCollector } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore, ProjectValidationError } from './projects/project-store';
@@ -1603,7 +1602,7 @@ app
   .catch((error) => {
     logError('[App] Startup failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown startup error';
-    dialog.showErrorBox('Open Cowork 启动失败', `${message}\n\n请查看日志获取更多信息。`);
+    dialog.showErrorBox('Open Cowork failed to start', `${message}\n\nCheck the logs for more information.`);
     app.quit();
   });
 
@@ -2133,131 +2132,10 @@ ipcMain.handle('config.discover-local', async (_event, payload?: { baseUrl?: str
   }
 });
 
-// Config file export/import IPC handlers
-ipcMain.handle('config.exportFile', () => {
-  try {
-    exportOnConfigChange();
-    return { success: true, path: configStore.getPublicConfigPath() };
-  } catch (error) {
-    logError('[Config] Error exporting config file:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('config.importFile', async () => {
-  try {
-    const previousConfig = configStore.getAll();
-    const imported = configStore.importSafeConfig();
-    if (imported) {
-      await syncConfigAfterMutation(previousConfig);
-    }
-    return { success: true, imported };
-  } catch (error) {
-    logError('[Config] Error importing config file:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('config.getPublicPath', () => {
-  try {
-    return configStore.getPublicConfigPath();
-  } catch (error) {
-    logError('[Config] Error getting public config path:', error);
-    return null;
-  }
-});
-
-// MCP Server IPC handlers
-ipcMain.handle('mcp.getServers', () => {
-  try {
-    return mcpConfigStore.getServers();
-  } catch (error) {
-    logError('[MCP] Error getting servers:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('mcp.getServer', (_event, serverId: string) => {
-  try {
-    return mcpConfigStore.getServer(serverId);
-  } catch (error) {
-    logError('[MCP] Error getting server:', error);
-    return null;
-  }
-});
-
-ipcMain.handle('mcp.saveServer', async (_event, config: MCPServerConfig) => {
-  mcpConfigStore.saveServer(config);
-  // Update only this specific server, not all servers
-  if (sessionManager) {
-    const mcpManager = sessionManager.getMCPManager();
-    try {
-      await mcpManager.updateServer(config);
-      sessionManager.invalidateMcpServersCache();
-      log(`[MCP] Server ${config.name} updated successfully`);
-    } catch (err) {
-      logError('[MCP] Failed to update server:', err);
-      // Roll back: save the config with enabled=false so a broken connector
-      // is not retried on next app startup
-      if (config.enabled) {
-        mcpConfigStore.saveServer({ ...config, enabled: false });
-      }
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      return { success: false, error: errorMessage };
-    }
-  }
-  return { success: true };
-});
-
-ipcMain.handle('mcp.deleteServer', async (_event, serverId: string) => {
-  mcpConfigStore.deleteServer(serverId);
-  // Remove and disconnect only this specific server
-  if (sessionManager) {
-    const mcpManager = sessionManager.getMCPManager();
-    try {
-      await mcpManager.removeServer(serverId);
-      sessionManager.invalidateMcpServersCache();
-      log(`[MCP] Server ${serverId} removed successfully`);
-    } catch (err) {
-      logError('[MCP] Failed to remove server:', err);
-    }
-  }
-  return { success: true };
-});
-
-ipcMain.handle('mcp.getTools', () => {
-  try {
-    if (!sessionManager) {
-      return [];
-    }
-    const mcpManager = sessionManager.getMCPManager();
-    return mcpManager.getTools();
-  } catch (error) {
-    logError('[MCP] Error getting tools:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('mcp.getServerStatus', () => {
-  try {
-    if (!sessionManager) {
-      return [];
-    }
-    const mcpManager = sessionManager.getMCPManager();
-    return mcpManager.getServerStatus();
-  } catch (error) {
-    logError('[MCP] Error getting server status:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('mcp.getPresets', () => {
-  try {
-    return mcpConfigStore.getPresets();
-  } catch (error) {
-    logError('[MCP] Error getting presets:', error);
-    return {};
-  }
+// MCP Server IPC handlers (see main/ipc/mcp-handlers.ts)
+registerMcpIpcHandlers({
+  getMcpManager: () => sessionManager?.getMCPManager() ?? null,
+  invalidateMcpServersCache: () => sessionManager?.invalidateMcpServersCache(),
 });
 
 // Skills API handlers
@@ -2616,15 +2494,6 @@ ipcMain.handle('sandbox.checkLima', async () => {
   } catch (error) {
     logError('[Sandbox] Error checking Lima:', error);
     return { available: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('sandbox.createLimaInstance', async () => {
-  try {
-    return await LimaBridge.createLimaInstance();
-  } catch (error) {
-    logError('[Sandbox] Error creating Lima instance:', error);
-    return false;
   }
 });
 
@@ -3277,7 +3146,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     sendToRenderer({
       type: 'error',
       payload: {
-        message: '当前方案未配置可用凭证，请先在 API 设置中完成配置',
+        message: 'No usable API credentials configured. Run the GUI to set up API keys.',
         code: 'CONFIG_REQUIRED_ACTIVE_SET',
         action: 'open_api_settings',
       },

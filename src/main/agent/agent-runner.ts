@@ -1,7 +1,7 @@
 /**
  * @module main/agent/agent-runner
  *
- * AI query execution engine (1514 lines).
+ * AI query execution engine.
  *
  * Responsibilities:
  * - Runs AI conversations via the Open Cowork agent SDK (createAgentSession)
@@ -23,6 +23,12 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import { Type, type TSchema } from '@sinclair/typebox';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+import {
+  getPiAgentInternals,
+  getPiSessionSteering,
+  type PiBeforeToolCallHook,
+  type PiToolCallContext,
+} from './pi-agent-access';
 import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
 import { getSharedProjectStore } from '../projects/project-store';
@@ -995,8 +1001,7 @@ ${hints.join('\n')}
     // We must chain to the SDK's original beforeToolCall hook because it
     // fires extension tool_call events and manages the _agentEventQueue.
     // Without chaining, the renderer misses completion events.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const agent = (piSession as any).agent;
+    const agent = getPiAgentInternals(piSession);
     if (!agent || typeof agent.setBeforeToolCall !== 'function') {
       logWarn(
         '[CoworkAgentRunner] Cannot access agent.setBeforeToolCall — skipping permission hook'
@@ -1005,17 +1010,13 @@ ${hints.join('\n')}
     }
 
     // Capture the SDK's hook before we overwrite it
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sdkBeforeToolCall: ((ctx: any, signal?: AbortSignal) => Promise<any>) | undefined =
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (agent as any)._beforeToolCall;
+    const sdkBeforeToolCall: PiBeforeToolCallHook | undefined = agent._beforeToolCall;
 
     const requestPermission = this.requestPermission;
     const getDisplayName = (name: string): string => this.getToolDisplayName(name);
 
     agent.setBeforeToolCall(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (ctx: any, signal?: AbortSignal): Promise<any> => {
+      async (ctx: PiToolCallContext, signal?: AbortSignal): Promise<unknown> => {
         const toolName: string = ctx.toolCall?.name ?? '';
         const input: Record<string, unknown> = ctx.args ?? {};
 
@@ -1082,24 +1083,18 @@ ${hints.join('\n')}
    *    (security-redactor) or observe them (telemetry, diff collector).
    */
   private installModsHooks(piSession: PiAgentSession, sessionId: string): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const agent = (piSession as any).agent;
+    const agent = getPiAgentInternals(piSession);
     if (!agent || typeof agent.setAfterToolCall !== 'function') {
       logWarn('[CoworkAgentRunner] Cannot access agent.setAfterToolCall — mods post-hook skipped');
       return;
     }
 
     // Pre-hook composition into the existing permission slot.
-    const originalBefore =
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (agent as any)._beforeToolCall as
-      | ((ctx: unknown, signal?: AbortSignal) => Promise<unknown>)
-      | undefined;
+    const originalBefore: PiBeforeToolCallHook | undefined = agent._beforeToolCall;
 
     if (typeof agent.setBeforeToolCall === 'function') {
       agent.setBeforeToolCall(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        async (ctx: any, signal?: AbortSignal): Promise<any> => {
+        async (ctx: PiToolCallContext, signal?: AbortSignal): Promise<unknown> => {
           const toolName: string = ctx.toolCall?.name ?? '';
           const args: Record<string, unknown> = ctx.args ?? {};
           const modsDecision = getModsRegistry().runPreToolUse({ sessionId, toolName, args });
@@ -1114,8 +1109,7 @@ ${hints.join('\n')}
 
     // Post-hook: replace the result text when any mod rewrites it.
     agent.setAfterToolCall(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (ctx: any): Promise<any> => {
+      async (ctx: PiToolCallContext): Promise<unknown> => {
         const toolName: string = ctx.toolCall?.name ?? '';
         const args: Record<string, unknown> = ctx.args ?? {};
         const blocks = Array.isArray(ctx.result?.content) ? ctx.result.content : [];
@@ -2591,20 +2585,14 @@ Tool routing:
 
         // Ollama: wrap _onPayload to inject num_ctx into every request
         if (provider === 'ollama') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const agent = piSession.agent as any;
+          const agent = getPiAgentInternals(piSession);
           // Guard: only patch if the SDK exposes _onPayload (private API)
-          if (!('_onPayload' in agent)) {
+          if (!agent || !('_onPayload' in agent)) {
             logWarn(
               '[CoworkAgentRunner] SDK agent does not expose _onPayload — skipping Ollama num_ctx patch'
             );
           } else {
-            const originalOnPayload = agent._onPayload as
-              | ((
-                  payload: Record<string, unknown>,
-                  modelArg: unknown
-                ) => Promise<Record<string, unknown>>)
-              | undefined;
+            const originalOnPayload = agent._onPayload;
             const ollamaNumCtx = {
               value: piModel.contextWindow || 128000,
             };
@@ -2684,10 +2672,9 @@ Tool routing:
             : buildWarnSteerMessage(decision);
         // fire-and-forget: SDK queues the steering message for the next turn
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const sessionAny = piSession as any;
-          if (typeof sessionAny.sendUserMessage === 'function') {
-            Promise.resolve(sessionAny.sendUserMessage(steerText, { deliverAs: 'steer' })).catch(
+          const sessionSteering = getPiSessionSteering(piSession);
+          if (typeof sessionSteering.sendUserMessage === 'function') {
+            Promise.resolve(sessionSteering.sendUserMessage(steerText, { deliverAs: 'steer' })).catch(
               (err: unknown) => {
                 logWarn('[LoopGuard] sendUserMessage(steer) failed:', err);
               }
