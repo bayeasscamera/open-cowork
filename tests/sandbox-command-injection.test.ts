@@ -20,6 +20,7 @@ const limaBridgePath = path.resolve(process.cwd(), 'src/main/sandbox/lima-bridge
 const sandboxVmBridgePath = path.resolve(process.cwd(), 'src/main/sandbox/sandbox-vm-bridge.ts');
 const limaSyncPath = path.resolve(process.cwd(), 'src/main/sandbox/lima-sync.ts');
 const syncHelpersPath = path.resolve(process.cwd(), 'src/main/sandbox/sync-helpers.ts');
+const sandboxVmSyncPath = path.resolve(process.cwd(), 'src/main/sandbox/sandbox-vm-sync.ts');
 
 const sandboxSyncSrc = fs.readFileSync(sandboxSyncPath, 'utf8');
 const wslBridgeSrc = fs.readFileSync(wslBridgePath, 'utf8');
@@ -27,6 +28,7 @@ const limaBridgeSrc = fs.readFileSync(limaBridgePath, 'utf8');
 const sandboxVmBridgeSrc = fs.readFileSync(sandboxVmBridgePath, 'utf8');
 const limaSyncSrc = fs.readFileSync(limaSyncPath, 'utf8');
 const syncHelpersSrc = fs.readFileSync(syncHelpersPath, 'utf8');
+const sandboxVmSyncSrc = fs.readFileSync(sandboxVmSyncPath, 'utf8');
 
 describe('sync-helpers sessionId validation', () => {
   it('defines a validateSessionId function with strict alphanumeric pattern', () => {
@@ -35,24 +37,25 @@ describe('sync-helpers sessionId validation', () => {
   });
 });
 
-describe('sandbox-sync sessionId validation', () => {
-  it('calls validateSessionId at the top of initSync', () => {
-    // validateSessionId should appear before any wslExec call in initSync
-    const initSyncStart = sandboxSyncSrc.indexOf('static async initSync(');
-    const validateCall = sandboxSyncSrc.indexOf('validateSessionId(sessionId)', initSyncStart);
-    const firstWslExec = sandboxSyncSrc.indexOf('this.wslExec(', initSyncStart);
-    expect(validateCall).toBeGreaterThan(initSyncStart);
-    expect(validateCall).toBeLessThan(firstWslExec);
+describe('sandbox-vm-sync input validation', () => {
+  it('validates the sessionId before running any VM command', () => {
+    const initStart = sandboxVmSyncSrc.indexOf('protected static async initSyncCore(');
+    const validateCall = sandboxVmSyncSrc.indexOf('validateSessionId(sessionId)', initStart);
+    const firstExec = sandboxVmSyncSrc.indexOf('this.execCommand(', initStart);
+    expect(validateCall).toBeGreaterThan(initStart);
+    expect(validateCall).toBeLessThan(firstExec);
   });
-});
 
-describe('lima-sync sessionId validation', () => {
-  it('calls validateSessionId at the top of initSync', () => {
-    const initSyncStart = limaSyncSrc.indexOf('static async initSync(');
-    const validateCall = limaSyncSrc.indexOf('validateSessionId(sessionId)', initSyncStart);
-    const firstLimaExec = limaSyncSrc.indexOf('this.limaExec(', initSyncStart);
-    expect(validateCall).toBeGreaterThan(initSyncStart);
-    expect(validateCall).toBeLessThan(firstLimaExec);
+  it('validates the VM context before running any VM command', () => {
+    const initStart = sandboxVmSyncSrc.indexOf('protected static async initSyncCore(');
+    const validateCall = sandboxVmSyncSrc.indexOf('this.validateContext(context)', initStart);
+    const firstExec = sandboxVmSyncSrc.indexOf('this.execCommand(', initStart);
+    expect(validateCall).toBeGreaterThan(initStart);
+    expect(validateCall).toBeLessThan(firstExec);
+  });
+
+  it('runs distro validation for WSL through the context hook', () => {
+    expect(sandboxSyncSrc).toContain('validateDistroName(context as string)');
   });
 });
 
@@ -142,32 +145,24 @@ describe('sandbox vm bridge agent path metacharacter check', () => {
 });
 
 describe('rm -rf symlink protection', () => {
-  it('sandbox-sync verifies realpath before rm -rf', () => {
-    const cleanupStart = sandboxSyncSrc.indexOf('static async cleanup(sessionId: string)');
-    const cleanupEnd = sandboxSyncSrc.indexOf(
-      '}',
-      sandboxSyncSrc.indexOf("logError('[SandboxSync] Cleanup failed:", cleanupStart)
-    );
-    const cleanupBody = sandboxSyncSrc.substring(cleanupStart, cleanupEnd);
+  it('verifies realpath before rm -rf in the shared sync base', () => {
+    const cleanupStart = sandboxVmSyncSrc.indexOf('static async cleanup(sessionId: string)');
+    const cleanupEnd = sandboxVmSyncSrc.indexOf('Cleanup failed:', cleanupStart);
+    const cleanupBody = sandboxVmSyncSrc.substring(cleanupStart, cleanupEnd);
 
     expect(cleanupBody).toContain('realpath');
     expect(cleanupBody).toContain('isRealPathWithinSandboxRoot(realPath, session.sandboxPath)');
     expect(cleanupBody).toContain('Refusing to delete');
+    // The containment check must happen before the deletion command is built
+    expect(cleanupBody.indexOf('isRealPathWithinSandboxRoot')).toBeLessThan(
+      cleanupBody.indexOf('rm -rf')
+    );
     expect(syncHelpersSrc).toContain(SANDBOX_ROOT_CHECK);
   });
 
-  it('lima-sync verifies realpath before rm -rf', () => {
-    const cleanupStart = limaSyncSrc.indexOf('static async cleanup(sessionId: string)');
-    const cleanupEnd = limaSyncSrc.indexOf(
-      '}',
-      limaSyncSrc.indexOf('logError(`[LimaSync] Cleanup error:', cleanupStart)
-    );
-    const cleanupBody = limaSyncSrc.substring(cleanupStart, cleanupEnd);
-
-    expect(cleanupBody).toContain('realpath');
-    expect(cleanupBody).toContain('isRealPathWithinSandboxRoot(realPath, session.sandboxPath)');
-    expect(cleanupBody).toContain('Refusing to delete');
-    expect(syncHelpersSrc).toContain(SANDBOX_ROOT_CHECK);
+  it('routes both VM backends through the shared cleanup', () => {
+    expect(sandboxSyncSrc).toContain('extends SandboxVmSync');
+    expect(limaSyncSrc).toContain('extends SandboxVmSync');
   });
 });
 
