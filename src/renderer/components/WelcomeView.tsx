@@ -262,7 +262,6 @@ export function WelcomeView() {
 
   const handleFileSelect = async () => {
     if (!isElectron || !window.electronAPI) {
-      console.log('[WelcomeView] Not in Electron, file selection not available');
       return;
     }
 

@@ -103,7 +103,7 @@ Only after the commit is done:
 
 | Module | Role |
 |--------|------|
-| `index.ts` (3400+ lines) | App bootstrap, IPC handlers, lifecycle. **Critical: all cleanup via `cleanupSandboxResources()`** |
+| `index.ts` (3800+ lines) | App bootstrap, IPC handlers, lifecycle. **Critical: all cleanup via `cleanupSandboxResources()`** |
 | `agent/agent-runner.ts` | Core agent execution loop. Orchestrates LLM calls, tool execution, compaction |
 | `agent/elite-coding-intelligence.ts` | System prompt for elite engineering. `EliteCodingIntelligence.getElitePrompt()` |
 | `agent/self-healing-runner.ts` | Retry & self-repair loop on agent failures |
@@ -141,7 +141,7 @@ Only after the commit is done:
 | `api-provider-guidance.ts` | Provider setup guides (Anthropic, OpenAI, Groq, Mistral, Together, Ollama…) |
 | `api-model-presets.ts` | Model presets per provider |
 
-### Tests (`tests/` — flat, 122+ files)
+### Tests (`tests/` — flat, 230+ files)
 
 Naming convention: `<feature>-<behavior>.test.ts`
 Examples: `provider-guidance.test.ts`, `session-manager-crud.test.ts`

@@ -164,7 +164,6 @@ function App() {
   const handleConfigSave = useCallback(
     async (newConfig: Partial<AppConfig>) => {
       if (!isElectron) {
-        console.log('[App] Browser mode - config save simulated');
         return;
       }
 

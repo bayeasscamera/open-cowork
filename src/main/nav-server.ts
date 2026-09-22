@@ -1,7 +1,7 @@
 /**
  * @module main/nav-server
  *
- * CLI-driven UI navigation server (155 lines).
+ * CLI-driven UI navigation server.
  *
  * Exposes HTTP endpoints on 127.0.0.1:19888 for external tools (e.g. Claude Code)
  * to control app page navigation programmatically:

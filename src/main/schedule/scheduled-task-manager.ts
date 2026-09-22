@@ -1,7 +1,7 @@
 /**
  * @module main/schedule/scheduled-task-manager
  *
- * Cron-like scheduled task system (488 lines).
+ * Cron-like scheduled task system.
  *
  * Responsibilities:
  * - Scheduled task CRUD with daily/weekly/interval repeat modes

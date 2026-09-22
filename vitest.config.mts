@@ -31,11 +31,14 @@ export default defineConfig({
         '**/*.config.*',
         '**/mockData',
       ],
+      // Ratcheted to just under the measured baseline (≈50.6% lines / 45.1%
+      // branches / 59.0% functions / 50.4% statements) so regressions fail CI
+      // instead of being tolerated down to the old 30/35/28/30 floor.
       thresholds: {
-        lines: 30,
-        functions: 35,
-        branches: 28,
-        statements: 30,
+        lines: 48,
+        functions: 56,
+        branches: 43,
+        statements: 48,
       },
     },
     mockReset: true,

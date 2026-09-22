@@ -1,7 +1,7 @@
 /**
  * @module main/skills/skills-manager
  *
- * Skill discovery and lifecycle (999 lines).
+ * Skill discovery and lifecycle.
  *
  * Responsibilities:
  * - Discovers built-in skills from .claude/skills/ directories

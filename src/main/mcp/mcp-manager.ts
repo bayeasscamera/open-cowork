@@ -1,7 +1,7 @@
 /**
  * @module main/mcp/mcp-manager
  *
- * Model Context Protocol (MCP) server manager (1321 lines).
+ * Model Context Protocol (MCP) server manager.
  *
  * Responsibilities:
  * - MCP server config CRUD (add, update, delete, list)

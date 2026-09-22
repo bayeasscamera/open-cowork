@@ -1,7 +1,7 @@
 /**
  * @module main/session/session-manager
  *
- * Session lifecycle manager (957 lines).
+ * Session lifecycle manager.
  *
  * Responsibilities:
  * - Session CRUD: create, continue, stop, delete, list

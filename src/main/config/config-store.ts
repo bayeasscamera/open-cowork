@@ -1,7 +1,7 @@
 /**
  * @module main/config/config-store
  *
- * Persistent application configuration (1373 lines).
+ * Persistent application configuration.
  *
  * Responsibilities:
  * - electron-store backed config persistence (API keys, model presets, settings)

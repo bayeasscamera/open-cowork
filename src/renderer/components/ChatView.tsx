@@ -630,7 +630,6 @@ export function ChatView() {
 
   const handleFileSelect = async () => {
     if (!isElectron || !window.electronAPI) {
-      console.log('[ChatView] Not in Electron, file selection not available');
       return;
     }
 
