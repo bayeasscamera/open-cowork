@@ -324,3 +324,21 @@ export function buildDiagnosticsSummary(input: BuildDiagnosticsSummaryInput): Di
     })),
   };
 }
+
+/**
+ * Strip query strings, fragments and trailing slash from a configured base URL
+ * before it is written to a diagnostic bundle.
+ */
+export function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    const pathname = parsed.pathname === '/' ? '' : parsed.pathname;
+    return `${parsed.origin}${pathname}`;
+  } catch {
+    return value.replace(/[?#].*$/, '');
+  }
+}

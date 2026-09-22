@@ -103,7 +103,8 @@ Only after the commit is done:
 
 | Module | Role |
 |--------|------|
-| `index.ts` (3800+ lines) | App bootstrap, IPC handlers, lifecycle. **Critical: all cleanup via `cleanupSandboxResources()`** |
+| `index.ts` | App bootstrap, lifecycle and the generic `client-invoke`/`client-event` entry points. **Critical: all cleanup via `cleanupSandboxResources()`** |
+| `ipc/*.ts` | Domain IPC modules (`registerXxxIpcHandlers(context)`): client event dispatch, config, skills/plugins, sandbox, remote, schedule, memory, window/shell, logs, mods, artifacts, MCP |
 | `agent/agent-runner.ts` | Core agent execution loop. Orchestrates LLM calls, tool execution, compaction |
 | `agent/elite-coding-intelligence.ts` | System prompt for elite engineering. `EliteCodingIntelligence.getElitePrompt()` |
 | `agent/self-healing-runner.ts` | Retry & self-repair loop on agent failures |
@@ -176,7 +177,7 @@ Examples: `provider-guidance.test.ts`, `session-manager-crud.test.ts`
 ## When Adding a New IPC Channel
 
 1. Declare in `src/preload/index.ts` — expose via `contextBridge`
-2. Register handler in `src/main/index.ts` — wrap in try/catch
+2. Register the handler in the matching `src/main/ipc/*.ts` module — wrap in try/catch; only app bootstrap/lifecycle stays in `src/main/index.ts`
 3. Use typed events — update `src/renderer/types/index.ts` if needed
 4. Never use dynamic channel names
 

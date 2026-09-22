@@ -3,15 +3,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const indexPath = path.resolve(process.cwd(), 'src/main/index.ts');
+// shell.* and dialog.* channels live in their own module since the structural
+// refactor.
+const windowHandlersPath = path.resolve(process.cwd(), 'src/main/ipc/window-handlers.ts');
 
 describe('Main process file navigation handling', () => {
   it('routes external navigation and IPC through the main-process validator', () => {
     const source = fs.readFileSync(indexPath, 'utf8');
+    const windowHandlers = fs.readFileSync(windowHandlersPath, 'utf8');
     expect(source.match(/void safeOpenExternal\(url\);/g)).toHaveLength(2);
-    expect(source).toContain(
+    expect(windowHandlers).toContain(
       "ipcMain.handle('shell.openExternal', (_event, url: unknown) => safeOpenExternal(url));"
     );
-    expect(source).not.toContain('shell.openExternal(url)');
+    expect(source + windowHandlers).not.toContain('shell.openExternal(url)');
   });
 
   it('delegates navigation URL classification to the shared policy module', () => {

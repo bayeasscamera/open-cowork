@@ -16,11 +16,24 @@ const mocks = vi.hoisted(() => ({
   setDevLogsEnabled: vi.fn(),
   isDevLogsEnabled: vi.fn(),
   configSet: vi.fn(),
+  configGet: vi.fn(),
+  showSaveDialog: vi.fn(),
+  buildDiagnosticsSummary: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
   ipcMain: { handle: mocks.handle },
   shell: { openPath: mocks.openPath },
+  app: { getVersion: () => '3.5.0', isPackaged: false },
+  dialog: { showSaveDialog: mocks.showSaveDialog },
+}));
+
+vi.mock('../src/main/sandbox/sandbox-adapter', () => ({
+  getSandboxAdapter: () => ({ mode: 'native', initialized: true }),
+}));
+vi.mock('../src/main/utils/diagnostics-summary', () => ({
+  buildDiagnosticsSummary: mocks.buildDiagnosticsSummary,
+  sanitizeDiagnosticBaseUrl: (value: string | undefined) => value ?? null,
 }));
 
 vi.mock('../src/main/utils/logger', () => ({
@@ -36,7 +49,7 @@ vi.mock('../src/main/utils/logger', () => ({
 }));
 
 vi.mock('../src/main/config/config-store', () => ({
-  configStore: { set: mocks.configSet },
+  configStore: { set: mocks.configSet, get: mocks.configGet },
 }));
 
 import { registerLogsIpcHandlers } from '../src/main/ipc/logs-handlers';
@@ -58,6 +71,7 @@ const CHANNELS = [
   'logs.setEnabled',
   'logs.isEnabled',
   'logs.write',
+  'logs.export',
 ];
 
 describe('logs IPC handlers', () => {
@@ -163,5 +177,16 @@ describe('logs IPC handlers', () => {
   it('write tolerates the legacy spread form without crashing', () => {
     expect(handler('logs.write')(undefined, 'warn', 'p', 'q')).toEqual({ success: true });
     expect(mocks.logWarn).toHaveBeenCalledWith('p', 'q');
+  });
+
+  it('export reports a cancellation when the save dialog is dismissed', async () => {
+    mocks.getAllLogFiles.mockReturnValue([]);
+    mocks.buildDiagnosticsSummary.mockReturnValue({ exportedAt: '2024-01-01T00:00:00.000Z' });
+    mocks.showSaveDialog.mockResolvedValue({ canceled: true, filePath: undefined });
+
+    await expect(handler('logs.export')(undefined)).resolves.toEqual({
+      success: false,
+      error: 'User cancelled',
+    });
   });
 });

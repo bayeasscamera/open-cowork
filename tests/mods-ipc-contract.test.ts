@@ -6,7 +6,13 @@ const root = resolve(__dirname, '..');
 
 describe('mods/diff/skill-doctor IPC contract', () => {
   it('main registers all four channels', () => {
-    const main = readFileSync(resolve(root, 'src/main/index.ts'), 'utf8');
+    // mods.*/diff.* live in main/ipc/mods-handlers.ts and skills.doctor in
+    // main/ipc/skills-handlers.ts since the structural refactor.
+    const main = [
+      readFileSync(resolve(root, 'src/main/index.ts'), 'utf8'),
+      readFileSync(resolve(root, 'src/main/ipc/mods-handlers.ts'), 'utf8'),
+      readFileSync(resolve(root, 'src/main/ipc/skills-handlers.ts'), 'utf8'),
+    ].join('\n');
     for (const channel of [
       "ipcMain.handle('mods.list'",
       "ipcMain.handle('mods.setEnabled'",
@@ -21,7 +27,12 @@ describe('mods/diff/skill-doctor IPC contract', () => {
 
   it('preload declares the same channels and typed API', () => {
     const preload = readFileSync(resolve(root, 'src/preload/index.ts'), 'utf8');
-    for (const channel of ["'mods.list'", "'mods.setEnabled'", "'diff.getSessionFiles'", "'skills.doctor'"]) {
+    for (const channel of [
+      "'mods.list'",
+      "'mods.setEnabled'",
+      "'diff.getSessionFiles'",
+      "'skills.doctor'",
+    ]) {
       expect(preload).toContain(`ipcRenderer.invoke(${channel}`);
     }
     // API shape declared for the renderer.

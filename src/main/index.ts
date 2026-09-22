@@ -20,7 +20,6 @@ import {
   BrowserWindow,
   ipcMain,
   dialog,
-  shell,
   Menu,
   nativeTheme,
   Tray,
@@ -43,10 +42,8 @@ import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extensi
 import { configStore, type AppTheme } from './config/config-store';
 import { startConfigFileWatcher, stopConfigFileWatcher } from './config/config-file-watcher';
 import { decidePermission } from './config/permission-rules-store';
-import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
+import { shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
-import { WSLBridge } from './sandbox/wsl-bridge';
-import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { ClientEvent, ServerEvent } from '../shared/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
@@ -71,16 +68,7 @@ import {
 } from './ipc/client-event-handler';
 import { getUnsupportedWorkspacePathReason } from './workspace-path-constraints';
 
-import {
-  log,
-  logWarn,
-  logError,
-  getLogsDirectory,
-  getAllLogFiles,
-  closeLogFile,
-  setDevLogsEnabled,
-  isDevLogsEnabled,
-} from './utils/logger';
+import { log, logWarn, logError, closeLogFile, setDevLogsEnabled } from './utils/logger';
 import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { registerConfigIpcHandlers } from './ipc/config-handlers';
@@ -89,21 +77,18 @@ import { registerMcpIpcHandlers } from './ipc/mcp-handlers';
 import { registerRemoteIpcHandlers } from './ipc/remote-handlers';
 import { registerScheduleIpcHandlers } from './ipc/schedule-handlers';
 import { registerMemoryIpcHandlers } from './ipc/memory-handlers';
+import { registerSandboxIpcHandlers } from './ipc/sandbox-handlers';
+import { registerSkillsIpcHandlers } from './ipc/skills-handlers';
+import { registerWindowIpcHandlers } from './ipc/window-handlers';
+import { registerModsIpcHandlers } from './ipc/mods-handlers';
 import { getModsRegistry } from './mods/mods-runtime';
-import { createBuiltinMods, getDiffCollector } from './mods/builtin-mods';
+import { createBuiltinMods } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore } from './projects/project-store';
 import {
   delegationNotifyEnabled,
   resumeInterruptedDelegations,
 } from './agent/background-delegations';
-import {
-  buildSkillDoctorReport,
-  loadSkillSourcesFromDir,
-  type SkillDoctorSkillSource,
-} from './mods/skill-doctor';
-import { approveProposal, listProposals, rejectProposal } from './skills/skill-proposals';
 
-import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { sendToRenderer, setRendererSenderContext } from './events/renderer-sender';
 import { revealFileInFolder, setRevealContext } from './utils/reveal-in-folder';
 
@@ -213,20 +198,6 @@ function resolveSubagentToolPermission(
   }
   const decision = decidePermission('subagent', toolName, toolInput);
   return decision === 'deny' ? 'deny' : 'allow';
-}
-
-function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(value);
-    const pathname = parsed.pathname === '/' ? '' : parsed.pathname;
-    return `${parsed.origin}${pathname}`;
-  } catch {
-    return value.replace(/[?#].*$/, '');
-  }
 }
 
 async function verifyGeminiRuntimeForSmokeTest(): Promise<void> {
@@ -1866,44 +1837,7 @@ ipcMain.handle('client-invoke', async (_event, data: ClientEvent) => {
   return handleClientEvent(data);
 });
 
-ipcMain.handle('get-version', () => {
-  try {
-    return app.getVersion();
-  } catch (error) {
-    logError('[IPC] Error getting version:', error);
-    return 'unknown';
-  }
-});
-
-ipcMain.handle('system.getTheme', () => {
-  try {
-    return { shouldUseDarkColors: nativeTheme.shouldUseDarkColors };
-  } catch (error) {
-    logError('[IPC] Error getting theme:', error);
-    return { shouldUseDarkColors: true };
-  }
-});
-
-ipcMain.handle('shell.openExternal', (_event, url: unknown) => safeOpenExternal(url));
-
-ipcMain.handle('shell.showItemInFolder', async (_event, filePath: string, cwd?: string) => {
-  return revealFileInFolder(filePath, cwd);
-});
-
 registerArtifactsIpcHandlers({ getWorkingDir });
-
-ipcMain.handle('dialog.selectFiles', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile', 'multiSelections'],
-    title: 'Select Files',
-  });
-
-  if (result.canceled) {
-    return [];
-  }
-
-  return result.filePaths;
-});
 
 // Config IPC handlers (see main/ipc/config-handlers.ts)
 registerConfigIpcHandlers({
@@ -1917,399 +1851,18 @@ registerMcpIpcHandlers({
   invalidateMcpServersCache: () => sessionManager?.invalidateMcpServersCache(),
 });
 
-// Skills API handlers
-ipcMain.handle('skills.getAll', async () => {
-  try {
-    if (!skillsManager) {
-      throw new Error('Skills manager is still starting');
-    }
-    return await skillsManager.listSkills();
-  } catch (error) {
-    logError('[Skills] Error getting skills:', error);
-    throw error;
-  }
+// Skills and plugin IPC handlers (see main/ipc/skills-handlers.ts)
+registerSkillsIpcHandlers({
+  getSkillsManager: () => skillsManager,
+  getPluginRuntimeService: () => pluginRuntimeService,
+  getSessionManager: () => sessionManager,
 });
 
-ipcMain.handle('skills.install', async (_event, skillPath: string) => {
-  try {
-    if (!skillsManager) {
-      throw new Error('SkillsManager not initialized');
-    }
-    const skill = await skillsManager.installSkill(skillPath);
-    sessionManager?.invalidateSkillsSetup();
-    return { success: true, skill };
-  } catch (error) {
-    logError('[Skills] Error installing skill:', error);
-    throw error;
-  }
-});
+// Window and system IPC handlers (see main/ipc/window-handlers.ts)
+registerWindowIpcHandlers({ getMainWindow: () => mainWindow });
 
-ipcMain.handle('skills.delete', async (_event, skillId: string) => {
-  try {
-    if (!skillsManager) {
-      throw new Error('SkillsManager not initialized');
-    }
-    await skillsManager.uninstallSkill(skillId);
-    sessionManager?.invalidateSkillsSetup();
-    return { success: true };
-  } catch (error) {
-    logError('[Skills] Error deleting skill:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('skills.setEnabled', async (_event, skillId: string, enabled: boolean) => {
-  try {
-    if (!skillsManager) {
-      throw new Error('SkillsManager not initialized');
-    }
-    skillsManager.setSkillEnabled(skillId, enabled);
-    sessionManager?.invalidateSkillsSetup();
-    return { success: true };
-  } catch (error) {
-    logError('[Skills] Error toggling skill:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('skills.validate', async (_event, skillPath: string) => {
-  try {
-    if (!skillsManager) {
-      return { valid: false, errors: ['SkillsManager not initialized'] };
-    }
-    const result = await skillsManager.validateSkillFolder(skillPath);
-    return result;
-  } catch (error) {
-    logError('[Skills] Error validating skill:', error);
-    return { valid: false, errors: ['Validation failed'] };
-  }
-});
-
-ipcMain.handle('skills.getStoragePath', async () => {
-  try {
-    if (!skillsManager) {
-      return null;
-    }
-    return skillsManager.getGlobalSkillsPath();
-  } catch (error) {
-    logError('[Skills] Error getting storage path:', error);
-    return null;
-  }
-});
-
-ipcMain.handle('skills.setStoragePath', async (_event, targetPath: string, migrate = true) => {
-  if (!skillsManager) {
-    throw new Error('SkillsManager not initialized');
-  }
-  const result = await skillsManager.setGlobalSkillsPath(targetPath, migrate !== false);
-  sendToRenderer({
-    type: 'config.status',
-    payload: {
-      isConfigured: configStore.isConfigured(),
-      config: configStore.getAll(),
-    },
-  });
-  return { success: true, ...result };
-});
-
-ipcMain.handle('skills.openStoragePath', async () => {
-  if (!skillsManager) {
-    throw new Error('SkillsManager not initialized');
-  }
-  const storagePath = skillsManager.getGlobalSkillsPath();
-  const openResult = await shell.openPath(storagePath);
-  if (openResult) {
-    return { success: false, path: storagePath, error: openResult };
-  }
-  return { success: true, path: storagePath };
-});
-
-// ── Proposed skills (sub-agent / synthesizer drafts, MANUAL approval gate) ──
-// A proposal is INERT until the user approves it here: approve moves the draft
-// into the ACTIVE skills directory; reject deletes it. Nothing else in the app
-// can activate a proposal — there is no automatic path.
-ipcMain.handle('skills.listProposals', async () => {
-  try {
-    return { success: true, proposals: listProposals() };
-  } catch (error) {
-    logError('[IPC] skills.listProposals failed:', error);
-    return { success: false, proposals: [] };
-  }
-});
-
-ipcMain.handle('skills.approveProposal', async (_event, name: unknown, renameTo?: unknown) => {
-  try {
-    if (typeof name !== 'string' || !name.trim()) {
-      return { success: false, error: 'Skill name is required.' };
-    }
-    const activeDir = skillsManager
-      ? skillsManager.getGlobalSkillsPath()
-      : join(app.getPath('userData'), 'claude', 'skills');
-    const rename = typeof renameTo === 'string' && renameTo.trim() ? renameTo : undefined;
-    const result = approveProposal(name, activeDir, rename);
-    if (!result.ok) {
-      // Structured code lets the UI offer the approve-as-rename flow.
-      return { success: false, code: result.code, error: result.error };
-    }
-    return { success: true, name: result.name, path: result.path };
-  } catch (error) {
-    logError('[IPC] skills.approveProposal failed:', error);
-    return { success: false, error: 'Failed to approve the proposed skill.' };
-  }
-});
-
-ipcMain.handle('skills.rejectProposal', async (_event, name: unknown) => {
-  try {
-    if (typeof name !== 'string' || !name.trim()) {
-      return { success: false, error: 'Skill name is required.' };
-    }
-    const result = rejectProposal(name);
-    if (!result.ok) {
-      return { success: false, error: result.error };
-    }
-    return { success: true };
-  } catch (error) {
-    logError('[IPC] skills.rejectProposal failed:', error);
-    return { success: false, error: 'Failed to reject the proposed skill.' };
-  }
-});
-
-ipcMain.handle('plugins.listCatalog', async (_event, options?: { installableOnly?: boolean }) => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    return await pluginRuntimeService.listCatalog(options);
-  } catch (error) {
-    logError('[Plugins] Error listing catalog:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('plugins.listInstalled', async () => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    return pluginRuntimeService.listInstalled();
-  } catch (error) {
-    logError('[Plugins] Error listing installed plugins:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('plugins.install', async (_event, pluginName: string) => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    const result = await pluginRuntimeService.install(pluginName);
-    sessionManager?.invalidateSkillsSetup();
-    return result;
-  } catch (error) {
-    logError('[Plugins] Error installing plugin:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('plugins.setEnabled', async (_event, pluginId: string, enabled: boolean) => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    const result = await pluginRuntimeService.setEnabled(pluginId, enabled);
-    sessionManager?.invalidateSkillsSetup();
-    return result;
-  } catch (error) {
-    logError('[Plugins] Error toggling plugin:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle(
-  'plugins.setComponentEnabled',
-  async (
-    _event,
-    pluginId: string,
-    component: 'skills' | 'commands' | 'agents' | 'hooks' | 'mcp',
-    enabled: boolean
-  ) => {
-    try {
-      if (!pluginRuntimeService) {
-        throw new Error('PluginRuntimeService not initialized');
-      }
-      const result = await pluginRuntimeService.setComponentEnabled(pluginId, component, enabled);
-      if (component === 'skills') {
-        sessionManager?.invalidateSkillsSetup();
-      }
-      return result;
-    } catch (error) {
-      logError('[Plugins] Error toggling plugin component:', error);
-      throw error;
-    }
-  }
-);
-
-ipcMain.handle('plugins.uninstall', async (_event, pluginId: string) => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    const result = await pluginRuntimeService.uninstall(pluginId);
-    sessionManager?.invalidateSkillsSetup();
-    return result;
-  } catch (error) {
-    logError('[Plugins] Error uninstalling plugin:', error);
-    throw error;
-  }
-});
-
-// Window control IPC handlers
-ipcMain.on('window.minimize', () => {
-  try {
-    mainWindow?.minimize();
-  } catch (error) {
-    logError('[Window] Error minimizing:', error);
-  }
-});
-
-ipcMain.on('window.maximize', () => {
-  try {
-    if (mainWindow?.isMaximized()) {
-      mainWindow.unmaximize();
-    } else {
-      mainWindow?.maximize();
-    }
-  } catch (error) {
-    logError('[Window] Error maximizing:', error);
-  }
-});
-
-ipcMain.on('window.close', () => {
-  try {
-    mainWindow?.close();
-  } catch (error) {
-    logError('[Window] Error closing:', error);
-  }
-});
-
-// Sandbox IPC handlers
-ipcMain.handle('sandbox.getStatus', async () => {
-  try {
-    const adapter = getSandboxAdapter();
-    const platform = process.platform;
-
-    if (platform === 'win32') {
-      const wslStatus = await WSLBridge.checkWSLStatus();
-      return {
-        platform: 'win32',
-        mode: adapter.initialized ? adapter.mode : 'none',
-        initialized: adapter.initialized,
-        wsl: wslStatus,
-        lima: null,
-      };
-    } else if (platform === 'darwin') {
-      const limaStatus = await LimaBridge.checkLimaStatus();
-      return {
-        platform: 'darwin',
-        mode: adapter.initialized ? adapter.mode : 'native',
-        initialized: adapter.initialized,
-        wsl: null,
-        lima: limaStatus,
-      };
-    } else {
-      return {
-        platform,
-        mode: adapter.initialized ? adapter.mode : 'native',
-        initialized: adapter.initialized,
-        wsl: null,
-        lima: null,
-      };
-    }
-  } catch (error) {
-    logError('[Sandbox] Error getting status:', error);
-    return {
-      platform: process.platform,
-      mode: 'none',
-      initialized: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
-  }
-});
-
-// WSL IPC handlers (Windows)
-ipcMain.handle('sandbox.checkWSL', async () => {
-  try {
-    return await WSLBridge.checkWSLStatus();
-  } catch (error) {
-    logError('[Sandbox] Error checking WSL:', error);
-    return { available: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('sandbox.installNodeInWSL', async (_event, distro: string) => {
-  try {
-    return await WSLBridge.installNodeInWSL(distro);
-  } catch (error) {
-    logError('[Sandbox] Error installing Node.js:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('sandbox.installPythonInWSL', async (_event, distro: string) => {
-  try {
-    return await WSLBridge.installPythonInWSL(distro);
-  } catch (error) {
-    logError('[Sandbox] Error installing Python:', error);
-    return false;
-  }
-});
-
-// Lima IPC handlers (macOS)
-ipcMain.handle('sandbox.checkLima', async () => {
-  try {
-    return await LimaBridge.checkLimaStatus();
-  } catch (error) {
-    logError('[Sandbox] Error checking Lima:', error);
-    return { available: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('sandbox.startLimaInstance', async () => {
-  try {
-    return await LimaBridge.startLimaInstance();
-  } catch (error) {
-    logError('[Sandbox] Error starting Lima instance:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('sandbox.stopLimaInstance', async () => {
-  try {
-    return await LimaBridge.stopLimaInstance();
-  } catch (error) {
-    logError('[Sandbox] Error stopping Lima instance:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('sandbox.installNodeInLima', async () => {
-  try {
-    return await LimaBridge.installNodeInLima();
-  } catch (error) {
-    logError('[Sandbox] Error installing Node.js in Lima:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('sandbox.installPythonInLima', async () => {
-  try {
-    return await LimaBridge.installPythonInLima();
-  } catch (error) {
-    logError('[Sandbox] Error installing Python in Lima:', error);
-    return false;
-  }
-});
+// Sandbox IPC handlers (see main/ipc/sandbox-handlers.ts)
+registerSandboxIpcHandlers();
 
 // Register built-in local mods once (idempotent registry).
 const modsRegistry = getModsRegistry();
@@ -2317,210 +1870,15 @@ for (const mod of createBuiltinMods()) {
   modsRegistry.register(mod);
 }
 
-// Logs IPC handlers (logs.export stays here: it needs app-wide runtime state)
-registerLogsIpcHandlers();
-
-// Mods IPC handlers (local function hooks)
-ipcMain.handle('mods.list', () => {
-  try {
-    return { success: true, mods: getModsRegistry().list() };
-  } catch (error) {
-    logError('[IPC] Error listing mods:', error);
-    return { success: false, mods: [] };
-  }
+// Logs IPC handlers (see main/ipc/logs-handlers.ts)
+registerLogsIpcHandlers({
+  getSessionManager: () => sessionManager,
+  getMainWindow: () => mainWindow,
+  getCurrentWorkingDir: () => currentWorkingDir,
 });
 
-ipcMain.handle('mods.setEnabled', (_event, id: unknown, enabled: unknown) => {
-  try {
-    if (typeof id !== 'string' || typeof enabled !== 'boolean') {
-      return { success: false, error: 'invalid_input' };
-    }
-    getModsRegistry().setEnabled(id, enabled);
-    return { success: true };
-  } catch (error) {
-    logError('[IPC] Error setting mod state:', error);
-    return { success: false, error: 'failed' };
-  }
-});
-
-ipcMain.handle('diff.getSessionFiles', (_event, sessionId: unknown) => {
-  try {
-    if (typeof sessionId !== 'string' || !sessionId.trim()) {
-      return { success: false, files: [] };
-    }
-    return { success: true, files: getDiffCollector().summary(sessionId) };
-  } catch (error) {
-    logError('[IPC] Error getting diff summary:', error);
-    return { success: false, files: [] };
-  }
-});
-
-ipcMain.handle('skills.doctor', async () => {
-  try {
-    const sources: SkillDoctorSkillSource[] = [];
-    // Built-in skills (bundled with the app)
-    const builtinDir = app.isPackaged
-      ? join(process.resourcesPath, 'skills')
-      : join(__dirname, '../../.claude', 'skills');
-    sources.push(...loadSkillSourcesFromDir(builtinDir));
-    // User skills directory
-    const userDir = join(app.getPath('userData'), 'claude', 'skills');
-    sources.push(...loadSkillSourcesFromDir(userDir));
-    const contextWindow = Number(configStore.get('contextWindow')) || null;
-    return { success: true, report: buildSkillDoctorReport(sources, contextWindow) };
-  } catch (error) {
-    logError('[IPC] Error building skill doctor report:', error);
-    return { success: false, report: null };
-  }
-});
-
-ipcMain.handle('logs.export', async () => {
-  try {
-    const logFiles = getAllLogFiles();
-    const diagnosticsSummary = buildDiagnosticsSummary({
-      app: {
-        version: app.getVersion(),
-        isPackaged: app.isPackaged,
-        platform: process.platform,
-        arch: process.arch,
-        nodeVersion: process.version,
-        electronVersion: process.versions.electron,
-        chromeVersion: process.versions.chrome,
-      },
-      runtime: {
-        currentWorkingDir,
-        logsDirectory: getLogsDirectory(),
-        logFileCount: logFiles.length,
-        totalLogSizeBytes: logFiles.reduce((total, file) => total + file.size, 0),
-        devLogsEnabled: isDevLogsEnabled(),
-      },
-      config: {
-        provider: configStore.get('provider'),
-        model: configStore.get('model'),
-        baseUrl: sanitizeDiagnosticBaseUrl(configStore.get('baseUrl') || undefined),
-        customProtocol: configStore.get('customProtocol') || null,
-        sandboxEnabled: !!configStore.get('sandboxEnabled'),
-        thinkingEnabled: !!configStore.get('enableThinking'),
-        apiKeyConfigured: !!configStore.get('apiKey'),
-        agentCliPathConfigured: !!configStore.get('agentCliPath'),
-        defaultWorkdir: configStore.get('defaultWorkdir') || null,
-        globalSkillsPathConfigured: !!configStore.get('globalSkillsPath'),
-      },
-      sandbox: {
-        mode: getSandboxAdapter().mode,
-        initialized: getSandboxAdapter().initialized,
-      },
-      sessions: sessionManager ? sessionManager.listSessions() : [],
-      logFiles,
-      deps: {
-        getMessages: (sessionId: string) =>
-          sessionManager ? sessionManager.getMessages(sessionId) : [],
-        getTraceSteps: (sessionId: string) =>
-          sessionManager ? sessionManager.getTraceSteps(sessionId) : [],
-      },
-    });
-
-    // Show save dialog
-    const result = await dialog.showSaveDialog(mainWindow!, {
-      title: 'Export Logs',
-      defaultPath: `opencowork-logs-${new Date().toISOString().split('T')[0]}.zip`,
-      filters: [
-        { name: 'ZIP Archive', extensions: ['zip'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-    });
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: 'User cancelled' };
-    }
-
-    // Dynamic import archiver
-    const archiver = await import('archiver');
-    const output = fs.createWriteStream(result.filePath);
-    const archive = archiver.default('zip', { zlib: { level: 9 } });
-
-    return new Promise((resolve) => {
-      let settled = false;
-      const settle = (value: {
-        success: boolean;
-        path?: string;
-        size?: number;
-        error?: string;
-      }) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        resolve(value);
-      };
-
-      output.on('close', () => {
-        log('[Logs] Exported logs to:', result.filePath);
-        settle({
-          success: true,
-          path: result.filePath,
-          size: archive.pointer(),
-        });
-      });
-
-      output.on('error', (err: Error) => {
-        logError('[Logs] Error writing exported archive:', err);
-        settle({ success: false, error: err.message });
-      });
-
-      archive.on('error', (err: Error) => {
-        logError('[Logs] Error creating archive:', err);
-        settle({ success: false, error: err.message });
-      });
-
-      archive.pipe(output);
-
-      // Add all log files
-      for (const logFile of logFiles) {
-        archive.file(logFile.path, { name: logFile.name });
-      }
-
-      // Add system info
-      const systemInfo = {
-        platform: process.platform,
-        arch: process.arch,
-        nodeVersion: process.version,
-        electronVersion: process.versions.electron,
-        appVersion: app.getVersion(),
-        exportDate: new Date().toISOString(),
-        logFiles: logFiles.map((f) => ({
-          name: f.name,
-          size: f.size,
-          modified: f.mtime,
-        })),
-      };
-      archive.append(JSON.stringify(systemInfo, null, 2), { name: 'system-info.json' });
-      archive.append(JSON.stringify(diagnosticsSummary, null, 2), {
-        name: 'diagnostics-summary.json',
-      });
-      archive.append(
-        [
-          'Open Cowork diagnostic bundle',
-          `Exported at: ${diagnosticsSummary.exportedAt}`,
-          '',
-          'Included files:',
-          '- Application log files (*.log)',
-          '- system-info.json',
-          '- diagnostics-summary.json',
-          '',
-          'diagnostics-summary.json contains a redacted runtime/config snapshot,',
-          'plus metadata-only session summaries and recent error traces to speed up debugging.',
-        ].join('\n'),
-        { name: 'README.txt' }
-      );
-
-      archive.finalize();
-    });
-  } catch (error) {
-    logError('[Logs] Error exporting logs:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
+// Mods and diff IPC handlers (see main/ipc/mods-handlers.ts)
+registerModsIpcHandlers();
 
 // Remote control IPC handlers (see main/ipc/remote-handlers.ts)
 registerRemoteIpcHandlers();
@@ -2536,58 +1894,6 @@ registerMemoryIpcHandlers({
   getMemoryService: () => memoryService,
   getMainWindow: () => mainWindow,
   getSessionManager: () => sessionManager,
-});
-
-ipcMain.handle('sandbox.retryLimaSetup', async () => {
-  if (process.platform !== 'darwin') {
-    return { success: false, error: 'Lima is only available on macOS' };
-  }
-
-  try {
-    const bootstrap = getSandboxBootstrap();
-    bootstrap.setProgressCallback((progress) => {
-      sendToRenderer({
-        type: 'sandbox.progress',
-        payload: progress,
-      });
-    });
-
-    try {
-      await LimaBridge.stopLimaInstance();
-    } catch (error) {
-      logError('[Sandbox] Error stopping Lima before retry:', error);
-    }
-
-    bootstrap.reset();
-    const result = await bootstrap.bootstrap();
-    const success = !result.error;
-    return { success, result, error: result.error };
-  } catch (error) {
-    logError('[Sandbox] Error retrying Lima setup:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-// Generic retry setup for both WSL and Lima
-ipcMain.handle('sandbox.retrySetup', async () => {
-  try {
-    const bootstrap = getSandboxBootstrap();
-    bootstrap.setProgressCallback((progress) => {
-      sendToRenderer({
-        type: 'sandbox.progress',
-        payload: progress,
-      });
-    });
-
-    // Reset and re-run bootstrap
-    bootstrap.reset();
-    const result = await bootstrap.bootstrap();
-    const success = !result.error;
-    return { success, result, error: result.error };
-  } catch (error) {
-    logError('[Sandbox] Error retrying setup:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
 });
 
 // Client event dispatch lives in its own module; wire the app-level state it

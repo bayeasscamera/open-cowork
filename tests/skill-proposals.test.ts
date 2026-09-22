@@ -258,7 +258,6 @@ describe('skill-proposals — pending store + MANDATORY approval gate', () => {
   });
 });
 
-
 describe('FULL FLOW — a sub-agent proposes, the human approves (only then active)', () => {
   it('propose_skill tool → pending draft → INACTIVE → human approve → active', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-flow-e2e-'));
@@ -283,7 +282,7 @@ describe('FULL FLOW — a sub-agent proposes, the human approves (only then acti
         '',
         '# Release notes checklist',
         '',
-        '1. Group changes by user impact.'
+        '1. Group changes by user impact.',
       ].join('\\n'),
     })) as { content: Array<{ type: string; text: string }> };
     expect(outcome.content[0].text).toContain('PENDING');
@@ -292,16 +291,16 @@ describe('FULL FLOW — a sub-agent proposes, the human approves (only then acti
     //    loader the Skill doctor uses.
     const pending = listProposals();
     expect(pending.map((p) => p.name)).toContain('release-notes-checklist');
-    expect(
-      loadSkillSourcesFromDir(activeDir).map((s) => s.name)
-    ).not.toContain('release-notes-checklist');
+    expect(loadSkillSourcesFromDir(activeDir).map((s) => s.name)).not.toContain(
+      'release-notes-checklist'
+    );
 
     // 3. Human approval — the ONLY activation path.
     const approved = approveProposal('release-notes-checklist', activeDir);
     expect(approved.ok).toBe(true);
-    expect(
-      loadSkillSourcesFromDir(activeDir).map((s) => s.name)
-    ).toContain('release-notes-checklist');
+    expect(loadSkillSourcesFromDir(activeDir).map((s) => s.name)).toContain(
+      'release-notes-checklist'
+    );
     expect(listProposals()).toHaveLength(0);
   });
 });
@@ -329,11 +328,13 @@ describe('wiring — propose_skill is proposal-only, no dynamic tools for sub-ag
   });
 
   it('the main IPC surface exposes list/approve/reject — approve is the ONLY activation path', () => {
-    const index = read('../src/main/index.ts');
-    expect(index).toContain("ipcMain.handle('skills.listProposals'");
-    expect(index).toContain("ipcMain.handle('skills.approveProposal'");
-    expect(index).toContain("ipcMain.handle('skills.rejectProposal'");
-    expect(index).toContain('approveProposal(name, activeDir, rename)');
+    // The skills.* channels live in their own module since the structural
+    // refactor.
+    const skillsHandlers = read('../src/main/ipc/skills-handlers.ts');
+    expect(skillsHandlers).toContain("ipcMain.handle('skills.listProposals'");
+    expect(skillsHandlers).toContain("ipcMain.handle('skills.approveProposal'");
+    expect(skillsHandlers).toContain("ipcMain.handle('skills.rejectProposal'");
+    expect(skillsHandlers).toContain('approveProposal(name, activeDir, rename)');
     const preload = read('../src/preload/index.ts');
     expect(preload).toContain("ipcRenderer.invoke('skills.listProposals')");
     expect(preload).toContain("ipcRenderer.invoke('skills.approveProposal', name, renameTo)");
@@ -345,7 +346,7 @@ describe('wiring — propose_skill is proposal-only, no dynamic tools for sub-ag
     expect(doctor).toContain('ProposedSkillsSection');
     expect(doctor).toContain("act(proposal.name, 'approve')");
     expect(doctor).toContain("act(proposal.name, 'reject')");
-    expect(doctor).toContain("approveProposal");
-    expect(doctor).toContain("rejectProposal");
+    expect(doctor).toContain('approveProposal');
+    expect(doctor).toContain('rejectProposal');
   });
 });
