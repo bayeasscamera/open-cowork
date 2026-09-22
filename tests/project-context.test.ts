@@ -38,6 +38,12 @@ function stubProject(overrides: Partial<Project> = {}): Project {
     description: null,
     workdir: '/w',
     configSetId: null,
+    modelId: null,
+    pipelineMode: 'single',
+    draftConfigSetId: null,
+    draftModelId: null,
+    refineConfigSetId: null,
+    refineModelId: null,
     instructions: null,
     archived: false,
     referenceFiles: [],
@@ -194,8 +200,13 @@ describe('agent runner wiring — source contract', () => {
   it('uses the project ConfigSet when pinned, falling back to the active config', () => {
     // The pinned project modelId (when set) overrides the set's active model.
     const runnerFlat = runnerSource.replace(/\s+/g, ' ');
+    // Single-model mode resolves exactly as before — the two-stage branch only
+    // substitutes the ConfigSet/model pair (draft slot) when it is armed.
     expect(runnerFlat).toContain(
-      'configStore.getConfigSetProjectedConfig( projectContext.configSetId, projectContext.configModelId ?? undefined )'
+      'const effectiveConfigSetId = twoStageArmed ? projectContext.draftConfigSetId : projectContext.configSetId;'
+    );
+    expect(runnerFlat).toContain(
+      'configStore.getConfigSetProjectedConfig( effectiveConfigSetId, effectiveConfigModelId ?? undefined )'
     );
     expect(runnerSource).toContain('|| configStore.getAll()');
   });

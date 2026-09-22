@@ -38,6 +38,15 @@ import {
   resolveProjectContext,
   type ProjectContextResolution,
 } from '../projects/project-context';
+import {
+  buildDraftDetailText,
+  decideTwoStage,
+  mergeTokenUsage,
+  runTwoStagePipeline,
+  shouldArmTwoStage,
+  type TwoStageResult,
+} from '../projects/two-stage-pipeline';
+import { runPiAiOneShot } from './sdk-one-shot';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
@@ -123,7 +132,18 @@ function resolveProjectContextForRunner(sessionId: string): ProjectContextResolu
   try {
     return resolveProjectContext(sessionId, getSharedProjectStore());
   } catch {
-    return { project: undefined, configSetId: null, configModelId: null, systemPromptBlock: '' };
+    // Degraded context: no project, single-model mode, no system-prompt block.
+    return {
+      project: undefined,
+      configSetId: null,
+      configModelId: null,
+      pipelineMode: 'single',
+      draftConfigSetId: null,
+      draftModelId: null,
+      refineConfigSetId: null,
+      refineModelId: null,
+      systemPromptBlock: '',
+    };
   }
 }
 
@@ -1701,13 +1721,50 @@ ${hints.join('\n')}
       // own ConfigSet instead of the globally active one.
       const projectContext = resolveProjectContextForRunner(session.id);
 
+      // ── Two-stage pipeline (project opt-in) ──────────────────────────
+      // A project can chain two models: a fast "draft" model produces the
+      // first pass (it owns ALL tool execution), then a separate "refine"
+      // model reviews and polishes the text. Only the refined answer is
+      // presented; the draft stays available as a collapsible detail.
+      //
+      // The arming decision is made BEFORE the draft runs so the live draft
+      // stream can be withheld. Trivial exchanges never arm the pipeline: the
+      // extra call has to be earned. When the pipeline is off or unarmed the
+      // code below is exactly the historical single-model path.
+      const pipelineRefineConfig = projectContext.refineConfigSetId
+        ? configStore.getConfigSetProjectedConfig(
+            projectContext.refineConfigSetId,
+            projectContext.refineModelId ?? undefined
+          ) || configStore.getAll()
+        : undefined;
+      const pipelineArmDecision = shouldArmTwoStage({
+        mode: projectContext.pipelineMode,
+        userRequest: prompt,
+        hasRefineModel: Boolean(pipelineRefineConfig),
+      });
+      const twoStageArmed = pipelineArmDecision.run;
+      if (projectContext.pipelineMode === 'two-stage' && !twoStageArmed) {
+        log(
+          '[CoworkAgentRunner] Two-stage pipeline not armed:',
+          pipelineArmDecision.reason,
+          '— falling back to single-model behavior'
+        );
+      }
+
       // Resolve model via pi-ai — project's ConfigSet wins when pinned, and a
-      // pinned project modelId overrides the set's active model.
+      // pinned project modelId overrides the set's active model. In two-stage
+      // mode the draft slot selects the model that produces the first pass.
+      const effectiveConfigSetId = twoStageArmed
+        ? projectContext.draftConfigSetId
+        : projectContext.configSetId;
+      const effectiveConfigModelId = twoStageArmed
+        ? projectContext.draftModelId
+        : projectContext.configModelId;
       const runtimeConfig =
-        (projectContext.configSetId
+        (effectiveConfigSetId
           ? configStore.getConfigSetProjectedConfig(
-              projectContext.configSetId,
-              projectContext.configModelId ?? undefined
+              effectiveConfigSetId,
+              effectiveConfigModelId ?? undefined
             )
           : undefined) || configStore.getAll();
       const modelString = this.getCurrentModelString(runtimeConfig.model);
@@ -2575,6 +2632,10 @@ Tool routing:
       let streamedText = '';
       let compactionStepId: string | undefined;
       let hasEmittedError = false;
+      // Two-stage pipeline buffers: when armed, the draft's terminal text-only
+      // message is withheld here instead of being presented as the answer.
+      let pipelineDraftMessage: Message | undefined;
+      let pipelineDraftText = '';
       const promptStartedAt = Date.now();
       const streamEventCounts = new Map<string, number>();
 
@@ -2807,14 +2868,19 @@ Tool routing:
               if (ame.type === 'text_delta') {
                 markFirstStreamEvent(ame.type);
                 streamedText += ame.delta;
-                this.sendPartial(session.id, ame.delta);
+                // Two-stage draft: the first pass is never presented as the
+                // answer, so its live stream is withheld. The accumulated text
+                // still drives the refine decision after the run.
+                if (!twoStageArmed) this.sendPartial(session.id, ame.delta);
               } else if (ame.type === 'thinking_delta') {
                 markFirstStreamEvent(ame.type);
                 // Forward thinking delta to renderer for real-time display
-                this.sendToRenderer({
-                  type: 'stream.thinking',
-                  payload: { sessionId: session.id, delta: ame.delta },
-                });
+                if (!twoStageArmed) {
+                  this.sendToRenderer({
+                    type: 'stream.thinking',
+                    payload: { sessionId: session.id, delta: ame.delta },
+                  });
+                }
               } else if (ame.type === 'toolcall_start') {
                 markFirstStreamEvent(ame.type);
                 const partial = ame.partial;
@@ -2971,6 +3037,23 @@ Tool routing:
                     model: piModel.id,
                     tokenUsage,
                   };
+                  // Two-stage draft: withhold the terminal text-only answer so
+                  // it is never presented as the final answer. It is kept in
+                  // memory and then either released as-is (pipeline skipped or
+                  // refine failed) or replaced by the refined version. Tool-call
+                  // messages still flow through untouched so tools render live.
+                  const isTerminalTextOnly =
+                    !contentBlocks.some((block) => block.type === 'tool_use') &&
+                    contentBlocks.some((block) => block.type === 'text');
+                  if (twoStageArmed && isTerminalTextOnly) {
+                    pipelineDraftMessage = assistantMsg;
+                    pipelineDraftText = contentBlocks
+                      .filter((block) => block.type === 'text')
+                      .map((block) => ('text' in block ? block.text : ''))
+                      .join('\n\n')
+                      .trim();
+                    break;
+                  }
                   this.sendMessage(session.id, assistantMsg);
                 }
               }
@@ -3186,6 +3269,112 @@ Tool routing:
         );
         return;
       }
+
+      // ── Two-stage pipeline finalization ───────────────────────────────
+      // The draft pass is complete and did not error: decide whether the
+      // refine pass earns its cost, then present the finalized answer. A
+      // refine failure releases the draft — one fallback attempt, never a
+      // silent block (same contract as sub-agent fallback).
+      if (twoStageArmed && pipelineDraftMessage && !terminalErrorText) {
+        const draftMessage = pipelineDraftMessage;
+        const draftLabel = `${piModel.provider}/${piModel.id}`;
+        const refineLabel = pipelineRefineConfig
+          ? `${pipelineRefineConfig.provider}/${pipelineRefineConfig.model}`
+          : 'active profile';
+        const decision = decideTwoStage({
+          mode: projectContext.pipelineMode,
+          userRequest: prompt,
+          hasRefineModel: Boolean(pipelineRefineConfig),
+          draftText: pipelineDraftText,
+        });
+
+        // The draft is never lost: it lands in the session log (persisted with
+        // the trace steps) with the model that produced it.
+        this.sendTraceStep(session.id, {
+          id: `pipeline-draft-${Date.now()}`,
+          type: 'thinking',
+          status: 'completed',
+          title: `Brouillon (étape 1/2) · ${draftLabel}`,
+          content: pipelineDraftText,
+          timestamp: Date.now(),
+        });
+
+        const refineStepId = `pipeline-refine-${Date.now()}`;
+        this.sendTraceStep(session.id, {
+          id: refineStepId,
+          type: 'thinking',
+          status: decision.run ? 'running' : 'completed',
+          title: decision.run
+            ? `Relecture et finition (étape 2/2) · ${refineLabel}`
+            : `Relecture ignorée · ${decision.reason}`,
+          timestamp: Date.now(),
+        });
+
+        let pipelineResult: TwoStageResult = {
+          finalText: pipelineDraftText,
+          usedFallback: false,
+        };
+        if (decision.run && pipelineRefineConfig) {
+          const refineConfig = pipelineRefineConfig;
+          pipelineResult = await runTwoStagePipeline({
+            decision,
+            userRequest: prompt,
+            draftText: pipelineDraftText,
+            refine: async ({ systemPrompt, prompt: refinePrompt }) => {
+              const oneShot = await runPiAiOneShot(refinePrompt, systemPrompt, refineConfig, {
+                signal: controller.signal,
+              });
+              return { text: oneShot.text, usage: oneShot.usage };
+            },
+          });
+        }
+
+        if (pipelineResult.usedFallback) {
+          // Refine failed: release the draft unchanged and say so out loud.
+          logWarn(
+            '[CoworkAgentRunner] Two-stage refine failed, releasing draft:',
+            pipelineResult.refineError
+          );
+          this.sendTraceUpdate(session.id, refineStepId, {
+            status: 'error',
+            title: `Relecture échouée — brouillon conservé · ${pipelineResult.refineError ?? 'unknown error'}`,
+          });
+          this.sendMessage(session.id, { ...draftMessage, id: uuidv4(), timestamp: Date.now() });
+        } else if (decision.run) {
+          // Refined answer: the draft moves into a collapsible detail block so
+          // it stays reachable without ever being presented as the answer.
+          this.sendTraceUpdate(session.id, refineStepId, {
+            status: 'completed',
+            title: `Version finalisée (étape 2/2) · ${refineLabel}`,
+            content: pipelineResult.finalText,
+          });
+          const finalContent: ContentBlock[] = [
+            ...draftMessage.content.filter((block) => block.type === 'thinking'),
+            {
+              type: 'thinking',
+              thinking: buildDraftDetailText({
+                draftText: pipelineDraftText,
+                draftLabel,
+                refineLabel,
+              }),
+            },
+            { type: 'text', text: sanitizeOutputPaths(pipelineResult.finalText) },
+          ];
+          this.sendMessage(session.id, {
+            ...draftMessage,
+            id: uuidv4(),
+            content: finalContent,
+            // Cost transparency: the finalized message reports BOTH passes.
+            tokenUsage: mergeTokenUsage(draftMessage.tokenUsage, pipelineResult.usage),
+            timestamp: Date.now(),
+          });
+        } else {
+          // Not worth a second pass (trivial request / short draft): the draft
+          // IS the answer, presented exactly like single-model mode.
+          this.sendMessage(session.id, { ...draftMessage, id: uuidv4(), timestamp: Date.now() });
+        }
+      }
+
       // Complete - update the initial thinking step
       this.sendTraceUpdate(session.id, thinkingStepId, {
         status: terminalErrorText ? 'error' : 'completed',

@@ -27,6 +27,7 @@ import type {
   MemoryDebugFileContent,
   MemoryInspectSessionResult,
   Project,
+  PipelineMode,
   ProjectContextUsage,
   BackgroundTask,
   DelegationSettings,
@@ -191,6 +192,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       description?: string;
       configSetId?: string;
       modelId?: string;
+      pipelineMode?: PipelineMode;
+      draftConfigSetId?: string;
+      draftModelId?: string;
+      refineConfigSetId?: string;
+      refineModelId?: string;
       instructions?: string;
     }): Promise<{ success: boolean; project?: Project; error?: string }> =>
       invoke({ type: 'projects.create', payload }),
@@ -221,6 +227,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       workdir?: string;
       configSetId?: string | null;
       modelId?: string | null;
+      pipelineMode?: PipelineMode;
+      draftConfigSetId?: string | null;
+      draftModelId?: string | null;
+      refineConfigSetId?: string | null;
+      refineModelId?: string | null;
       instructions?: string | null;
     }): Promise<{ success: boolean; project?: Project; error?: string }> =>
       invoke({ type: 'projects.update', payload }),
@@ -260,6 +271,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       removedReferenceFiles?: number;
       error?: string;
     }> => invoke({ type: 'projects.delete', payload: { projectId } }),
+  },
+
+  /**
+   * Session deletion. General project archive/delete intentionally leaves
+   * linked conversations intact (orphaned, never deleted) — removing a
+   * conversation stays an explicit, user-visible action. The invoke shape is
+   * unchanged: the historical dynamic-forwarding fallback still routes this
+   * channel, this types the surface the renderer already calls.
+   */
+  sessions: {
+    delete: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
+      invoke({ type: 'session.delete', payload: { sessionId } }),
   },
 
   // Background delegations — tracking view API
@@ -770,6 +793,11 @@ declare global {
           description?: string;
           configSetId?: string;
           modelId?: string;
+          pipelineMode?: PipelineMode;
+          draftConfigSetId?: string;
+          draftModelId?: string;
+          refineConfigSetId?: string;
+          refineModelId?: string;
           instructions?: string;
         }) => Promise<{ success: boolean; project?: Project; error?: string }>;
         list: (
@@ -797,6 +825,11 @@ declare global {
           workdir?: string;
           configSetId?: string | null;
           modelId?: string | null;
+          pipelineMode?: PipelineMode;
+          draftConfigSetId?: string | null;
+          draftModelId?: string | null;
+          refineConfigSetId?: string | null;
+          refineModelId?: string | null;
           instructions?: string | null;
         }) => Promise<{ success: boolean; project?: Project; error?: string }>;
         archive: (
@@ -824,6 +857,10 @@ declare global {
           removedReferenceFiles?: number;
           error?: string;
         }>;
+      };
+      /** Session deletion — the renderer's session list lives here. */
+      sessions: {
+        delete: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
       };
       backgroundTasks: {
         list: (sessionId?: string) => Promise<{ success: boolean; tasks: BackgroundTask[] }>;

@@ -20,7 +20,8 @@
  */
 
 import { readFileSync } from 'fs';
-import type { Project } from '../../shared/types';
+import type { PipelineMode, Project } from '../../shared/types';
+import { normalizePipelineMode } from './two-stage-pipeline';
 import { logError } from '../utils/logger';
 
 export interface ProjectContextResolution {
@@ -30,8 +31,33 @@ export interface ProjectContextResolution {
   configSetId: string | null;
   /** Model pinned INSIDE that ConfigSet (null = the set's active model). */
   configModelId: string | null;
+  /** Answer pipeline configured for the project ('single' when no project). */
+  pipelineMode: PipelineMode;
+  /** Draft-pass ConfigSet (two-stage only; null = global active ConfigSet). */
+  draftConfigSetId: string | null;
+  /** Model pinned inside the draft ConfigSet (null = the set's active model). */
+  draftModelId: string | null;
+  /** Refine-pass ConfigSet (two-stage only; null = pipeline cannot activate). */
+  refineConfigSetId: string | null;
+  /** Model pinned inside the refine ConfigSet (null = the set's active model). */
+  refineModelId: string | null;
   /** Ready-to-inject system prompt block ('' when nothing applies). */
   systemPromptBlock: string;
+}
+
+/** Degraded context: no project, single-model mode, no injection. */
+function emptyProjectContext(): ProjectContextResolution {
+  return {
+    project: undefined,
+    configSetId: null,
+    configModelId: null,
+    pipelineMode: 'single',
+    draftConfigSetId: null,
+    draftModelId: null,
+    refineConfigSetId: null,
+    refineModelId: null,
+    systemPromptBlock: '',
+  };
 }
 
 /** Hard bounds: a runaway reference file can never flood the context window. */
@@ -152,17 +178,22 @@ export function resolveProjectContext(
   try {
     const project = store.getForSession(sessionId);
     if (!project || project.archived) {
-      return { project: undefined, configSetId: null, configModelId: null, systemPromptBlock: '' };
+      return emptyProjectContext();
     }
     return {
       project,
       configSetId: project.configSetId,
       configModelId: project.modelId,
+      pipelineMode: normalizePipelineMode(project.pipelineMode),
+      draftConfigSetId: project.draftConfigSetId,
+      draftModelId: project.draftModelId,
+      refineConfigSetId: project.refineConfigSetId,
+      refineModelId: project.refineModelId,
       systemPromptBlock: buildSystemPromptBlock(project),
     };
   } catch (err) {
     // Resolve must never take a session down with it — degrade to no context.
-    logError('[ProjectContext] Failed resolving project context for session:', sessionId, err);
-    return { project: undefined, configSetId: null, configModelId: null, systemPromptBlock: '' };
+    logError('[ProjectContext] Failed to resolve project context for session:', sessionId, err);
+    return emptyProjectContext();
   }
 }

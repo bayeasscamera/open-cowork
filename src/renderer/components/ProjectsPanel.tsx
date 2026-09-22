@@ -17,7 +17,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { Project, Session } from '../types';
+import type { PipelineMode, Project, Session } from '../types';
 import { useAppStore } from '../store';
 import { buildConfigSetLites, ConfigSetModelPicker } from './shared/ConfigSetModelPicker';
 
@@ -151,6 +151,11 @@ export function ProjectsPanel() {
   const [workdir, setWorkdir] = useState('');
   const [configSetId, setConfigSetId] = useState('');
   const [configModelId, setConfigModelId] = useState('');
+  const [pipelineMode, setPipelineMode] = useState<PipelineMode>('single');
+  const [draftConfigSetId, setDraftConfigSetId] = useState('');
+  const [draftModelId, setDraftModelId] = useState('');
+  const [refineConfigSetId, setRefineConfigSetId] = useState('');
+  const [refineModelId, setRefineModelId] = useState('');
   const [instructions, setInstructions] = useState('');
   const [referenceFiles, setReferenceFiles] = useState<string[]>([]);
   const [archived, setArchived] = useState(false);
@@ -194,6 +199,11 @@ export function ProjectsPanel() {
         setWorkdir(project.workdir);
         setConfigSetId(project.configSetId ?? '');
         setConfigModelId(project.modelId ?? '');
+        setPipelineMode(project.pipelineMode ?? 'single');
+        setDraftConfigSetId(project.draftConfigSetId ?? '');
+        setDraftModelId(project.draftModelId ?? '');
+        setRefineConfigSetId(project.refineConfigSetId ?? '');
+        setRefineModelId(project.refineModelId ?? '');
         setInstructions(project.instructions ?? '');
         setReferenceFiles(project.referenceFiles);
         setArchived(project.archived);
@@ -220,6 +230,11 @@ export function ProjectsPanel() {
       setWorkdir('');
       setConfigSetId('');
       setConfigModelId('');
+      setPipelineMode('single');
+      setDraftConfigSetId('');
+      setDraftModelId('');
+      setRefineConfigSetId('');
+      setRefineModelId('');
       setInstructions('');
       setReferenceFiles([]);
       setArchived(false);
@@ -281,12 +296,36 @@ export function ProjectsPanel() {
 
   const nameInvalid = !name.trim();
   const workdirInvalid = !workdir.trim() || !isAbsolutePath(workdir);
+  const pipelineEnabled = pipelineMode === 'two-stage';
+  const pipelineInvalid = pipelineEnabled && !refineConfigSetId;
+
+  /**
+   * Toggle the two-stage pipeline. Enabling seeds both slots from the current
+   * single selection so the mode is immediately usable, then the user can
+   * diverge (cheap draft vs. stronger refine).
+   */
+  const handlePipelineToggle = (enabled: boolean) => {
+    setError(null);
+    if (!enabled) {
+      setPipelineMode('single');
+      return;
+    }
+    setDraftConfigSetId((prev) => prev || configSetId);
+    setDraftModelId((prev) => prev || configModelId);
+    setRefineConfigSetId((prev) => prev || configSetId);
+    setRefineModelId((prev) => prev || configModelId);
+    setPipelineMode('two-stage');
+  };
 
   const handleSave = async () => {
     setError(null);
     setTouched({ name: true, workdir: true });
     if (nameInvalid || workdirInvalid) {
       setError(t('projects.errors.nameAndWorkdirRequired'));
+      return;
+    }
+    if (pipelineInvalid) {
+      setError(t('projects.pipelineRefineRequired'));
       return;
     }
     setIsSaving(true);
@@ -299,6 +338,11 @@ export function ProjectsPanel() {
           workdir: workdir.trim(),
           configSetId: configSetId || null,
           modelId: configModelId || null,
+          pipelineMode,
+          draftConfigSetId: draftConfigSetId || null,
+          draftModelId: draftModelId || null,
+          refineConfigSetId: refineConfigSetId || null,
+          refineModelId: refineModelId || null,
           instructions: instructions.trim() || null,
         });
         if (!result.success) {
@@ -312,6 +356,11 @@ export function ProjectsPanel() {
           description: description.trim() || undefined,
           configSetId: configSetId || undefined,
           modelId: configModelId || undefined,
+          pipelineMode,
+          draftConfigSetId: draftConfigSetId || undefined,
+          draftModelId: draftModelId || undefined,
+          refineConfigSetId: refineConfigSetId || undefined,
+          refineModelId: refineModelId || undefined,
           instructions: instructions.trim() || undefined,
         });
         if (!result.success) {
@@ -522,18 +571,82 @@ export function ProjectsPanel() {
                 title={t('projects.configSet')}
                 description={t('projects.configSetHint')}
               >
-                <ConfigSetModelPicker
-                  sets={buildConfigSetLites(appConfig ?? {})}
-                  value={{ configSetId: configSetId, modelId: configModelId || undefined }}
-                  onChange={(next) => {
-                    setConfigSetId(next.configSetId);
-                    setConfigModelId(next.modelId ?? '');
-                  }}
-                  configSetLabel={t('projects.configSetShort')}
-                  modelLabel={t('projects.model')}
-                  allowEmpty
-                  emptyLabel={t('projects.configSetNone')}
-                />
+                <label className="mb-3 flex cursor-pointer items-start gap-2.5 rounded-xl border border-border bg-surface px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={pipelineEnabled}
+                    onChange={(e) => handlePipelineToggle(e.target.checked)}
+                    className="mt-0.5 h-3.5 w-3.5 flex-shrink-0"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[12px] font-medium text-text-primary">
+                      {t('projects.pipelineEnable')}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-4 text-text-muted">
+                      {t('projects.pipelineEnableHint')}
+                    </span>
+                  </span>
+                </label>
+
+                {pipelineEnabled ? (
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-border-subtle bg-background/40 p-3">
+                      <ConfigSetModelPicker
+                        sets={buildConfigSetLites(appConfig ?? {})}
+                        value={{
+                          configSetId: draftConfigSetId,
+                          modelId: draftModelId || undefined,
+                        }}
+                        onChange={(next) => {
+                          setDraftConfigSetId(next.configSetId);
+                          setDraftModelId(next.modelId ?? '');
+                        }}
+                        configSetLabel={t('projects.pipelineDraftConfigSet')}
+                        modelLabel={t('projects.pipelineDraftModel')}
+                        allowEmpty
+                        emptyLabel={t('projects.pipelineDraftNone')}
+                      />
+                    </div>
+                    <div className="rounded-xl border border-border-subtle bg-background/40 p-3">
+                      <ConfigSetModelPicker
+                        sets={buildConfigSetLites(appConfig ?? {})}
+                        value={{
+                          configSetId: refineConfigSetId,
+                          modelId: refineModelId || undefined,
+                        }}
+                        onChange={(next) => {
+                          setRefineConfigSetId(next.configSetId);
+                          setRefineModelId(next.modelId ?? '');
+                        }}
+                        configSetLabel={t('projects.pipelineRefineConfigSet')}
+                        modelLabel={t('projects.pipelineRefineModel')}
+                        allowEmpty
+                        emptyLabel={t('projects.pipelineRefineNone')}
+                      />
+                    </div>
+                    <p className="text-[11px] leading-4 text-text-muted">
+                      {t('projects.pipelineCostHint')}
+                    </p>
+                    {pipelineInvalid && (
+                      <p className="text-[11px] text-error">
+                        {t('projects.pipelineRefineRequired')}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <ConfigSetModelPicker
+                    sets={buildConfigSetLites(appConfig ?? {})}
+                    value={{ configSetId: configSetId, modelId: configModelId || undefined }}
+                    onChange={(next) => {
+                      setConfigSetId(next.configSetId);
+                      setConfigModelId(next.modelId ?? '');
+                    }}
+                    configSetLabel={t('projects.configSetShort')}
+                    modelLabel={t('projects.model')}
+                    allowEmpty
+                    emptyLabel={t('projects.configSetNone')}
+                  />
+                )}
               </SectionCard>
 
               <SectionCard

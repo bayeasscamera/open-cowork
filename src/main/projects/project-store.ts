@@ -16,7 +16,8 @@ import { randomUUID } from 'crypto';
 import { existsSync, statSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 import { getDatabase, type DatabaseInstance, type ProjectRow, type SessionRow } from '../db/database';
-import type { Project } from '../../shared/types';
+import type { PipelineMode, Project } from '../../shared/types';
+import { normalizePipelineMode } from './two-stage-pipeline';
 import { log, logError } from '../utils/logger';
 
 export interface CreateProjectInput {
@@ -26,6 +27,14 @@ export interface CreateProjectInput {
   configSetId?: string;
   /** Model pinned inside the selected ConfigSet (absent = its active model). */
   modelId?: string;
+  /** Answer pipeline (absent = 'single', the legacy behavior). */
+  pipelineMode?: PipelineMode;
+  /** Draft-pass ConfigSet for two-stage mode (absent = global active ConfigSet). */
+  draftConfigSetId?: string;
+  draftModelId?: string;
+  /** Refine-pass ConfigSet for two-stage mode (absent = pipeline disabled). */
+  refineConfigSetId?: string;
+  refineModelId?: string;
   instructions?: string;
 }
 
@@ -35,6 +44,11 @@ export interface UpdateProjectInput {
   workdir?: string;
   configSetId?: string | null;
   modelId?: string | null;
+  pipelineMode?: PipelineMode;
+  draftConfigSetId?: string | null;
+  draftModelId?: string | null;
+  refineConfigSetId?: string | null;
+  refineModelId?: string | null;
   instructions?: string | null;
   archived?: boolean;
 }
@@ -57,6 +71,11 @@ function rowToProject(
     workdir: row.workdir,
     configSetId: row.config_set_id,
     modelId: row.config_model_id,
+    pipelineMode: normalizePipelineMode(row.pipeline_mode),
+    draftConfigSetId: row.draft_config_set_id ?? null,
+    draftModelId: row.draft_config_model_id ?? null,
+    refineConfigSetId: row.refine_config_set_id ?? null,
+    refineModelId: row.refine_config_model_id ?? null,
     instructions: row.instructions,
     archived: row.archived === 1,
     referenceFiles,
@@ -133,6 +152,11 @@ export class ProjectStore {
       workdir,
       config_set_id: input.configSetId?.trim() || null,
       config_model_id: input.modelId?.trim() || null,
+      pipeline_mode: normalizePipelineMode(input.pipelineMode),
+      draft_config_set_id: input.draftConfigSetId?.trim() || null,
+      draft_config_model_id: input.draftModelId?.trim() || null,
+      refine_config_set_id: input.refineConfigSetId?.trim() || null,
+      refine_config_model_id: input.refineModelId?.trim() || null,
       instructions: input.instructions?.trim() || null,
       archived: 0,
       created_at: now,
@@ -153,6 +177,21 @@ export class ProjectStore {
     if (input.description !== undefined) updates.description = input.description?.trim() || null;
     if (input.configSetId !== undefined) updates.config_set_id = input.configSetId?.trim() || null;
     if (input.modelId !== undefined) updates.config_model_id = input.modelId?.trim() || null;
+    if (input.pipelineMode !== undefined) {
+      updates.pipeline_mode = normalizePipelineMode(input.pipelineMode);
+    }
+    if (input.draftConfigSetId !== undefined) {
+      updates.draft_config_set_id = input.draftConfigSetId?.trim() || null;
+    }
+    if (input.draftModelId !== undefined) {
+      updates.draft_config_model_id = input.draftModelId?.trim() || null;
+    }
+    if (input.refineConfigSetId !== undefined) {
+      updates.refine_config_set_id = input.refineConfigSetId?.trim() || null;
+    }
+    if (input.refineModelId !== undefined) {
+      updates.refine_config_model_id = input.refineModelId?.trim() || null;
+    }
     if (input.instructions !== undefined) updates.instructions = input.instructions?.trim() || null;
     if (input.archived !== undefined) updates.archived = input.archived ? 1 : 0;
 

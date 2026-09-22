@@ -140,6 +140,16 @@ export interface ProjectRow {
   config_set_id: string | null;
   /** Model pinned inside the ConfigSet (NULL = the set's active model — legacy rows). */
   config_model_id: string | null;
+  /** 'single' (default) or 'two-stage' — NULL on legacy rows, normalized on read. */
+  pipeline_mode: string | null;
+  /** ConfigSet of the fast draft pass (two-stage only). */
+  draft_config_set_id: string | null;
+  /** Model pinned inside the draft ConfigSet (NULL = the set's active model). */
+  draft_config_model_id: string | null;
+  /** ConfigSet of the refine pass (two-stage only; required to activate). */
+  refine_config_set_id: string | null;
+  /** Model pinned inside the refine ConfigSet (NULL = the set's active model). */
+  refine_config_model_id: string | null;
   /** Persistent project instructions injected into every linked session. */
   instructions: string | null;
   /** 0 = active, 1 = archived (no destructive delete without confirmation). */
@@ -406,6 +416,11 @@ function initializeSchema(database: Database.Database): void {
       workdir TEXT NOT NULL,
       config_set_id TEXT,
       config_model_id TEXT,
+      pipeline_mode TEXT,
+      draft_config_set_id TEXT,
+      draft_config_model_id TEXT,
+      refine_config_set_id TEXT,
+      refine_config_model_id TEXT,
       instructions TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
@@ -414,6 +429,13 @@ function initializeSchema(database: Database.Database): void {
   `);
     // Legacy projects predate the model pin: NULL = the ConfigSet's active model.
     ensureColumn(database, 'projects', 'config_model_id', 'config_model_id TEXT');
+    // Two-stage pipeline columns — added after the first release, so existing
+    // databases need the same ALTER TABLE path as the model pin above.
+    ensureColumn(database, 'projects', 'pipeline_mode', 'pipeline_mode TEXT');
+    ensureColumn(database, 'projects', 'draft_config_set_id', 'draft_config_set_id TEXT');
+    ensureColumn(database, 'projects', 'draft_config_model_id', 'draft_config_model_id TEXT');
+    ensureColumn(database, 'projects', 'refine_config_set_id', 'refine_config_set_id TEXT');
+    ensureColumn(database, 'projects', 'refine_config_model_id', 'refine_config_model_id TEXT');
 
     // Sessions can point at the project they belong to (null = no project).
     ensureColumn(database, 'sessions', 'project_id', 'project_id TEXT');
@@ -598,9 +620,12 @@ export function initDatabase(): DatabaseInstance {
 
   const insertProject = rawDb.prepare(`
     INSERT INTO projects (
-      id, name, description, workdir, config_set_id, config_model_id, instructions, archived, created_at, updated_at
+      id, name, description, workdir, config_set_id, config_model_id,
+      pipeline_mode, draft_config_set_id, draft_config_model_id,
+      refine_config_set_id, refine_config_model_id,
+      instructions, archived, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getProjectStmt = rawDb.prepare(`
@@ -839,6 +864,11 @@ export function initDatabase(): DatabaseInstance {
           project.workdir,
           project.config_set_id,
           project.config_model_id,
+          project.pipeline_mode,
+          project.draft_config_set_id,
+          project.draft_config_model_id,
+          project.refine_config_set_id,
+          project.refine_config_model_id,
           project.instructions,
           project.archived,
           project.created_at,

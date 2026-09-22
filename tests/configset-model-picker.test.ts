@@ -108,8 +108,13 @@ describe('project model pin — resolution wiring', () => {
   });
 
   it('the runner passes the pinned model to the projected ConfigSet config', () => {
+    // Single-model mode resolves the project's pin; two-stage mode substitutes
+    // the draft slot — both flow through the same projection call.
     expect(agentRunner).toContain(
-      'getConfigSetProjectedConfig(\n              projectContext.configSetId,\n              projectContext.configModelId ?? undefined\n            )'
+      'getConfigSetProjectedConfig(\n              effectiveConfigSetId,\n              effectiveConfigModelId ?? undefined\n            )'
+    );
+    expect(agentRunner).toContain(
+      'const effectiveConfigModelId = twoStageArmed\n        ? projectContext.draftModelId\n        : projectContext.configModelId;'
     );
   });
 });

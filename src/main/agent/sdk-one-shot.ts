@@ -170,7 +170,17 @@ export async function runPiAiOneShot(
     maxTokens?: number;
     signal?: AbortSignal;
   }
-): Promise<{ text: string; hasThinking: boolean; durationMs: number }> {
+): Promise<{
+  text: string;
+  hasThinking: boolean;
+  durationMs: number;
+  /**
+   * Provider-reported token usage, when available. Additive: existing callers
+   * (probe, title generation) ignore it; the two-stage pipeline merges it into
+   * the finalized message so the extra pass is visible in the cost report.
+   */
+  usage?: { input: number; output: number };
+}> {
   const modelString = resolvePiModelString(config);
   const keyProvider = config.customProtocol || config.provider || 'anthropic';
   const parts = modelString.split('/');
@@ -287,7 +297,11 @@ export async function runPiAiOneShot(
     'thinkingBlocks:',
     thinkingBlocks.length
   );
-  return { text, hasThinking, durationMs: Date.now() - start };
+  const usage =
+    typeof response.usage?.input === 'number' && typeof response.usage?.output === 'number'
+      ? { input: response.usage.input, output: response.usage.output }
+      : undefined;
+  return { text, hasThinking, durationMs: Date.now() - start, usage };
 }
 
 function normalizeProbeAck(raw: string): string {

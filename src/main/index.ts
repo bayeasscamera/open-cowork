@@ -3469,6 +3469,11 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
           description: event.payload.description,
           configSetId: event.payload.configSetId,
           modelId: event.payload.modelId,
+          pipelineMode: event.payload.pipelineMode,
+          draftConfigSetId: event.payload.draftConfigSetId,
+          draftModelId: event.payload.draftModelId,
+          refineConfigSetId: event.payload.refineConfigSetId,
+          refineModelId: event.payload.refineModelId,
           instructions: event.payload.instructions,
         });
         return { success: true, project };
@@ -3516,6 +3521,11 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
           workdir: event.payload.workdir,
           configSetId: event.payload.configSetId,
           modelId: event.payload.modelId,
+          pipelineMode: event.payload.pipelineMode,
+          draftConfigSetId: event.payload.draftConfigSetId,
+          draftModelId: event.payload.draftModelId,
+          refineConfigSetId: event.payload.refineConfigSetId,
+          refineModelId: event.payload.refineModelId,
           instructions: event.payload.instructions,
         });
         return { success: true, project };

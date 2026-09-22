@@ -18,6 +18,16 @@ export interface Session {
 }
 
 /**
+ * How a project turns a model response into the answer it presents.
+ * - `single`    — one model produces the answer (default, legacy behavior).
+ * - `two-stage` — a fast "draft" model produces a first pass, then a more
+ *                  capable "refine" model reviews and polishes it. Only the
+ *                  finalized text is presented; the draft stays available as a
+ *                  collapsible detail and a session log entry.
+ */
+export type PipelineMode = 'single' | 'two-stage';
+
+/**
  * A Project groups sessions around a shared working context: a workspace
  * folder, persistent instructions, reference files and an optional ConfigSet
  * (provider/model) override. Never hard-deleted — archived only.
@@ -30,6 +40,16 @@ export interface Project {
   configSetId: string | null;
   /** Model pinned INSIDE the selected ConfigSet (null = the set's active model). */
   modelId: string | null;
+  /** Answer pipeline for this project: single model (default) or draft→refine. */
+  pipelineMode: PipelineMode;
+  /** ConfigSet used for the fast draft pass (two-stage only). */
+  draftConfigSetId: string | null;
+  /** Model pinned inside the draft ConfigSet (null = the set's active model). */
+  draftModelId: string | null;
+  /** ConfigSet used for the refine pass (two-stage only; required to activate). */
+  refineConfigSetId: string | null;
+  /** Model pinned inside the refine ConfigSet (null = the set's active model). */
+  refineModelId: string | null;
   instructions: string | null;
   archived: boolean;
   /** Absolute paths of attached reference files (read-only context at session start). */
@@ -612,6 +632,11 @@ export type ClientEvent =
         description?: string;
         configSetId?: string;
         modelId?: string;
+        pipelineMode?: PipelineMode;
+        draftConfigSetId?: string;
+        draftModelId?: string;
+        refineConfigSetId?: string;
+        refineModelId?: string;
         instructions?: string;
       };
     }
@@ -626,6 +651,11 @@ export type ClientEvent =
         workdir?: string;
         configSetId?: string | null;
         modelId?: string | null;
+        pipelineMode?: PipelineMode;
+        draftConfigSetId?: string | null;
+        draftModelId?: string | null;
+        refineConfigSetId?: string | null;
+        refineModelId?: string | null;
         instructions?: string | null;
       };
     }
