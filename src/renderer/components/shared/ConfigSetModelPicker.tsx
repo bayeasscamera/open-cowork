@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 /**
  * Shared two-level ConfigSet → model picker.
  *
- * Single source of truth for BOTH consumers (SettingsSubAgents per-role and
- * global sub-agent selection, and the ProjectsPanel model profile selector) —
- * the exact same component, so the two screens can never drift apart.
+ * Single source of truth for every consumer (the dedicated Sub-agents view,
+ * the delegation form, the images settings, and the Projects panel profile
+ * selector) — the exact same component, so those screens can never drift apart.
  *
  * Value semantics (identical to subAgents.perRole): `modelId: undefined` means
  * "use the selected ConfigSet's active model"; picking the active model in the
