@@ -87,6 +87,7 @@ const EXTRACTED_MODULES = [
   'pi-session-tools',
   'create-pi-session',
   'reuse-pi-session',
+  'loop-guard-controller',
   'runtime-config-summary',
   'skills-directory-setup',
 ];
@@ -116,6 +117,11 @@ const WIRING: Array<{ module: string; iface: string; declaration: string }> = [
     module: 'create-pi-session',
     iface: 'CreatePiSessionDeps',
     declaration: 'await createPiSession(',
+  },
+  {
+    module: 'loop-guard-controller',
+    iface: 'LoopGuardControllerDeps',
+    declaration: 'createLoopGuardController({',
   },
   {
     module: 'reuse-pi-session',
