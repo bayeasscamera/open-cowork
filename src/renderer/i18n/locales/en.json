@@ -885,6 +885,7 @@
     "timeout": "Idle timeout (seconds)",
     "maxConcurrent": "Max concurrent delegations",
     "notify": "Notify when a task finishes",
+    "resumeOnRestart": "Resume interrupted tasks when the app restarts",
     "empty": "No delegated tasks yet.",
     "selectHint": "Select a task to see its report or live progress.",
     "summaryCounts": "{running} running · {completed} completed · {failed} failed",

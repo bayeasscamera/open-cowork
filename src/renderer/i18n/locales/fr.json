@@ -456,6 +456,7 @@
     "timeout": "Timeout d'inactivité (secondes)",
     "maxConcurrent": "Délégations simultanées max",
     "notify": "Notifier quand une tâche se termine",
+    "resumeOnRestart": "Reprendre les tâches interrompues au redémarrage",
     "empty": "Aucune tâche déléguée pour l'instant.",
     "selectHint": "Sélectionnez une tâche pour voir son rapport ou sa progression en direct.",
     "summaryCounts": "{running} en cours · {completed} terminées · {failed} échouées",

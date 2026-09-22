@@ -60,6 +60,8 @@ const MAX_INJECTED_RESULT_CHARS = 12_000;
 const MAX_PERSISTED_RESULT_CHARS = 20_000;
 const MAX_LOG_STEPS = 40;
 const MAX_TRACKED_TASKS = 60;
+/** One resume attempt per task: a task interrupted again must not loop forever. */
+export const MAX_DELEGATION_RESUME_ATTEMPTS = 1;
 
 export type DelegationStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -109,6 +111,14 @@ export interface BackgroundDelegation {
   modifiedFiles?: string[];
   delivered: boolean;
   log: DelegationLogEntry[];
+  /** True when the app quit while this delegation was still running. */
+  interrupted?: boolean;
+  /** Set on a delegation that replaced an interrupted one (see resumeInterruptedDelegations). */
+  resumedFrom?: string;
+  /** Id of the delegation that resumed this interrupted one. */
+  resumedBy?: string;
+  /** How many times this task has already been resumed (bounded, see MAX_DELEGATION_RESUME_ATTEMPTS). */
+  resumeAttempts?: number;
 }
 
 export interface DelegationSettings {
@@ -122,6 +132,12 @@ export interface DelegationSettings {
   maxConcurrent: number;
   /** Native notification when a task finishes while the app is unfocused. */
   notifyOnCompletion: boolean;
+  /**
+   * Re-launch delegations that were still running when the app last quit.
+   * A background sub-agent cannot survive process exit, so "persistent" means
+   * resumed at startup from the stored prompt, workspace and role.
+   */
+  resumeOnRestart: boolean;
 }
 
 export const DEFAULT_DELEGATION_SETTINGS: DelegationSettings = {
@@ -130,6 +146,7 @@ export const DEFAULT_DELEGATION_SETTINGS: DelegationSettings = {
   timeoutMs: 180_000,
   maxConcurrent: 2,
   notifyOnCompletion: true,
+  resumeOnRestart: true,
 };
 
 /**
@@ -255,15 +272,21 @@ function loadPersisted(): void {
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8')) as BackgroundDelegation[];
     for (const item of raw) {
       // Sub-agent sessions die with the app: anything still "running" was
-      // interrupted by the restart.
+      // interrupted by the restart. The record keeps its prompt/workspace/role
+      // so resumeInterruptedDelegations() can re-launch it.
       if (item.status === 'running') {
         item.status = 'failed';
         item.error = 'Interrupted by app restart';
         item.completedAt = Date.now();
+        item.interrupted = true;
       }
       if (!Array.isArray(item.log)) item.log = [];
       delegations.set(item.id, item);
       if (item.status === 'completed' && !item.delivered) {
+        enqueuePending(item.id);
+      } else if (item.interrupted && !item.delivered) {
+        // An interrupted task must never disappear silently: the session is
+        // told at the next turn even when the resume setting is off.
         enqueuePending(item.id);
       }
     }
@@ -316,6 +339,10 @@ export function normalizeDelegationSettings(raw: unknown): DelegationSettings {
       typeof r.notifyOnCompletion === 'boolean'
         ? r.notifyOnCompletion
         : DEFAULT_DELEGATION_SETTINGS.notifyOnCompletion,
+    resumeOnRestart:
+      typeof r.resumeOnRestart === 'boolean'
+        ? r.resumeOnRestart
+        : DEFAULT_DELEGATION_SETTINGS.resumeOnRestart,
   };
 }
 
@@ -670,6 +697,89 @@ export function retryDelegation(
     role: source.role,
     ...(overrides ?? {}),
   });
+}
+
+/**
+ * Re-launch the delegations that were still running when the app last quit.
+ *
+ * A background sub-agent session lives inside this process, so quitting always
+ * interrupts it — what survives is the delegation itself (prompt, workspace,
+ * role), persisted in background_delegations.json. At startup the interrupted
+ * TOP-LEVEL tasks are re-launched as new delegations, and both records are
+ * linked (resumedFrom / resumedBy) so the tracking view tells the whole story.
+ *
+ * Bounded on purpose:
+ *  - at most MAX_DELEGATION_RESUME_ATTEMPTS resume per task;
+ *  - only depth-1 tasks: a depth-2 child belongs to a parent that is re-run;
+ *  - the concurrency cap still applies, so tasks that do not fit stay
+ *    interrupted and are resumed at the next launch.
+ */
+export function resumeInterruptedDelegations(
+  options: {
+    /** Injection point for tests; defaults to the real startDelegation. */
+    start?: (options: StartDelegationOptions) => { taskId: string; done: Promise<void> };
+  } = {}
+): { disabled: boolean; resumed: string[]; skipped: string[] } {
+  ensureLoaded();
+  const resumed: string[] = [];
+  const skipped: string[] = [];
+
+  if (!settings.resumeOnRestart) {
+    return { disabled: true, resumed, skipped };
+  }
+
+  const interrupted = Array.from(delegations.values())
+    .filter(
+      (d) =>
+        d.interrupted === true &&
+        d.status !== 'running' &&
+        !d.resumedBy &&
+        (d.resumeAttempts ?? 0) < MAX_DELEGATION_RESUME_ATTEMPTS
+    )
+    .sort((a, b) => a.startedAt - b.startedAt);
+
+  const start = options.start ?? startDelegation;
+
+  for (const delegation of interrupted) {
+    if (delegation.depth > 1) {
+      // The parent's own re-run recreates its children.
+      skipped.push(delegation.id);
+      continue;
+    }
+    try {
+      const { taskId } = start({
+        sessionId: delegation.sessionId,
+        cwd: delegation.cwd,
+        title: delegation.title,
+        prompt: delegation.prompt,
+        role: delegation.role,
+        depth: delegation.depth,
+        ...(delegation.crossVerify ? { crossVerify: true } : {}),
+      });
+      const replacement = delegations.get(taskId);
+      const attempts = (delegation.resumeAttempts ?? 0) + 1;
+      delegation.resumedBy = taskId;
+      if (replacement) {
+        replacement.resumedFrom = delegation.id;
+        replacement.resumeAttempts = attempts;
+        pushLog(replacement, 'launched', `Resumed after app restart (was ${delegation.id})`);
+      }
+      persist();
+      resumed.push(taskId);
+      log(`[BackgroundDelegations] Resumed interrupted task ${delegation.id} as ${taskId}`);
+    } catch (error) {
+      // Capacity or depth guard: leave the record resumable for the next
+      // launch instead of failing the whole startup path.
+      skipped.push(delegation.id);
+      logWarn(
+        `[BackgroundDelegations] Could not resume ${delegation.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  return { disabled: false, resumed, skipped };
 }
 
 /** Remove a FINISHED task from the tracking history (never a running one). */

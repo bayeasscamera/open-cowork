@@ -115,6 +115,8 @@ export interface DelegationSettings {
   timeoutMs: number;
   maxConcurrent: number;
   notifyOnCompletion: boolean;
+  /** Re-launch delegations that were still running when the app last quit. */
+  resumeOnRestart: boolean;
 }
 
 /** Swarm execution stats (main screen transparency section). */

@@ -103,6 +103,14 @@ export function DelegationSettingsForm({ compact = false }: { compact?: boolean 
         />
         {t('delegatedTasks.notify')}
       </label>
+      <label className="flex items-center gap-2 text-sm text-text-secondary">
+        <input
+          type="checkbox"
+          checked={settings.resumeOnRestart}
+          onChange={(e) => void save({ resumeOnRestart: e.target.checked })}
+        />
+        {t('delegatedTasks.resumeOnRestart')}
+      </label>
       {error && (
         <p className="text-xs text-rose-500" role="alert">
           {error}

@@ -907,6 +907,7 @@
     "timeout": "空闲超时（秒）",
     "maxConcurrent": "最大并发委托数",
     "notify": "任务完成时通知",
+    "resumeOnRestart": "重启后继续被中断的任务",
     "empty": "暂无委托任务。",
     "selectHint": "选择一个任务查看报告或实时进度。",
     "summaryCounts": "{running} 进行中 · {completed} 已完成 · {failed} 失败",

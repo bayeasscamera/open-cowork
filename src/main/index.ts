@@ -107,6 +107,7 @@ import {
   setDelegationSettings,
   delegationNotifyEnabled,
   getDelegationStats,
+  resumeInterruptedDelegations,
 } from './agent/background-delegations';
 import { getSwarmStats } from './agent/swarm-stats';
 import {
@@ -1501,6 +1502,21 @@ app
       now: () => Date.now(),
     });
     scheduledTaskManager.start();
+
+    // Delegations that were still running when the app last quit are resumed
+    // here (opt-in via the delegation settings). A background sub-agent lives
+    // inside this process, so "persistent" means re-launched at startup with
+    // the stored prompt, workspace and role.
+    try {
+      const resumeOutcome = resumeInterruptedDelegations();
+      if (resumeOutcome.resumed.length > 0) {
+        log(
+          `[App] Resumed ${resumeOutcome.resumed.length} interrupted delegation(s) after restart`
+        );
+      }
+    } catch (error) {
+      logError('[App] Failed to resume interrupted delegations:', error);
+    }
 
     // 初始化远程管理器
     remoteManager.setRendererCallback(sendToRenderer);
