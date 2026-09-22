@@ -141,11 +141,13 @@ import {
   parseHeadlessArgs,
   redirectConsoleToStderr,
   createHeadlessSendToRenderer,
+  contentBlocksToText,
   emitSessionStarted,
   emitSessionEnded,
   emitHeadlessReady,
   readStdinPrompt,
   startRpcLoop,
+  writeResultFileAtomic,
 } from './cli/headless-io';
 import { CrashGuard } from './utils/crash-guard';
 import {
@@ -916,6 +918,27 @@ app
       log('[Headless] Starting in headless mode');
       log('[Headless] Args:', JSON.stringify(headlessArgs));
 
+      // Detached delegations read their outcome from this file; the parent
+      // appends it atomically so it is never observed half-written.
+      const headlessResultFile = headlessArgs.resultFile;
+      /** Last assistant message seen — the detached task's real output. */
+      let headlessFinalOutput = '';
+      const writeHeadlessResult = (
+        status: 'completed' | 'failed',
+        sessionId?: string,
+        error?: string
+      ): void => {
+        if (!headlessResultFile) return;
+        const result: Parameters<typeof writeResultFileAtomic>[1] = {
+          status,
+          finishedAt: Date.now(),
+        };
+        if (sessionId) result.sessionId = sessionId;
+        if (error) result.error = error;
+        if (headlessFinalOutput) result.output = headlessFinalOutput;
+        writeResultFileAtomic(headlessResultFile, result);
+      };
+
       if (headlessArgs.autoApprove) {
         process.stderr.write(
           '\n⚠️  WARNING: --auto-approve is active. ALL tool calls (file writes, shell commands, network) will be approved without confirmation.\n\n'
@@ -972,6 +995,9 @@ app
       // Mutable interceptor: set in stdio mode to route events to StdioChannel
       let stdioEventInterceptor: ((event: ServerEvent) => void) | null = null;
       const headlessSendWithPermission = (event: ServerEvent) => {
+        if (event.type === 'stream.message' && event.payload.message.role === 'assistant') {
+          headlessFinalOutput = contentBlocksToText(event.payload.message.content);
+        }
         if (event.type === 'permission.request') {
           const { toolUseId } = event.payload;
           const result = headlessArgs.autoApprove ? 'allow' : 'deny';
@@ -1130,6 +1156,7 @@ app
         log('[Headless] Single-shot mode with prompt');
 
         if (!configStore.hasUsableCredentialsForActiveSet()) {
+          writeHeadlessResult('failed', undefined, 'No usable API credentials configured.');
           headlessSendWithPermission({
             type: 'error',
             payload: {
@@ -1151,14 +1178,17 @@ app
           emitSessionStarted(session.id);
           await waitForSessionCompletion(session.id);
           emitSessionEnded(session.id);
+          writeHeadlessResult('completed', session.id);
           await headlessCleanup();
           process.exit(0);
         } catch (err) {
           logError('[Headless] Session error:', err);
+          const message = err instanceof Error ? err.message : String(err);
+          writeHeadlessResult('failed', undefined, message);
           headlessSendWithPermission({
             type: 'error',
             payload: {
-              message: err instanceof Error ? err.message : String(err),
+              message,
             },
           });
           await headlessCleanup();

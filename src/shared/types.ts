@@ -117,6 +117,10 @@ export interface DelegationSettings {
   notifyOnCompletion: boolean;
   /** Re-launch delegations that were still running when the app last quit. */
   resumeOnRestart: boolean;
+  /** Run each delegation in its own detached process (survives app quit). */
+  detachedExecution: boolean;
+  /** Let detached delegations run every tool without confirmation. */
+  detachedAutoApprove: boolean;
 }
 
 /** Swarm execution stats (main screen transparency section). */
@@ -695,6 +699,9 @@ export type ClientEvent =
         timeoutMs?: number;
         maxConcurrent?: number;
         notifyOnCompletion?: boolean;
+        resumeOnRestart?: boolean;
+        detachedExecution?: boolean;
+        detachedAutoApprove?: boolean;
       };
     };
 

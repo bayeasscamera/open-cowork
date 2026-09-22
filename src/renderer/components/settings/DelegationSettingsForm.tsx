@@ -111,6 +111,28 @@ export function DelegationSettingsForm({ compact = false }: { compact?: boolean 
         />
         {t('delegatedTasks.resumeOnRestart')}
       </label>
+      <label className="flex items-center gap-2 text-sm text-text-secondary">
+        <input
+          type="checkbox"
+          checked={settings.detachedExecution}
+          onChange={(e) => void save({ detachedExecution: e.target.checked })}
+        />
+        {t('delegatedTasks.detachedExecution')}
+      </label>
+      <label className="flex items-center gap-2 text-sm text-text-secondary">
+        <input
+          type="checkbox"
+          checked={settings.detachedAutoApprove}
+          onChange={(e) => void save({ detachedAutoApprove: e.target.checked })}
+        />
+        {t('delegatedTasks.detachedAutoApprove')}
+      </label>
+      {settings.detachedExecution && !settings.detachedAutoApprove && (
+        <p className="text-xs text-amber-500">{t('delegatedTasks.detachedHint')}</p>
+      )}
+      {settings.detachedAutoApprove && (
+        <p className="text-xs text-rose-500">{t('delegatedTasks.detachedAutoApproveWarning')}</p>
+      )}
       {error && (
         <p className="text-xs text-rose-500" role="alert">
           {error}

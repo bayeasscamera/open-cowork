@@ -12,8 +12,11 @@
  * Dependencies: none (pure Node stdio)
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import * as readline from 'readline';
-import type { ServerEvent, ClientEvent } from '../../shared/types';
+import type { ContentBlock, ServerEvent, ClientEvent } from '../../shared/types';
+import { DETACHED_RESULT_SCHEMA_VERSION } from '../../shared/detached-delegation-protocol';
 import { redactSecrets } from '../utils/secret-redaction';
 
 // ── Headless JSONL event types ──
@@ -202,6 +205,53 @@ export function emitHeadlessReady(): void {
   writeJsonl({ type: 'headless.ready', mode: 'rpc' });
 }
 
+// ── Detached-delegation result file ──
+
+/** Outcome record a detached child writes for its parent (and next startup). */
+export interface HeadlessResultFile {
+  status: 'completed' | 'failed';
+  output?: string;
+  error?: string;
+  sessionId?: string;
+  finishedAt: number;
+}
+
+/**
+ * Flatten assistant message content into plain text. The result file and the
+ * delegation report parser both need text, never the provider block shape.
+ */
+export function contentBlocksToText(content: ContentBlock[]): string {
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n');
+}
+
+/**
+ * Write the result file atomically (tmp + rename) so a parent polling the path
+ * never observes a half-written record. Failures go to stderr only: a detached
+ * child must not crash because its outcome could not be saved.
+ */
+export function writeResultFileAtomic(file: string, result: HeadlessResultFile): void {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = file + '.tmp.' + process.pid;
+    fs.writeFileSync(
+      tmp,
+      JSON.stringify({ schemaVersion: DETACHED_RESULT_SCHEMA_VERSION, ...result }, null, 2),
+      'utf-8'
+    );
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    process.stderr.write(
+      '[Headless] Failed to write result file: ' +
+        (err instanceof Error ? err.message : String(err)) +
+        '\n'
+    );
+  }
+}
+
 // ── stdin readers ──
 
 /**
@@ -304,6 +354,8 @@ export interface HeadlessArgs {
   cwd: string;
   autoApprove: boolean;
   mode: 'json' | 'rpc' | 'stdio';
+  /** Where a detached-child run must write its outcome record (null = no file). */
+  resultFile: string | null;
 }
 
 /**
@@ -333,6 +385,15 @@ export function parseHeadlessArgs(): HeadlessArgs {
     }
   }
 
+  // Parse --result-file (detached delegations read the outcome from here)
+  let resultFile: string | null = null;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--result-file' && i + 1 < argv.length) {
+      resultFile = argv[i + 1];
+      break;
+    }
+  }
+
   // Parse --auto-approve
   const autoApprove = argv.includes('--auto-approve');
 
@@ -348,5 +409,5 @@ export function parseHeadlessArgs(): HeadlessArgs {
     }
   }
 
-  return { headless, prompt, cwd, autoApprove, mode };
+  return { headless, prompt, cwd, autoApprove, mode, resultFile };
 }

@@ -169,11 +169,29 @@ node bin/open-cowork.mjs --print-target   # show the command that would be launc
 | `--cwd <dir>`             | Working directory (default: current directory)                |
 | `--auto-approve`          | Approve every tool call without confirmation                  |
 | `--mode json\|rpc\|stdio` | Output and transport mode (JSONL stream on stdout by default) |
+| `--result-file <path>`    | Write an atomic outcome record (used by detached delegations) |
 | `--app <path>`            | Launcher: use this app bundle instead of auto-detecting       |
 | `--print-target`          | Launcher: print the resolved command, then exit               |
 
 Headless stdout carries JSONL events only: logs go to stderr, and credentials are redacted
 before any event is written.
+
+#### Detached delegations
+
+Background delegated tasks normally run inside the app process: quitting the app interrupts
+them, and they are re-launched from their stored prompt on the next start. Enabling **Run each
+task in its own detached process** in the delegation settings instead launches each top-level
+delegation as its own headless child
+(`--headless --mode json -p "<brief>" --result-file <userData>/delegations/<id>.result.json`),
+which keeps working after the app quits. The tracking view tails the child's log for live
+progress, and its outcome is collected by the polling loop — or, if the app was closed, at the
+next startup.
+
+A detached process has nobody to answer a permission prompt, so it runs deny-by-default: it can
+read, but cannot write files or run commands. **Allow all tools without confirmation** grants it
+`--auto-approve` (full tool access, no confirmation), so enable it only for tasks you trust.
+Detached execution is off by default, applies to top-level delegations only (a depth-2
+sub-delegation is always awaited in-process), and cancellation signals the whole process group.
 
 ### Security Configuration: 🔒 Sandbox Support
 

@@ -54,6 +54,19 @@ import { MemoryLLMClient, type MemoryLLMClientLike } from '../memory/memory-llm-
 import { log, logError, logWarn } from '../utils/logger';
 import type { ServerEvent } from '../../shared/types';
 import { configStore, type AppConfig as StoreAppConfig } from '../config/config-store';
+import {
+  buildDetachedLaunchPlan,
+  describeDetachedEvent,
+  isProcessAlive,
+  killDetachedTree,
+  readDetachedResult,
+  readNewLogLines,
+  spawnDetachedDelegation,
+  DETACHED_POLL_INTERVAL_MS,
+  DETACHED_TERMINATE_GRACE_MS,
+  type DetachedLauncher,
+  type DetachedResult,
+} from './detached-delegation';
 
 /** Injected result text is capped so a huge research cannot flood the turn. */
 const MAX_INJECTED_RESULT_CHARS = 12_000;
@@ -119,6 +132,16 @@ export interface BackgroundDelegation {
   resumedBy?: string;
   /** How many times this task has already been resumed (bounded, see MAX_DELEGATION_RESUME_ATTEMPTS). */
   resumeAttempts?: number;
+  /** True when this delegation runs in its own OS process (survives app quit). */
+  detached?: boolean;
+  /** PID of the detached process (used to cancel it and to check liveness). */
+  pid?: number;
+  /** File the detached process writes its atomic outcome to. */
+  resultFile?: string;
+  /** File the detached process appends its JSONL event stream to. */
+  logFile?: string;
+  /** Byte offset already consumed from logFile (live progress tail). */
+  logOffset?: number;
 }
 
 export interface DelegationSettings {
@@ -138,6 +161,18 @@ export interface DelegationSettings {
    * resumed at startup from the stored prompt, workspace and role.
    */
   resumeOnRestart: boolean;
+  /**
+   * Run each delegation in its own detached OS process (--headless), so it
+   * keeps working after the app quits. Off by default: it costs a whole
+   * process per task and changes the permission model (detachedAutoApprove).
+   */
+  detachedExecution: boolean;
+  /**
+   * Give detached delegations --auto-approve. A detached process has nobody to
+   * answer a permission prompt, so without this it can read but not write or
+   * run commands. Enabling it grants FULL tool access with no confirmation.
+   */
+  detachedAutoApprove: boolean;
 }
 
 export const DEFAULT_DELEGATION_SETTINGS: DelegationSettings = {
@@ -147,6 +182,8 @@ export const DEFAULT_DELEGATION_SETTINGS: DelegationSettings = {
   maxConcurrent: 2,
   notifyOnCompletion: true,
   resumeOnRestart: true,
+  detachedExecution: false,
+  detachedAutoApprove: false,
 };
 
 /**
@@ -211,6 +248,10 @@ const delegations = new Map<string, BackgroundDelegation>();
 const pendingBySession = new Map<string, string[]>();
 /** Live abort controllers — cancel() must reach the running sub-agent. */
 const controllers = new Map<string, AbortController>();
+/** Resolvers of detached tasks' `done` promise, keyed by delegation id. */
+const detachedWaiters = new Map<string, () => void>();
+/** Poller that watches detached processes for completion and progress. */
+let detachedTimer: ReturnType<typeof setInterval> | null = null;
 
 /** One research cross-verification pass (opt-in; see crossVerify). */
 interface ResearchCrossCheck {
@@ -270,11 +311,28 @@ function loadPersisted(): void {
   try {
     if (!fs.existsSync(file)) return;
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8')) as BackgroundDelegation[];
+    /** A detached task still alive in another process must keep being watched. */
+    let reattachedDetached = false;
     for (const item of raw) {
-      // Sub-agent sessions die with the app: anything still "running" was
-      // interrupted by the restart. The record keeps its prompt/workspace/role
-      // so resumeInterruptedDelegations() can re-launch it.
-      if (item.status === 'running') {
+      // A detached delegation runs in its own process: it may have finished
+      // (result file), still be running (live pid), or died without a result.
+      // Only the last case is an interruption the resume path can act on.
+      if (item.status === 'running' && item.detached) {
+        const finished = item.resultFile ? readDetachedResult(item.resultFile) : null;
+        if (finished) {
+          applyDetachedResult(item, finished);
+        } else if (item.pid && isProcessAlive(item.pid)) {
+          reattachedDetached = true;
+        } else {
+          item.status = 'failed';
+          item.error = 'Detached process was interrupted by app restart';
+          item.completedAt = Date.now();
+          item.interrupted = true;
+        }
+      } else if (item.status === 'running') {
+        // Sub-agent sessions die with the app: anything still "running" was
+        // interrupted by the restart. The record keeps its prompt/workspace/
+        // role so resumeInterruptedDelegations() can re-launch it.
         item.status = 'failed';
         item.error = 'Interrupted by app restart';
         item.completedAt = Date.now();
@@ -290,6 +348,7 @@ function loadPersisted(): void {
         enqueuePending(item.id);
       }
     }
+    if (reattachedDetached) ensureDetachedPolling();
   } catch (err) {
     logError('[BackgroundDelegations] Failed to load persisted state:', err);
   }
@@ -343,6 +402,14 @@ export function normalizeDelegationSettings(raw: unknown): DelegationSettings {
       typeof r.resumeOnRestart === 'boolean'
         ? r.resumeOnRestart
         : DEFAULT_DELEGATION_SETTINGS.resumeOnRestart,
+    detachedExecution:
+      typeof r.detachedExecution === 'boolean'
+        ? r.detachedExecution
+        : DEFAULT_DELEGATION_SETTINGS.detachedExecution,
+    detachedAutoApprove:
+      typeof r.detachedAutoApprove === 'boolean'
+        ? r.detachedAutoApprove
+        : DEFAULT_DELEGATION_SETTINGS.detachedAutoApprove,
   };
 }
 
@@ -428,6 +495,8 @@ export interface StartDelegationOptions {
   getConfig?: () => StoreAppConfig;
   /** Session launcher override (tests): inject a fake sub-agent session. */
   launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
+  /** Detached launcher override (tests): never spawn a real Electron process. */
+  spawnDetached?: DetachedLauncher;
 }
 
 /**
@@ -498,10 +567,19 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
   pushLog(delegation, 'launched', `Task delegated (role: ${role}, depth: ${depth})`);
   persist();
 
-  const controller = new AbortController();
-  controllers.set(id, controller);
   // The global semaphore budget follows the delegation settings.
   subAgentGate.setMax(settings.maxConcurrent);
+
+  // Detached execution only makes sense for top-level delegations: a depth-2
+  // child is awaited synchronously by its parent sub-agent.
+  if (settings.detachedExecution && depth === 1) {
+    const done = launchDetachedTask(id, delegation, options);
+    emit(delegation, 'status');
+    return { taskId: id, done };
+  }
+
+  const controller = new AbortController();
+  controllers.set(id, controller);
 
   const done = launchBackgroundTask(id, delegation, options);
   emit(delegation, 'status');
@@ -658,6 +736,191 @@ function rollupTokensToParent(parentTaskId: string, child: BackgroundDelegation)
   persist();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DETACHED execution — the delegation survives the app quitting
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Where detached tasks keep their log and result files. */
+function detachedDir(): string {
+  return path.join(path.dirname(resolveStorageFile()), 'delegations');
+}
+
+function ensureDetachedPolling(): void {
+  if (detachedTimer) return;
+  const timer = setInterval(() => pollDetachedDelegations(), DETACHED_POLL_INTERVAL_MS);
+  // Node's Timeout is unref-able (the DOM typing does not know it): the poller
+  // must never keep the app — or a test run — alive by itself.
+  (timer as { unref?: () => void }).unref?.();
+  detachedTimer = timer;
+}
+
+function stopDetachedPolling(): void {
+  if (!detachedTimer) return;
+  clearInterval(detachedTimer);
+  detachedTimer = null;
+}
+
+/** Stop the poller once nothing detached is left to watch. */
+function stopDetachedPollingIfIdle(): void {
+  const stillWatching = Array.from(delegations.values()).some(
+    (d) => d.detached && d.status === 'running'
+  );
+  if (!stillWatching) stopDetachedPolling();
+}
+
+/**
+ * Move a record to its final state from a result payload. Pure so the same
+ * logic serves the live poller AND startup reconciliation.
+ */
+function applyDetachedResult(delegation: BackgroundDelegation, result: DetachedResult): void {
+  delegation.completedAt = result.finishedAt ?? Date.now();
+  if (result.status === 'completed') {
+    delegation.status = 'completed';
+    const output = result.output ?? '';
+    delegation.rawResult = output;
+    delegation.report = parseDelegationReport(output);
+  } else {
+    delegation.status = 'failed';
+    delegation.error = result.error ?? 'Detached process failed';
+  }
+}
+
+/** Settle a detached task and hand its report to the session exactly once. */
+function finalizeDetached(delegation: BackgroundDelegation, result: DetachedResult): void {
+  const wasRunning = delegation.status === 'running';
+  applyDetachedResult(delegation, result);
+  if (delegation.status === 'completed') {
+    pushLog(delegation, 'completed', 'Detached process reported completion');
+    if (!delegation.delivered) enqueuePending(delegation.id);
+  } else {
+    pushLog(delegation, 'failed', delegation.error ?? 'Detached process failed');
+  }
+  const waiter = detachedWaiters.get(delegation.id);
+  if (waiter) {
+    detachedWaiters.delete(delegation.id);
+    waiter();
+  }
+  persist();
+  if (wasRunning) emit(delegation, 'status');
+}
+
+/**
+ * Launch the delegation as a detached child process. The child is the app
+ * itself in headless single-shot mode; the parent keeps only the pid and the
+ * two files, so quitting (or restarting) never loses the task.
+ */
+function launchDetachedTask(
+  id: string,
+  delegation: BackgroundDelegation,
+  options: StartDelegationOptions
+): Promise<void> {
+  const dir = detachedDir();
+  const resultFile = path.join(dir, id + '.result.json');
+  const logFile = path.join(dir, id + '.jsonl');
+
+  let resolveDone: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+  detachedWaiters.set(id, resolveDone);
+
+  try {
+    const plan = buildDetachedLaunchPlan({
+      execPath: process.execPath,
+      ...(process.defaultApp ? { appPath: app.getAppPath() } : {}),
+      prompt: buildAutonomousPrompt(delegation.prompt),
+      cwd: delegation.cwd,
+      autoApprove: settings.detachedAutoApprove,
+      resultFile,
+      logFile,
+      delegationId: id,
+    });
+    const spawnFn = options.spawnDetached ?? spawnDetachedDelegation;
+    const { pid } = spawnFn(plan);
+    if (!pid) throw new Error('the detached process did not report a pid');
+    delegation.detached = true;
+    delegation.pid = pid;
+    delegation.resultFile = resultFile;
+    delegation.logFile = logFile;
+    delegation.logOffset = 0;
+    pushLog(delegation, 'launched', 'Detached process started (pid ' + pid + ')');
+    persist();
+    ensureDetachedPolling();
+    log(
+      '[BackgroundDelegations] Task ' +
+        id +
+        ' detached (pid ' +
+        pid +
+        ', auto-approve=' +
+        settings.detachedAutoApprove +
+        ')'
+    );
+  } catch (error) {
+    delegation.status = 'failed';
+    delegation.completedAt = Date.now();
+    delegation.error =
+      'Could not start the detached process: ' +
+      (error instanceof Error ? error.message : String(error));
+    pushLog(delegation, 'failed', delegation.error);
+    detachedWaiters.delete(id);
+    resolveDone();
+    persist();
+    emit(delegation, 'status');
+  }
+  return done;
+}
+
+/**
+ * One polling pass over every running detached task:
+ *  1. a result file means it finished — settle it;
+ *  2. a dead pid with no result means it died — fail it (and let the resume
+ *     path retry it at the next launch);
+ *  3. otherwise it is still working — tail its log for live progress.
+ * Exported so tests drive it deterministically instead of waiting on timers.
+ */
+export function pollDetachedDelegations(): void {
+  ensureLoaded();
+  let progressed = false;
+  for (const delegation of Array.from(delegations.values())) {
+    if (!delegation.detached || delegation.status !== 'running') continue;
+
+    const result = delegation.resultFile ? readDetachedResult(delegation.resultFile) : null;
+    if (result) {
+      finalizeDetached(delegation, result);
+      continue;
+    }
+
+    if (delegation.pid && !isProcessAlive(delegation.pid)) {
+      // A result file may still be mid-rename: check once more before failing.
+      const late = delegation.resultFile ? readDetachedResult(delegation.resultFile) : null;
+      finalizeDetached(
+        delegation,
+        late ?? { status: 'failed', error: 'Detached process exited without writing a result' }
+      );
+      continue;
+    }
+
+    if (delegation.logFile) {
+      const { lines, offset } = readNewLogLines(delegation.logFile, delegation.logOffset ?? 0);
+      delegation.logOffset = offset;
+      let last: string | null = null;
+      for (const line of lines) {
+        const text = describeDetachedEvent(line);
+        if (text) {
+          pushLog(delegation, 'tool', text);
+          last = text;
+        }
+      }
+      if (last) {
+        progressed = true;
+        emit(delegation, 'progress', last);
+      }
+    }
+  }
+  stopDetachedPollingIfIdle();
+  if (progressed) persist();
+}
+
 /**
  * Cancel a running delegation: aborts the REAL sub-agent session (AbortSignal
  * → launchSubAgentSession's race + finally abort/dispose), marks the task
@@ -670,11 +933,33 @@ export function cancelDelegation(taskId: string): boolean {
   delegation.status = 'cancelled';
   delegation.completedAt = Date.now();
   pushLog(delegation, 'cancelled', 'Cancelled by user');
+  if (delegation.detached && delegation.pid) {
+    const pid = delegation.pid;
+    const signalled = killDetachedTree(pid, 'SIGTERM');
+    pushLog(
+      delegation,
+      'cancelled',
+      signalled
+        ? 'Detached process ' + pid + ' terminated'
+        : 'Could not signal detached process ' + pid + ' (already gone?)'
+    );
+    // A detached agent may ignore SIGTERM: escalate once, then give up.
+    const escalate = setTimeout(() => {
+      if (isProcessAlive(pid)) killDetachedTree(pid, 'SIGKILL');
+    }, DETACHED_TERMINATE_GRACE_MS);
+    (escalate as { unref?: () => void }).unref?.();
+    const waiter = detachedWaiters.get(taskId);
+    if (waiter) {
+      detachedWaiters.delete(taskId);
+      waiter();
+    }
+  }
   const controller = controllers.get(taskId);
   if (controller) {
     controller.abort();
     controllers.delete(taskId);
   }
+  stopDetachedPollingIfIdle();
   persist();
   emit(delegation, 'status');
   log(`[BackgroundDelegations] Task ${taskId} (${delegation.title}) cancelled — sub-agent session aborted`);
@@ -788,6 +1073,17 @@ export function deleteDelegation(taskId: string): boolean {
   const delegation = delegations.get(taskId);
   if (!delegation || delegation.status === 'running') return false;
   delegations.delete(taskId);
+  detachedWaiters.delete(taskId);
+  if (delegation.detached) {
+    for (const file of [delegation.resultFile, delegation.logFile]) {
+      if (!file) continue;
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        // Already gone: deleting a record must never fail on a missing file.
+      }
+    }
+  }
   const queue = pendingBySession.get(delegation.sessionId);
   if (queue) {
     pendingBySession.set(
@@ -1084,6 +1380,9 @@ export function __resetDelegationsForTest(): void {
   pendingBySession.clear();
   controllers.forEach((c) => c.abort());
   controllers.clear();
+  detachedWaiters.forEach((resolve) => resolve());
+  detachedWaiters.clear();
+  stopDetachedPolling();
   researchCrossChecks.clear();
   researchEmbeddingCache.clear();
   settings = { ...DEFAULT_DELEGATION_SETTINGS };

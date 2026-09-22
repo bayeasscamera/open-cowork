@@ -319,6 +319,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       timeoutMs?: number;
       maxConcurrent?: number;
       notifyOnCompletion?: boolean;
+      resumeOnRestart?: boolean;
+      detachedExecution?: boolean;
+      detachedAutoApprove?: boolean;
     }): Promise<{ success: boolean; settings?: DelegationSettings; error?: string }> =>
       invoke({ type: 'backgroundTasks.setSettings', payload: next }),
   },
@@ -893,6 +896,9 @@ declare global {
           timeoutMs?: number;
           maxConcurrent?: number;
           notifyOnCompletion?: boolean;
+          resumeOnRestart?: boolean;
+          detachedExecution?: boolean;
+          detachedAutoApprove?: boolean;
         }) => Promise<{ success: boolean; settings?: DelegationSettings; error?: string }>;
       };
       document: {
