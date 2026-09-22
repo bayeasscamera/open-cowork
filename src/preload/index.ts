@@ -52,50 +52,55 @@ import type {
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
 let ipcListener: ((event: Electron.IpcRendererEvent, data: ServerEvent) => void) | null = null;
 
-// Allowlist of valid ClientEvent types to prevent spoofing arbitrary IPC channels
-const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>([
-  'session.start',
-  'session.continue',
-  'session.stop',
-  'session.delete',
-  'session.batchDelete',
-  'session.rename',
-  'session.togglePin',
-  'session.activate',
-  'session.list',
-  'session.getMessages',
-  'session.getTraceSteps',
-  'session.compact',
-  'session.getContextUsage',
-  'permission.response',
-  'sudo.password.response',
-  'settings.update',
-  'folder.select',
-  'workdir.get',
-  'workdir.set',
-  'workdir.select',
-  'projects.create',
-  'projects.list',
-  'projects.get',
-  'projects.update',
-  'projects.archive',
-  'projects.attachFile',
-  'projects.detachFile',
-  'projects.linkSession',
-  'projects.unlinkSession',
-  'projects.delete',
-  'backgroundTasks.list',
-  'backgroundTasks.get',
-  'backgroundTasks.cancel',
-  'backgroundTasks.retry',
-  'backgroundTasks.delete',
-  'backgroundTasks.getSettings',
-  'backgroundTasks.getStats',
-  'backgroundTasks.setSettings',
-  'document.read',
-  'document.write',
-  'document.list',
-]);
+// Exhaustive allowlist of valid ClientEvent types to prevent spoofing arbitrary
+// IPC channels. Typed as `Record<ClientEvent['type'], true>` so TypeScript fails
+// the build if this map and the ClientEvent union ever drift apart (previously a
+// hand-maintained array, which silently omitted 'config.createSet').
+const ALLOWED_CLIENT_EVENT_MAP: Record<ClientEvent['type'], true> = {
+  'session.start': true,
+  'session.continue': true,
+  'session.stop': true,
+  'session.delete': true,
+  'session.batchDelete': true,
+  'session.rename': true,
+  'session.togglePin': true,
+  'session.activate': true,
+  'session.list': true,
+  'session.getMessages': true,
+  'session.getTraceSteps': true,
+  'session.compact': true,
+  'session.getContextUsage': true,
+  'permission.response': true,
+  'sudo.password.response': true,
+  'settings.update': true,
+  'config.createSet': true,
+  'folder.select': true,
+  'workdir.get': true,
+  'workdir.set': true,
+  'workdir.select': true,
+  'projects.create': true,
+  'projects.list': true,
+  'projects.get': true,
+  'projects.update': true,
+  'projects.archive': true,
+  'projects.attachFile': true,
+  'projects.detachFile': true,
+  'projects.linkSession': true,
+  'projects.unlinkSession': true,
+  'projects.delete': true,
+  'backgroundTasks.list': true,
+  'backgroundTasks.get': true,
+  'backgroundTasks.cancel': true,
+  'backgroundTasks.retry': true,
+  'backgroundTasks.delete': true,
+  'backgroundTasks.getSettings': true,
+  'backgroundTasks.getStats': true,
+  'backgroundTasks.setSettings': true,
+  'document.read': true,
+  'document.write': true,
+  'document.list': true,
+};
+const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_CLIENT_EVENT_MAP));
 
 // Invoke a whitelisted ClientEvent and wait for the response. Defined once at
 // module scope so both the generic `invoke()` API and the typed `session.*`
@@ -106,7 +111,6 @@ const invoke = async <T>(event: ClientEvent): Promise<T> => {
     console.warn('[Preload] Blocked unauthorized invoke type:', event.type);
     throw new Error(`Unauthorized event type: ${event.type}`);
   }
-  console.log('[Preload] Invoking:', event.type);
   return ipcRenderer.invoke('client-invoke', event);
 };
 
@@ -119,7 +123,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.warn('[Preload] Blocked unauthorized event type:', event.type);
       return;
     }
-    console.log('[Preload] Sending event:', event.type);
     ipcRenderer.send('client-event', event);
   },
 
@@ -127,24 +130,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   on: (callback: (event: ServerEvent) => void) => {
     // Remove previous listener if exists
     if (ipcListener) {
-      console.log('[Preload] Removing previous listener');
       ipcRenderer.removeListener('server-event', ipcListener);
     }
 
     registeredCallback = callback;
     ipcListener = (_: Electron.IpcRendererEvent, data: ServerEvent) => {
-      console.log('[Preload] Received event:', data.type);
       if (registeredCallback) {
         registeredCallback(data);
       }
     };
 
-    console.log('[Preload] Registering new listener');
     ipcRenderer.on('server-event', ipcListener);
 
     // Return cleanup function
     return () => {
-      console.log('[Preload] Cleanup called');
       if (ipcListener) {
         ipcRenderer.removeListener('server-event', ipcListener);
         ipcListener = null;

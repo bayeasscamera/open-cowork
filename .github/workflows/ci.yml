@@ -33,7 +33,9 @@ jobs:
         run: npx patch-package
 
       - name: Audit dependencies
-        run: npm audit --audit-level=high --omit=dev
+        # Fails on any high/critical advisory not explicitly accepted in
+        # scripts/audit-ci.mjs (see SECURITY.md → Known accepted advisories).
+        run: node scripts/audit-ci.mjs
 
       - name: Build native modules for tests
         run: npm rebuild better-sqlite3

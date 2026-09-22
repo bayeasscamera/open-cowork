@@ -39,6 +39,22 @@ Out of scope:
 - Self-XSS or issues requiring the attacker to already have local code execution
 - Vulnerabilities in third-party dependencies (report those upstream)
 
+## Known accepted advisories
+
+`scripts/audit-ci.mjs` fails CI on any high/critical dependency advisory that is
+not explicitly accepted below. Each accepted entry has no upstream fix and is
+re-reviewed on every dependency bump. The runtime mitigation for `extract-zip`
+lives in `patches/extract-zip+2.0.1.patch`.
+
+| Advisory | Package | Why accepted |
+|----------|---------|--------------|
+| GHSA-jmr9-qjv8-65gv | extract-zip | No fixed release (2.0.1 is latest). Symlink traversal blocked at runtime by our patch. |
+| GHSA-7pqw-9j4j-h8q3 | extract-zip | Same as above — escaping-symlink arbitrary write blocked at runtime. |
+| GHSA-qr28-p3wr-mxq3 | ngrok | Only 5.0.0-beta.2 is affected; fix is a downgrade to 4.3.3. Remote tunnels are opt-in and require a user-supplied token. |
+| GHSA-jfgx-wxx8-mp94 | @mariozechner/pi-coding-agent | Every published version ≤ 0.73.1 is vulnerable; no upstream fix yet. |
+| GHSA-r95r-rj6r-c39x | @mariozechner/pi-coding-agent | Every published version ≤ 0.73.1 is vulnerable; no upstream fix yet. |
+| GHSA-7v5m-pr3q-6453 | @mariozechner/pi-coding-agent | Every published version ≤ 0.73.1 is vulnerable; no upstream fix yet. |
+
 ## Security Best Practices for Users
 
 - Keep the app updated to the latest release.
