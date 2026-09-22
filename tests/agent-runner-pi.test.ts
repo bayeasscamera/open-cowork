@@ -4,6 +4,8 @@ import path from 'node:path';
 
 const agentRunnerPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner.ts');
 const agentRunnerContent = readFileSync(agentRunnerPath, 'utf8');
+const formattingPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner-formatting.ts');
+const formattingContent = readFileSync(formattingPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -19,7 +21,9 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('keeps MCP config build resilient', () => {
-    expect(agentRunnerContent).toContain('function safeStringify');
+    // The resilient serializer now lives in the formatting module
+    expect(agentRunnerContent).toContain("from './agent-runner-formatting'");
+    expect(formattingContent).toContain('function safeStringify');
     expect(agentRunnerContent).toContain('Failed to prepare MCP server config, skipping server');
   });
 
