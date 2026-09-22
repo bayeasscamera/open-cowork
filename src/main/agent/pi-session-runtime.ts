@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export interface PiSessionRuntimeSignatureInput {
+interface PiSessionRuntimeSignatureInput {
   configProvider?: string;
   customProtocol?: string;
   modelProvider?: string;

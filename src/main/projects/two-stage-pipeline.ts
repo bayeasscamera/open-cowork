@@ -91,7 +91,7 @@ export function isTrivialRequest(userRequest: string): boolean {
   return false;
 }
 
-export type PipelineDecisionReason =
+type PipelineDecisionReason =
   | 'mode-off'
   | 'missing-refine-model'
   | 'trivial-request'
@@ -99,7 +99,7 @@ export type PipelineDecisionReason =
   | 'short-draft'
   | 'ok';
 
-export interface PipelineDecision {
+interface PipelineDecision {
   /** True when the second (refine) pass must run. */
   run: boolean;
   /** Why — exposed for tests, logs and the UI's transparency story. */
@@ -174,7 +174,7 @@ export function buildRefinePrompt(input: { userRequest: string; draftText: strin
   ].join('\n');
 }
 
-export interface SimpleTokenUsage {
+interface SimpleTokenUsage {
   input: number;
   output: number;
 }
@@ -191,12 +191,12 @@ export function mergeTokenUsage(
   };
 }
 
-export interface RefineOutcome {
+interface RefineOutcome {
   text: string;
   usage?: SimpleTokenUsage;
 }
 
-export type RefineCall = (input: { systemPrompt: string; prompt: string }) => Promise<RefineOutcome>;
+type RefineCall = (input: { systemPrompt: string; prompt: string }) => Promise<RefineOutcome>;
 
 export interface TwoStageResult {
   /** What the user sees. */

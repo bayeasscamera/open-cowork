@@ -5,8 +5,8 @@ import { normalizeOllamaBaseUrl } from './auth-utils';
 import { ollamaNativeBaseUrl } from '../../shared/ollama-base-url';
 
 export const REQUEST_TIMEOUT_MS = 120000;
-export const OLLAMA_MODELS_TIMEOUT_LOCAL_MS = 5000;
-export const OLLAMA_MODELS_TIMEOUT_REMOTE_MS = 8000;
+const OLLAMA_MODELS_TIMEOUT_LOCAL_MS = 5000;
+const OLLAMA_MODELS_TIMEOUT_REMOTE_MS = 8000;
 const OLLAMA_MODELS_CACHE_TTL_MS = 10000;
 
 interface OllamaModelIndexResult {
@@ -224,7 +224,7 @@ export async function testOllamaConnection(input: ApiTestInput): Promise<ApiTest
 
 // --- Ollama model info (native /api/show endpoint) ---
 
-export interface OllamaModelInfo {
+interface OllamaModelInfo {
   contextWindow: number | undefined;
   parameterSize: string | undefined;
 }

@@ -11,13 +11,13 @@ import { redactSecrets } from './secret-redaction';
 
 // ── Structured log context (propagated via AsyncLocalStorage) ──
 
-export interface LogContext {
+interface LogContext {
   sessionId?: string;
   traceId?: string;
   module?: string;
 }
 
-export const logStorage = new AsyncLocalStorage<LogContext>();
+const logStorage = new AsyncLocalStorage<LogContext>();
 
 /**
  * Run a callback with structured log context.

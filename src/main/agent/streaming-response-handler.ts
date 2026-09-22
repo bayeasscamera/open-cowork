@@ -7,7 +7,7 @@
 
 import { StreamingThinkingParser } from '../../shared/thinking-extractor';
 
-export interface StreamChunkPayload {
+interface StreamChunkPayload {
   sessionId: string;
   messageId: string;
   type: 'content' | 'thinking' | 'tool_call' | 'done';

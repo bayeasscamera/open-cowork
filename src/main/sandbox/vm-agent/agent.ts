@@ -51,7 +51,7 @@ interface DirectoryEntry {
  * differs (log prefix, env var name, host path prefix) comes from the
  * injected platform descriptor.
  */
-export class SandboxAgent {
+class SandboxAgent {
   private workspacePath: string = '';
   private hostWorkspacePath: string = '';
   private isShuttingDown: boolean = false;

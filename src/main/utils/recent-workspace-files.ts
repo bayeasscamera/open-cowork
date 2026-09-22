@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
 
-export interface RecentWorkspaceFile {
+interface RecentWorkspaceFile {
   path: string;
   modifiedAt: number;
   size: number;

@@ -10,7 +10,7 @@ import { executeCommandSafe } from './exec.js';
  * Execute PowerShell command (Windows only)
  * Uses -WindowStyle Hidden to prevent focus theft from target windows
  */
-export async function executePowerShell(
+async function executePowerShell(
   script: string,
   timeout: number = 30000
 ): Promise<{ stdout: string; stderr: string }> {

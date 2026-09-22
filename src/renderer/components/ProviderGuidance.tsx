@@ -1,7 +1,7 @@
 import { AlertTriangle, Info, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-export interface CommonProviderSetupView {
+interface CommonProviderSetupView {
   id: string;
   name: string;
   protocolLabel: string;

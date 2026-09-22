@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '../store';
 import { useActiveSessionMessages } from '../store/selectors';
 
-export interface ContextUsageInfo {
+interface ContextUsageInfo {
   tokens: number;
   contextWindow: number;
   percent: number;

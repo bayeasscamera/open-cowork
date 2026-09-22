@@ -90,7 +90,7 @@ const GENERIC_TOPIC_WORDS = new Set([
 ]);
 
 /** Shared keywords that actually prove a common subject. */
-export function distinctiveSharedKeywords(a: string, b: string): string[] {
+function distinctiveSharedKeywords(a: string, b: string): string[] {
   const bWords = new Set(extractTopicKeywords(b));
   return extractTopicKeywords(a).filter(
     (word) => bWords.has(word) && !GENERIC_TOPIC_WORDS.has(word)

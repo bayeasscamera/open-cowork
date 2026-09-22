@@ -51,7 +51,7 @@ export type ProviderProfileKey =
   | 'custom:openai'
   | 'custom:gemini';
 export type ConfigSetId = string;
-export type CreateSetMode = 'blank' | 'clone';
+type CreateSetMode = 'blank' | 'clone';
 
 export interface CreateConfigSetPayload {
   name: string;
@@ -190,7 +190,7 @@ export interface OpenJevConfig {
   baseUrl: string;
 }
 
-export interface SubAgentProfileSelection {
+interface SubAgentProfileSelection {
   configSetId: string;
   /** Model id inside the configSet; empty/undefined = the set's active model. */
   modelId?: string;
@@ -694,7 +694,7 @@ export function normalizeImageGenerationConfig(raw: unknown): ImageGenerationCon
   };
 }
 
-export function normalizeOpenJevConfig(raw: unknown): OpenJevConfig {
+function normalizeOpenJevConfig(raw: unknown): OpenJevConfig {
   const r = (raw ?? {}) as Partial<OpenJevConfig>;
   return {
     enabled: r.enabled === true,

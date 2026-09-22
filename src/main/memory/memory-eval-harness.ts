@@ -5,13 +5,13 @@ import type { MemoryLLMClientLike } from './memory-llm-client';
 import { MemoryLLMClient } from './memory-llm-client';
 import { extractJson, loadJsonFile, normalizeWorkspaceKey, saveJsonFile } from './memory-utils';
 
-export interface MemoryEvalMessage {
+interface MemoryEvalMessage {
   role: 'user' | 'assistant';
   text: string;
   timestamp: number;
 }
 
-export interface MemoryEvalQuery {
+interface MemoryEvalQuery {
   id: string;
   prompt: string;
   workspace?: string;
@@ -19,7 +19,7 @@ export interface MemoryEvalQuery {
   forbiddenHits?: string[];
 }
 
-export interface MemoryEvalCase {
+interface MemoryEvalCase {
   id: string;
   title: string;
   workspace?: string;
@@ -28,7 +28,7 @@ export interface MemoryEvalCase {
   queries: MemoryEvalQuery[];
 }
 
-export interface MemoryEvalQueryResult {
+interface MemoryEvalQueryResult {
   queryId: string;
   prompt: string;
   workspace?: string;
@@ -42,7 +42,7 @@ export interface MemoryEvalQueryResult {
   matchedForbiddenHits: string[];
 }
 
-export interface MemoryEvalCaseResult {
+interface MemoryEvalCaseResult {
   caseId: string;
   sessionId: string;
   title: string;

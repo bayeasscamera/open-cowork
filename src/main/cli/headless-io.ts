@@ -21,7 +21,7 @@ import { redactSecrets } from '../utils/secret-redaction';
 
 // ── Headless JSONL event types ──
 
-export interface HeadlessEvent {
+interface HeadlessEvent {
   type: string;
   [key: string]: unknown;
 }
@@ -208,7 +208,7 @@ export function emitHeadlessReady(): void {
 // ── Detached-delegation result file ──
 
 /** Outcome record a detached child writes for its parent (and next startup). */
-export interface HeadlessResultFile {
+interface HeadlessResultFile {
   status: 'completed' | 'failed';
   output?: string;
   error?: string;
@@ -348,7 +348,7 @@ export function redirectConsoleToStderr(): void {
 
 // ── CLI argument parsing ──
 
-export interface HeadlessArgs {
+interface HeadlessArgs {
   headless: boolean;
   prompt: string | null;
   cwd: string;

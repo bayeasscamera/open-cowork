@@ -82,7 +82,7 @@ export function hashWorkspaceKey(workspaceKey: string): string {
   return crypto.createHash('sha1').update(workspaceKey).digest('hex').slice(0, 16);
 }
 
-export function ensureParentDir(filePath: string): void {
+function ensureParentDir(filePath: string): void {
   fs.mkdirSync(path.dirname(path.resolve(filePath)), { recursive: true });
 }
 
@@ -145,7 +145,7 @@ export function extractJson(rawText: string): unknown {
   }
 }
 
-export function extractTextFromContent(content: ContentBlock[]): string {
+function extractTextFromContent(content: ContentBlock[]): string {
   return content
     .map((block) => {
       switch (block.type) {
@@ -206,7 +206,7 @@ export function tokenizeSearchQuery(query: string): string[] {
   return Array.from(new Set(simpleTokenize(query))).slice(0, 16);
 }
 
-export function simpleTokenize(text: string): string[] {
+function simpleTokenize(text: string): string[] {
   return (text.toLowerCase().match(/[a-z0-9][a-z0-9_-]{1,}|[\u4e00-\u9fff]{2,}/g) || []).filter(
     (token) => !EN_STOP_WORDS.has(token) && !ZH_STOP_WORDS.includes(token)
   );
@@ -272,7 +272,7 @@ export function stripTrailingSlashes(value?: string): string | undefined {
   return value?.trim().replace(/\/+$/, '') || undefined;
 }
 
-export function resolveCoreCombinedKey(
+function resolveCoreCombinedKey(
   category: CoreMemoryCategory | undefined,
   key: string
 ): string {

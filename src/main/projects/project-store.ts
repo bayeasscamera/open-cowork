@@ -20,7 +20,7 @@ import type { PipelineMode, Project } from '../../shared/types';
 import { normalizePipelineMode } from './two-stage-pipeline';
 import { log, logError } from '../utils/logger';
 
-export interface CreateProjectInput {
+interface CreateProjectInput {
   name: string;
   workdir: string;
   description?: string;
@@ -38,7 +38,7 @@ export interface CreateProjectInput {
   instructions?: string;
 }
 
-export interface UpdateProjectInput {
+interface UpdateProjectInput {
   name?: string;
   description?: string | null;
   workdir?: string;

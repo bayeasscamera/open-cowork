@@ -44,7 +44,7 @@ import { spawn, type ChildProcess } from 'child_process';
 // Dynamic Skill Registry
 // ---------------------------------------------------------------------------
 
-export interface DynamicSkillDefinition {
+interface DynamicSkillDefinition {
   slug: string;
   name: string;
   description: string;

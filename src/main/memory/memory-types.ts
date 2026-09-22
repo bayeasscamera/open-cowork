@@ -5,7 +5,7 @@ import type { Message, Session } from '../../shared/types';
 export type CoreMemoryCategory = 'identity' | 'preferences' | 'skills' | 'interests';
 export type MemorySearchScope = 'workspace' | 'global' | 'all';
 export type MemorySearchKind = 'core' | 'experience_session' | 'experience_chunk' | 'raw_session';
-export type MemoryNavigationActionType = 'expand_chunk' | 'expand_session' | 'get_raw_session';
+type MemoryNavigationActionType = 'expand_chunk' | 'expand_session' | 'get_raw_session';
 
 export interface MemoryTranscriptTurn {
   role: string;
@@ -74,7 +74,7 @@ export interface SessionMemoryItem {
   embedding: number[];
 }
 
-export interface ProgressiveSummaryItem {
+interface ProgressiveSummaryItem {
   type: 'chunk' | 'session';
   id: string;
   sessionId: string;

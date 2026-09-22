@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-export const MCP_OAUTH_CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
+const MCP_OAUTH_CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 
 type OpenExternal = (url: string) => Promise<void> | void;
 

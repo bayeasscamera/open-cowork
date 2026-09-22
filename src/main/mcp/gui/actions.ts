@@ -45,7 +45,7 @@ import {
   clickHistory,
 } from './click-history.js';
 
-export async function performMacMouseMoveViaQuartz(
+async function performMacMouseMoveViaQuartz(
   globalX: number,
   globalY: number,
   modifiers: string[]
@@ -72,7 +72,7 @@ Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
   await executePython(script, 5000);
 }
 
-export async function performMacClickViaQuartz(
+async function performMacClickViaQuartz(
   globalX: number,
   globalY: number,
   clickType: 'single' | 'double' | 'right' | 'triple',
@@ -113,7 +113,7 @@ for i in range(${clickCount}):
   await executePython(script, 8000);
 }
 
-export async function performMacDragViaQuartz(
+async function performMacDragViaQuartz(
   fromX: number,
   fromY: number,
   toX: number,
@@ -820,7 +820,7 @@ export async function takeScreenshot(
 /**
  * Clean up screenshot files older than 1 hour to prevent disk accumulation.
  */
-export function cleanupOldScreenshots(): void {
+function cleanupOldScreenshots(): void {
   const maxAge = 60 * 60 * 1000; // 1 hour
   const now = Date.now();
   try {

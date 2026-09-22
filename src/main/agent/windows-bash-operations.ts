@@ -12,12 +12,12 @@ const DEFAULT_TASKKILL_WAIT_MS = 3000;
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
-export interface WindowsShellInvocation {
+interface WindowsShellInvocation {
   shell: string;
   args: string[];
 }
 
-export interface WindowsBashOperationsOptions {
+interface WindowsBashOperationsOptions {
   spawnProcess?: SpawnProcess;
   shellResolver?: (cwd: string) => string;
   terminationGraceMs?: number;

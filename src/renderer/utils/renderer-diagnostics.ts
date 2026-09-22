@@ -5,7 +5,7 @@ const MAX_RENDERER_LOG_TEXT = 3000;
 const DIAGNOSTIC_DEDUPE_TTL_MS = 10_000;
 const MAX_DIAGNOSTIC_CACHE_SIZE = 200;
 
-export function truncateRendererLogText(value: string, maxLength = MAX_RENDERER_LOG_TEXT): string {
+function truncateRendererLogText(value: string, maxLength = MAX_RENDERER_LOG_TEXT): string {
   if (value.length <= maxLength) {
     return value;
   }

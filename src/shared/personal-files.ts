@@ -30,7 +30,7 @@ export interface PersonalFileRevision {
   timestamp: number;
 }
 
-export interface PersonalFileRestoreRequest {
+interface PersonalFileRestoreRequest {
   path: string;
   generation: number;
   revision: number;

@@ -36,7 +36,7 @@ import { FIELD_VALIDATORS } from './config-store';
  *    special-cases `config_write` to always deny rather than silently
  *    allow, since a background subagent cannot show an interactive dialog.
  */
-export interface PermissionAwareTool extends AgentRuntimeCustomTool {
+interface PermissionAwareTool extends AgentRuntimeCustomTool {
   permission?: 'always-ask';
 }
 

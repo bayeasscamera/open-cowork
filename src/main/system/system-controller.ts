@@ -21,7 +21,7 @@ import { logError } from '../utils/logger';
 
 const execAsync = promisify(exec);
 
-export interface ProcessInfo {
+interface ProcessInfo {
   pid: number;
   name: string;
   cpu?: string;

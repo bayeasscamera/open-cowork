@@ -13,13 +13,13 @@
  * replaced entirely by its placeholder, so later layers never see a live secret.
  */
 
-export interface SecretRedactionRule {
+interface SecretRedactionRule {
   pattern: RegExp;
   /** Fixed placeholder, or a replacer `(match, groups) => replacement`. */
   placeholder: string | ((match: string, groups: string[]) => string);
 }
 
-export const SECRET_REDACTION_RULES: SecretRedactionRule[] = [
+const SECRET_REDACTION_RULES: SecretRedactionRule[] = [
   // sk- / rk- / pk- style API keys (Anthropic et similaires).
   { pattern: /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}/g, placeholder: '[REDACTED-KEY]' },
   // GitHub personal / OAuth / fine-grained tokens.

@@ -16,7 +16,7 @@ interface SkillUsageSchema {
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-export interface SkillDoctorEntry {
+interface SkillDoctorEntry {
   name: string;
   path: string;
   tokenEstimate: number;
@@ -25,7 +25,7 @@ export interface SkillDoctorEntry {
   recommendation: 'disable' | 'keep';
 }
 
-export interface SkillDoctorReport {
+interface SkillDoctorReport {
   entries: SkillDoctorEntry[];
   totalSkillTokens: number;
   contextWindow: number | null;

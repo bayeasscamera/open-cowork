@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export type SubagentEvent =
+type SubagentEvent =
   | 'started'
   | 'tool_start'
   | 'tool_end'

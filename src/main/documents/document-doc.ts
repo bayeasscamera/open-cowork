@@ -17,14 +17,14 @@ import * as path from 'path';
 import { isPathWithinRoot } from '../tools/path-containment';
 import { logError } from '../utils/logger';
 
-export interface ReadDocResult {
+interface ReadDocResult {
   ok: boolean;
   content?: string;
   mtimeMs?: number;
   error?: string;
 }
 
-export interface WriteDocResult {
+interface WriteDocResult {
   ok: boolean;
   status: 'written' | 'conflict' | 'error';
   mtimeMs?: number;

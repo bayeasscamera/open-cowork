@@ -7,13 +7,13 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 import { EventEmitter } from 'events';
 import { log, logError, logWarn } from '../../../utils/logger';
 
-export interface FeishuWSConfig {
+interface FeishuWSConfig {
   appId: string;
   appSecret: string;
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
 }
 
-export interface FeishuMessage {
+interface FeishuMessage {
   messageId: string;
   chatId: string;
   chatType: 'p2p' | 'group';

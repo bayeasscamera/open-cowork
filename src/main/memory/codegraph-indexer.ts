@@ -10,14 +10,14 @@ import * as path from 'path';
 // import('typescript') inside extractSymbolsFromFile.
 import type * as ts from 'typescript';
 
-export interface CodeSymbol {
+interface CodeSymbol {
   name: string;
   kind: 'function' | 'class' | 'interface' | 'variable' | 'type';
   filePath: string;
   line: number;
 }
 
-export interface CodeGraphIndex {
+interface CodeGraphIndex {
   symbols: CodeSymbol[];
   filesCount: number;
   lastIndexed: number;

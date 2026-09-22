@@ -21,7 +21,7 @@ export interface ConfigSetLite {
   models: string[];
 }
 
-export interface ConfigSetModelSelection {
+interface ConfigSetModelSelection {
   configSetId: string;
   /** Model pinned inside the selected set (undefined = its active model). */
   modelId?: string;

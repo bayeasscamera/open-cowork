@@ -8,12 +8,12 @@
 import { ipcMain } from 'electron';
 import { log, logError } from '../utils/logger';
 
-export type IPCHandlerFn = (
+type IPCHandlerFn = (
   event: Electron.IpcMainEvent,
   ...args: unknown[]
 ) => Promise<unknown> | unknown;
 
-export type IPCInvokeHandlerFn = (
+type IPCInvokeHandlerFn = (
   event: Electron.IpcMainInvokeEvent,
   ...args: unknown[]
 ) => Promise<unknown> | unknown;

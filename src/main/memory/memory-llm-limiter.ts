@@ -10,7 +10,7 @@
 
 export type MemoryLlmPriority = 'foreground' | 'background';
 
-export interface MemoryLlmLimiterOptions {
+interface MemoryLlmLimiterOptions {
   /** Maximum number of completions in flight; defaults to 1. */
   maxConcurrent?: number;
 }

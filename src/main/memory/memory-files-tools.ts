@@ -3,7 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 import type { AgentRuntimeCustomTool } from '../extensions/agent-runtime-extension';
 import type { MemoryFilesStore } from './memory-files-store';
 
-export interface MemoryFileToolOptions {
+interface MemoryFileToolOptions {
   store: MemoryFilesStore;
   owner: string;
   sessionId: string;

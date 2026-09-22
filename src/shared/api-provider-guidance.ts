@@ -1,6 +1,6 @@
 import type { SharedCustomProtocolType, SharedProviderType } from './api-model-presets';
 
-export type CommonProviderSetupId =
+type CommonProviderSetupId =
   | 'openrouter'
   | 'deepseek'
   | 'kimi-coding'
@@ -32,13 +32,13 @@ export interface CommonProviderSetup {
   };
 }
 
-export type ProviderGuidanceHintCode =
+type ProviderGuidanceHintCode =
   | 'empty_probe_response'
   | 'probe_response_mismatch'
   | 'prefer_provider_tab'
   | 'protocol_mismatch';
 
-export type ProviderGuidanceErrorHintKind =
+type ProviderGuidanceErrorHintKind =
   | 'emptyProbeGeneric'
   | 'emptyProbeDetected'
   | 'emptyProbePreferProvider'

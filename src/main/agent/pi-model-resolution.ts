@@ -8,26 +8,26 @@ const REASONING_MODEL_PATTERN =
 const DEEPSEEK_V4_MODEL_PATTERN = /(?:^|[/_-])deepseek[-_.]?v4(?:$|[-:_.])/i;
 type PiRegistryProvider = Parameters<typeof getModel>[0];
 
-export interface PiModelStringInput {
+interface PiModelStringInput {
   provider?: string;
   customProtocol?: string;
   model?: string;
   defaultModel?: string;
 }
 
-export interface PiModelLookupOptions {
+interface PiModelLookupOptions {
   configProvider?: string;
   rawProvider?: string;
   customBaseUrl?: string;
   customProtocol?: string;
 }
 
-export interface PiModelLookupCandidate {
+interface PiModelLookupCandidate {
   provider: string;
   model: string;
 }
 
-export interface SyntheticPiModelFallbackInput {
+interface SyntheticPiModelFallbackInput {
   rawModel?: string;
   resolvedModelString: string;
   rawProvider?: string;
@@ -35,7 +35,7 @@ export interface SyntheticPiModelFallbackInput {
   baseUrl?: string;
 }
 
-export interface SyntheticPiModelFallback {
+interface SyntheticPiModelFallback {
   provider: string;
   modelId: string;
 }

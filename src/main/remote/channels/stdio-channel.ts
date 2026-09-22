@@ -28,28 +28,28 @@ import type { ChannelType, RemoteMessage, RemoteResponse } from '../types';
 
 // ── Input message types ──
 
-export interface StdioSessionStart {
+interface StdioSessionStart {
   type: 'session.start';
   prompt: string;
   cwd?: string;
 }
 
-export interface StdioSessionMessage {
+interface StdioSessionMessage {
   type: 'session.message';
   sessionId: string;
   text: string;
 }
 
-export interface StdioSessionAbort {
+interface StdioSessionAbort {
   type: 'session.abort';
   sessionId: string;
 }
 
-export type StdioInputMessage = StdioSessionStart | StdioSessionMessage | StdioSessionAbort;
+type StdioInputMessage = StdioSessionStart | StdioSessionMessage | StdioSessionAbort;
 
 // ── Output event types ──
 
-export interface StdioOutputEvent {
+interface StdioOutputEvent {
   type: string;
   sessionId?: string;
   [key: string]: unknown;

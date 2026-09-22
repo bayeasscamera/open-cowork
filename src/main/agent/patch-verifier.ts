@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import { SurgicalPatcher, PatchResult } from './surgical-patcher';
 
-export interface PreFlightVerificationResult {
+interface PreFlightVerificationResult {
   canApply: boolean;
   dryRunPassed: boolean;
   patchResult: PatchResult;

@@ -81,7 +81,7 @@ export interface SkillsStorageChangeEvent {
   message?: string;
 }
 
-export interface SetGlobalSkillsPathResult {
+interface SetGlobalSkillsPathResult {
   path: string;
   migratedCount: number;
   skippedCount: number;

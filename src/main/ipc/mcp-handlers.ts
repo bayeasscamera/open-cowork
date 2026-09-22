@@ -12,7 +12,7 @@ import type { MCPManager, MCPServerConfig } from '../mcp/mcp-manager';
 import { log, logError } from '../utils/logger';
 
 /** Accessors for app-level state owned by main/index.ts. */
-export interface McpIpcContext {
+interface McpIpcContext {
   getMcpManager(): MCPManager | null;
   invalidateMcpServersCache(): void;
 }

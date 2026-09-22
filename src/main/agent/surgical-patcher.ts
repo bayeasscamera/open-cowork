@@ -11,7 +11,7 @@
  */
 
 
-export interface PatchRequest {
+interface PatchRequest {
   filePath: string;
   searchBlock: string;
   replacementBlock: string;

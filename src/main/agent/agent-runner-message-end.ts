@@ -24,18 +24,18 @@ interface ResolvedMessageEndPayload {
 
 const FOUR_XX_ERROR_RE = /\b4\d{2}\b/;
 
-export interface TerminalErrorEmissionDetails {
+interface TerminalErrorEmissionDetails {
   partialText: string;
   messageText: string;
 }
 
-export interface AbortDispositionFlags {
+interface AbortDispositionFlags {
   abortedByTimeout: boolean;
   abortedByLoopGuard: boolean;
   abortedByStreamError: boolean;
 }
 
-export type AbortDisposition = 'timeout' | 'loop_guard' | 'stream_error' | 'user';
+type AbortDisposition = 'timeout' | 'loop_guard' | 'stream_error' | 'user';
 
 export function toUserFacingErrorText(errorText: string): string {
   const lower = errorText.toLowerCase();

@@ -42,7 +42,7 @@ export function getArtifactLabel(pathValue: string, name?: string): string {
   return trimmedName ?? '';
 }
 
-export type ArtifactIconKey =
+type ArtifactIconKey =
   | 'slides'
   | 'table'
   | 'doc'
@@ -54,7 +54,7 @@ export type ArtifactIconKey =
   | 'archive'
   | 'file';
 
-export type ArtifactIconComponent =
+type ArtifactIconComponent =
   | 'presentation'
   | 'table'
   | 'document'

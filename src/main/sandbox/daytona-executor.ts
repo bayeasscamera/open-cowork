@@ -15,7 +15,7 @@ import { log } from '../utils/logger';
 
 const execFileAsync = promisify(execFile);
 
-export interface DaytonaExecutorConfig extends SandboxConfig {
+interface DaytonaExecutorConfig extends SandboxConfig {
   workspaceId: string;
   apiKey?: string;
   apiUrl?: string;

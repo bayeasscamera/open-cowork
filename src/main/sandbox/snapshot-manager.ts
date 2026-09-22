@@ -10,7 +10,7 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
-export interface WorkspaceSnapshot {
+interface WorkspaceSnapshot {
   id: string;
   workspacePath: string;
   timestamp: number;

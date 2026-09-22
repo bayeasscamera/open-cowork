@@ -1,13 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { TraceStep } from '../../shared/types';
 
-export type ArtifactInfo = {
+type ArtifactInfo = {
   path: string;
   name?: string;
   type?: string;
 };
 
-export type ArtifactParseResult = {
+type ArtifactParseResult = {
   cleanText: string;
   artifacts: ArtifactInfo[];
 };

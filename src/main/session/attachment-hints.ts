@@ -10,13 +10,13 @@
  * (vision) tool on it. Files keep the historical "use Read" hint.
  */
 
-export interface AttachedFileHint {
+interface AttachedFileHint {
   filename: string;
   relativePath: string;
   size: number;
 }
 
-export interface AttachmentHintInput {
+interface AttachmentHintInput {
   files?: AttachedFileHint[];
   /** Workspace-relative paths of images the user pasted or attached. */
   images?: string[];

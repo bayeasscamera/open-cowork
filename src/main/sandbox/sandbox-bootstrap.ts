@@ -32,7 +32,7 @@ export interface SandboxSetupProgress {
   error?: string;
 }
 
-export interface SandboxBootstrapResult {
+interface SandboxBootstrapResult {
   mode: 'wsl' | 'lima' | 'native';
   wslStatus?: WSLStatus;
   limaStatus?: LimaStatus;
@@ -46,7 +46,7 @@ type ProgressCallback = (progress: SandboxSetupProgress) => void;
  * This runs in the background and reports progress to the renderer
  * Caches the result so SandboxAdapter can skip slow status checks
  */
-export class SandboxBootstrap {
+class SandboxBootstrap {
   private static instance: SandboxBootstrap | null = null;
   private setupPromise: Promise<SandboxBootstrapResult> | null = null;
   private progressCallback: ProgressCallback | null = null;

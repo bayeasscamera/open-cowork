@@ -3,7 +3,7 @@ import { DEFAULT_MEMORY_PROMPTS, PROMPT_ITERATION_SYSTEM_PROMPT, type MemoryProm
 import type { MemoryEvalReport } from './memory-eval-harness';
 import { extractJson } from './memory-utils';
 
-export interface MemoryPromptOptimizationResult {
+interface MemoryPromptOptimizationResult {
   prompts: MemoryPromptSet;
   baselineScore: number;
   bestScore: number;

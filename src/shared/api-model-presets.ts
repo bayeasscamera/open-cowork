@@ -16,7 +16,7 @@ export interface SharedProviderPreset {
   keyHint: string;
 }
 
-export interface SharedProviderPresets {
+interface SharedProviderPresets {
   openrouter: SharedProviderPreset;
   anthropic: SharedProviderPreset;
   custom: SharedProviderPreset;
@@ -25,7 +25,7 @@ export interface SharedProviderPresets {
   ollama: SharedProviderPreset;
 }
 
-export interface ModelInputGuidance {
+interface ModelInputGuidance {
   placeholder: string;
   hint: string;
 }

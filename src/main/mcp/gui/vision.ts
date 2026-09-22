@@ -41,7 +41,7 @@ import {
   lastClickEntry,
 } from './click-history.js';
 
-export async function getMacDockItemsViaAccessibility(): Promise<DockItemInfo[]> {
+async function getMacDockItemsViaAccessibility(): Promise<DockItemInfo[]> {
   if (PLATFORM !== 'darwin') return [];
 
   const jxaScript = [
@@ -83,7 +83,7 @@ export async function getMacDockItemsViaAccessibility(): Promise<DockItemInfo[]>
   );
 }
 
-export async function tryLocateElementInDockByAccessibility(
+async function tryLocateElementInDockByAccessibility(
   elementDescription: string,
   displayIndex?: number
 ): Promise<{
@@ -263,7 +263,7 @@ export async function callVisionAPI(
   throw new Error('Vision API failed: Maximum retries exceeded');
 }
 
-export function isVisionRequestShapeError(errorMessage: string): boolean {
+function isVisionRequestShapeError(errorMessage: string): boolean {
   if (!errorMessage) {
     return false;
   }
@@ -285,7 +285,7 @@ export function getBaseUrlHost(baseUrl: string | undefined): string {
   }
 }
 
-export function buildVisionRuntimeSummary(
+function buildVisionRuntimeSummary(
   functionName: string | undefined,
   anthropicApiKey: string | undefined,
   openAIApiKey: string | undefined,
@@ -306,7 +306,7 @@ export function buildVisionRuntimeSummary(
   };
 }
 
-export function pickVisionApiKey(
+function pickVisionApiKey(
   selectedRoute: 'openai-chat-completions' | 'anthropic-messages',
   anthropicApiKey: string | undefined,
   openAIApiKey: string | undefined,
@@ -325,7 +325,7 @@ export function pickVisionApiKey(
 /**
  * Call vision API with timeout
  */
-export async function callVisionAPIWithTimeout(
+async function callVisionAPIWithTimeout(
   base64Image: string,
   prompt: string,
   maxTokens: number,
@@ -606,7 +606,7 @@ export async function callVisionAPIWithTimeout(
  * Annotate screenshot with click history markers
  * Returns path to annotated image and click history info
  */
-export async function annotateScreenshotWithClickHistory(
+async function annotateScreenshotWithClickHistory(
   screenshotPath: string,
   displayIndex: number
 ): Promise<{ annotatedPath: string; clickHistoryInfo: string }> {
@@ -1188,7 +1188,7 @@ export async function analyzeScreenshotWithVision(
  * Optionally draws a bounding box if provided
  * Uses Python PIL/Pillow for cross-platform compatibility
  */
-export async function markPointOnImage(
+async function markPointOnImage(
   imagePath: string,
   x: number,
   y: number,
@@ -1561,7 +1561,7 @@ export async function locateGUIElement(
 /**
  * Execute a single GUI action step
  */
-export async function executeActionStep(
+async function executeActionStep(
   step: { step: number; action: string; element_description: string; value?: string },
   displayIndex?: number
 ): Promise<{
@@ -2000,7 +2000,7 @@ Example:
   });
 }
 
-export function stripOperationSuccessJudgmentBlock(answer: string): string {
+function stripOperationSuccessJudgmentBlock(answer: string): string {
   if (!answer) {
     return answer;
   }

@@ -36,10 +36,10 @@ import { isPathWithinRoot } from '../tools/path-containment';
 import { configStore } from '../config/config-store';
 import { log, logWarn } from '../utils/logger';
 
-export type ImageMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+type ImageMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
 
 /** Image protocols we can talk to. Anthropic has no image-generation model. */
-export type ImageProtocol = 'anthropic' | 'openai' | 'gemini';
+type ImageProtocol = 'anthropic' | 'openai' | 'gemini';
 
 /** Only the config fields image work needs — keeps the tools unit-testable. */
 export interface ImageConfigSource {
@@ -61,7 +61,7 @@ export interface ImageConfigSource {
   };
 }
 
-export interface ImageProviderConfig {
+interface ImageProviderConfig {
   provider: string;
   protocol: ImageProtocol;
   model: string;
@@ -84,7 +84,7 @@ export interface GenerationRequest {
   quality?: string;
 }
 
-export interface GenerationResult {
+interface GenerationResult {
   base64: string;
   mimeType: ImageMimeType;
   /** The model that actually produced the bytes. */
@@ -92,10 +92,10 @@ export interface GenerationResult {
   provider: string;
 }
 
-export type VisionTransport = (request: VisionRequest) => Promise<string>;
-export type GenerationTransport = (request: GenerationRequest) => Promise<GenerationResult>;
+type VisionTransport = (request: VisionRequest) => Promise<string>;
+type GenerationTransport = (request: GenerationRequest) => Promise<GenerationResult>;
 
-export interface ImageToolsDeps {
+interface ImageToolsDeps {
   sessionId: string;
   cwd: string;
   /** Full app config; defaults to the persisted config store. */
@@ -111,14 +111,14 @@ export interface ImageToolsDeps {
 }
 
 /** Hard cap on a workspace image we are willing to base64 into a request. */
-export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-export const VISION_TIMEOUT_MS = 60_000;
-export const GENERATION_TIMEOUT_MS = 180_000;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const VISION_TIMEOUT_MS = 60_000;
+const GENERATION_TIMEOUT_MS = 180_000;
 /** Sub-directory of the workspace where generated images are written. */
-export const GENERATED_IMAGE_DIR = 'generated-images';
-export const DEFAULT_COST_CONFIRM_THRESHOLD_USD = 0.05;
+const GENERATED_IMAGE_DIR = 'generated-images';
+const DEFAULT_COST_CONFIRM_THRESHOLD_USD = 0.05;
 
-export const DEFAULT_VISION_PROMPT =
+const DEFAULT_VISION_PROMPT =
   'Describe this image precisely and factually. Report any text, numbers, labels, UI state, errors or anomalies you can read, then summarise what it shows.';
 
 // ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ function isWindows(): boolean {
 }
 
 /** Canonical workspace root (symlinks resolved) used for every containment check. */
-export function workspaceRealRoot(cwd: string): string {
+function workspaceRealRoot(cwd: string): string {
   const resolved = path.resolve(cwd);
   try {
     return fs.realpathSync(resolved);
@@ -241,12 +241,12 @@ export function resolveConfinedWritePath(cwd: string, relativePath: string): str
  * (macOS /tmp is a link to /private/tmp), so comparing against the raw cwd
  * would produce a bogus "../../.." path.
  */
-export function toWorkspaceRelative(cwd: string, absPath: string): string {
+function toWorkspaceRelative(cwd: string, absPath: string): string {
   const rel = path.relative(workspaceRealRoot(cwd), absPath) || path.basename(absPath);
   return rel.split(path.sep).join('/');
 }
 
-export interface ReadWorkspaceImageResult {
+interface ReadWorkspaceImageResult {
   absPath: string;
   relativePath: string;
   mimeType: ImageMimeType;

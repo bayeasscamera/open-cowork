@@ -11,15 +11,15 @@
 
 import { logError } from '../utils/logger';
 
-export type ToolExecutorFn = (toolName: string, args: Record<string, unknown>) => Promise<unknown>;
+type ToolExecutorFn = (toolName: string, args: Record<string, unknown>) => Promise<unknown>;
 
-export interface RpcExecutionOptions {
+interface RpcExecutionOptions {
   timeoutMs?: number;
   maxOutputChars?: number;
   maxToolCalls?: number;
 }
 
-export interface RpcExecutionResult {
+interface RpcExecutionResult {
   success: boolean;
   result?: unknown;
   stdout: string;

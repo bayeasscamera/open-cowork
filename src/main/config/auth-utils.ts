@@ -7,12 +7,12 @@ const CHATGPT_ACCOUNT_ID_RE = /^[-_a-zA-Z0-9]{6,}$/;
 const OFFICIAL_OPENAI_HOSTS = new Set(['api.openai.com', 'chatgpt.com']);
 
 export const OPENAI_PLATFORM_BASE_URL = 'https://api.openai.com/v1';
-export const LOCAL_OPENAI_PLACEHOLDER_KEY = 'sk-openai-local-proxy';
-export const OLLAMA_PLACEHOLDER_KEY = 'sk-ollama-local-proxy';
+const LOCAL_OPENAI_PLACEHOLDER_KEY = 'sk-openai-local-proxy';
+const OLLAMA_PLACEHOLDER_KEY = 'sk-ollama-local-proxy';
 
 type OpenAIConfigLike = Pick<AppConfig, 'provider' | 'customProtocol' | 'apiKey' | 'baseUrl'>;
 
-export interface ResolvedOpenAICredentials {
+interface ResolvedOpenAICredentials {
   apiKey: string;
   baseUrl?: string;
   accountId?: string;

@@ -3,7 +3,7 @@
  * v3.6+: One-Click MCP App Store & Tool Registry
  */
 
-export interface MCPStoreItem {
+interface MCPStoreItem {
   id: string;
   name: string;
   description: string;

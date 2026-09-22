@@ -13,7 +13,7 @@ import { log, logError, logWarn } from '../utils/logger';
 import { SystemNotifier } from '../utils/system-notifier';
 
 /** Accessors for the mutable app-level singletons owned by main/index.ts. */
-export interface RendererSenderContext {
+interface RendererSenderContext {
   getMainWindow(): BrowserWindow | null;
   getEventSender(): ((event: ServerEvent) => void) | null;
   getSessionManager(): SessionManager | null;

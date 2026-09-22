@@ -76,16 +76,16 @@ const MAX_TRACKED_TASKS = 60;
 /** One resume attempt per task: a task interrupted again must not loop forever. */
 export const MAX_DELEGATION_RESUME_ATTEMPTS = 1;
 
-export type DelegationStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+type DelegationStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 
-export interface DelegationReport {
+interface DelegationReport {
   summary: string;
   findings: string;
   assumptions: string;
   limits: string;
 }
 
-export interface DelegationLogEntry {
+interface DelegationLogEntry {
   at: number;
   kind: 'launched' | 'tool' | 'completed' | 'failed' | 'cancelled';
   text: string;
@@ -175,7 +175,7 @@ export interface DelegationSettings {
   detachedAutoApprove: boolean;
 }
 
-export const DEFAULT_DELEGATION_SETTINGS: DelegationSettings = {
+const DEFAULT_DELEGATION_SETTINGS: DelegationSettings = {
   configSetId: '',
   modelId: undefined,
   timeoutMs: 180_000,
@@ -231,7 +231,7 @@ export function parseDelegationReport(text: string): DelegationReport {
 }
 
 /** Human-readable + model-readable projection of a report for injection. */
-export function formatReportForInjection(report: DelegationReport): string {
+function formatReportForInjection(report: DelegationReport): string {
   const parts = [`Summary: ${report.summary}`];
   if (report.findings) parts.push(`Findings: ${report.findings}`);
   if (report.assumptions && !/^none$/i.test(report.assumptions.trim())) {
@@ -464,7 +464,7 @@ function emit(delegation: BackgroundDelegation, kind: 'status' | 'progress', det
   }
 }
 
-export interface StartDelegationOptions {
+interface StartDelegationOptions {
   sessionId: string;
   /** Workspace the background sub-agent is confined to (children inherit it). */
   cwd: string;
@@ -586,14 +586,14 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
   return { taskId: id, done };
 }
 
-export class DelegationCapacityError extends Error {
+class DelegationCapacityError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'DelegationCapacityError';
   }
 }
 
-export class DelegationDepthError extends Error {
+class DelegationDepthError extends Error {
   constructor(depth: number) {
     super(`Delegation depth ${depth} exceeds the hard cap of 2 levels (main agent → sub-agent → sub-sub-agent).`);
     this.name = 'DelegationDepthError';

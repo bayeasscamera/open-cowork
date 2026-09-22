@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 
 /** Machine-readable error codes for MemoryFilesError. */
-export type MemoryFilesErrorCode =
+type MemoryFilesErrorCode =
   | 'invalid_path'
   | 'invalid_owner'
   | 'invalid_input'
@@ -61,7 +61,7 @@ export class MemoryFilesError extends Error {
 }
 
 /** Summary entry returned by list(). */
-export interface MemoryFileSummary {
+interface MemoryFileSummary {
   readonly path: string;
   readonly sizeBytes: number;
   readonly version: string;
@@ -71,7 +71,7 @@ export interface MemoryFileSummary {
 }
 
 /** Full single-file read result. */
-export interface MemoryFileRead {
+interface MemoryFileRead {
   readonly path: string;
   readonly content: string;
   readonly version: string;
@@ -80,13 +80,13 @@ export interface MemoryFileRead {
 }
 
 /** Batch read result: found files plus explicitly reported missing paths. */
-export interface MemoryFileBatchRead {
+interface MemoryFileBatchRead {
   readonly files: MemoryFileRead[];
   readonly missing: string[];
 }
 
 /** Result of a successful create/replace/append/str_replace. */
-export interface MemoryWriteResult {
+interface MemoryWriteResult {
   readonly path: string;
   /** Fresh opaque version token (UUID). Persist it for the next CAS op. */
   readonly version: string;
@@ -98,7 +98,7 @@ export interface MemoryWriteResult {
 }
 
 /** Result of a successful delete. */
-export interface MemoryDeleteResult {
+interface MemoryDeleteResult {
   readonly path: string;
   readonly revision: number;
   readonly generation: number;
@@ -106,7 +106,7 @@ export interface MemoryDeleteResult {
 }
 
 /** Historical revision entry (including deletion markers). */
-export interface MemoryFileRevision {
+interface MemoryFileRevision {
   readonly revision: number;
   readonly generation: number;
   readonly content: string | null; // null when deleted
@@ -119,7 +119,7 @@ export interface MemoryFileRevision {
 }
 
 /** Footprint statistics returned by usage(). */
-export interface MemoryFilesUsage {
+interface MemoryFilesUsage {
   readonly files: number;
   readonly liveBytes: number;
   readonly historyEntries: number;
@@ -127,7 +127,7 @@ export interface MemoryFilesUsage {
   readonly limits: Required<MemoryFilesStoreOptions>;
 }
 
-export interface MemoryFilesStoreOptions {
+interface MemoryFilesStoreOptions {
   /** Max UTF-8 bytes per file. Default 100_000. */
   maxFileBytes?: number;
   /** Max number of live files per owner. Default 1000. */

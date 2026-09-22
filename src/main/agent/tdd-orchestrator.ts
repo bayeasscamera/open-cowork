@@ -21,9 +21,9 @@ import { configStore } from '../config/config-store';
 
 const execAsync = promisify(exec);
 
-export type TddPhase = 'red' | 'green' | 'refactor' | 'failed';
+type TddPhase = 'red' | 'green' | 'refactor' | 'failed';
 
-export interface TddCycleResult {
+interface TddCycleResult {
   feature: string;
   phase: TddPhase;
   testFilePath: string;

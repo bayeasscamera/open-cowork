@@ -8,18 +8,18 @@ export const PLATFORM = os.platform(); // 'darwin' for macOS, 'win32' for Window
 // Use platform-appropriate paths:
 // - macOS: ~/Library/Application Support/open-cowork
 // - Windows: %APPDATA%/open-cowork
-export const OPEN_COWORK_DATA_DIR =
+const OPEN_COWORK_DATA_DIR =
   PLATFORM === 'win32'
     ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'open-cowork')
     : path.join(os.homedir(), 'Library', 'Application Support', 'open-cowork');
 
 // Directory for storing GUI operate files (screenshots, etc.)
-export const GUI_OPERATE_DIR = path.join(OPEN_COWORK_DATA_DIR, 'gui_operate');
+const GUI_OPERATE_DIR = path.join(OPEN_COWORK_DATA_DIR, 'gui_operate');
 export const SCREENSHOTS_DIR = path.join(GUI_OPERATE_DIR, 'screenshots');
-export const SCREENSHOT_REUSE_WINDOW_MS = 5 * 60_000;
+const SCREENSHOT_REUSE_WINDOW_MS = 5 * 60_000;
 export const OPENAI_PLATFORM_BASE_URL = 'https://api.openai.com/v1';
 
-export type ScreenshotCacheEntry = {
+type ScreenshotCacheEntry = {
   displayIndex: number;
   regionKey: string;
   path: string;
@@ -28,7 +28,7 @@ export type ScreenshotCacheEntry = {
   displayInfo: { width: number; height: number; scaleFactor: number };
 };
 
-export let lastScreenshotCache: ScreenshotCacheEntry | null = null;
+let lastScreenshotCache: ScreenshotCacheEntry | null = null;
 export const screenshotRequestCounts = new Map<string, number>();
 
 // ============================================================================

@@ -26,7 +26,7 @@ import {
 import type { Message } from '../../shared/types';
 import type Database from 'better-sqlite3';
 
-export interface SynthesizedSkillResult {
+interface SynthesizedSkillResult {
   name: string;
   description: string;
   skillPath: string;
@@ -35,7 +35,7 @@ export interface SynthesizedSkillResult {
   version?: number;
 }
 
-export interface SkillSynthesisEvaluation {
+interface SkillSynthesisEvaluation {
   shouldCreateSkill: boolean;
   name?: string;
   description?: string;

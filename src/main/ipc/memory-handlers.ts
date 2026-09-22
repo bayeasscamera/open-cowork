@@ -14,7 +14,7 @@ import type { SessionManager } from '../session/session-manager';
 import { sendToRenderer } from '../events/renderer-sender';
 
 /** Accessors for app-level state owned by main/index.ts. */
-export interface MemoryIpcContext {
+interface MemoryIpcContext {
   getMemoryService(): MemoryService | null;
   getMainWindow(): BrowserWindow | null;
   getSessionManager(): SessionManager | null;

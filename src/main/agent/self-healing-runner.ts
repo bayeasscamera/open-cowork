@@ -8,7 +8,7 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-export interface TestExecutionResult {
+interface TestExecutionResult {
   passed: boolean;
   command: string;
   stdout: string;
@@ -17,7 +17,7 @@ export interface TestExecutionResult {
   extractedErrors: string[];
 }
 
-export interface HealingIteration {
+interface HealingIteration {
   iteration: number;
   testResult: TestExecutionResult;
   proposedFix?: string;

@@ -307,7 +307,7 @@ export interface RemoteMessage {
   raw?: unknown;
 }
 
-export interface RemoteSender {
+interface RemoteSender {
   /** Platform-specific user ID */
   id: string;
 
@@ -437,7 +437,7 @@ export interface RemoteSessionMapping {
 // Gateway Events
 // ============================================================================
 
-export type GatewayEventType =
+type GatewayEventType =
   | 'gateway.started'
   | 'gateway.stopped'
   | 'gateway.error'

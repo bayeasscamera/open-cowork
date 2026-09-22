@@ -20,7 +20,7 @@ import { log } from '../utils/logger';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface SymbolUsage {
+interface SymbolUsage {
   filePath: string;
   line: number;
   column: number;
@@ -28,7 +28,7 @@ export interface SymbolUsage {
   kind: 'import' | 'call' | 'reference' | 'export';
 }
 
-export interface RenameResult {
+interface RenameResult {
   filesModified: string[];
   totalReplacements: number;
   errors: string[];

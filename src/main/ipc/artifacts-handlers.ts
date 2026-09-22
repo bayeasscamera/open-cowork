@@ -14,7 +14,7 @@ import { listRecentWorkspaceFiles } from '../utils/recent-workspace-files';
 import { logError } from '../utils/logger';
 
 /** Accessor for the mutable app-level working dir owned by main/index.ts. */
-export interface ArtifactsIpcContext {
+interface ArtifactsIpcContext {
   getWorkingDir(): string | null;
 }
 

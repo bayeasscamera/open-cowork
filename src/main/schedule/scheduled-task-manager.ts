@@ -18,14 +18,14 @@ import {
 import { log, logError } from '../utils/logger';
 
 export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
-export type ScheduledTaskWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+type ScheduledTaskWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export interface ScheduledTaskDailyScheduleConfig {
+interface ScheduledTaskDailyScheduleConfig {
   kind: 'daily';
   times: string[];
 }
 
-export interface ScheduledTaskWeeklyScheduleConfig {
+interface ScheduledTaskWeeklyScheduleConfig {
   kind: 'weekly';
   weekdays: ScheduledTaskWeekday[];
   times: string[];
@@ -88,7 +88,7 @@ export interface ScheduledTaskStore {
   delete(id: string): boolean;
 }
 
-export interface ScheduledTaskRunResult {
+interface ScheduledTaskRunResult {
   sessionId: string;
 }
 

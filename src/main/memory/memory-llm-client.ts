@@ -19,7 +19,7 @@ export interface MemoryCompletionRequest {
   priority?: MemoryLlmPriority;
 }
 
-export interface MemoryCompletionResponse {
+interface MemoryCompletionResponse {
   text: string;
 }
 
@@ -47,7 +47,7 @@ interface ResolvedMemoryModelConfig {
   timeoutMs: number;
 }
 
-export interface MemoryLLMClientOptions {
+interface MemoryLLMClientOptions {
   /** How long a denied memory model is bypassed before being retried. */
   cooldownMs?: number;
   /** How many times a rate-limited (429) memory call is retried with backoff. */

@@ -375,7 +375,7 @@ export async function convertToGlobalCoordinates(
  * - (0, 0) is top-left
  * - (1000, 1000) is bottom-right
  */
-export async function convertNormalizedToDisplayCoordinates(
+async function convertNormalizedToDisplayCoordinates(
   xNormalized: number,
   yNormalized: number,
   displayIndex: number = 0

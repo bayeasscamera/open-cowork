@@ -17,7 +17,7 @@ export async function pathExists(filePath: string): Promise<boolean> {
   }
 }
 
-export function getResourcesDirCandidates(): string[] {
+function getResourcesDirCandidates(): string[] {
   const candidates: string[] = [];
 
   // If Electron main process passes resourcesPath into env for spawned MCP servers
@@ -37,7 +37,7 @@ export function getResourcesDirCandidates(): string[] {
   return [...new Set(candidates)];
 }
 
-export async function resolveBundledExecutable(relativeFromResources: string): Promise<string | null> {
+async function resolveBundledExecutable(relativeFromResources: string): Promise<string | null> {
   for (const resourcesDir of getResourcesDirCandidates()) {
     const candidate = path.join(resourcesDir, relativeFromResources);
     if (await pathExists(candidate)) return candidate;
@@ -45,7 +45,7 @@ export async function resolveBundledExecutable(relativeFromResources: string): P
   return null;
 }
 
-export let cachedCliclickPath: string | null | undefined;
+let cachedCliclickPath: string | null | undefined;
 
 export async function resolveCliclickPath(): Promise<string | null> {
   if (cachedCliclickPath !== undefined) return cachedCliclickPath;
@@ -133,16 +133,16 @@ export function formatCliclickCoords(x: number, y: number): string {
   return `${x},${y}`;
 }
 
-export type PythonExec = {
+type PythonExec = {
   python: string;
   pythonRoot: string;
   env: NodeJS.ProcessEnv;
 };
 
-export let cachedPythonExec: PythonExec | null | undefined;
+let cachedPythonExec: PythonExec | null | undefined;
 
 // Check if we're in dev environment
-export function isDevEnvironment(): boolean {
+function isDevEnvironment(): boolean {
   // MCP servers run as child processes — cannot use Electron's app.isPackaged
   // Use VITE_DEV_SERVER_URL (set during dev) or script path heuristic
   const isDev = !!process.env.VITE_DEV_SERVER_URL || process.env.NODE_ENV === 'development';
@@ -150,7 +150,7 @@ export function isDevEnvironment(): boolean {
   return isDev;
 }
 
-export async function resolvePythonExec(): Promise<PythonExec | null> {
+async function resolvePythonExec(): Promise<PythonExec | null> {
   if (cachedPythonExec !== undefined) {
     writeMCPLog(
       `[resolvePythonExec] Using cached Python: ${cachedPythonExec?.python}`,

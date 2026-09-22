@@ -158,7 +158,7 @@ export interface ProjectRow {
   updated_at: number;
 }
 
-export interface ProjectFileRow {
+interface ProjectFileRow {
   id: string;
   project_id: string;
   /** Absolute path of the reference file (read at session start, never mounted writable). */

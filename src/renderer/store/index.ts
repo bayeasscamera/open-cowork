@@ -14,10 +14,10 @@ import type {
 } from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
-export type GlobalNoticeType = 'info' | 'warning' | 'error' | 'success';
+type GlobalNoticeType = 'info' | 'warning' | 'error' | 'success';
 
 /** Dedicated full-width project pages (list or detail). */
-export type ProjectsPageState =
+type ProjectsPageState =
   | { view: 'list' }
   | { view: 'detail'; projectId: string };
 export type GlobalNoticeAction = 'open_api_settings';

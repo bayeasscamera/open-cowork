@@ -9,7 +9,7 @@
  * - Relentless problem solving instructions
  */
 
-export interface StrategyPlan {
+interface StrategyPlan {
   primaryApproach: string;
   fallbackApproach: string;
   resilienceScore: number;

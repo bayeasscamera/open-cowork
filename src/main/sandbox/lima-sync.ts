@@ -26,7 +26,7 @@ function validateSessionId(sessionId: string): void {
   }
 }
 
-export interface LimaSyncSession {
+interface LimaSyncSession {
   sessionId: string;
   macPath: string; // Original macOS path (e.g., /Users/username/project)
   sandboxPath: string; // Lima sandbox path (e.g., ~/.claude/sandbox/{sessionId})
@@ -36,7 +36,7 @@ export interface LimaSyncSession {
   lastSyncTime?: number; // Last sync timestamp
 }
 
-export interface LimaSyncResult {
+interface LimaSyncResult {
   success: boolean;
   sandboxPath: string;
   fileCount: number;

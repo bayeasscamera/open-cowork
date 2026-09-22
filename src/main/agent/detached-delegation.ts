@@ -37,7 +37,7 @@ export interface DetachedLaunchPlan {
   logFile: string;
 }
 
-export interface BuildDetachedPlanOptions {
+interface BuildDetachedPlanOptions {
   /** process.execPath of the running app. */
   execPath: string;
   /**
@@ -160,7 +160,7 @@ export function killDetachedTree(pid: number, signal: NodeJS.Signals = 'SIGTERM'
   }
 }
 
-export interface LogTail {
+interface LogTail {
   lines: string[];
   offset: number;
 }
@@ -223,14 +223,14 @@ export function describeDetachedEvent(line: string): string | null {
   }
 }
 
-export interface DetachedSpawnOptions {
+interface DetachedSpawnOptions {
   cwd: string;
   detached: boolean;
   stdio: ['ignore', number, number];
   env: Record<string, string>;
 }
 
-export interface DetachedChild {
+interface DetachedChild {
   pid?: number;
   unref?: () => void;
 }

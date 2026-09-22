@@ -25,18 +25,18 @@ const DEFAULT_MAX_CHARS = 20_000;
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 OpenCowork/1.0';
 
-export interface WebSearchConfig {
+interface WebSearchConfig {
   tavilyApiKey?: string;
   braveApiKey?: string;
 }
 
-export interface WebSearchResultItem {
+interface WebSearchResultItem {
   title: string;
   url: string;
   snippet: string;
 }
 
-export type WebSearchProviderId = 'tavily' | 'brave' | 'duckduckgo';
+type WebSearchProviderId = 'tavily' | 'brave' | 'duckduckgo';
 
 export function resolveWebSearchProvider(
   config: WebSearchConfig,
@@ -296,7 +296,7 @@ function extractTitle(html: string): string {
   return decodeHtmlEntities(stripTags(match[1])).replace(/\s+/g, ' ').trim();
 }
 
-export interface FetchPageResult {
+interface FetchPageResult {
   url: string;
   finalUrl: string;
   status: number;

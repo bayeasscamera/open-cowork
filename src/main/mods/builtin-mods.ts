@@ -16,7 +16,7 @@ import type { CoworkMod, ModsToolCall, ModsToolResult } from './mods-runtime';
 // 1. telemetry — local-only tool-call log lines; never any network send.
 // ---------------------------------------------------------------------------
 
-export const telemetryMod: CoworkMod = {
+const telemetryMod: CoworkMod = {
   id: 'telemetry',
   label: 'Telemetry (local)',
   description: 'Records every tool call to the local application log. No network.',
@@ -80,7 +80,7 @@ export const domainLoaderMod: CoworkMod = {
 //    per-file diffs with line counts and a naive unified-style diff text.
 // ---------------------------------------------------------------------------
 
-export interface DiffFileEntry {
+interface DiffFileEntry {
   path: string;
   before: string | null;
   after: string | null;
@@ -342,7 +342,7 @@ function targetPathOf(args: Record<string, unknown>): string | null {
   return typeof raw === 'string' && raw.trim() ? raw : null;
 }
 
-export const diffCollectorMod: CoworkMod = {
+const diffCollectorMod: CoworkMod = {
   id: 'diff-panel',
   label: 'Live diff panel',
   description:

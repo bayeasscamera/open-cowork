@@ -19,7 +19,7 @@ import {
 import { log, logWarn, logError } from './logger';
 
 /** Accessor for the mutable app-level working dir owned by main/index.ts. */
-export interface RevealContext {
+interface RevealContext {
   getWorkingDir(): string | null;
 }
 

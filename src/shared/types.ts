@@ -72,14 +72,14 @@ export interface ProjectContextUsage {
 }
 
 /** Structured self-report produced by an autonomous delegated task. */
-export interface BackgroundTaskReport {
+interface BackgroundTaskReport {
   summary: string;
   findings: string;
   assumptions: string;
   limits: string;
 }
 
-export interface BackgroundTaskLogEntry {
+interface BackgroundTaskLogEntry {
   at: number;
   kind: 'launched' | 'tool' | 'completed' | 'failed' | 'cancelled';
   text: string;
@@ -147,7 +147,7 @@ export interface DelegationStats {
   fallbacks: number;
 }
 
-export type SessionStatus = 'idle' | 'running' | 'completed' | 'error';
+type SessionStatus = 'idle' | 'running' | 'completed' | 'error';
 
 export interface MountedPath {
   virtual: string;
@@ -169,7 +169,7 @@ export interface Message {
   executionTimeMs?: number;
 }
 
-export type MessageRole = 'user' | 'assistant' | 'system';
+type MessageRole = 'user' | 'assistant' | 'system';
 
 export type ContentBlock =
   | TextContent
@@ -232,7 +232,7 @@ export interface ThinkingContent {
   thinking: string;
 }
 
-export interface TokenUsage {
+interface TokenUsage {
   input: number;
   output: number;
 }
@@ -252,18 +252,18 @@ export interface TraceStep {
   duration?: number;
 }
 
-export type TraceStepType = 'thinking' | 'text' | 'tool_call' | 'tool_result';
-export type TraceStepStatus = 'pending' | 'running' | 'completed' | 'error';
+type TraceStepType = 'thinking' | 'text' | 'tool_call' | 'tool_result';
+type TraceStepStatus = 'pending' | 'running' | 'completed' | 'error';
 
 export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
 export type ScheduleWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export interface DailyScheduleConfig {
+interface DailyScheduleConfig {
   kind: 'daily';
   times: string[];
 }
 
-export interface WeeklyScheduleConfig {
+interface WeeklyScheduleConfig {
   kind: 'weekly';
   weekdays: ScheduleWeekday[];
   times: string[];
@@ -327,7 +327,7 @@ export interface Skill {
   createdAt: number;
 }
 
-export type SkillType = 'builtin' | 'mcp' | 'custom';
+type SkillType = 'builtin' | 'mcp' | 'custom';
 
 export type PluginComponentKind = 'skills' | 'commands' | 'agents' | 'hooks' | 'mcp';
 
@@ -414,7 +414,7 @@ export interface MemoryEntry {
   createdAt: number;
 }
 
-export interface MemoryMetadata {
+interface MemoryMetadata {
   source: string;
   timestamp: number;
   tags: string[];
@@ -568,7 +568,7 @@ export interface SudoPasswordRequest {
 }
 
 // AskUserQuestion display types - kept for rendering historical messages
-export interface QuestionOption {
+interface QuestionOption {
   label: string;
   description?: string;
 }
@@ -1005,7 +1005,7 @@ export interface AppConfig {
   openjev?: { enabled: boolean; baseUrl: string };
 }
 
-export interface ProviderPreset {
+interface ProviderPreset {
   name: string;
   baseUrl: string;
   models: { id: string; name: string }[];
@@ -1059,7 +1059,7 @@ export interface ApiTestResult {
 export type DiagnosticStepName = 'dns' | 'tcp' | 'tls' | 'auth' | 'model';
 export type DiagnosticStepStatus = 'pending' | 'running' | 'ok' | 'fail' | 'skip';
 export type DiagnosticVerificationLevel = 'fast' | 'deep';
-export type DiagnosticAdvisoryCode = 'not_deep_verified' | 'model_loading' | 'manual_model';
+type DiagnosticAdvisoryCode = 'not_deep_verified' | 'model_loading' | 'manual_model';
 
 export interface DiagnosticStep {
   name: DiagnosticStepName;
@@ -1097,7 +1097,7 @@ export interface LocalServiceInfo {
   models?: string[];
 }
 
-export type LocalOllamaDiscoveryStatus = 'unavailable' | 'service_available' | 'models_available';
+type LocalOllamaDiscoveryStatus = 'unavailable' | 'service_available' | 'models_available';
 
 export interface LocalOllamaDiscoveryResult {
   available: boolean;

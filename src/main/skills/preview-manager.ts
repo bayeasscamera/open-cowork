@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface DocumentPreviewPayload {
+interface DocumentPreviewPayload {
   filePath: string;
   fileType: 'pdf' | 'docx' | 'xlsx' | 'pptx' | 'unknown';
   previewType: 'pdf-stream' | 'html' | 'json-table' | 'text';

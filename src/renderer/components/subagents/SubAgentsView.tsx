@@ -13,14 +13,14 @@ import { useAppStore } from '../../store';
 import type { DelegationStats, SwarmStats } from '../../types';
 
 export type SubAgentRoleKey = 'architect' | 'developer' | 'reviewer' | 'security';
-export const SUB_AGENT_ROLES: SubAgentRoleKey[] = [
+const SUB_AGENT_ROLES: SubAgentRoleKey[] = [
   'architect',
   'developer',
   'reviewer',
   'security',
 ];
 
-export interface SubAgentsDraft {
+interface SubAgentsDraft {
   configSetId: string;
   /** Model pinned inside the selected configSet (empty = its active model). */
   modelId?: string;

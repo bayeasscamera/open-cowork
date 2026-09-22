@@ -31,12 +31,12 @@
 // ---------------------------------------------------------------------------
 
 /** The three contexts cross-verification applies to. */
-export type CrossCheckKind = 'reviewer_security' | 'code_review' | 'research';
+type CrossCheckKind = 'reviewer_security' | 'code_review' | 'research';
 
 /** What a peer said about the other agent's conclusion. */
-export type CrossCheckVerdict = 'agree' | 'disagree' | 'blind_spot' | 'unknown';
+type CrossCheckVerdict = 'agree' | 'disagree' | 'blind_spot' | 'unknown';
 
-export interface CrossCheckResponse {
+interface CrossCheckResponse {
   /** Agent that produced this response (role name, e.g. "reviewer"). */
   agent: string;
   verdict: CrossCheckVerdict;
@@ -47,7 +47,7 @@ export interface CrossCheckResponse {
 }
 
 /** A disagreement that survived the single cross-check round. */
-export interface Divergence {
+interface Divergence {
   kind: CrossCheckKind;
   /** Agent that raised the disagreement. */
   challenger: string;
@@ -65,7 +65,7 @@ export interface Divergence {
 }
 
 /** An angle the other agent missed (not necessarily a contradiction). */
-export interface BlindSpot {
+interface BlindSpot {
   kind: CrossCheckKind;
   finder: string;
   target: string;
@@ -73,7 +73,7 @@ export interface BlindSpot {
 }
 
 /** A factual contradiction between two parallel research sources. */
-export interface ResearchContradiction {
+interface ResearchContradiction {
   topic: string;
   sourceA: string;
   claimA: string;
@@ -85,7 +85,7 @@ export interface ResearchContradiction {
 }
 
 /** A substantive (non-syntax) review point raised about the developer's work. */
-export interface CodeReviewFinding {
+interface CodeReviewFinding {
   /** True when the reviewer raised a point worth a targeted developer re-run. */
   raised: boolean;
   /** The precise point, or '' when the reviewer found nothing substantive. */

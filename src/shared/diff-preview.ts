@@ -3,14 +3,14 @@
  * v3.5: Side-by-Side & Granular Unified Diff Engine
  */
 
-export interface DiffLine {
+interface DiffLine {
   type: 'added' | 'removed' | 'unchanged';
   oldLineNumber?: number;
   newLineNumber?: number;
   content: string;
 }
 
-export interface FileDiffResult {
+interface FileDiffResult {
   filePath: string;
   lines: DiffLine[];
   additions: number;

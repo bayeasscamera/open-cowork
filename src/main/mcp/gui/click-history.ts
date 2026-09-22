@@ -15,12 +15,12 @@ import {
 
 // Store click history for current session (in-memory cache)
 export let clickHistory: ClickHistoryEntry[] = [];
-export let clickHistoryCounter = 0;
+let clickHistoryCounter = 0;
 export let currentAppName: string = '';
 export let lastClickEntry: ClickHistoryEntry | null = null;
-export let restoreAppContextPromise: Promise<boolean> | null = null;
+let restoreAppContextPromise: Promise<boolean> | null = null;
 
-export async function saveLastAppContext(appName: string): Promise<void> {
+async function saveLastAppContext(appName: string): Promise<void> {
   try {
     await fs.mkdir(GUI_APPS_DIR, { recursive: true });
     const payload: LastAppContext = { appName, savedAt: Date.now() };
@@ -33,7 +33,7 @@ export async function saveLastAppContext(appName: string): Promise<void> {
   }
 }
 
-export async function inferMostRecentAppNameFromDisk(): Promise<string | null> {
+async function inferMostRecentAppNameFromDisk(): Promise<string | null> {
   try {
     await fs.mkdir(GUI_APPS_DIR, { recursive: true });
     const entries = await fs.readdir(GUI_APPS_DIR, { withFileTypes: true });
@@ -63,7 +63,7 @@ export async function inferMostRecentAppNameFromDisk(): Promise<string | null> {
   }
 }
 
-export async function restoreLastAppContext(): Promise<boolean> {
+async function restoreLastAppContext(): Promise<boolean> {
   if (currentAppName) return true;
 
   try {
@@ -124,7 +124,7 @@ export function normalizeText(text: string): string {
   return text.toLowerCase().trim();
 }
 
-export function compactText(text: string): string {
+function compactText(text: string): string {
   return normalizeText(text).replace(/[\s_-]+/g, '');
 }
 
@@ -153,7 +153,7 @@ export function inferExpectedAppAliasesFromText(text: string): string[] {
   return Array.from(aliases);
 }
 
-export function getAliasTokensForAppName(appName: string): string[] {
+function getAliasTokensForAppName(appName: string): string[] {
   const normalizedName = normalizeText(appName);
   const compactName = compactText(appName);
   const tokens = new Set<string>([normalizedName, compactName]);
@@ -230,7 +230,7 @@ export function appNameMatchesAliases(appName: string, aliases: string[]): boole
 /**
  * Get the directory path for a specific app
  */
-export function getAppDirectory(appName: string): string {
+function getAppDirectory(appName: string): string {
   // Sanitize app name for use in directory name
   const sanitizedName = appName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
   return path.join(GUI_APPS_DIR, sanitizedName);
@@ -239,7 +239,7 @@ export function getAppDirectory(appName: string): string {
 /**
  * Get the file path for storing click history for a specific app
  */
-export function getAppClickHistoryFilePath(appName: string): string {
+function getAppClickHistoryFilePath(appName: string): string {
   return path.join(getAppDirectory(appName), 'click_history.json');
 }
 
@@ -283,7 +283,7 @@ export async function getAllVisitedApps(): Promise<string[]> {
  * Load click history from disk for a specific app
  * Converts normalized coordinates (0-1000) to current display's logical coordinates
  */
-export async function loadClickHistoryForApp(appName: string): Promise<void> {
+async function loadClickHistoryForApp(appName: string): Promise<void> {
   try {
     // Ensure app directory exists
     const appDir = getAppDirectory(appName);

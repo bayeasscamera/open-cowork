@@ -64,9 +64,9 @@ import { buildCorrectiveContext } from './cross-verification';
 // Profile resolution
 // ---------------------------------------------------------------------------
 
-export type SubAgentProfileSource = 'role' | 'configSet' | 'inherited';
+type SubAgentProfileSource = 'role' | 'configSet' | 'inherited';
 
-export interface ResolvedSubAgentProfile {
+interface ResolvedSubAgentProfile {
   /** Derived AppConfig the sub-agent session must run with. */
   config: AppConfig;
   source: SubAgentProfileSource;
@@ -229,7 +229,7 @@ interface ToolCallShape {
  * so a write through a symlinked directory is still caught. Lexical
  * resolution alone lets a workspace symlink escape the confinement.
  */
-export function resolveRealPathWithin(root: string, raw: string): string {
+function resolveRealPathWithin(root: string, raw: string): string {
   const abs = path.resolve(root, raw);
   let probe = abs;
   const missing: string[] = [];
@@ -262,7 +262,7 @@ function resolveRealRoot(cwd: string): string {
 }
 
 /** Resolved absolute path when the call targets a file path inside the workspace. */
-export function extractConfinedToolPath(
+function extractConfinedToolPath(
   root: string,
   toolName: string,
   args: unknown
@@ -370,7 +370,7 @@ export function withConfinement(tool: AnyTool, cwd: string): AnyTool {
 // Post-task syntax verification
 // ---------------------------------------------------------------------------
 
-export interface SyntaxIssue {
+interface SyntaxIssue {
   file: string;
   line: number;
   message: string;
@@ -388,7 +388,7 @@ function getTypescript(): Promise<typeof import('typescript')> {
  * Parse every modified TS/JS file and report SYNTAX-level diagnostics only
  * (confined, no execution, no bash). Non-TS files are skipped.
  */
-export async function checkModifiedFilesSyntax(
+async function checkModifiedFilesSyntax(
   modifiedFiles: string[],
   getTs: () => Promise<typeof import('typescript')> = getTypescript
 ): Promise<SyntaxIssue[]> {
@@ -896,7 +896,7 @@ function normalizeSubAgentUsage(
 // Runner assembly
 // ---------------------------------------------------------------------------
 
-export interface SwarmRunnerOptions {
+interface SwarmRunnerOptions {
   /** Workspace every sub-agent is confined to. */
   cwd: string;
   /** Config source; defaults to the app config store. */

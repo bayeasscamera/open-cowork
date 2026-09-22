@@ -7,7 +7,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import { log, logWarn } from './utils/logger';
 
-export interface PreflightIssue {
+interface PreflightIssue {
   resource: string;
   severity: 'critical' | 'warning';
   message: string;

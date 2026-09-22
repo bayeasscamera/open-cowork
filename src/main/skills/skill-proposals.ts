@@ -40,7 +40,7 @@ import type { ServerEvent } from '../../shared/types';
 const MAX_PROPOSAL_CONTENT_CHARS = 48_000;
 const MAX_DESCRIPTION_CHARS = 1_000;
 
-export interface SkillProposalMeta {
+interface SkillProposalMeta {
   name: string;
   description: string;
   /** Who proposed it (role/label of the proposing sub-agent or 'main-agent'). */
@@ -52,14 +52,14 @@ export interface SkillProposalMeta {
   rationale?: string;
 }
 
-export interface ProposedSkill extends SkillProposalMeta {
+interface ProposedSkill extends SkillProposalMeta {
   /** Absolute path of the pending SKILL.md draft. */
   path: string;
   /** The static markdown content (read back from disk — single source of truth). */
   content: string;
 }
 
-export interface ProposeSkillResult {
+interface ProposeSkillResult {
   ok: boolean;
   name?: string;
   path?: string;
@@ -67,7 +67,7 @@ export interface ProposeSkillResult {
   error?: string;
 }
 
-export interface ApproveSkillResult {
+interface ApproveSkillResult {
   ok: boolean;
   /** Active path the skill now occupies — set only on success. */
   path?: string;

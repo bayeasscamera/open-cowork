@@ -12,7 +12,7 @@
 import { Notification, BrowserWindow, app } from 'electron';
 import { log } from './logger';
 
-export interface SystemNotificationOptions {
+interface SystemNotificationOptions {
   title: string;
   body: string;
   urgency?: 'normal' | 'critical';

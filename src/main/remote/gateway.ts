@@ -26,7 +26,7 @@ import { MessageRouter } from './message-router';
  * Equal-length strings compare via timingSafeEqual; length mismatch still
  * leaks only the length, which is acceptable and unavoidable.
  */
-export function timingSafeEqualStrings(a: string, b: string): boolean {
+function timingSafeEqualStrings(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') {
     return false;
   }

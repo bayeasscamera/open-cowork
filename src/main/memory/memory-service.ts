@@ -48,7 +48,7 @@ import { MemoryFilesStore } from './memory-files-store';
 import { PersonalFilesManager } from './personal-files-manager';
 import { createMemoryFileTools, memoryFileError } from './memory-files-tools';
 
-export interface PersonalMemoryHost {
+interface PersonalMemoryHost {
   // Stable local app-profile account scope, NOT authenticated remote identity.
   owner: string;
   isSessionEnabled: (sessionId: string) => boolean;

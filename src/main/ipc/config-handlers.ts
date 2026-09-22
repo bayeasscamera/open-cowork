@@ -27,7 +27,7 @@ import type {
 import type { SessionManager } from '../session/session-manager';
 
 /** Accessors for app-level state owned by main/index.ts. */
-export interface ConfigIpcContext {
+interface ConfigIpcContext {
   getSessionManager(): SessionManager | null;
   applyBackgroundAccessSetting(enabled: boolean): void;
 }

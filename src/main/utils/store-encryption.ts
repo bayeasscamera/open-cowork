@@ -52,7 +52,7 @@ function createScryptOptions(N: number, r: number, p: number): crypto.ScryptOpti
 export const SECURE_SCRYPT_OPTIONS: crypto.ScryptOptions = createScryptOptions(65536, 8, 1);
 
 /** Legacy scrypt parameters — Node.js defaults used by earlier releases. */
-export const LEGACY_SCRYPT_OPTIONS: crypto.ScryptOptions = createScryptOptions(16384, 8, 1);
+const LEGACY_SCRYPT_OPTIONS: crypto.ScryptOptions = createScryptOptions(16384, 8, 1);
 
 function deriveKeyBuffer(
   seed: string,

@@ -23,15 +23,15 @@ export type PiBeforeToolCallHook = (
   signal?: AbortSignal
 ) => Promise<unknown>;
 
-export type PiAfterToolCallHook = (ctx: PiToolCallContext) => Promise<unknown>;
+type PiAfterToolCallHook = (ctx: PiToolCallContext) => Promise<unknown>;
 
-export type PiOnPayloadHook = (
+type PiOnPayloadHook = (
   payload: Record<string, unknown>,
   modelArg: unknown
 ) => Promise<Record<string, unknown>>;
 
 /** The subset of the private Agent object this app relies on. */
-export interface PiAgentInternals {
+interface PiAgentInternals {
   setBeforeToolCall?: (hook: PiBeforeToolCallHook) => void;
   setAfterToolCall?: (hook: PiAfterToolCallHook) => void;
   _beforeToolCall?: PiBeforeToolCallHook;
@@ -49,7 +49,7 @@ export function getPiAgentInternals(session: unknown): PiAgentInternals | null {
 }
 
 /** Optional private steering method used by the loop guard. */
-export interface PiSessionSteering {
+interface PiSessionSteering {
   sendUserMessage?: (text: string, options: { deliverAs: 'steer' }) => Promise<unknown>;
 }
 

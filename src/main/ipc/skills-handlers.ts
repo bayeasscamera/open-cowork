@@ -22,7 +22,7 @@ import type { SkillsManager } from '../skills/skills-manager';
 import { logError } from '../utils/logger';
 
 /** Accessors for app-level state owned by main/index.ts. */
-export interface SkillsIpcContext {
+interface SkillsIpcContext {
   getSkillsManager(): SkillsManager | null;
   getPluginRuntimeService(): PluginRuntimeService | null;
   getSessionManager(): SessionManager | null;

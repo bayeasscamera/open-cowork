@@ -31,7 +31,7 @@ const REHYPE_PLUGINS = [
   [rehypeKatex, { throwOnError: false, strict: false }],
 ] as const;
 
-export interface MessageMarkdownProps {
+interface MessageMarkdownProps {
   normalizedText: string;
   isStreaming?: boolean;
   components?: Record<string, unknown>;

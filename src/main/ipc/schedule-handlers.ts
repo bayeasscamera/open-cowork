@@ -16,7 +16,7 @@ import type {
 import { logError } from '../utils/logger';
 
 /** Accessors for app-level state owned by main/index.ts. */
-export interface ScheduleIpcContext {
+interface ScheduleIpcContext {
   getScheduledTaskManager(): ScheduledTaskManager | null;
   getWorkspacePathUnsupportedReason(workspacePath?: string): string | null;
   resolveScheduledTaskTitle(prompt: string, cwd?: string, fallbackTitle?: string): Promise<string>;

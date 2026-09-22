@@ -3,7 +3,7 @@
  * v3.5: Dynamic Fallback and Multi-Provider Routing
  */
 
-export interface ModelEndpoint {
+interface ModelEndpoint {
   provider: string;
   baseUrl: string;
   apiKey: string;
@@ -11,7 +11,7 @@ export interface ModelEndpoint {
   priority: number;
 }
 
-export interface RouteExecutionResult<T> {
+interface RouteExecutionResult<T> {
   result: T;
   usedEndpoint: ModelEndpoint;
   fallbacksAttempted: number;

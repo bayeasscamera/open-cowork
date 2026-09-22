@@ -5,14 +5,14 @@ import type { Message, Session, TraceStep } from '../../shared/types';
 const MAX_DIAGNOSTIC_SESSIONS = 8;
 const MAX_DIAGNOSTIC_ERROR_STEPS = 20;
 
-export interface DiagnosticLogFile {
+interface DiagnosticLogFile {
   name: string;
   path: string;
   size: number;
   mtime: Date;
 }
 
-export interface DiagnosticsSummarySessionItem {
+interface DiagnosticsSummarySessionItem {
   id: string;
   status: Session['status'];
   cwd: string | null;
@@ -27,7 +27,7 @@ export interface DiagnosticsSummarySessionItem {
   latestErrorStep: TraceStepMetaSummary | null;
 }
 
-export interface MessageMetaSummary {
+interface MessageMetaSummary {
   timestamp: string | null;
   blockTypes: string[];
   textBlockCount: number;
@@ -37,7 +37,7 @@ export interface MessageMetaSummary {
   toolResultCount: number;
 }
 
-export interface TraceStepMetaSummary {
+interface TraceStepMetaSummary {
   id: string;
   type: TraceStep['type'];
   status: TraceStep['status'];
@@ -50,7 +50,7 @@ export interface TraceStepMetaSummary {
   isError: boolean;
 }
 
-export interface DiagnosticsSummary {
+interface DiagnosticsSummary {
   exportedAt: string;
   app: {
     version: string;
@@ -101,12 +101,12 @@ export interface DiagnosticsSummary {
   }>;
 }
 
-export interface DiagnosticsSummaryDependencies {
+interface DiagnosticsSummaryDependencies {
   getMessages(sessionId: string): Message[];
   getTraceSteps(sessionId: string): TraceStep[];
 }
 
-export interface BuildDiagnosticsSummaryInput {
+interface BuildDiagnosticsSummaryInput {
   exportedAt?: Date;
   app: DiagnosticsSummary['app'];
   runtime: DiagnosticsSummary['runtime'];
@@ -227,7 +227,7 @@ function summarizeMessageMeta(message?: Message): MessageMetaSummary | null {
   };
 }
 
-export function summarizeTraceStepMeta(step: TraceStep): TraceStepMetaSummary {
+function summarizeTraceStepMeta(step: TraceStep): TraceStepMetaSummary {
   return {
     id: step.id,
     type: step.type,

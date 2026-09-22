@@ -25,7 +25,7 @@ import { buildDiagnosticsSummary, sanitizeDiagnosticBaseUrl } from '../utils/dia
 import type { SessionManager } from '../session/session-manager';
 
 /** Accessors for app-level state owned by main/index.ts. */
-export interface LogsIpcContext {
+interface LogsIpcContext {
   getSessionManager(): SessionManager | null;
   getMainWindow(): BrowserWindow | null;
   getCurrentWorkingDir(): string | null;

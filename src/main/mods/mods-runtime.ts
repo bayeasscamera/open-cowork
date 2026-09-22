@@ -26,12 +26,12 @@ export interface ModsToolResult {
   content: string;
 }
 
-export interface PreToolUseDecision {
+interface PreToolUseDecision {
   block?: boolean;
   reason?: string;
 }
 
-export interface PostToolUseDecision {
+interface PostToolUseDecision {
   /** Replace the whole text content of the result before it reaches the model. */
   replaceContent?: string;
 }

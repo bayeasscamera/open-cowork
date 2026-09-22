@@ -11,7 +11,7 @@ interface ContextStrategy {
 }
 
 /** A recorded error pattern to avoid repeating the same mistakes */
-export interface ErrorPattern {
+interface ErrorPattern {
   id: string;
   pattern: string;       // What went wrong (normalized)
   rootCause: string;     // Why it happened
@@ -23,7 +23,7 @@ export interface ErrorPattern {
 }
 
 /** User preference and dialectic knowledge entry (Honcho / Hermes-inspired) */
-export interface UserPreference {
+interface UserPreference {
   id: string;
   key: string;           // Normalized preference key, e.g. "lang", "workflow", "coding_style"
   value: string;         // Observation or preference details

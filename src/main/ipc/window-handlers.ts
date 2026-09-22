@@ -12,7 +12,7 @@ import { revealFileInFolder } from '../utils/reveal-in-folder';
 import { logError } from '../utils/logger';
 
 /** Accessor for the app window owned by main/index.ts. */
-export interface WindowIpcContext {
+interface WindowIpcContext {
   getMainWindow(): BrowserWindow | null;
 }
 

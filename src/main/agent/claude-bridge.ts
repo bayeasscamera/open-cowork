@@ -9,7 +9,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 
-export interface ClaudeCodeExecutionOptions {
+interface ClaudeCodeExecutionOptions {
   prompt: string;
   cwd: string;
   dangerouslySkipPermissions?: boolean;

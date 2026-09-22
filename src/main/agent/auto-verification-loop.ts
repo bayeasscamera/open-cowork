@@ -15,12 +15,12 @@ import { log } from '../utils/logger';
 
 const execAsync = promisify(exec);
 
-export interface VerificationPhaseResult {
+interface VerificationPhaseResult {
   passed: boolean;
   errors: string[];
 }
 
-export interface VerificationSummary {
+interface VerificationSummary {
   allPassed: boolean;
   typecheck: VerificationPhaseResult;
   tests: VerificationPhaseResult & { filesRun: string[] };

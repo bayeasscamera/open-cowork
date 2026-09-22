@@ -20,7 +20,7 @@ export interface OpenJevConfig {
   baseUrl: string;
 }
 
-export interface OpenJevVerdict {
+interface OpenJevVerdict {
   /** Probability that the request genuinely needs the multi-agent swarm. */
   needsSwarm: number;
   /** Expected complexity: 0 = trivial, 1 = moderate, 2 = complex. */

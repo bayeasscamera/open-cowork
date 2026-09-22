@@ -17,7 +17,7 @@ import { log, logError } from '../utils/logger';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface CodeChunk {
+interface CodeChunk {
   filePath: string;
   startLine: number;
   endLine: number;
@@ -25,7 +25,7 @@ export interface CodeChunk {
   embedding?: number[];
 }
 
-export interface SearchResult {
+interface SearchResult {
   filePath: string;
   startLine: number;
   endLine: number;

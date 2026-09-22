@@ -3,7 +3,7 @@
  * v3.5: Support extraction & streaming for reasoning models (DeepSeek-R1, Qwen-Max, o-series, Claude 3.7)
  */
 
-export interface ParsedThinkingContent {
+interface ParsedThinkingContent {
   thinking: string;
   response: string;
   isThinkingComplete: boolean;

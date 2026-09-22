@@ -17,7 +17,7 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
-export interface ProcessEdge {
+interface ProcessEdge {
   pid: number;
   ppid: number;
 }

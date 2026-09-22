@@ -1,7 +1,7 @@
 export { DEFAULT_SESSION_TITLE, getDefaultTitleFromPrompt } from '../../shared/session-title';
 import { DEFAULT_SESSION_TITLE, getDefaultTitleFromPrompt } from '../../shared/session-title';
 
-export type TitleDecisionInput = {
+type TitleDecisionInput = {
   userMessageCount: number;
   currentTitle: string;
   prompt: string;
