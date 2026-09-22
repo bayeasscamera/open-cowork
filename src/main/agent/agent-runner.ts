@@ -21,7 +21,6 @@ import {
   type AgentSession as PiAgentSession,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
-import { Type, type TSchema } from '@sinclair/typebox';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import {
   getPiAgentInternals,
@@ -76,6 +75,7 @@ import {
   summarizeMessageForLog,
   toErrorText,
 } from './agent-runner-formatting';
+import { buildMcpCustomTools } from './agent-runner-mcp-tools';
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
@@ -107,10 +107,7 @@ import {
   type LoopGuardDecision,
   type ToolCallDescriptor,
 } from './agent-runner-loop-guard';
-import {
-  normalizeMcpToolResultForModel,
-  normalizeToolExecutionResultForUi,
-} from './tool-result-utils';
+import { normalizeToolExecutionResultForUi } from './tool-result-utils';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
@@ -453,44 +450,6 @@ async function enrichProcessPathForBuild(): Promise<void> {
 }
 
 // Shared pi-ai auth storage — created once, reused across sessions.
-
-/**
- * Bridge MCP tools from MCPManager into ToolDefinition[] format for the agent SDK.
- * Each MCP tool becomes a customTool whose execute() delegates to mcpManager.callTool().
- */
-function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
-  const mcpTools = mcpManager.getTools();
-  return mcpTools.map((mcpTool) => {
-    // Wrap the raw JSON Schema inputSchema as a TypeBox TSchema
-    const parameters = Type.Unsafe<Record<string, unknown>>(
-      mcpTool.inputSchema as Record<string, unknown>
-    );
-
-    const toolDef: ToolDefinition<TSchema, unknown> = {
-      name: mcpTool.name,
-      label: `${mcpTool.serverName} → ${mcpTool.originalName || mcpTool.name}`,
-      description: mcpTool.description || `MCP tool from ${mcpTool.serverName}`,
-      parameters,
-      async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-        try {
-          const result = await mcpManager.callTool(mcpTool.name, params as Record<string, unknown>);
-          const normalizedResult = normalizeMcpToolResultForModel(result);
-          return {
-            content: [{ type: 'text' as const, text: normalizedResult.text }],
-            details:
-              normalizedResult.images.length > 0
-                ? { openCoworkImages: normalizedResult.images }
-                : undefined,
-          };
-        } catch (err: unknown) {
-          logError(`[CoworkAgentRunner] MCP tool ${mcpTool.name} failed:`, err);
-          throw err instanceof Error ? err : new Error(String(err));
-        }
-      },
-    };
-    return toolDef;
-  });
-}
 
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;

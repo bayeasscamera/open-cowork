@@ -6,6 +6,8 @@ const agentRunnerPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner
 const agentRunnerContent = readFileSync(agentRunnerPath, 'utf8');
 const formattingPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner-formatting.ts');
 const formattingContent = readFileSync(formattingPath, 'utf8');
+const mcpToolsPath = path.resolve(process.cwd(), 'src/main/agent/agent-runner-mcp-tools.ts');
+const mcpToolsContent = readFileSync(mcpToolsPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -102,10 +104,13 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('routes MCP image results through structured helpers instead of stringifying base64 into text', () => {
-    expect(agentRunnerContent).toContain(
-      "import {\n  normalizeMcpToolResultForModel,\n  normalizeToolExecutionResultForUi,\n} from './tool-result-utils'"
+    // The MCP bridge now lives in agent-runner-mcp-tools.ts
+    expect(agentRunnerContent).toContain("from './agent-runner-mcp-tools'");
+    expect(agentRunnerContent).toContain('buildMcpCustomTools(this.mcpManager)');
+    expect(mcpToolsContent).toContain(
+      "import { normalizeMcpToolResultForModel } from './tool-result-utils'"
     );
-    expect(agentRunnerContent).toContain(
+    expect(mcpToolsContent).toContain(
       'const normalizedResult = normalizeMcpToolResultForModel(result);'
     );
     expect(agentRunnerContent).toContain(
