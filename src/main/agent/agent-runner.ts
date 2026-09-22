@@ -32,18 +32,9 @@ import {
 import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
 import { getSharedProjectStore } from '../projects/project-store';
-import {
-  evaluateRoutingSignal,
-  formatRoutingHint,
-} from './openjev-router';
-import {
-  takePendingDelegationResults,
-  describeRunningDelegations,
-} from './background-delegations';
-import {
-  resolveProjectContext,
-  type ProjectContextResolution,
-} from '../projects/project-context';
+import { evaluateRoutingSignal, formatRoutingHint } from './openjev-router';
+import { takePendingDelegationResults, describeRunningDelegations } from './background-delegations';
+import { resolveProjectContext, type ProjectContextResolution } from '../projects/project-context';
 import {
   buildDraftDetailText,
   decideTwoStage,
@@ -71,13 +62,14 @@ import {
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execFileSync, spawn } from 'child_process';
+import { execFileSync } from 'child_process';
 import { app } from 'electron';
 import { setMaxListeners } from 'node:events';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
+import { wrapBashToolForSudo, wrapBashToolWithDefaultTimeout } from './agent-runner-bash-tools';
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
@@ -1108,34 +1100,25 @@ ${hints.join('\n')}
     }
 
     // Post-hook: replace the result text when any mod rewrites it.
-    agent.setAfterToolCall(
-      async (ctx: PiToolCallContext): Promise<unknown> => {
-        const toolName: string = ctx.toolCall?.name ?? '';
-        const args: Record<string, unknown> = ctx.args ?? {};
-        const blocks = Array.isArray(ctx.result?.content) ? ctx.result.content : [];
-        const text = blocks
-          .filter((block: { type?: string; text?: string }) => block.type === 'text')
-          .map((block: { text?: string }) => block.text ?? '')
-          .join('');
-        const replaced = getModsRegistry().runPostToolUse(
-          { sessionId, toolName, args },
-          { content: text }
-        );
-        if (replaced !== text) {
-          return { content: [{ type: 'text', text: replaced }] };
-        }
-        return undefined;
+    agent.setAfterToolCall(async (ctx: PiToolCallContext): Promise<unknown> => {
+      const toolName: string = ctx.toolCall?.name ?? '';
+      const args: Record<string, unknown> = ctx.args ?? {};
+      const blocks = Array.isArray(ctx.result?.content) ? ctx.result.content : [];
+      const text = blocks
+        .filter((block: { type?: string; text?: string }) => block.type === 'text')
+        .map((block: { text?: string }) => block.text ?? '')
+        .join('');
+      const replaced = getModsRegistry().runPostToolUse(
+        { sessionId, toolName, args },
+        { content: text }
+      );
+      if (replaced !== text) {
+        return { content: [{ type: 'text', text: replaced }] };
       }
-    );
+      return undefined;
+    });
 
     log(`[CoworkAgentRunner] Mods hooks installed on session ${sessionId}`);
-  }
-
-  /**
-   * Check if a command contains sudo
-   */
-  private static isSudoCommand(command: string): boolean {
-    return /\bsudo\b/.test(command);
   }
 
   private getToolDisplayName(toolName: string): string {
@@ -1160,137 +1143,6 @@ ${hints.join('\n')}
 
     this.toolDisplayNameCache.set(toolName, displayName);
     return displayName;
-  }
-
-  /**
-   * Wrap the bash tool in the coding tools array to intercept sudo commands.
-   * When a sudo command is detected, prompts the user for a password,
-   * then rewrites the command to pipe the password into sudo -S.
-   */
-  private wrapBashToolForSudo(
-    tools: ToolDefinition[],
-    sessionId: string,
-    effectiveCwd: string
-  ): ToolDefinition[] {
-    if (!this.requestSudoPassword) return tools;
-
-    const requestSudoPassword = this.requestSudoPassword;
-
-    return tools.map((tool) => {
-      if (tool.name !== 'bash') return tool;
-
-      const originalExecute = tool.execute;
-      return {
-        ...tool,
-        execute: async (
-          toolCallId: string,
-          params: { command: string; timeout?: number },
-          signal: AbortSignal | undefined,
-          onUpdate: ((update: unknown) => void) | undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ctx: any
-        ) => {
-          const command = params.command;
-
-          if (CoworkAgentRunner.isSudoCommand(command)) {
-            log('[CoworkAgentRunner] Sudo command detected, requesting password');
-            const password = await requestSudoPassword(sessionId, toolCallId, command);
-
-            if (!password) {
-              log('[CoworkAgentRunner] Sudo password cancelled by user');
-              return {
-                content: [
-                  { type: 'text' as const, text: 'Command cancelled: user denied sudo password.' },
-                ],
-                details: undefined as unknown,
-              };
-            }
-
-            // Add -S flag to sudo invocations that don't already have it
-            const rewrittenCommand = command.replace(/\bsudo\b(?!\s+-S)/g, 'sudo -S');
-
-            // Pass password via stdin pipe so it never appears in process args
-            // or environment variables. Uses async spawn with stdio: 'pipe'.
-            log(
-              '[CoworkAgentRunner] Executing sudo command with password injection (via stdin pipe)'
-            );
-            try {
-              const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
-              const shellArgs =
-                process.platform === 'win32' ? ['/c', rewrittenCommand] : ['-c', rewrittenCommand];
-              const timeoutMs = (params.timeout ?? 120) * 1000;
-              const output = await new Promise<string>((resolve, reject) => {
-                const child = spawn(shell, shellArgs, {
-                  stdio: ['pipe', 'pipe', 'pipe'],
-                  cwd: effectiveCwd,
-                });
-                let stdout = '';
-                let stderr = '';
-                const timer = setTimeout(() => {
-                  child.kill('SIGKILL');
-                  reject(new Error(`Sudo command timed out after ${timeoutMs}ms`));
-                }, timeoutMs);
-                child.stdout.on('data', (chunk: Buffer) => {
-                  stdout += chunk.toString();
-                });
-                child.stderr.on('data', (chunk: Buffer) => {
-                  stderr += chunk.toString();
-                });
-                child.on('error', (err) => {
-                  clearTimeout(timer);
-                  reject(err);
-                });
-                child.on('close', () => {
-                  clearTimeout(timer);
-                  resolve(stdout + stderr);
-                });
-                child.stdin.write(password + '\n');
-                child.stdin.end();
-              });
-              return {
-                content: [{ type: 'text' as const, text: output || '(no output)' }],
-                details: undefined as unknown,
-              };
-            } catch (sudoErr) {
-              logError('[CoworkAgentRunner] Sudo command failed:', sudoErr);
-              throw sudoErr instanceof Error ? sudoErr : new Error(String(sudoErr));
-            }
-          }
-
-          return originalExecute(toolCallId, params, signal, onUpdate, ctx);
-        },
-      } as ToolDefinition;
-    });
-  }
-
-  /**
-   * Wrap the bash tool to inject a default timeout when the model omits one.
-   * The agent SDK's bash tool has no default timeout, which means
-   * commands can run indefinitely if the model doesn't specify a timeout.
-   */
-  private static wrapBashToolWithDefaultTimeout(tools: ToolDefinition[]): ToolDefinition[] {
-    const DEFAULT_BASH_TIMEOUT_SECONDS = 120;
-
-    return tools.map((tool) => {
-      if (tool.name !== 'bash') return tool;
-
-      const originalExecute = tool.execute;
-      return {
-        ...tool,
-        execute: async (
-          toolCallId: string,
-          params: { command: string; timeout?: number },
-          signal: AbortSignal | undefined,
-          onUpdate: ((update: unknown) => void) | undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ctx: any
-        ) => {
-          const effectiveParams =
-            params.timeout != null ? params : { ...params, timeout: DEFAULT_BASH_TIMEOUT_SECONDS };
-          return originalExecute(toolCallId, effectiveParams, signal, onUpdate, ctx);
-        },
-      } as ToolDefinition;
-    });
   }
 
   /**
@@ -2032,7 +1884,13 @@ ${hints.join('\n')}
             existingMessages,
             isColdStart: !cachedSession,
           })
-        : { promptPrefix: undefined, customTools: [], memoryEnabled: false, refreshSession: false, systemContext: undefined };
+        : {
+            promptPrefix: undefined,
+            customTools: [],
+            memoryEnabled: false,
+            refreshSession: false,
+            systemContext: undefined,
+          };
       const memoryEnabled = extensionResult.memoryEnabled === true;
       // SDK tools/system prompt are creation-time state. Rebuild before history
       // reconstruction, including the first disabled turn after an enabled run.
@@ -2416,15 +2274,17 @@ Tool routing:
       );
 
       // Inject a default 120s timeout for bash commands when the model omits one
-      const withTimeout = CoworkAgentRunner.wrapBashToolWithDefaultTimeout(
-        codingTools as ToolDefinition[]
-      );
+      const withTimeout = wrapBashToolWithDefaultTimeout(codingTools as ToolDefinition[]);
 
       // Wrap the bash tool to intercept sudo commands and request passwords
       // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
       // createAgentSession.tools expects Tool[] (4-param execute). The extra ctx
       // parameter is simply not passed by the session runner — safe to cast.
-      const wrappedTools = this.wrapBashToolForSudo(withTimeout, session.id, effectiveCwd);
+      const wrappedTools = wrapBashToolForSudo(withTimeout, {
+        requestSudoPassword: this.requestSudoPassword,
+        sessionId: session.id,
+        effectiveCwd,
+      });
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
       logCtx(`[CoworkAgentRunner] Session reuse check: cached=${!!cachedSession}`);
@@ -2674,11 +2534,11 @@ Tool routing:
         try {
           const sessionSteering = getPiSessionSteering(piSession);
           if (typeof sessionSteering.sendUserMessage === 'function') {
-            Promise.resolve(sessionSteering.sendUserMessage(steerText, { deliverAs: 'steer' })).catch(
-              (err: unknown) => {
-                logWarn('[LoopGuard] sendUserMessage(steer) failed:', err);
-              }
-            );
+            Promise.resolve(
+              sessionSteering.sendUserMessage(steerText, { deliverAs: 'steer' })
+            ).catch((err: unknown) => {
+              logWarn('[LoopGuard] sendUserMessage(steer) failed:', err);
+            });
           } else {
             logWarn('[LoopGuard] piSession.sendUserMessage is not available; skipping steer');
           }
@@ -3372,7 +3232,8 @@ Tool routing:
       // On successful task completion, trigger autonomous skill evaluation in background.
       if (!terminalErrorText && !controller.signal.aborted) {
         const globalSkillsDir = this.getConfiguredGlobalSkillsDir();
-        const rawDb = (this.memoryManager as unknown as { db?: import('better-sqlite3').Database })?.db;
+        const rawDb = (this.memoryManager as unknown as { db?: import('better-sqlite3').Database })
+          ?.db;
         if (!this.skillSynthesizer) {
           this.skillSynthesizer = new SkillSynthesizer(globalSkillsDir, rawDb);
         } else {
@@ -3409,7 +3270,10 @@ Tool routing:
         ) {
           const learner = new ActivePreferenceLearner(this.memoryManager);
           learner
-            .extractAndRecord(existingMessages, () => configStore.get('memoryEnabled') !== false && session.memoryEnabled)
+            .extractAndRecord(
+              existingMessages,
+              () => configStore.get('memoryEnabled') !== false && session.memoryEnabled
+            )
             .then((count) => {
               if (count > 0) {
                 this.sendTraceStep(session.id, {
@@ -3468,9 +3332,16 @@ Tool routing:
           // triggered causes the upstream to reject the next request with 400.
           const errCached = this.piSessions.get(session.id);
           if (errCached) {
-            try { errCached.session.dispose(); } catch { /* ignore dispose errors */ }
+            try {
+              errCached.session.dispose();
+            } catch {
+              /* ignore dispose errors */
+            }
             this.piSessions.delete(session.id);
-            logCtx('[CoworkAgentRunner] Evicted corrupted pi session after stream error:', session.id);
+            logCtx(
+              '[CoworkAgentRunner] Evicted corrupted pi session after stream error:',
+              session.id
+            );
           }
         } else {
           logCtx('[CoworkAgentRunner] Aborted by user');
@@ -3517,9 +3388,16 @@ Tool routing:
       if (terminalErrorText) {
         const finalCached = this.piSessions.get(session.id);
         if (finalCached) {
-          try { finalCached.session.dispose(); } catch { /* ignore */ }
+          try {
+            finalCached.session.dispose();
+          } catch {
+            /* ignore */
+          }
           this.piSessions.delete(session.id);
-          logCtx('[CoworkAgentRunner] Evicted pi session after terminal error (finally):', session.id);
+          logCtx(
+            '[CoworkAgentRunner] Evicted pi session after terminal error (finally):',
+            session.id
+          );
         }
       }
 
