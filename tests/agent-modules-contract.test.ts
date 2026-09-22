@@ -86,6 +86,7 @@ const EXTRACTED_MODULES = [
   'contextual-prompt',
   'pi-session-tools',
   'create-pi-session',
+  'reuse-pi-session',
   'runtime-config-summary',
   'skills-directory-setup',
 ];
@@ -115,6 +116,11 @@ const WIRING: Array<{ module: string; iface: string; declaration: string }> = [
     module: 'create-pi-session',
     iface: 'CreatePiSessionDeps',
     declaration: 'await createPiSession(',
+  },
+  {
+    module: 'reuse-pi-session',
+    iface: 'ReusePiSessionDeps',
+    declaration: 'await reusePiSession(',
   },
   {
     module: 'session-event-logging',
