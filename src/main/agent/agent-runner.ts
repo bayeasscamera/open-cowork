@@ -36,6 +36,7 @@ import {
   type TwoStageResult,
 } from '../projects/two-stage-pipeline';
 import { runPiAiOneShot } from './sdk-one-shot';
+import { installPiPayloadHook } from './openai-payload-sanitizer';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -607,6 +608,57 @@ export class CoworkAgentRunner {
 
   private installModsHooks(piSession: PiAgentSession, sessionId: string): void {
     installModsHooksImpl(piSession, sessionId);
+  }
+
+  /**
+   * Install the SDK's outgoing-payload hook on a freshly created session.
+   * Extracted from run() so the payload policy lives in a tested module:
+   *  - Ollama: inject `num_ctx` on every request (unchanged behaviour);
+   *  - OpenAI-compatible relays: drop non-standard `thinking` content parts
+   *    that make them answer 422 on the second turn of a tool-using exchange.
+   */
+  private installPayloadHook(
+    piSession: PiAgentSession,
+    sessionId: string,
+    options: {
+      provider?: string;
+      customProtocol?: string;
+      baseUrl?: string;
+      modelId?: string;
+      contextWindow?: number;
+    }
+  ): void {
+    const isOllama = options.provider === 'ollama';
+    const ollamaNumCtx = isOllama ? options.contextWindow || 128000 : undefined;
+    const installation = installPiPayloadHook(getPiAgentInternals(piSession), {
+      endpoint: {
+        provider: options.provider,
+        customProtocol: options.customProtocol,
+        baseUrl: options.baseUrl,
+        modelId: options.modelId,
+      },
+      sanitizeThinking: options.customProtocol === 'openai' || options.provider === 'openai',
+      ollamaNumCtx,
+    });
+
+    if (!installation.installed) {
+      if (isOllama && installation.reason === 'no-hook') {
+        logWarn(
+          '[CoworkAgentRunner] SDK agent does not expose _onPayload — skipping Ollama num_ctx patch'
+        );
+      }
+      return;
+    }
+
+    if (typeof ollamaNumCtx === 'number') {
+      this.piSessions.get(sessionId)!.ollamaNumCtx = { value: ollamaNumCtx };
+    }
+    log(
+      '[CoworkAgentRunner] Payload hook installed:',
+      isOllama ? 'ollama num_ctx=' + ollamaNumCtx : 'no num_ctx',
+      '| strips thinking parts:',
+      installation.stripsThinking
+    );
   }
 
   private getToolDisplayName(toolName: string): string {
@@ -1931,33 +1983,15 @@ Tool routing:
           refreshMemoryContext: extensionResult.refreshSession,
         });
 
-        // Ollama: wrap _onPayload to inject num_ctx into every request
-        if (provider === 'ollama') {
-          const agent = getPiAgentInternals(piSession);
-          // Guard: only patch if the SDK exposes _onPayload (private API)
-          if (!agent || !('_onPayload' in agent)) {
-            logWarn(
-              '[CoworkAgentRunner] SDK agent does not expose _onPayload — skipping Ollama num_ctx patch'
-            );
-          } else {
-            const originalOnPayload = agent._onPayload;
-            const ollamaNumCtx = {
-              value: piModel.contextWindow || 128000,
-            };
-            agent._onPayload = async (payload: Record<string, unknown>, modelArg: unknown) => {
-              let result = originalOnPayload
-                ? await originalOnPayload.call(agent, payload, modelArg)
-                : payload;
-              if (result === undefined) result = payload;
-              return { ...result, num_ctx: ollamaNumCtx.value };
-            };
-            this.piSessions.get(session.id)!.ollamaNumCtx = ollamaNumCtx;
-            log(
-              '[CoworkAgentRunner] Ollama _onPayload wrapper installed, num_ctx:',
-              ollamaNumCtx.value
-            );
-          } // end else (_onPayload exists)
-        }
+        // Outgoing-payload hook (Ollama num_ctx + relay thinking-part repair).
+        // The policy itself lives in ./openai-payload-sanitizer (unit-tested).
+        this.installPayloadHook(piSession, session.id, {
+          provider,
+          customProtocol: runtimeConfig.customProtocol,
+          baseUrl: effectiveBaseUrl,
+          modelId: piModel.id,
+          contextWindow: piModel.contextWindow,
+        });
 
         logTiming('agent session created', runStartTime);
       }
