@@ -19,19 +19,23 @@ const wslBridgePath = path.resolve(process.cwd(), 'src/main/sandbox/wsl-bridge.t
 const limaBridgePath = path.resolve(process.cwd(), 'src/main/sandbox/lima-bridge.ts');
 const sandboxVmBridgePath = path.resolve(process.cwd(), 'src/main/sandbox/sandbox-vm-bridge.ts');
 const limaSyncPath = path.resolve(process.cwd(), 'src/main/sandbox/lima-sync.ts');
+const syncHelpersPath = path.resolve(process.cwd(), 'src/main/sandbox/sync-helpers.ts');
 
 const sandboxSyncSrc = fs.readFileSync(sandboxSyncPath, 'utf8');
 const wslBridgeSrc = fs.readFileSync(wslBridgePath, 'utf8');
 const limaBridgeSrc = fs.readFileSync(limaBridgePath, 'utf8');
 const sandboxVmBridgeSrc = fs.readFileSync(sandboxVmBridgePath, 'utf8');
 const limaSyncSrc = fs.readFileSync(limaSyncPath, 'utf8');
+const syncHelpersSrc = fs.readFileSync(syncHelpersPath, 'utf8');
+
+describe('sync-helpers sessionId validation', () => {
+  it('defines a validateSessionId function with strict alphanumeric pattern', () => {
+    expect(syncHelpersSrc).toContain('if (!/^[a-zA-Z0-9_-]+$/.test(sessionId))');
+    expect(syncHelpersSrc).toContain('throw new Error(`Invalid sessionId: ${sessionId}`)');
+  });
+});
 
 describe('sandbox-sync sessionId validation', () => {
-  it('defines a validateSessionId function with strict alphanumeric pattern', () => {
-    expect(sandboxSyncSrc).toContain('if (!/^[a-zA-Z0-9_-]+$/.test(sessionId))');
-    expect(sandboxSyncSrc).toContain('throw new Error(`Invalid sessionId: ${sessionId}`)');
-  });
-
   it('calls validateSessionId at the top of initSync', () => {
     // validateSessionId should appear before any wslExec call in initSync
     const initSyncStart = sandboxSyncSrc.indexOf('static async initSync(');
@@ -43,10 +47,6 @@ describe('sandbox-sync sessionId validation', () => {
 });
 
 describe('lima-sync sessionId validation', () => {
-  it('defines a validateSessionId function with strict alphanumeric pattern', () => {
-    expect(limaSyncSrc).toContain('if (!/^[a-zA-Z0-9_-]+$/.test(sessionId))');
-  });
-
   it('calls validateSessionId at the top of initSync', () => {
     const initSyncStart = limaSyncSrc.indexOf('static async initSync(');
     const validateCall = limaSyncSrc.indexOf('validateSessionId(sessionId)', initSyncStart);
@@ -151,8 +151,9 @@ describe('rm -rf symlink protection', () => {
     const cleanupBody = sandboxSyncSrc.substring(cleanupStart, cleanupEnd);
 
     expect(cleanupBody).toContain('realpath');
-    expect(cleanupBody).toContain(SANDBOX_ROOT_CHECK);
+    expect(cleanupBody).toContain('isRealPathWithinSandboxRoot(realPath, session.sandboxPath)');
     expect(cleanupBody).toContain('Refusing to delete');
+    expect(syncHelpersSrc).toContain(SANDBOX_ROOT_CHECK);
   });
 
   it('lima-sync verifies realpath before rm -rf', () => {
@@ -164,8 +165,9 @@ describe('rm -rf symlink protection', () => {
     const cleanupBody = limaSyncSrc.substring(cleanupStart, cleanupEnd);
 
     expect(cleanupBody).toContain('realpath');
-    expect(cleanupBody).toContain(SANDBOX_ROOT_CHECK);
+    expect(cleanupBody).toContain('isRealPathWithinSandboxRoot(realPath, session.sandboxPath)');
     expect(cleanupBody).toContain('Refusing to delete');
+    expect(syncHelpersSrc).toContain(SANDBOX_ROOT_CHECK);
   });
 });
 
