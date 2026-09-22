@@ -176,16 +176,17 @@ function OpenJevSection() {
  * The sub-agents interface: role personas, per-role model selector, guardrails,
  * async delegations, pending skill proposals and cost transparency.
  *
- * One implementation, two hosts: the dedicated sidebar view (no onClose, so the
- * close button clears `subAgentsVisible`) and the Settings → Sub-agents tab,
- * which passes the settings panel's own close handler. Both persist through the
- * SAME IPC config.get/config.save channel.
+ * The dedicated sidebar view (App.tsx) is the ONLY surface that renders this
+ * component; Settings keeps a single link that navigates here. `onClose` stays
+ * optional so a host can supply its own dismisser, and defaults to clearing
+ * `subAgentsVisible`. Persistence goes through the SAME IPC
+ * config.get/config.save channel.
  */
 export function SubAgentsView({ onClose }: { onClose?: () => void } = {}) {
   const { t } = useTranslation();
   const setSubAgentsVisible = useAppStore((s) => s.setSubAgentsVisible);
-  // Settings hosts this interface too; there the close button must dismiss the
-  // settings panel rather than the sidebar view.
+  // No host passes `onClose` today; the fallback keeps the close button
+  // meaningful for the sidebar view.
   const handleClose = (): void => {
     if (onClose) onClose();
     else setSubAgentsVisible(false);

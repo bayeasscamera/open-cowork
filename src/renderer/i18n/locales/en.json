@@ -146,6 +146,8 @@
     "sandboxDesc": "Isolated execution environment",
     "subAgents": "Sub-agents",
     "subAgentsDesc": "Role personas, per-role models and delegation guardrails",
+    "subAgentsMovedDesc": "This interface now has its own view, at the same level as Projects. Open it to configure role personas, per-role models and delegation guardrails.",
+    "subAgentsOpenView": "Open the Sub-agents view",
     "connectors": "MCP Connectors",
     "connectorsDesc": "Browser & tool integrations",
     "skills": "Skills",

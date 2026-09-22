@@ -146,6 +146,8 @@
     "sandboxDesc": "隔离执行环境",
     "subAgents": "子智能体",
     "subAgentsDesc": "角色人设、按角色分配模型与委派防护",
+    "subAgentsMovedDesc": "该界面现在拥有独立视图，与项目同级。打开它可配置角色人设、按角色分配的模型与委派防护。",
+    "subAgentsOpenView": "打开子智能体视图",
     "connectors": "MCP 连接器",
     "connectorsDesc": "浏览器和工具集成",
     "skills": "技能",

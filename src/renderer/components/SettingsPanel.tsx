@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import {
   X,
   Settings,
@@ -12,6 +12,7 @@ import {
   Sparkles,
   BrainCircuit,
   Network,
+  ExternalLink,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -27,7 +28,6 @@ import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
 import { SettingsPersonalization } from './settings/SettingsPersonalization';
-import { SubAgentsView } from './subagents/SubAgentsView';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -85,6 +85,29 @@ const TAB_GROUPS: TabGroup[] = [
   { labelKey: 'settings.groupSystem', tabs: ['logs', 'general'] },
 ];
 
+/**
+ * Settings keeps a single ENTRY POINT to the Sub-agents interface, but the
+ * interface itself lives in the dedicated sidebar view (same navigation level
+ * as the Projects pages). Rendering the component here as well is what created
+ * two drifted surfaces; this panel only navigates.
+ */
+function SubAgentsLinkPanel({ onOpen }: { onOpen: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border border-border-muted bg-surface/60 p-6 sm:flex-row sm:items-center sm:justify-between">
+      <p className="max-w-[34rem] text-sm text-text-muted">{t('settings.subAgentsMovedDesc')}</p>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90"
+      >
+        <ExternalLink className="h-4 w-4" />
+        {t('settings.subAgentsOpenView')}
+      </button>
+    </div>
+  );
+}
+
 export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProps) {
   const { t } = useTranslation();
   const { width } = useWindowSize();
@@ -93,6 +116,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   // takes effect even before this component mounts.
   const storeTab = useAppStore((s) => s.settingsTab);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
+  const setSubAgentsVisible = useAppStore((s) => s.setSubAgentsVisible);
   const resolvedInitial =
     storeTab && VALID_TABS.has(storeTab as TabId) ? (storeTab as TabId) : initialTab;
 
@@ -127,6 +151,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
     // form, so reading viewedTabs here would re-trigger on every set.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  /** Settings only links to the dedicated view; it never hosts the interface. */
+  const openSubAgentsView = useCallback((): void => {
+    setSubAgentsVisible(true);
+    onClose();
+  }, [setSubAgentsVisible, onClose]);
 
   const tabs = [
     {
@@ -305,86 +335,81 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
 
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {activeTab === 'subagents' ? (
-          // The interface owns its header and scrolling; skipping the settings
-          // chrome keeps the sidebar view and this tab identical.
-          <SubAgentsView onClose={onClose} />
-        ) : (
-          <>
-            <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 panel-glass">
-              <div>
-                <p className="text-[11px] text-text-muted">
-                  {t('settings.title')}
-                  {activeGroupLabel && <> › {t(activeGroupLabel.labelKey)}</>}
+        <>
+          <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 panel-glass">
+            <div>
+              <p className="text-[11px] text-text-muted">
+                {t('settings.title')}
+                {activeGroupLabel && <> › {t(activeGroupLabel.labelKey)}</>}
+              </p>
+              <h3 className="mt-1 text-[1.3rem] font-semibold tracking-[-0.03em] text-text-primary">
+                {activeTabMeta?.label}
+              </h3>
+              <div className="accent-underline mt-1.5 w-14" />
+              {activeTabMeta?.description && (
+                <p className="mt-2 text-sm text-text-muted max-w-[36rem]">
+                  {activeTabMeta.description}
                 </p>
-                <h3 className="mt-1 text-[1.3rem] font-semibold tracking-[-0.03em] text-text-primary">
-                  {activeTabMeta?.label}
-                </h3>
-                <div className="accent-underline mt-1.5 w-14" />
-                {activeTabMeta?.description && (
-                  <p className="mt-2 text-sm text-text-muted max-w-[36rem]">
-                    {activeTabMeta.description}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={onClose}
-                className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
-              >
-                <X className="w-5 h-5 text-text-secondary" />
-              </button>
+              )}
             </div>
-            <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
-              <div className="max-w-[860px] w-full min-w-0 mx-auto">
-                <div className="">
-                  <div className={activeTab === 'api' ? '' : 'hidden'}>
-                    {viewedTabs.has('api') && (
-                      <>
-                        <SettingsAPI />
-                      </>
-                    )}
-                  </div>
-                  <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
-                    {viewedTabs.has('sandbox') && <SettingsSandbox />}
-                  </div>
-                  <div className={activeTab === 'connectors' ? '' : 'hidden'}>
-                    {viewedTabs.has('connectors') && (
-                      <SettingsConnectors isActive={activeTab === 'connectors'} />
-                    )}
-                  </div>
-                  <div className={activeTab === 'skills' ? '' : 'hidden'}>
-                    <SettingsMods />
-                    {viewedTabs.has('skills') && (
-                      <SettingsSkills isActive={activeTab === 'skills'} />
-                    )}
-                  </div>
-                  <div className={activeTab === 'personalization' ? '' : 'hidden'}>
-                    {viewedTabs.has('personalization') && <SettingsPersonalization />}
-                  </div>
-                  <div className={activeTab === 'memory' ? '' : 'hidden'}>
-                    {viewedTabs.has('memory') && <SettingsMemory />}
-                  </div>
-                  <div className={activeTab === 'schedule' ? '' : 'hidden'}>
-                    {viewedTabs.has('schedule') && (
-                      <SettingsSchedule isActive={activeTab === 'schedule'} />
-                    )}
-                  </div>
-                  <div className={activeTab === 'remote' ? '' : 'hidden'}>
-                    {viewedTabs.has('remote') && (
-                      <RemoteControlPanel isActive={activeTab === 'remote'} />
-                    )}
-                  </div>
-                  <div className={activeTab === 'logs' ? '' : 'hidden'}>
-                    {viewedTabs.has('logs') && <SettingsLogs isActive={activeTab === 'logs'} />}
-                  </div>
-                  <div className={activeTab === 'general' ? '' : 'hidden'}>
-                    {viewedTabs.has('general') && <SettingsGeneral />}
-                  </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
+            >
+              <X className="w-5 h-5 text-text-secondary" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
+            <div className="max-w-[860px] w-full min-w-0 mx-auto">
+              <div className="">
+                <div className={activeTab === 'subagents' ? '' : 'hidden'}>
+                  {viewedTabs.has('subagents') && <SubAgentsLinkPanel onOpen={openSubAgentsView} />}
+                </div>
+                <div className={activeTab === 'api' ? '' : 'hidden'}>
+                  {viewedTabs.has('api') && (
+                    <>
+                      <SettingsAPI />
+                    </>
+                  )}
+                </div>
+                <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
+                  {viewedTabs.has('sandbox') && <SettingsSandbox />}
+                </div>
+                <div className={activeTab === 'connectors' ? '' : 'hidden'}>
+                  {viewedTabs.has('connectors') && (
+                    <SettingsConnectors isActive={activeTab === 'connectors'} />
+                  )}
+                </div>
+                <div className={activeTab === 'skills' ? '' : 'hidden'}>
+                  <SettingsMods />
+                  {viewedTabs.has('skills') && <SettingsSkills isActive={activeTab === 'skills'} />}
+                </div>
+                <div className={activeTab === 'personalization' ? '' : 'hidden'}>
+                  {viewedTabs.has('personalization') && <SettingsPersonalization />}
+                </div>
+                <div className={activeTab === 'memory' ? '' : 'hidden'}>
+                  {viewedTabs.has('memory') && <SettingsMemory />}
+                </div>
+                <div className={activeTab === 'schedule' ? '' : 'hidden'}>
+                  {viewedTabs.has('schedule') && (
+                    <SettingsSchedule isActive={activeTab === 'schedule'} />
+                  )}
+                </div>
+                <div className={activeTab === 'remote' ? '' : 'hidden'}>
+                  {viewedTabs.has('remote') && (
+                    <RemoteControlPanel isActive={activeTab === 'remote'} />
+                  )}
+                </div>
+                <div className={activeTab === 'logs' ? '' : 'hidden'}>
+                  {viewedTabs.has('logs') && <SettingsLogs isActive={activeTab === 'logs'} />}
+                </div>
+                <div className={activeTab === 'general' ? '' : 'hidden'}>
+                  {viewedTabs.has('general') && <SettingsGeneral />}
                 </div>
               </div>
             </div>
-          </>
-        )}
+          </div>
+        </>
       </div>
     </div>
   );

@@ -1,34 +1,56 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(__dirname, '..');
 const read = (p: string): string => readFileSync(resolve(root, p), 'utf-8');
 
+/** Every source file under a directory (recursive). */
+function collectSources(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) collectSources(full, out);
+    else if (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')) out.push(full);
+  }
+  return out;
+}
+
 describe('dedicated Sub-agents view navigation', () => {
   it('the duplicated SettingsSubAgents screen is gone for good', () => {
     // Regression: a second, drifted copy of the interface used to live inline
     // in the API tab.
-    expect(existsSync(resolve(root, 'src/renderer/components/settings/SettingsSubAgents.tsx'))).toBe(false);
+    expect(
+      existsSync(resolve(root, 'src/renderer/components/settings/SettingsSubAgents.tsx'))
+    ).toBe(false);
     const panel = read('src/renderer/components/SettingsPanel.tsx');
     expect(panel).not.toContain('SettingsSubAgents');
   });
 
-  it('Settings exposes its own Sub-agents tab, hosting the shared view', () => {
-    // Product requirement: the sub-agents interface must be reachable from
-    // Settings, not only from the sidebar. It reuses the SAME component (one
-    // implementation, two hosts) instead of reintroducing a copy.
+  it('Settings keeps ONE entry point that navigates to the dedicated view', () => {
+    // Canonical surface decision (2026-09-22): the dedicated sidebar view is the
+    // only place that RENDERS the interface. Settings keeps a tab, but it is a
+    // link that navigates there — never a second host.
     const panel = read('src/renderer/components/SettingsPanel.tsx');
-    expect(panel).toContain("import { SubAgentsView } from './subagents/SubAgentsView'");
+    expect(panel).not.toContain('<SubAgentsView');
+    expect(panel).not.toContain("from './subagents/SubAgentsView'");
     expect(panel).toContain("id: 'subagents' as TabId");
     expect(panel).toContain("label: t('settings.subAgents')");
-    expect(panel).toContain("labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents']");
-    // The host supplies the close action; the sidebar host falls back to the
-    // store flag.
-    expect(panel).toContain('<SubAgentsView onClose={onClose} />');
-    const view = read('src/renderer/components/subagents/SubAgentsView.tsx');
-    expect(view).toContain('export function SubAgentsView({ onClose }');
-    expect(view).toContain('if (onClose) onClose();');
+    expect(panel).toContain(
+      "labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents']"
+    );
+    // The entry point navigates: it opens the dedicated view and closes Settings.
+    expect(panel).toContain('setSubAgentsVisible(true)');
+    expect(panel).toContain('onClose();');
+    expect(panel).toContain("t('settings.subAgentsOpenView')");
+  });
+
+  it('renders the interface from exactly ONE place (the dedicated view)', () => {
+    // Regression guard against a new "two hosts" drift: only App.tsx may render
+    // the component. Any other render site fails this test.
+    const renderSites = collectSources(resolve(root, 'src/renderer'))
+      .filter((file) => readFileSync(file, 'utf-8').includes('<SubAgentsView'))
+      .map((file) => file.slice(root.length + 1));
+    expect(renderSites).toEqual(['src/renderer/App.tsx']);
   });
 
   it('the sidebar exposes a Sub-agents entry that opens the dedicated view', () => {
@@ -57,7 +79,9 @@ describe('dedicated Sub-agents view navigation', () => {
   it('the dedicated view hosts the pending-proposals section (Skill doctor parity)', () => {
     const view = read('src/renderer/components/subagents/SubAgentsView.tsx');
     // Same component the doctor renders — one implementation, two hosts.
-    expect(view).toContain("import { ProposedSkillsSection } from '../settings/SettingsSkillDoctor'");
+    expect(view).toContain(
+      "import { ProposedSkillsSection } from '../settings/SettingsSkillDoctor'"
+    );
     expect(view).toContain('<ProposedSkillsSection />');
     const doctor = read('src/renderer/components/settings/SettingsSkillDoctor.tsx');
     expect(doctor).toContain('export function ProposedSkillsSection');
@@ -66,7 +90,7 @@ describe('dedicated Sub-agents view navigation', () => {
   it('the dedicated view persists through the SAME config IPC as before', () => {
     const view = read('src/renderer/components/subagents/SubAgentsView.tsx');
     expect(view).toContain('window.electronAPI.config.get()');
-    expect(view).toContain("subAgents: buildSubAgentsUpdate(draft)");
+    expect(view).toContain('subAgents: buildSubAgentsUpdate(draft)');
     expect(view).toContain('export function buildSubAgentsUpdate');
     expect(view).toContain('export function SubAgentsView');
   });

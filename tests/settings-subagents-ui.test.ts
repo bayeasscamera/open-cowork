@@ -63,8 +63,13 @@ describe('settings sub-agents UI → persisted config', () => {
       maxConcurrent: 8,
     });
     expect(
-      buildSubAgentsUpdate({ configSetId: '', modelId: undefined, perRole: {}, timeoutMs: 120_000, maxConcurrent: 2 })
-        .configSetId
+      buildSubAgentsUpdate({
+        configSetId: '',
+        modelId: undefined,
+        perRole: {},
+        timeoutMs: 120_000,
+        maxConcurrent: 2,
+      }).configSetId
     ).toBe('');
   });
 
@@ -84,14 +89,20 @@ describe('settings sub-agents UI → persisted config', () => {
     // Re-read (simulated app reload): the same value survives normalization.
     expect(store.getAll().subAgents).toEqual(payload);
 
-    store.update({ subAgents: { configSetId: '', perRole: {}, timeoutMs: 120_000, maxConcurrent: 2 } });
+    store.update({
+      subAgents: { configSetId: '', perRole: {}, timeoutMs: 120_000, maxConcurrent: 2 },
+    });
     expect(store.getAll().subAgents?.configSetId).toBe('');
   });
 
   it('migrates a legacy per-role string config on read', () => {
     const store = new ConfigStore();
     // Simulate a config saved before the { configSetId, modelId } format.
-    store.update({ subAgents: { configSetId: 'cheap', perRole: { reviewer: 'set-2' } } as unknown as Parameters<typeof store.update>[0]['subAgents'] });
+    store.update({
+      subAgents: { configSetId: 'cheap', perRole: { reviewer: 'set-2' } } as unknown as Parameters<
+        typeof store.update
+      >[0]['subAgents'],
+    });
     expect(store.getAll().subAgents?.perRole).toEqual({
       reviewer: { configSetId: 'set-2', modelId: undefined },
     });
@@ -108,22 +119,38 @@ describe('settings sub-agents UI → persisted config', () => {
     expect(source).not.toContain("ipcRenderer.invoke('config.subAgents");
   });
 
-  it('the API tab does not embed a duplicate sub-agents section', () => {
-    // The interface is reachable from Settings → Sub-agents, but only through
-    // the shared view; the old inline copy inside the API tab is gone.
+  it('Settings never hosts a second sub-agents surface, only a link to the view', () => {
+    // The canonical surface is the dedicated sidebar view. Settings keeps a
+    // single entry point that navigates there; the old inline copy AND the
+    // later "shared component as a second host" are both gone.
     const panel = readFileSync(resolve(root, 'src/renderer/components/SettingsPanel.tsx'), 'utf8');
     expect(panel).not.toContain('SettingsSubAgents');
-    expect(panel).toContain("import { SubAgentsView } from './subagents/SubAgentsView'");
+    expect(panel).not.toContain('<SubAgentsView');
+    expect(panel).not.toContain("from './subagents/SubAgentsView'");
     expect(panel).toContain("label: t('settings.subAgents')");
+    expect(panel).toContain("t('settings.subAgentsOpenView')");
   });
 
   it('the Settings → Sub-agents labels exist in en, fr and zh', () => {
     for (const lang of ['en', 'fr', 'zh']) {
       const settings = JSON.parse(
         readFileSync(resolve(root, `src/renderer/i18n/locales/${lang}.json`), 'utf8')
-      ).settings as { subAgents?: string; subAgentsDesc?: string };
+      ).settings as {
+        subAgents?: string;
+        subAgentsDesc?: string;
+        subAgentsMovedDesc?: string;
+        subAgentsOpenView?: string;
+      };
       expect(settings.subAgents, `settings.subAgents missing in ${lang}`).toBeTruthy();
       expect(settings.subAgentsDesc, `settings.subAgentsDesc missing in ${lang}`).toBeTruthy();
+      expect(
+        settings.subAgentsMovedDesc,
+        `settings.subAgentsMovedDesc missing in ${lang}`
+      ).toBeTruthy();
+      expect(
+        settings.subAgentsOpenView,
+        `settings.subAgentsOpenView missing in ${lang}`
+      ).toBeTruthy();
     }
   });
 

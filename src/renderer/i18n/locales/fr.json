@@ -270,6 +270,8 @@
     "sandboxDesc": "Environnement d’exécution isolé",
     "subAgents": "Sous-agents",
     "subAgentsDesc": "Personas de rôle, modèles par rôle et garde-fous de délégation",
+    "subAgentsMovedDesc": "Cette interface dispose désormais de sa propre vue, au même niveau que les Projets. Ouvrez-la pour configurer les personas de rôle, les modèles par rôle et les garde-fous de délégation.",
+    "subAgentsOpenView": "Ouvrir la vue Sous-agents",
     "connectors": "Connecteurs MCP",
     "connectorsDesc": "Intégrations navigateur et outils",
     "skills": "Compétences (Skills)",
