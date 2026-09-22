@@ -39,7 +39,20 @@ export interface RenameResult {
 // ---------------------------------------------------------------------------
 
 const SOURCE_EXTS = new Set(['.ts', '.tsx']);
-const EXCLUDE = new Set(['node_modules', 'dist', 'dist-electron', '.git', 'release']);
+const EXCLUDE = new Set([
+  'node_modules',
+  'dist',
+  'dist-electron',
+  'dist-mcp',
+  'dist-wsl-agent',
+  'dist-lima-agent',
+  '.git',
+  'release',
+  'coverage',
+  '.bundle-resources',
+  '.worktrees',
+  '.cowork',
+]);
 
 function walkTs(dir: string): string[] {
   const results: string[] = [];
@@ -67,10 +80,6 @@ function parseFile(filePath: string) {
   }
 }
 
-function getLine(code: string, line: number): string {
-  return code.split('\n')[line - 1] ?? '';
-}
-
 // ---------------------------------------------------------------------------
 // AstCodeIntelligence
 // ---------------------------------------------------------------------------
@@ -89,21 +98,25 @@ export class AstCodeIntelligence {
       const parsed = parseFile(filePath);
       if (!parsed) continue;
       const { code, ast } = parsed;
+      // Split once per file instead of re-splitting the whole file for every
+      // match (getLine did `code.split('\n')` per node — O(matches x size)).
+      const lines = code.split('\n');
+      const lineAt = (line: number): string => lines[line - 1] ?? '';
 
       this.walkNode(ast as unknown as Record<string, unknown>, (node) => {
         const n = node as { type: string; loc?: { start: { line: number; column: number } }; name?: string; local?: { name: string }; imported?: { name: string }; source?: { value: string } };
 
         // Import specifier: import { symbolName } from '...'
         if (n.type === AST_NODE_TYPES.ImportSpecifier && n.local?.name === symbolName) {
-          usages.push({ filePath, line: n.loc!.start.line, column: n.loc!.start.column, context: getLine(code, n.loc!.start.line), kind: 'import' });
+          usages.push({ filePath, line: n.loc!.start.line, column: n.loc!.start.column, context: lineAt(n.loc!.start.line), kind: 'import' });
         }
         // Import default: import symbolName from '...'
         if (n.type === AST_NODE_TYPES.ImportDefaultSpecifier && n.local?.name === symbolName) {
-          usages.push({ filePath, line: n.loc!.start.line, column: n.loc!.start.column, context: getLine(code, n.loc!.start.line), kind: 'import' });
+          usages.push({ filePath, line: n.loc!.start.line, column: n.loc!.start.column, context: lineAt(n.loc!.start.line), kind: 'import' });
         }
         // Identifier reference
         if (n.type === AST_NODE_TYPES.Identifier && n.name === symbolName) {
-          usages.push({ filePath, line: n.loc!.start.line, column: n.loc!.start.column, context: getLine(code, n.loc!.start.line), kind: 'reference' });
+          usages.push({ filePath, line: n.loc!.start.line, column: n.loc!.start.column, context: lineAt(n.loc!.start.line), kind: 'reference' });
         }
       });
     }

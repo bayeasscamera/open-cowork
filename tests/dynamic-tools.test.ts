@@ -115,7 +115,8 @@ describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills',
     expect(report.results.length).toBe(2);
   });
 
-  it('find_symbol_usages locates usages via AST', async () => {
+  // Scans the whole repository AST, so allow more than the 5s default under load.
+  it('find_symbol_usages locates usages via AST', { timeout: 30000 }, async () => {
     const metaTools = buildAgentMetaTools();
     const findTool = metaTools.find((t) => t.name === 'find_symbol_usages')!;
 
