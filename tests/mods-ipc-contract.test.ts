@@ -74,10 +74,12 @@ describe('mods/diff/skill-doctor IPC contract', () => {
 
   it('agent-runner installs both pre and post mods hooks', () => {
     const runner = readFileSync(resolve(root, 'src/main/agent/agent-runner.ts'), 'utf8');
-    expect(runner).toContain('runPreToolUse({ sessionId, toolName, args })');
-    expect(runner).toContain('runPostToolUse(');
-    expect(runner).toContain('setAfterToolCall');
+    const hooks = readFileSync(resolve(root, 'src/main/agent/agent-hooks.ts'), 'utf8');
+    // The hook bodies moved to agent-hooks.ts; the runner still installs them.
     expect(runner).toContain('installModsHooks(piSession, session.id)');
+    expect(hooks).toContain('runPreToolUse({ sessionId, toolName, args })');
+    expect(hooks).toContain('runPostToolUse(');
+    expect(hooks).toContain('setAfterToolCall');
   });
 
   it('every builtin mod id is unique', () => {
