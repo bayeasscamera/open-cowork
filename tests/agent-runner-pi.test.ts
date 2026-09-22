@@ -58,12 +58,14 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('summarizes noisy SDK message updates instead of logging every text delta', () => {
-    expect(agentRunnerContent).toContain('const streamEventCounts = new Map<string, number>();');
+    // The counters now live in stream-liveness; the runner still counts per update
+    // and only logs the aggregated summary at message_end.
+    expect(agentRunnerContent).toContain('streamLiveness.recordStreamEvent(updateType);');
     expect(agentRunnerContent).toContain(
       "if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {"
     );
     expect(agentRunnerContent).toContain("'[CoworkAgentRunner] Event: message_end'");
-    expect(agentRunnerContent).toContain('messageUpdateCounts: getStreamEventSummary()');
+    expect(agentRunnerContent).toContain('messageUpdateCounts: streamLiveness.getStreamEventSummary()');
     expect(agentRunnerContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
     expect(agentRunnerContent).toContain("'[CoworkAgentRunner] message_end raw message:'");
   });

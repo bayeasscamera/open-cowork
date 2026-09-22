@@ -43,6 +43,7 @@ import {
   syncSandboxChangesToHost,
 } from './agent-runner-sandbox-session';
 import { buildColdStartHistoryPreamble } from './cold-start-history';
+import { createStreamLivenessWatcher } from './stream-liveness';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -1554,7 +1555,6 @@ Tool routing:
       let pipelineDraftMessage: Message | undefined;
       let pipelineDraftText = '';
       const promptStartedAt = Date.now();
-      const streamEventCounts = new Map<string, number>();
 
       // ── Loop guard: protect against runaway tool-call loops ──
       // (e.g. gemini-3.1-pro with thinking=off has been observed producing hundreds
@@ -1616,70 +1616,43 @@ Tool routing:
         }
       };
 
-      // Ollama cold-start feedback: if provider is 'ollama' and no stream event arrives
-      // within 10 seconds, show a "model loading" trace update so users know what's happening.
-      let ollamaColdStartTimerId: ReturnType<typeof setTimeout> | undefined;
-      let receivedFirstStreamEvent = false;
-      let firstStreamEventAt: number | undefined;
-      if (provider === 'ollama') {
-        ollamaColdStartTimerId = setTimeout(() => {
-          if (!receivedFirstStreamEvent && !controller.signal.aborted) {
-            this.sendTraceUpdate(session.id, thinkingStepId, {
-              title: 'Waiting for model to load into memory...',
-            });
+      // Stream liveness: warn on a slow Ollama cold start, cancel that warning on
+      // the first event, abort after 5 minutes without activity and count event
+      // types for diagnostics. The policy lives in stream-liveness; the effects
+      // (trace updates, abort, logging) stay here.
+      const streamLiveness = createStreamLivenessWatcher({
+        provider,
+        promptStartedAt,
+        isAborted: () => controller.signal.aborted,
+        onColdStartWaiting: () => {
+          this.sendTraceUpdate(session.id, thinkingStepId, {
+            title: 'Waiting for model to load into memory...',
+          });
+        },
+        onFirstStreamEvent: ({ eventType, latencyMs }) => {
+          this.sendTraceUpdate(session.id, thinkingStepId, {
+            title: 'Processing request...',
+          });
+          if (provider === 'ollama') {
+            log(
+              '[CoworkAgentRunner] Ollama first stream event received',
+              safeStringify({
+                sessionId: session.id,
+                eventType,
+                modelId: piModel.id,
+                modelProvider: piModel.provider,
+                baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
+                latencyMs,
+              })
+            );
           }
-        }, 10000);
-      }
-
-      const markFirstStreamEvent = (eventType: string) => {
-        if (receivedFirstStreamEvent) {
-          return;
-        }
-        receivedFirstStreamEvent = true;
-        firstStreamEventAt = Date.now();
-        if (ollamaColdStartTimerId) {
-          clearTimeout(ollamaColdStartTimerId);
-        }
-        this.sendTraceUpdate(session.id, thinkingStepId, {
-          title: 'Processing request...',
-        });
-        if (provider === 'ollama') {
-          log(
-            '[CoworkAgentRunner] Ollama first stream event received',
-            safeStringify({
-              sessionId: session.id,
-              eventType,
-              modelId: piModel.id,
-              modelProvider: piModel.provider,
-              baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
-              latencyMs: firstStreamEventAt - promptStartedAt,
-            })
-          );
-        }
-      };
-
-      // Activity-based timeout: reset the 5-min timer whenever the SDK sends events
-      const PROMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-      let activityTimeoutId: ReturnType<typeof setTimeout> | undefined;
-      const resetActivityTimeout = () => {
-        if (activityTimeoutId) clearTimeout(activityTimeoutId);
-        activityTimeoutId = setTimeout(() => {
+        },
+        onActivityTimeout: () => {
           logWarn('[CoworkAgentRunner] Prompt timed out (no activity for 5 min), aborting');
           abortedByTimeout = true;
           controller.abort();
-        }, PROMPT_TIMEOUT_MS);
-      };
-
-      const recordStreamEvent = (eventType: string) => {
-        streamEventCounts.set(eventType, (streamEventCounts.get(eventType) ?? 0) + 1);
-      };
-
-      const getStreamEventSummary = () =>
-        Object.fromEntries(
-          Array.from(streamEventCounts.entries()).sort(([left], [right]) =>
-            left.localeCompare(right)
-          )
-        );
+        },
+      });
 
       const emitTerminalError = (errorText: string, options: { abort?: boolean } = {}): void => {
         terminalErrorText = errorText;
@@ -1747,11 +1720,11 @@ Tool routing:
           if (controller.signal.aborted) return;
 
           // Reset activity timeout on meaningful events
-          resetActivityTimeout();
+          streamLiveness.resetActivityTimeout();
 
           if (event.type === 'message_update') {
             const updateType = event.assistantMessageEvent.type;
-            recordStreamEvent(updateType);
+            streamLiveness.recordStreamEvent(updateType);
             if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {
               log(`[CoworkAgentRunner] Event: ${event.type} → ${updateType}`);
             }
@@ -1766,7 +1739,7 @@ Tool routing:
               safeStringify(
                 {
                   message: summarizeMessageForLog(event.message),
-                  messageUpdateCounts: getStreamEventSummary(),
+                  messageUpdateCounts: streamLiveness.getStreamEventSummary(),
                 },
                 2
               )
@@ -1782,14 +1755,14 @@ Tool routing:
               if (controller.signal.aborted) break;
               const ame = event.assistantMessageEvent;
               if (ame.type === 'text_delta') {
-                markFirstStreamEvent(ame.type);
+                streamLiveness.markFirstStreamEvent(ame.type);
                 streamedText += ame.delta;
                 // Two-stage draft: the first pass is never presented as the
                 // answer, so its live stream is withheld. The accumulated text
                 // still drives the refine decision after the run.
                 if (!twoStageArmed) this.sendPartial(session.id, ame.delta);
               } else if (ame.type === 'thinking_delta') {
-                markFirstStreamEvent(ame.type);
+                streamLiveness.markFirstStreamEvent(ame.type);
                 // Forward thinking delta to renderer for real-time display
                 if (!twoStageArmed) {
                   this.sendToRenderer({
@@ -1798,7 +1771,7 @@ Tool routing:
                   });
                 }
               } else if (ame.type === 'toolcall_start') {
-                markFirstStreamEvent(ame.type);
+                streamLiveness.markFirstStreamEvent(ame.type);
                 const partial = ame.partial;
                 const toolContent = partial?.content?.[ame.contentIndex];
                 const toolName = toolContent?.type === 'toolCall' ? toolContent.name : 'unknown';
@@ -1821,7 +1794,7 @@ Tool routing:
                 // in message_end below as a unified path for all providers.
                 log('[CoworkAgentRunner] message_update done event (handled in message_end)');
               } else if (ame.type === 'error') {
-                markFirstStreamEvent(ame.type);
+                streamLiveness.markFirstStreamEvent(ame.type);
                 const errorDetail = JSON.stringify(ame.error?.content || 'no content');
                 logCtxError('[CoworkAgentRunner] pi-ai stream error:', ame.reason, errorDetail);
                 emitTerminalError(resolveAssistantStreamErrorText(ame), { abort: true });
@@ -1851,10 +1824,8 @@ Tool routing:
                     modelId: piModel.id,
                     modelProvider: piModel.provider,
                     usedSyntheticModel,
-                    receivedFirstStreamEvent,
-                    firstStreamLatencyMs: firstStreamEventAt
-                      ? firstStreamEventAt - promptStartedAt
-                      : null,
+                    receivedFirstStreamEvent: streamLiveness.hasReceivedFirstStreamEvent(),
+                    firstStreamLatencyMs: streamLiveness.getFirstStreamLatencyMs(),
                     stopReason: (msg as { stopReason?: unknown })?.stopReason ?? null,
                     contentBlocks: Array.isArray((msg as { content?: unknown[] })?.content)
                       ? ((msg as { content?: unknown[] }).content?.length ?? 0)
@@ -2121,7 +2092,7 @@ Tool routing:
 
       // Execute the prompt — unsubscribe in finally to prevent event listener leak
       try {
-        resetActivityTimeout();
+        streamLiveness.resetActivityTimeout();
         if (provider === 'ollama') {
           log(
             '[CoworkAgentRunner] Starting Ollama prompt',
@@ -2147,8 +2118,7 @@ Tool routing:
         } catch (e) {
           logWarn('[CoworkAgentRunner] unsubscribe error:', e);
         }
-        if (activityTimeoutId) clearTimeout(activityTimeoutId);
-        if (ollamaColdStartTimerId) clearTimeout(ollamaColdStartTimerId);
+        streamLiveness.dispose();
       }
 
       logTiming('agent prompt completed', runStartTime);
