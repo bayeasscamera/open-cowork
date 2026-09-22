@@ -37,6 +37,10 @@ import {
 } from '../projects/two-stage-pipeline';
 import { runPiAiOneShot } from './sdk-one-shot';
 import { installPiPayloadHook } from './openai-payload-sanitizer';
+import {
+  initSandboxSession,
+  resolveSandboxBackend,
+} from './agent-runner-sandbox-session';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -764,329 +768,31 @@ export class CoworkAgentRunner {
       const workingDir = session.cwd || undefined;
       logCtx('[CoworkAgentRunner] Working directory:', workingDir || '(none)');
 
-      // Initialize sandbox sync if WSL mode is active
+      // Initialize the isolated sandbox session (project files + skills) when
+      // WSL/Lima is active. The orchestration lives in
+      // agent-runner-sandbox-session so it is unit-testable without a VM; only
+      // the platform decision stays here.
       const sandbox = getSandboxAdapter();
-
-      if (sandbox.isWSL && sandbox.wslStatus?.distro && workingDir) {
-        log('[CoworkAgentRunner] WSL mode active, initializing sandbox sync...');
-
-        // Only show sync UI for new sessions (first message)
-        const isNewSession = !SandboxSync.hasSession(session.id);
-
-        if (isNewSession) {
-          // Notify UI: syncing files (only for new sessions)
-          this.sendToRenderer({
-            type: 'sandbox.sync',
-            payload: {
-              sessionId: session.id,
-              phase: 'syncing_files',
-              message: 'Syncing files to sandbox...',
-              detail: 'Copying project files to isolated WSL environment',
-            },
-          });
-        }
-
-        const syncResult = await SandboxSync.initSync(
-          workingDir,
-          session.id,
-          sandbox.wslStatus.distro
-        );
-
-        if (syncResult.success) {
-          sandboxPath = syncResult.sandboxPath;
-          useSandboxIsolation = true;
-          log(`[CoworkAgentRunner] Sandbox initialized: ${sandboxPath}`);
-          log(
-            `[CoworkAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`
-          );
-
-          if (isNewSession) {
-            // Update UI with file count (only for new sessions)
-            this.sendToRenderer({
-              type: 'sandbox.sync',
-              payload: {
-                sessionId: session.id,
-                phase: 'syncing_skills',
-                message: 'Configuring skills...',
-                detail: 'Copying built-in skills to sandbox',
-                fileCount: syncResult.fileCount,
-                totalSize: syncResult.totalSize,
-              },
-            });
-          }
-
-          // Copy skills to sandbox ~/.claude/skills/
-          const builtinSkillsPath = this.getBuiltinSkillsPath();
-          try {
-            const distro = sandbox.wslStatus!.distro!;
-            const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
-
-            // Create .claude/skills directory in sandbox
-            execFileSync('wsl', ['-d', distro, '-e', 'mkdir', '-p', sandboxSkillsPath], {
-              encoding: 'utf-8',
-              timeout: 10000,
-            });
-
-            if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-              // Use rsync via execFileSync with array args to avoid shell injection
-              const wslSourcePath = pathConverter.toWSL(builtinSkillsPath);
-              log(
-                `[CoworkAgentRunner] Copying skills with rsync: ${wslSourcePath}/ -> ${sandboxSkillsPath}/`
-              );
-
-              execFileSync(
-                'wsl',
-                ['-d', distro, '-e', 'rsync', '-av', wslSourcePath + '/', sandboxSkillsPath + '/'],
-                {
-                  encoding: 'utf-8',
-                  timeout: 120000, // 2 min timeout for large skill directories
-                }
-              );
-            }
-
-            const appSkillsDir = this.getRuntimeSkillsDir();
-            if (!fs.existsSync(appSkillsDir)) {
-              fs.mkdirSync(appSkillsDir, { recursive: true });
-            }
-            this.syncUserSkillsToAppDir(appSkillsDir);
-            this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
-
-            if (fs.existsSync(appSkillsDir)) {
-              const wslSourcePath = pathConverter.toWSL(appSkillsDir);
-              log(
-                `[CoworkAgentRunner] Copying app skills with rsync: ${wslSourcePath}/ -> ${sandboxSkillsPath}/`
-              );
-
-              execFileSync(
-                'wsl',
-                ['-d', distro, '-e', 'rsync', '-avL', wslSourcePath + '/', sandboxSkillsPath + '/'],
-                {
-                  encoding: 'utf-8',
-                  timeout: 120000, // 2 min timeout for large skill directories
-                }
-              );
-            }
-
-            // List copied skills for verification
-            const copiedSkills = execFileSync(
-              'wsl',
-              ['-d', distro, '-e', 'ls', sandboxSkillsPath],
-              {
-                encoding: 'utf-8',
-                timeout: 10000,
-              }
-            )
-              .trim()
-              .split(/\r?\n/)
-              .filter(Boolean);
-
-            log(`[CoworkAgentRunner] Skills copied to sandbox: ${sandboxSkillsPath}`);
-            log(`[CoworkAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
-          } catch (error) {
-            logError('[CoworkAgentRunner] Failed to copy skills to sandbox:', error);
-          }
-
-          if (isNewSession) {
-            // Notify UI: sync complete (only for new sessions)
-            this.sendToRenderer({
-              type: 'sandbox.sync',
-              payload: {
-                sessionId: session.id,
-                phase: 'ready',
-                message: 'Sandbox ready',
-                detail: `Synced ${syncResult.fileCount} files`,
-                fileCount: syncResult.fileCount,
-                totalSize: syncResult.totalSize,
-              },
-            });
-          }
-        } else {
-          logError('[CoworkAgentRunner] Sandbox sync failed:', syncResult.error);
-          log('[CoworkAgentRunner] Falling back to /mnt/ access (less secure)');
-
-          if (isNewSession) {
-            // Notify UI: error (only for new sessions)
-            this.sendToRenderer({
-              type: 'sandbox.sync',
-              payload: {
-                sessionId: session.id,
-                phase: 'error',
-                message: 'Sandbox file sync failed, falling back to direct access mode',
-                detail: 'Falling back to direct access mode (less secure)',
-              },
-            });
-          }
-        }
-      }
-
-      // Initialize sandbox sync if Lima mode is active
-      if (sandbox.isLima && sandbox.limaStatus?.instanceRunning && workingDir) {
-        log('[CoworkAgentRunner] Lima mode active, initializing sandbox sync...');
-
-        const { LimaSync } = await import('../sandbox/lima-sync');
-
-        // Only show sync UI for new sessions (first message)
-        const isNewLimaSession = !LimaSync.hasSession(session.id);
-
-        if (isNewLimaSession) {
-          // Notify UI: syncing files (only for new sessions)
-          this.sendToRenderer({
-            type: 'sandbox.sync',
-            payload: {
-              sessionId: session.id,
-              phase: 'syncing_files',
-              message: 'Syncing files to sandbox...',
-              detail: 'Copying project files to isolated Lima environment',
-            },
-          });
-        }
-
-        const syncResult = await LimaSync.initSync(workingDir, session.id);
-
-        if (syncResult.success) {
-          sandboxPath = syncResult.sandboxPath;
-          useSandboxIsolation = true;
-          log(`[CoworkAgentRunner] Sandbox initialized: ${sandboxPath}`);
-          log(
-            `[CoworkAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`
-          );
-
-          if (isNewLimaSession) {
-            // Update UI with file count (only for new sessions)
-            this.sendToRenderer({
-              type: 'sandbox.sync',
-              payload: {
-                sessionId: session.id,
-                phase: 'syncing_skills',
-                message: 'Configuring skills...',
-                detail: 'Copying built-in skills to sandbox',
-                fileCount: syncResult.fileCount,
-                totalSize: syncResult.totalSize,
-              },
-            });
-          }
-
-          // Copy skills to sandbox ~/.claude/skills/
-          const builtinSkillsPath = this.getBuiltinSkillsPath();
-          try {
-            const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
-
-            // Create .claude/skills directory in sandbox
-            execFileSync(
-              'limactl',
-              ['shell', 'claude-sandbox', '--', 'mkdir', '-p', sandboxSkillsPath],
-              {
-                encoding: 'utf-8',
-                timeout: 10000,
-              }
-            );
-
-            if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-              // Use rsync via execFileSync with array args to avoid shell injection
-              // Lima mounts /Users directly, so paths are the same
-              log(
-                `[CoworkAgentRunner] Copying skills with rsync: ${builtinSkillsPath}/ -> ${sandboxSkillsPath}/`
-              );
-
-              execFileSync(
-                'limactl',
-                [
-                  'shell',
-                  'claude-sandbox',
-                  '--',
-                  'rsync',
-                  '-av',
-                  builtinSkillsPath + '/',
-                  sandboxSkillsPath + '/',
-                ],
-                {
-                  encoding: 'utf-8',
-                  timeout: 120000, // 2 min timeout for large skill directories
-                }
-              );
-            }
-
-            const appSkillsDir = this.getRuntimeSkillsDir();
-            if (!fs.existsSync(appSkillsDir)) {
-              fs.mkdirSync(appSkillsDir, { recursive: true });
-            }
-            this.syncUserSkillsToAppDir(appSkillsDir);
-            this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
-
-            if (fs.existsSync(appSkillsDir)) {
-              log(
-                `[CoworkAgentRunner] Copying app skills with rsync: ${appSkillsDir}/ -> ${sandboxSkillsPath}/`
-              );
-
-              execFileSync(
-                'limactl',
-                [
-                  'shell',
-                  'claude-sandbox',
-                  '--',
-                  'rsync',
-                  '-avL',
-                  appSkillsDir + '/',
-                  sandboxSkillsPath + '/',
-                ],
-                {
-                  encoding: 'utf-8',
-                  timeout: 120000, // 2 min timeout for large skill directories
-                }
-              );
-            }
-
-            // List copied skills for verification
-            const copiedSkills = execFileSync(
-              'limactl',
-              ['shell', 'claude-sandbox', '--', 'ls', sandboxSkillsPath],
-              {
-                encoding: 'utf-8',
-                timeout: 10000,
-              }
-            )
-              .trim()
-              .split(/\r?\n/)
-              .filter(Boolean);
-
-            log(`[CoworkAgentRunner] Skills copied to sandbox: ${sandboxSkillsPath}`);
-            log(`[CoworkAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
-          } catch (error) {
-            logError('[CoworkAgentRunner] Failed to copy skills to sandbox:', error);
-          }
-
-          if (isNewLimaSession) {
-            // Notify UI: sync complete (only for new sessions)
-            this.sendToRenderer({
-              type: 'sandbox.sync',
-              payload: {
-                sessionId: session.id,
-                phase: 'ready',
-                message: 'Sandbox ready',
-                detail: `Synced ${syncResult.fileCount} files`,
-                fileCount: syncResult.fileCount,
-                totalSize: syncResult.totalSize,
-              },
-            });
-          }
-        } else {
-          logError('[CoworkAgentRunner] Sandbox sync failed:', syncResult.error);
-          log('[CoworkAgentRunner] Falling back to direct access (less secure)');
-
-          if (isNewLimaSession) {
-            // Notify UI: error (only for new sessions)
-            this.sendToRenderer({
-              type: 'sandbox.sync',
-              payload: {
-                sessionId: session.id,
-                phase: 'error',
-                message: 'Sandbox file sync failed, falling back to direct access mode',
-                detail: 'Falling back to direct access mode (less secure)',
-              },
-            });
-          }
-        }
-      }
+      const sandboxInit = await initSandboxSession({
+        sessionId: session.id,
+        workingDir,
+        backend: resolveSandboxBackend({
+          isWsl: sandbox.isWSL,
+          wslDistro: sandbox.wslStatus?.distro,
+          isLima: sandbox.isLima,
+          limaInstanceRunning: sandbox.limaStatus?.instanceRunning,
+          hasWorkingDir: Boolean(workingDir),
+        }),
+        getBuiltinSkillsPath: () => this.getBuiltinSkillsPath(),
+        getRuntimeSkillsDir: () => this.getRuntimeSkillsDir(),
+        syncUserSkills: (runtimeSkillsDir) => this.syncUserSkillsToAppDir(runtimeSkillsDir),
+        syncConfiguredSkills: (runtimeSkillsDir) =>
+          this.syncConfiguredSkillsToRuntimeDir(runtimeSkillsDir),
+        toVmPath: (hostPath) => pathConverter.toWSL(hostPath),
+        notify: (status) => this.sendToRenderer({ type: 'sandbox.sync', payload: status }),
+      });
+      sandboxPath = sandboxInit.sandboxPath;
+      useSandboxIsolation = sandboxInit.useSandboxIsolation;
 
       // Check if current user message includes images
       const lastUserMessage =
