@@ -40,6 +40,28 @@ export function shouldPreferToolResultImages(
   return omittedImageOutputPattern.test(normalized) || emptyOutputPattern.test(normalized);
 }
 
+/**
+ * Image-output tools whose picture IS the deliverable: analyze_image and
+ * generate_image. Their result is expanded on arrival so the user sees the
+ * image itself rather than a file path they must click to reveal.
+ */
+const IMAGE_DELIVERABLE_TOOLS = new Set(['analyze_image', 'generate_image']);
+
+/** True for the tools whose picture IS the deliverable (cheap, no scan). */
+export function isImageDeliverableTool(toolName: string | undefined): boolean {
+  return !!toolName && IMAGE_DELIVERABLE_TOOLS.has(toolName);
+}
+
+export function shouldAutoExpandToolResult(
+  toolName: string | undefined,
+  hasImages: boolean
+): boolean {
+  if (!hasImages) {
+    return false;
+  }
+  return isImageDeliverableTool(toolName);
+}
+
 export function shouldRenderToolResultText(
   toolName: string | undefined,
   content: string,

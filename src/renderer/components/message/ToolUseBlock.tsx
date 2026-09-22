@@ -1,5 +1,5 @@
 // Tool use card — collapsible, merges matching tool_result from same/other messages
-import { useState, memo } from 'react';
+import { memo } from 'react';
 import { ChevronDown, ChevronRight, Loader2, XCircle, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import {
@@ -11,6 +11,7 @@ import type { ToolUseContent, ToolResultContent, ContentBlock, Message } from '.
 import { AskUserQuestionBlock } from './AskUserQuestionBlock';
 import { TodoWriteBlock } from './TodoWriteBlock';
 import { getToolIcon, getToolLabel } from './toolHelpers';
+import { useAutoExpandToolResult } from '../../hooks/useAutoExpandToolResult';
 
 // Only allow safe image MIME types for data: URI rendering
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -35,7 +36,14 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   const activeTurn = useAppStore((s) =>
     message?.sessionId ? (s.sessionStates[message.sessionId]?.activeTurn ?? null) : null
   );
-  const [expanded, setExpanded] = useState(false);
+  // analyze_image / generate_image results pop open on arrival so the picture
+  // is visible without a click (the user's own toggle always wins).
+  const { expanded, toggle: toggleExpanded } = useAutoExpandToolResult({
+    toolUseId: block.id,
+    toolName: block.name,
+    allBlocks,
+    allMessages,
+  });
 
   // Special-case tool UIs
   if (block.name === 'AskUserQuestion') {
@@ -128,7 +136,7 @@ export const ToolUseBlock = memo(function ToolUseBlock({
     >
       {/* Header — always visible */}
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={toggleExpanded}
         className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-surface-hover/50 transition-colors"
       >
         {/* Status icon */}

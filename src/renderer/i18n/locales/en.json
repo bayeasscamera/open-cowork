@@ -265,6 +265,17 @@
       "saved": "Web search settings saved.",
       "saveFailed": "Could not save web search settings. Your edits have been kept; please try again."
     },
+    "images": {
+      "title": "Images (vision & generation)",
+      "description": "Dedicated profile for reading and generating images. Image models are billed per image, so they are chosen separately from your chat model. Keep \"Inherit active profile\" to reuse your current provider.",
+      "profileLabel": "Images profile",
+      "inheritActive": "Inherit active profile",
+      "modelHint": "Pick a ConfigSet whose model can read and/or generate images — for example gpt-image-1.5 or dall-e-3 (OpenAI), gemini-2.5-flash-image or imagen-4.0-generate-001 (Gemini). Anthropic models can read images but not generate them.",
+      "costThresholdLabel": "Cost confirmation threshold (USD per image)",
+      "costThresholdHint": "generate_image reports an estimated price before spending. At or above this estimate it pauses and asks for explicit confirmation; below it, it generates directly. 0 asks every time.",
+      "saved": "Image settings saved.",
+      "error": "Could not save image settings. Please try again."
+    },
     "firstRunTitle": "Set Up API",
     "firstRunSubtitle": "Configure a provider to start using Open Cowork",
     "settingsTitle": "API Settings",

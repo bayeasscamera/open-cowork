@@ -20,6 +20,7 @@ import { ApiConfigSetManager } from '../ApiConfigSetManager';
 import { CommonProviderSetupsCard, GuidanceInlineHint } from '../ProviderGuidance';
 import ApiDiagnosticsPanel from '../ApiDiagnosticsPanel';
 import { SettingsWebSearch } from './SettingsWebSearch';
+import { SettingsImages } from './SettingsImages';
 
 interface ModelOptionItem {
   id: string;
@@ -590,6 +591,7 @@ export function SettingsAPI() {
         </div>
       </div>
       <SettingsWebSearch />
+      <SettingsImages />
     </div>
   );
 }

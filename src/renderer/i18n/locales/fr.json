@@ -720,6 +720,17 @@
       "saved": "Paramètres de recherche Web enregistrés.",
       "saveFailed": "Impossible d’enregistrer les paramètres de recherche Web. Vos modifications sont conservées ; veuillez réessayer."
     },
+    "images": {
+      "title": "Images (lecture et génération)",
+      "description": "Profil dédié à la lecture et à la génération d’images. Les modèles d’image sont facturés à l’image : ils se choisissent donc séparément du modèle de conversation. Laissez « Hériter du profil actif » pour réutiliser votre fournisseur actuel.",
+      "profileLabel": "Profil images",
+      "inheritActive": "Hériter du profil actif",
+      "modelHint": "Choisissez un jeu de configuration dont le modèle sait lire et/ou générer des images — par exemple gpt-image-1.5 ou dall-e-3 (OpenAI), gemini-2.5-flash-image ou imagen-4.0-generate-001 (Gemini). Les modèles Anthropic lisent les images mais n’en génèrent pas.",
+      "costThresholdLabel": "Seuil de confirmation du coût (USD par image)",
+      "costThresholdHint": "generate_image annonce une estimation avant de dépenser. À ce seuil ou au-dessus, il s’interrompt et demande une confirmation explicite ; en dessous, il génère directement. 0 demande à chaque fois.",
+      "saved": "Paramètres d’image enregistrés.",
+      "error": "Impossible d’enregistrer les paramètres d’image. Veuillez réessayer."
+    },
     "firstRunTitle": "Bienvenue dans Open Cowork",
     "firstRunSubtitle": "Configurez votre fournisseur d’API pour commencer.",
     "settingsTitle": "Paramètres API",

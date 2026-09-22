@@ -33,6 +33,7 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import type { ImageGenerationConfig } from '../../shared/types';
 
 /**
  * Application configuration schema
@@ -137,6 +138,9 @@ export interface AppConfig {
 
   // Sub-agent swarm settings (profile resolution + guardrails)
   subAgents?: SubAgentsConfig;
+
+  // Dedicated image read/generation profile (separate from text ConfigSets)
+  imageGeneration?: ImageGenerationConfig;
 
   // OpenJev "System One" routing hint (optional, off by default)
   openjev?: OpenJevConfig;
@@ -356,6 +360,14 @@ const DEFAULT_SUB_AGENTS: SubAgentsConfig = {
   maxConcurrent: 2,
 };
 
+// Image work inherits the active profile until the user pins a dedicated
+// images ConfigSet — image models are billed per image, not per token, so the
+// choice is explicit and never silently taken from the chat model.
+const DEFAULT_IMAGE_GENERATION: ImageGenerationConfig = {
+  configSetId: '',
+  costConfirmThresholdUsd: 0.05,
+};
+
 const defaultConfig: AppConfig = {
   provider: defaultConfigSet.provider,
   apiKey: defaultProfiles.openrouter.apiKey,
@@ -410,6 +422,7 @@ const defaultConfig: AppConfig = {
     promptIterationRounds: 2,
   },
   subAgents: DEFAULT_SUB_AGENTS,
+  imageGeneration: DEFAULT_IMAGE_GENERATION,
   openjev: { enabled: false, baseUrl: 'http://127.0.0.1:8080' },
   enableThinking: false,
   isConfigured: false,
@@ -628,6 +641,25 @@ export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
       typeof value.maxConcurrent === 'number' && Number.isFinite(value.maxConcurrent)
         ? Math.max(1, Math.min(8, Math.round(value.maxConcurrent)))
         : DEFAULT_SUB_AGENTS.maxConcurrent,
+  };
+}
+
+/**
+ * Normalize the dedicated image profile. An unknown/absent field inherits the
+ * active ConfigSet (configSetId: ''), which keeps the feature usable with zero
+ * configuration while still allowing a pinned image-only profile.
+ */
+export function normalizeImageGenerationConfig(raw: unknown): ImageGenerationConfig {
+  const value = typeof raw === 'object' && raw !== null ? (raw as Partial<ImageGenerationConfig>) : {};
+  const threshold = value.costConfirmThresholdUsd;
+  return {
+    configSetId: typeof value.configSetId === 'string' ? value.configSetId.trim() : '',
+    modelId:
+      typeof value.modelId === 'string' && value.modelId.trim() ? value.modelId.trim() : undefined,
+    costConfirmThresholdUsd:
+      typeof threshold === 'number' && Number.isFinite(threshold)
+        ? Math.max(0, Math.min(100, threshold))
+        : DEFAULT_IMAGE_GENERATION.costConfirmThresholdUsd,
   };
 }
 
@@ -1219,6 +1251,7 @@ export class ConfigStore {
       trayEnabled: toBoolean(raw.trayEnabled, defaultConfig.trayEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       subAgents: normalizeSubAgentsConfig(raw.subAgents),
+      imageGeneration: normalizeImageGenerationConfig(raw.imageGeneration),
       openjev: normalizeOpenJevConfig(raw.openjev),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
@@ -1672,6 +1705,10 @@ export class ConfigStore {
         updates.subAgents !== undefined
           ? normalizeSubAgentsConfig(updates.subAgents)
           : current.subAgents,
+      imageGeneration:
+        updates.imageGeneration !== undefined
+          ? normalizeImageGenerationConfig(updates.imageGeneration)
+          : current.imageGeneration,
       openjev:
         updates.openjev !== undefined
           ? normalizeOpenJevConfig(updates.openjev)

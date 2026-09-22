@@ -165,6 +165,12 @@ export interface ImageContent {
     media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
     data: string;
   };
+  /**
+   * Workspace-relative path once this image is persisted under the session's
+   * .tmp folder. The chat model itself is text-only, so the path is what lets
+   * the agent call the analyze_image tool on an image the user pasted.
+   */
+  relativePath?: string;
 }
 
 export interface FileAttachmentContent {
@@ -892,6 +898,24 @@ export interface MemoryRuntimeConfig {
   promptIterationRounds?: number;
 }
 
+/**
+ * Dedicated provider/model selection for image READ (vision) and GENERATION.
+ * Kept separate from the text ConfigSets on purpose: image models are priced
+ * per image and are often a different vendor than the chat model. Reuses the
+ * existing ConfigSet + model picker, so a user duplicates nothing.
+ */
+export interface ImageGenerationConfig {
+  /** ConfigSet used for image work. Empty = inherit the active ConfigSet. */
+  configSetId: string;
+  /** Exact model pinned inside that set (undefined = the set's active model). */
+  modelId?: string;
+  /**
+   * Estimated cost per image (USD) at or above which generate_image refuses
+   * once and asks for an explicit acknowledgement. Undefined = built-in default.
+   */
+  costConfirmThresholdUsd?: number;
+}
+
 export interface AppConfig {
   provider: ProviderType;
   apiKey: string;
@@ -918,6 +942,8 @@ export interface AppConfig {
   /** Menu-bar tray icon + Alt+Space global toggle (background quick access). */
   trayEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;
+  /** Image read/generation profile (dedicated ConfigSet, opt-in). */
+  imageGeneration?: ImageGenerationConfig;
   enableThinking?: boolean;
   isConfigured: boolean;
   /** OpenJev "System One" routing hint (optional, off by default). */

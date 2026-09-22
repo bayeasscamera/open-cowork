@@ -287,6 +287,17 @@
       "saved": "网页搜索设置已保存。",
       "saveFailed": "无法保存网页搜索设置。您的修改已保留，请重试。"
     },
+    "images": {
+      "title": "图像（读取与生成）",
+      "description": "用于读取和生成图像的专用配置。图像模型按张计费，因此与对话模型分开选择。保持“继承当前配置”即可复用当前提供商。",
+      "profileLabel": "图像配置",
+      "inheritActive": "继承当前配置",
+      "modelHint": "请选择支持读取和/或生成图像的配置方案，例如 gpt-image-1.5 或 dall-e-3（OpenAI）、gemini-2.5-flash-image 或 imagen-4.0-generate-001（Gemini）。Anthropic 模型可读取图像但不能生成。",
+      "costThresholdLabel": "费用确认阈值（每张图像，美元）",
+      "costThresholdHint": "generate_image 会在产生费用前给出预估价格。达到或超过该阈值时会暂停并请求明确确认；低于阈值则直接生成。设为 0 表示每次都询问。",
+      "saved": "图像设置已保存。",
+      "error": "无法保存图像设置，请重试。"
+    },
     "firstRunTitle": "配置 API",
     "firstRunSubtitle": "设置 API 提供商后即可开始使用",
     "settingsTitle": "API 设置",

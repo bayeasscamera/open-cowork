@@ -106,6 +106,7 @@ import { SkillSynthesizer } from '../skills/skill-synthesizer';
 import type { MemoryManager } from '../memory/memory-manager';
 import { buildAgentMetaTools } from '../tools/dynamic-tool-creator';
 import { buildWebTools } from './web-tools';
+import { buildImageTools } from './image-tools';
 import { AdaptiveStrategyEngine } from './adaptive-strategy-engine';
 import { ActivePreferenceLearner } from '../memory/active-preference-learner';
 
@@ -2327,11 +2328,17 @@ Tool routing:
         tavilyApiKey: runtimeConfig.tavilyApiKey || process.env.TAVILY_API_KEY || '',
         braveApiKey: runtimeConfig.braveApiKey || process.env.BRAVE_API_KEY || '',
       });
+      // Native image read (vision) + generation, confined to the session
+      // workspace. The returned images ride back through the SAME
+      // openCoworkImages channel the screenshot MCP tools already use, so the
+      // chat renders them inline with no new plumbing.
+      const imageTools = buildImageTools({ sessionId: session.id, cwd: effectiveCwd });
       const customTools = [
         ...mcpCustomTools,
         ...extensionCustomTools,
         ...metaTools,
         ...webTools,
+        ...imageTools,
       ];
       if (mcpCustomTools.length > 0) {
         log(

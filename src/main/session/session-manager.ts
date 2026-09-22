@@ -23,6 +23,7 @@ import type {
   TextContent,
   TraceStep,
   FileAttachmentContent,
+  ImageContent,
 } from '../../shared/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -58,6 +59,7 @@ import {
 } from './session-title-utils';
 import { generateTitleWithSdk } from '../agent/sdk-one-shot';
 import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
+import { buildAttachmentPromptHints } from './attachment-hints';
 
 interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
@@ -80,6 +82,14 @@ interface AgentRunner {
 
 const WORKSPACE_MOUNT_VIRTUAL_PATH = '/mnt/workspace';
 const TITLE_GENERATION_TIMEOUT_MS = 20000;
+
+/** File extension for each inline image MIME type a paste can produce. */
+const PASTED_IMAGE_EXTENSION: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+};
 
 export class SessionManager {
   private db: DatabaseInstance;
@@ -522,6 +532,12 @@ export class SessionManager {
     const processedContent: ContentBlock[] = [];
 
     for (const block of content) {
+      if (block.type === 'image') {
+        // Pasted images arrive inline (base64). Persist them so the text-only
+        // chat model can still "see" them via the analyze_image tool.
+        processedContent.push(await this.persistPastedImage(session, block as ImageContent));
+        continue;
+      }
       if (block.type === 'file_attachment') {
         const fileBlock = block as FileAttachmentContent;
 
@@ -637,6 +653,71 @@ export class SessionManager {
     return processedContent;
   }
 
+  /**
+   * Persist an inline (pasted) image under the session's .tmp folder and return
+   * the block enriched with its workspace-relative path. The image stays in the
+   * block so the UI keeps rendering it; the path is what the analyze_image
+   * (vision) tool reads, since the chat model is text-only. Best-effort: on any
+   * failure the original block is returned unchanged rather than dropping it.
+   */
+  private async persistPastedImage(
+    session: Session,
+    imageBlock: ImageContent
+  ): Promise<ImageContent> {
+    try {
+      const data = imageBlock.source?.data;
+      if (!data) return imageBlock;
+      const buffer = Buffer.from(data, 'base64');
+      if (buffer.length === 0) return imageBlock;
+
+      const extension = PASTED_IMAGE_EXTENSION[imageBlock.source.media_type] ?? 'png';
+      const tmpDir = path.join(session.cwd || process.cwd(), '.tmp');
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+      const destFilename = `pasted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+      const destPath = path.join(tmpDir, destFilename);
+      fs.writeFileSync(destPath, buffer);
+
+      const relativePath = `.tmp/${destFilename}`;
+      await this.syncAttachmentToSandbox(session.id, destPath, relativePath);
+      log('[SessionManager] Persisted pasted image:', relativePath, `(${buffer.length} bytes)`);
+      return { ...imageBlock, relativePath };
+    } catch (error) {
+      logError('[SessionManager] Failed to persist pasted image:', error);
+      return imageBlock;
+    }
+  }
+
+  /**
+   * Best-effort copy of an attachment into the active sandbox (WSL or Lima).
+   * Non-fatal: the host copy remains usable when no sandbox is running.
+   */
+  private async syncAttachmentToSandbox(
+    sessionId: string,
+    hostPath: string,
+    relativePath: string
+  ): Promise<void> {
+    try {
+      if (SandboxSync.getSandboxPath(sessionId)) {
+        const result = await SandboxSync.syncFileToSandbox(sessionId, hostPath, relativePath);
+        if (!result.success) {
+          logError('[SessionManager] Failed to sync attachment to WSL sandbox:', result.error);
+        }
+        return;
+      }
+      const { LimaSync } = await import('../sandbox/lima-sync');
+      if (LimaSync.getSandboxPath(sessionId)) {
+        const result = await LimaSync.syncFileToSandbox(sessionId, hostPath, relativePath);
+        if (!result.success) {
+          logError('[SessionManager] Failed to sync attachment to Lima sandbox:', result.error);
+        }
+      }
+    } catch (error) {
+      logError('[SessionManager] Attachment sandbox sync failed:', error);
+    }
+  }
+
   // Process a prompt using CoworkAgentRunner
   private async processPrompt(
     session: Session,
@@ -674,19 +755,27 @@ export class SessionManager {
           messageContent.map((c) => c.type)
         );
 
-        // Build enhanced prompt with file information
+        // Build enhanced prompt with attachment information (files + images).
+        // Images are announced by workspace path so the agent can call
+        // analyze_image on them — the chat model itself cannot receive bytes.
         let enhancedPrompt = prompt;
         const fileAttachments = messageContent.filter(
           (c) => c.type === 'file_attachment'
         ) as FileAttachmentContent[];
-        if (fileAttachments.length > 0) {
-          const fileInfo = fileAttachments
-            .map(
-              (f) => `- ${f.filename} (${(f.size / 1024).toFixed(1)} KB) at path: ${f.relativePath}`
-            )
-            .join('\n');
-          enhancedPrompt = `${prompt}\n\n[Attached files - use Read tool to access them]:\n${fileInfo}`;
-          logCtx('[SessionManager] Enhanced prompt with file info:', enhancedPrompt);
+        const imagePaths = messageContent
+          .filter((c): c is ImageContent => c.type === 'image' && !!c.relativePath)
+          .map((c) => c.relativePath as string);
+        const attachmentHints = buildAttachmentPromptHints({
+          files: fileAttachments.map((f) => ({
+            filename: f.filename,
+            relativePath: f.relativePath,
+            size: f.size,
+          })),
+          images: imagePaths,
+        });
+        if (attachmentHints) {
+          enhancedPrompt = `${prompt}\n\n${attachmentHints}`;
+          logCtx('[SessionManager] Enhanced prompt with attachment info:', enhancedPrompt);
         }
 
         // Save user message to database for persistence
