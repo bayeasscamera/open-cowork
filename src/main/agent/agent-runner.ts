@@ -19,6 +19,7 @@ import { getSharedProjectStore } from '../projects/project-store';
 import { assembleContextualPrompt } from './contextual-prompt';
 import { buildPiSessionTools } from './pi-session-tools';
 import { createPiSession, type CachedPiSession } from './create-pi-session';
+import { reusePiSession } from './reuse-pi-session';
 import { resolveProjectContext, type ProjectContextResolution } from '../projects/project-context';
 import {
   buildDraftDetailText,
@@ -1044,41 +1045,13 @@ export class CoworkAgentRunner {
 
       let piSession: PiAgentSession;
       if (cachedSession) {
-        // Reuse existing session — SDK retains full conversation history and handles compaction
-        piSession = cachedSession.session;
-
-        // Hot-swap model/thinking if changed — SDK supports this natively
-        if (cachedSession.modelId !== piModel.id) {
-          logCtx(
-            '[CoworkAgentRunner] Model changed, hot-swapping:',
-            cachedSession.modelId,
-            '→',
-            piModel.id
-          );
-          await piSession.setModel(piModel);
-          cachedSession.modelId = piModel.id;
-          // Update Ollama num_ctx ref if present
-          if (cachedSession.ollamaNumCtx) {
-            cachedSession.ollamaNumCtx.value = piModel.contextWindow || 128000;
-            log(
-              '[CoworkAgentRunner] Updated Ollama num_ctx on hot-swap:',
-              cachedSession.ollamaNumCtx.value
-            );
-          }
-        }
-        if (cachedSession.thinkingLevel !== thinkingLevel) {
-          logCtx(
-            '[CoworkAgentRunner] Thinking level changed, hot-swapping:',
-            cachedSession.thinkingLevel,
-            '→',
-            thinkingLevel
-          );
-          piSession.setThinkingLevel(thinkingLevel);
-          cachedSession.thinkingLevel = thinkingLevel;
-        }
-
-        logCtx('[CoworkAgentRunner] Reusing cached pi session for:', session.id);
-        logTiming('agent session reused', runStartTime);
+        piSession = await reusePiSession({
+          cachedSession,
+          sessionId: session.id,
+          piModel,
+          thinkingLevel,
+          runStartTime,
+        });
       } else {
         piSession = await createPiSession({
           session,
