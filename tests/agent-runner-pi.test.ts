@@ -27,6 +27,10 @@ const sessionEventHandlerPath = path.resolve(
   'src/main/agent/session-event-handler.ts'
 );
 const sessionEventHandlerContent = readFileSync(sessionEventHandlerPath, 'utf8');
+const createPiSessionPath = path.resolve(process.cwd(), 'src/main/agent/create-pi-session.ts');
+const createPiSessionContent = readFileSync(createPiSessionPath, 'utf8');
+const piSessionToolsPath = path.resolve(process.cwd(), 'src/main/agent/pi-session-tools.ts');
+const piSessionToolsContent = readFileSync(piSessionToolsPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -111,8 +115,10 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('uses pi DefaultResourceLoader with additionalSkillPaths and appendSystemPrompt', () => {
-    expect(agentRunnerContent).toContain('additionalSkillPaths: skillPaths');
-    expect(agentRunnerContent).toContain('appendSystemPrompt: coworkAppendPrompt');
+    // Session construction now lives in create-pi-session.ts
+    expect(createPiSessionContent).toContain('additionalSkillPaths: deps.skillPaths');
+    expect(createPiSessionContent).toContain('appendSystemPrompt: deps.coworkAppendPrompt');
+    expect(createPiSessionContent).not.toContain('systemPromptOverride');
     expect(agentRunnerContent).not.toContain('systemPromptOverride');
   });
 
@@ -145,9 +151,9 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('routes MCP image results through structured helpers instead of stringifying base64 into text', () => {
-    // The MCP bridge now lives in agent-runner-mcp-tools.ts
-    expect(agentRunnerContent).toContain("from './agent-runner-mcp-tools'");
-    expect(agentRunnerContent).toContain('buildMcpCustomTools(this.mcpManager)');
+    // The MCP bridge now lives in agent-runner-mcp-tools.ts; assembly in pi-session-tools.ts
+    expect(piSessionToolsContent).toContain("from './agent-runner-mcp-tools'");
+    expect(piSessionToolsContent).toContain('buildMcpCustomTools(deps.mcpManager)');
     expect(mcpToolsContent).toContain(
       "import { normalizeMcpToolResultForModel } from './tool-result-utils'"
     );

@@ -132,8 +132,9 @@ describe('resolveProjectContext — INTEGRATION over the real database', () => {
       const project = store.create({
         name: 'AO publics 2026',
         workdir,
-        description: 'Préparation des réponses aux appels d\'offres',
-        instructions: 'NE JAMAIS inventer de chiffres ; marquer [À COMPLÉTER] si une donnée manque.',
+        description: "Préparation des réponses aux appels d'offres",
+        instructions:
+          'NE JAMAIS inventer de chiffres ; marquer [À COMPLÉTER] si une donnée manque.',
         configSetId: 'set-ao',
       });
 
@@ -172,7 +173,7 @@ describe('resolveProjectContext — INTEGRATION over the real database', () => {
       const block = resolution.systemPromptBlock;
       expect(block).toContain('<project_context>');
       expect(block).toContain('This conversation belongs to the project "AO publics 2026".');
-      expect(block).toContain('Préparation des réponses aux appels d\'offres');
+      expect(block).toContain("Préparation des réponses aux appels d'offres");
       expect(block).toContain(`Workspace: ${workdir}`);
       expect(block).toContain('NE JAMAIS inventer de chiffres');
       // The REAL content of the reference file is inside the block.
@@ -190,11 +191,13 @@ describe('agent runner wiring — source contract', () => {
   // coworkAppendPrompt array that feeds the SDK's appendSystemPrompt, and must
   // prefer the project's ConfigSet when one is pinned.
   const runnerSource = readFileSync('src/main/agent/agent-runner.ts', 'utf-8');
+  const sessionFactorySource = readFileSync('src/main/agent/create-pi-session.ts', 'utf-8');
 
   it('appends the resolved project context block to the system prompt', () => {
     expect(runnerSource).toContain('projectContext.systemPromptBlock,');
-    // And that array is the appendSystemPrompt payload of the resource loader.
-    expect(runnerSource).toContain('appendSystemPrompt: coworkAppendPrompt,');
+    // And that array is the appendSystemPrompt payload of the resource loader
+    // (built in create-pi-session.ts).
+    expect(sessionFactorySource).toContain('appendSystemPrompt: deps.coworkAppendPrompt,');
   });
 
   it('uses the project ConfigSet when pinned, falling back to the active config', () => {

@@ -756,7 +756,11 @@ describe('wiring — source contracts', () => {
     expect(promptAssembly).toContain('takePendingDelegationResults(deps.sessionId)');
     expect(promptAssembly).toContain('describeRunningDelegations(deps.sessionId)');
     expect(agent).toContain('assembleContextualPrompt({');
-    expect(agent).toContain('buildAgentMetaTools({ sessionId: session.id, cwd: effectiveCwd })');
+    // Tool assembly (incl. meta-tools) now lives in pi-session-tools.ts
+    const toolsAssembly = flat(read('src/main/agent/pi-session-tools.ts'));
+    expect(toolsAssembly).toContain(
+      'buildAgentMetaTools({ sessionId: deps.sessionId, cwd: deps.cwd })'
+    );
   });
 
   it('the tools are registered and the delegate tool acknowledges without awaiting', () => {

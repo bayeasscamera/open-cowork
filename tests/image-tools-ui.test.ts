@@ -28,14 +28,16 @@ function render(name: string, content: string, withImage: boolean): string {
   const use = toolUse(name, { prompt: 'A red cube', path: 'photo.png' });
   const result = toolResult(content, withImage);
   const allBlocks: ContentBlock[] = [use, result];
-  return renderToStaticMarkup(
-    React.createElement(ToolUseBlock, { block: use, allBlocks })
-  );
+  return renderToStaticMarkup(React.createElement(ToolUseBlock, { block: use, allBlocks }));
 }
 
 describe('image tool results are rendered VISUALLY in the chat', () => {
   it('renders a generated image as an <img> with a data: URI, not just a file path', () => {
-    const html = render('generate_image', 'Generated 1 image with gpt-image-1.\nPath: generated-images/red-cube.png', true);
+    const html = render(
+      'generate_image',
+      'Generated 1 image with gpt-image-1.\nPath: generated-images/red-cube.png',
+      true
+    );
     expect(html).toContain('<img');
     expect(html).toContain('data:image/png;base64,' + PNG_BASE64);
   });
@@ -69,7 +71,7 @@ describe('the images settings expose ANY provider', () => {
       join(process.cwd(), 'src/renderer/components/settings/SettingsImages.tsx'),
       'utf8'
     );
-    expect(source).toContain("sourceCustom");
+    expect(source).toContain('sourceCustom');
     expect(source).toContain('PROVIDER_OPTIONS');
     expect(source).toContain('api.images.providerLabel');
     expect(source).toContain('api.images.protocolLabel');
@@ -106,12 +108,10 @@ describe('the images settings expose ANY provider', () => {
 
 describe('the agent runtime actually exposes the image tools', () => {
   it('registers analyze_image + generate_image as native custom tools', () => {
-    const source = readFileSync(
-      join(process.cwd(), 'src/main/agent/agent-runner.ts'),
-      'utf8'
-    );
+    // Tool assembly moved to pi-session-tools.ts
+    const source = readFileSync(join(process.cwd(), 'src/main/agent/pi-session-tools.ts'), 'utf8');
     expect(source).toContain("import { buildImageTools } from './image-tools'");
-    expect(source).toContain('buildImageTools({ sessionId: session.id, cwd: effectiveCwd })');
+    expect(source).toContain('buildImageTools({ sessionId: deps.sessionId, cwd: deps.cwd })');
     expect(source).toContain('...imageTools');
   });
 });

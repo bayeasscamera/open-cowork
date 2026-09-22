@@ -12,19 +12,13 @@
  *
  * Dependencies: session-manager, mcp-manager, config-store, skills-manager
  */
-import {
-  createAgentSession,
-  SessionManager as PiSessionManager,
-  SettingsManager as PiSettingsManager,
-  createCodingTools,
-  type BashToolOptions,
-  type AgentSession as PiAgentSession,
-  type ToolDefinition,
-} from '@mariozechner/pi-coding-agent';
-import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+import { type AgentSession as PiAgentSession } from '@mariozechner/pi-coding-agent';
+import { getSharedAuthStorage } from './shared-auth';
 import { getPiAgentInternals, getPiSessionSteering } from './pi-agent-access';
 import { getSharedProjectStore } from '../projects/project-store';
 import { assembleContextualPrompt } from './contextual-prompt';
+import { buildPiSessionTools } from './pi-session-tools';
+import { createPiSession, type CachedPiSession } from './create-pi-session';
 import { resolveProjectContext, type ProjectContextResolution } from '../projects/project-context';
 import {
   buildDraftDetailText,
@@ -73,9 +67,7 @@ import { app } from 'electron';
 import { setMaxListeners } from 'node:events';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
-import { wrapBashToolForSudo, wrapBashToolWithDefaultTimeout } from './agent-runner-bash-tools';
 import { safeStringify, summarizeMessageForLog, toErrorText } from './agent-runner-formatting';
-import { buildMcpCustomTools } from './agent-runner-mcp-tools';
 import {
   getBundledNodePaths,
   resolveBundledPythonBinDir,
@@ -125,14 +117,9 @@ import {
   type LoopGuardDecision,
 } from './agent-runner-loop-guard';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
-import { createWindowsBashOperations } from './windows-bash-operations';
-import { createCompactionExtensionFactory } from './compaction-extension';
 import { EliteCodingIntelligence } from './elite-coding-intelligence';
 import { SkillSynthesizer } from '../skills/skill-synthesizer';
 import type { MemoryManager } from '../memory/memory-manager';
-import { buildAgentMetaTools } from '../tools/dynamic-tool-creator';
-import { buildWebTools } from './web-tools';
-import { buildImageTools } from './image-tools';
 import { AdaptiveStrategyEngine } from './adaptive-strategy-engine';
 import { ActivePreferenceLearner } from '../memory/active-preference-learner';
 
@@ -289,16 +276,6 @@ interface AgentRunnerOptions {
     toolName: string,
     input: Record<string, unknown>
   ) => Promise<'allow' | 'deny' | 'allow_always'>;
-}
-
-interface CachedPiSession {
-  session: PiAgentSession;
-  modelId: string;
-  thinkingLevel: string;
-  runtimeSignature: string;
-  skillsSignature?: string;
-  refreshMemoryContext?: boolean;
-  ollamaNumCtx?: { value: number };
 }
 
 /**
@@ -1044,60 +1021,15 @@ export class CoworkAgentRunner {
       // Bridge MCP tools and the agent meta-tools (skill proposals, eval
       // harness, AST helpers…) into the agent SDK. No dynamic tool loading:
       // the registry that evaluated agent-written code was removed.
-      const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
-      const extensionCustomTools = extensionResult.customTools || [];
-      const metaTools = buildAgentMetaTools({ sessionId: session.id, cwd: effectiveCwd });
-      const webTools = buildWebTools({
+      const { customTools, wrappedTools } = await buildPiSessionTools({
+        mcpManager: this.mcpManager,
+        sessionId: session.id,
+        cwd: effectiveCwd,
+        extensionCustomTools: extensionResult.customTools || [],
         tavilyApiKey: runtimeConfig.tavilyApiKey || process.env.TAVILY_API_KEY || '',
         braveApiKey: runtimeConfig.braveApiKey || process.env.BRAVE_API_KEY || '',
-      });
-      // Native image read (vision) + generation, confined to the session
-      // workspace. The returned images ride back through the SAME
-      // openCoworkImages channel the screenshot MCP tools already use, so the
-      // chat renders them inline with no new plumbing.
-      const imageTools = buildImageTools({ sessionId: session.id, cwd: effectiveCwd });
-      const customTools = [
-        ...mcpCustomTools,
-        ...extensionCustomTools,
-        ...metaTools,
-        ...webTools,
-        ...imageTools,
-      ];
-      if (mcpCustomTools.length > 0) {
-        log(
-          `[CoworkAgentRunner] Registered ${customTools.length} total customTools (MCP: ${mcpCustomTools.length}):`,
-          customTools.map((t) => t.name).join(', ')
-        );
-      }
-      if (extensionCustomTools.length > 0) {
-        log(
-          `[CoworkAgentRunner] Registered ${extensionCustomTools.length} extension tools as customTools:`,
-          extensionCustomTools.map((t) => t.name).join(', ')
-        );
-      }
-
-      // Enrich process.env.PATH for build mode — ensures Skill commands (python3, node)
-      // executed via Pi SDK's Bash tool can find bundled and user-installed executables.
-      await enrichProcessPathForBuild();
-
-      const bashOptions: BashToolOptions | undefined =
-        process.platform === 'win32' ? { operations: createWindowsBashOperations() } : undefined;
-      const codingTools = createCodingTools(
-        effectiveCwd,
-        bashOptions ? { bash: bashOptions } : undefined
-      );
-
-      // Inject a default 120s timeout for bash commands when the model omits one
-      const withTimeout = wrapBashToolWithDefaultTimeout(codingTools as ToolDefinition[]);
-
-      // Wrap the bash tool to intercept sudo commands and request passwords
-      // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
-      // createAgentSession.tools expects Tool[] (4-param execute). The extra ctx
-      // parameter is simply not passed by the session runner — safe to cast.
-      const wrappedTools = wrapBashToolForSudo(withTimeout, {
         requestSudoPassword: this.requestSudoPassword,
-        sessionId: session.id,
-        effectiveCwd,
+        enrichProcessPath: enrichProcessPathForBuild,
       });
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
@@ -1148,125 +1080,29 @@ export class CoworkAgentRunner {
         logCtx('[CoworkAgentRunner] Reusing cached pi session for:', session.id);
         logTiming('agent session reused', runStartTime);
       } else {
-        // First query in this session — create new agent session
-        // ResourceLoader + ModelRegistry only needed for session creation — skip on reuse
-        const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
-
-        // Per-session compaction instructions (from session metadata if present).
-        // Capped at 2000 chars to limit prompt injection surface — this field
-        // is only set programmatically (not from external user input).
-        let sessionCompactInstructions: string | undefined =
-          'compactInstructions' in session &&
-          typeof (session as Record<string, unknown>).compactInstructions === 'string'
-            ? ((session as Record<string, unknown>).compactInstructions as string)
-            : undefined;
-        if (sessionCompactInstructions && sessionCompactInstructions.length > 2000) {
-          sessionCompactInstructions = sessionCompactInstructions.slice(0, 2000);
-        }
-
-        const resourceLoader = new DefaultResourceLoader({
-          cwd: effectiveCwd,
-          additionalSkillPaths: skillPaths,
-          appendSystemPrompt: coworkAppendPrompt,
-          extensionFactories: [
-            createCompactionExtensionFactory({
-              customInstructions: sessionCompactInstructions,
-              pruneToolOutputAbove: 500,
-              keepRecentToolResults: 3,
-            }),
-          ],
-        });
-        await resourceLoader.reload();
-
-        const modelRegistry = new ModelRegistry(authStorage);
-
-        // Ollama-specific compaction tuning based on actual context window
-        const contextWindow = piModel.contextWindow || 128000;
-        let compactionSettings: {
-          enabled: boolean;
-          reserveTokens?: number;
-          keepRecentTokens?: number;
-        };
-        if (provider === 'ollama' && contextWindow < 16384) {
-          // Very small context: disable compaction (weak models produce unreliable summaries)
-          compactionSettings = { enabled: false };
-          log(
-            '[CoworkAgentRunner] Ollama small context model, disabling auto-compaction (contextWindow:',
-            contextWindow,
-            ')'
-          );
-        } else if (provider === 'ollama' && contextWindow < 65536) {
-          // Medium context: scale reserves proportionally
-          compactionSettings = {
-            enabled: true,
-            reserveTokens: Math.floor(contextWindow * 0.15),
-            keepRecentTokens: Math.floor(contextWindow * 0.25),
-          };
-          log(
-            '[CoworkAgentRunner] Ollama medium context, scaled compaction:',
-            JSON.stringify(compactionSettings)
-          );
-        } else {
-          compactionSettings = { enabled: true };
-        }
-
-        const { session: newPiSession } = await createAgentSession({
-          model: piModel,
+        piSession = await createPiSession({
+          session,
+          piModel,
           thinkingLevel,
           authStorage,
-          modelRegistry,
-          tools: wrappedTools as unknown as ReturnType<typeof createCodingTools>,
-          customTools,
-          sessionManager: PiSessionManager.inMemory(),
-          settingsManager: PiSettingsManager.inMemory({
-            compaction: compactionSettings,
-            retry: { enabled: true, maxRetries: 2 },
-          }),
-          resourceLoader,
           cwd: effectiveCwd,
-        });
-        piSession = newPiSession;
-
-        // Install permission-gating hook via the SDK's tool_call extension event.
-        // This must happen once per new session — the hook persists across reuses.
-        this.installPermissionHook(piSession, session.id);
-        this.installModsHooks(piSession, session.id);
-
-        // Store session for reuse — evict oldest if cache is full
-        if (this.piSessions.size >= CoworkAgentRunner.MAX_CACHED_SESSIONS) {
-          const oldestKey = this.piSessions.keys().next().value;
-          if (oldestKey) {
-            const oldest = this.piSessions.get(oldestKey);
-            if (oldest) {
-              try {
-                oldest.session.dispose();
-              } catch (e) {
-                logWarn('[CoworkAgentRunner] dispose error on eviction:', e);
-              }
-            }
-            this.piSessions.delete(oldestKey);
-            log('[CoworkAgentRunner] Evicted oldest cached session:', oldestKey);
-          }
-        }
-        this.piSessions.set(session.id, {
-          session: piSession,
-          modelId: piModel.id,
-          thinkingLevel,
+          skillPaths,
+          coworkAppendPrompt,
+          provider,
+          customProtocol: runtimeConfig.customProtocol,
+          effectiveBaseUrl,
+          tools: wrappedTools,
+          customTools,
           runtimeSignature: sessionRuntimeSignature,
           skillsSignature,
           refreshMemoryContext: extensionResult.refreshSession,
+          sessions: this.piSessions,
+          maxCachedSessions: CoworkAgentRunner.MAX_CACHED_SESSIONS,
+          installPermissionHook: (target) => this.installPermissionHook(target, session.id),
+          installModsHooks: (target) => this.installModsHooks(target, session.id),
+          installPayloadHook: (target, options) =>
+            this.installPayloadHook(target, session.id, options),
         });
-
-        // Outgoing-payload hook (Ollama num_ctx + relay thinking-part repair).
-        // The policy itself lives in ./openai-payload-sanitizer (unit-tested).
-        this.installPayloadHook(piSession, session.id, {
-          provider,
-          customProtocol: runtimeConfig.customProtocol,
-          baseUrl: effectiveBaseUrl,
-          modelId: piModel.id,
-          contextWindow: piModel.contextWindow,
-        });
-
         logTiming('agent session created', runStartTime);
       }
 
