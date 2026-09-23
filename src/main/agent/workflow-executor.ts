@@ -48,6 +48,15 @@ import type { WorkflowOrchestrator } from './workflow-orchestrator';
 
 export const DEFAULT_MAX_TASKS_PER_RUN = 50;
 export const DEFAULT_TASK_ATTEMPTS = 1;
+/**
+ * Extra attempts granted when the agent *claimed* success but the main process
+ * re-ran a declared proof command and it failed. One is enough to be useful:
+ * the agent gets the exact failing command and its raw output, so a second
+ * identical failure means the plan needs a human, not another model call.
+ */
+export const DEFAULT_PROOF_RECOVERY_ATTEMPTS = 1;
+/** How much of a failing proof's output is fed back to the agent. */
+export const MAX_PROOF_FEEDBACK_CHARS = 2000;
 /** Minimum delay between two live progress reports for one task. */
 export const TASK_PROGRESS_THROTTLE_MS = 400;
 
@@ -82,6 +91,28 @@ export interface WorkflowTaskOutcome {
   evidenceKinds?: EvidenceKind[];
   /** Shell commands that exited non-zero, used as a regression signal. */
   failedCommands?: number;
+}
+
+/**
+ * Why the previous attempt failed, handed back to the agent so a retry is a
+ * *recovery* rather than a blind repeat of the same prompt.
+ */
+export interface TaskFailureContext {
+  /** 1-based number of the attempt that failed. */
+  attempt: number;
+  /** Human-readable reason, already formatted. */
+  reason: string;
+  /** The declared proof command the main process re-ran, when proof failed. */
+  proofCommand?: string;
+  /** Raw output of that command, truncated. */
+  proofOutput?: string;
+}
+
+/** A declared proof command that ran and exited non-zero. */
+export interface ProofFailure {
+  reason: string;
+  command: string;
+  output: string;
 }
 
 export type WorkflowTaskRunner = (context: WorkflowTaskContext) => Promise<WorkflowTaskOutcome>;
@@ -140,6 +171,11 @@ export interface WorkflowExecutorOptions {
   maxTasks?: number;
   /** Attempts per task; the first attempt is always made. */
   attempts?: number;
+  /**
+   * Extra attempts bought by a failing declared proof (see
+   * DEFAULT_PROOF_RECOVERY_ATTEMPTS). Zero disables proof recovery entirely.
+   */
+  proofRecoveryAttempts?: number;
   /** Re-runs every command the task declared as proof; injected for tests. */
   runProof?: ProofRunner;
   proofTimeoutMs?: number;
@@ -164,7 +200,11 @@ const ROLE_INSTRUCTIONS: Readonly<Record<AtomicTask['role'], string>> = Object.f
 });
 
 /** The prompt handed to the agent loop for one atomic task. */
-export function buildTaskPrompt(task: AtomicTask, contract: TaskContract): string {
+export function buildTaskPrompt(
+  task: AtomicTask,
+  contract: TaskContract,
+  failure?: TaskFailureContext
+): string {
   const lines: string[] = [
     'You are the "' + task.role + '" sub-agent of an approved Cowork plan.',
     '',
@@ -231,7 +271,37 @@ export function buildTaskPrompt(task: AtomicTask, contract: TaskContract): strin
     'cannot be proven, say so explicitly instead of claiming success.'
   );
 
+  if (failure) {
+    lines.push('', '## Previous attempt failed', failure.reason);
+    if (failure.proofCommand) {
+      lines.push(
+        '',
+        'The main process re-ran your declared proof command "' +
+          failure.proofCommand +
+          '" and it exited non-zero. Its raw output was:',
+        '',
+        truncateProofOutput(failure.proofOutput ?? ''),
+        '',
+        'Fix the cause of that failure. Do not repeat the same change, and do not claim',
+        'success until that exact command exits 0.'
+      );
+    } else {
+      lines.push(
+        '',
+        'Correct the cause of that failure instead of repeating the same approach unchanged.'
+      );
+    }
+  }
+
   return lines.join('\n');
+}
+
+/** Keep the tail of a proof output: the error is almost always at the end. */
+function truncateProofOutput(output: string): string {
+  if (output.length <= MAX_PROOF_FEEDBACK_CHARS) {
+    return output;
+  }
+  return '… ' + output.slice(output.length - MAX_PROOF_FEEDBACK_CHARS);
 }
 
 function baseResult(task: AtomicTask, startedAt: number): TaskRunResult {
@@ -354,7 +424,6 @@ export class WorkflowExecutor {
 
     const effectiveIsolated = Boolean(worktreePath);
     const cwd = worktreePath ?? this.options.workspaceRoot;
-    const prompt = buildTaskPrompt(task, contract);
     const budget = new BudgetGuard(task.budget, { now: this.now });
     const controller = new AbortController();
     // A run-level cancel must interrupt the task that is in flight, not only
@@ -403,35 +472,76 @@ export class WorkflowExecutor {
       }
     };
 
-    const maxAttempts = Math.max(1, this.options.attempts ?? DEFAULT_TASK_ATTEMPTS);
+    const generalLimit = Math.max(1, this.options.attempts ?? DEFAULT_TASK_ATTEMPTS);
+    const recoveryLimit = Math.max(
+      0,
+      this.options.proofRecoveryAttempts ?? DEFAULT_PROOF_RECOVERY_ATTEMPTS
+    );
     let outcome: WorkflowTaskOutcome | null = null;
     let lastError = isolationError ?? '';
     let attempts = 0;
+    let recoveries = 0;
+    let failure: TaskFailureContext | undefined;
+    let proofFailure: ProofFailure | undefined;
+    // Ordinary failures are bounded by `generalLimit`. A failing declared proof
+    // buys exactly one more attempt per recovery slot, because it is the only
+    // failure that carries a concrete, actionable artefact back to the agent.
+    let allowedAttempts = generalLimit;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      attempts = attempt;
+    while (attempts < allowedAttempts) {
       if (controller.signal.aborted || budget.exceeded) {
         break;
       }
+      attempts += 1;
+      proofFailure = undefined;
       try {
         outcome = await this.options.runTask({
           task,
           contract,
           cwd,
-          prompt,
+          prompt: buildTaskPrompt(task, contract, failure),
           isolated: effectiveIsolated,
           signal: controller.signal,
           onToolCall,
           onTokens,
         });
         lastError = outcome.error ?? '';
-        if (outcome.success) {
-          break;
-        }
       } catch (error: unknown) {
         outcome = null;
         lastError = error instanceof Error ? error.message : String(error);
       }
+
+      if (!outcome?.success) {
+        // Nothing to prove yet: hand the failure back to the next attempt.
+        failure = {
+          attempt: attempts,
+          reason: lastError || 'The task did not succeed.',
+        };
+        continue;
+      }
+      if (budget.exceeded) {
+        break;
+      }
+
+      // The agent claims success. Prove it: the main process re-runs every
+      // declared command and records the real exit code. A failing proof fails
+      // the task, whatever the summary said.
+      const proof = await this.runDeclaredProofs(task, cwd);
+      if (!proof) {
+        break;
+      }
+      proofFailure = proof;
+      if (recoveries >= recoveryLimit) {
+        break;
+      }
+      recoveries += 1;
+      allowedAttempts += 1;
+      failure = {
+        attempt: attempts,
+        reason: proof.reason,
+        proofCommand: proof.command,
+        proofOutput: proof.output,
+      };
     }
 
     if (outcome?.toolCalls !== undefined && outcome.toolCalls > budget.toolCalls) {
@@ -447,13 +557,9 @@ export class WorkflowExecutor {
 
     const evidence = await this.collectEvidence(task, outcome, effectiveIsolated, worktreePath);
 
-    // Independent proof: the main process re-runs every declared command and
-    // records the real exit code. A failing proof fails the task, whatever the
-    // agent claimed in its summary.
-    let proofFailure: string | undefined;
-    if (outcome?.success && !budget.exceeded) {
-      proofFailure = await this.runDeclaredProofs(task, cwd);
-    }
+    // A retry that turned a failing proof into a passing one is a recovery:
+    // the plan succeeded without the user having to intervene.
+    const recovered = proofFailure === undefined && outcome?.success === true && attempts > 1;
 
     const isolatedNote = effectiveIsolated
       ? 'Ran in ephemeral worktree ' + String(worktreePath) + '.'
@@ -480,9 +586,9 @@ export class WorkflowExecutor {
       this.options.orchestrator.failTask(task.id, budgetReason);
     } else if (proofFailure) {
       status = 'failed';
-      summary = proofFailure;
-      error = proofFailure;
-      this.options.orchestrator.failTask(task.id, proofFailure);
+      summary = proofFailure.reason;
+      error = proofFailure.reason;
+      this.options.orchestrator.failTask(task.id, proofFailure.reason);
     } else if (outcome?.success) {
       // Recording the evidence is not enough: the task is only accepted once
       // its own criteria verify against the collected proof.
@@ -518,6 +624,7 @@ export class WorkflowExecutor {
       attempts,
       toolCalls: budget.toolCalls,
       isolated: effectiveIsolated,
+      ...(recovered ? { recovered: true } : {}),
       evidenceKinds: evidence.map((entry) => entry.kind),
       ...(verification ? { verification } : {}),
       ...(error ? { error } : {}),
@@ -608,8 +715,11 @@ export class WorkflowExecutor {
     return evidence;
   }
 
-  /** Re-run every declared proof command; returns the first failure reason. */
-  private async runDeclaredProofs(task: AtomicTask, cwd: string): Promise<string | undefined> {
+  /** Re-run every declared proof command; returns the first failure, if any. */
+  private async runDeclaredProofs(
+    task: AtomicTask,
+    cwd: string
+  ): Promise<ProofFailure | undefined> {
     const commands = declaredCommands(task);
     if (commands.length === 0) {
       return undefined;
@@ -636,14 +746,17 @@ export class WorkflowExecutor {
         output: result.output,
       });
       if (result.exitCode !== 0) {
-        return (
-          'Proof command "' +
-          command +
-          '" exited with code ' +
-          result.exitCode +
-          (result.timedOut ? ' (timed out)' : '') +
-          '.'
-        );
+        return {
+          reason:
+            'Proof command "' +
+            command +
+            '" exited with code ' +
+            result.exitCode +
+            (result.timedOut ? ' (timed out)' : '') +
+            '.',
+          command,
+          output: result.output,
+        };
       }
     }
     return undefined;

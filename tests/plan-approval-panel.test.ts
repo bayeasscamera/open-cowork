@@ -6,6 +6,7 @@ const read = (rel: string) => readFileSync(path.resolve(process.cwd(), rel), 'ut
 
 const panel = read('src/renderer/components/PlanApprovalPanel.tsx');
 const planGraph = read('src/renderer/components/PlanGraph.tsx');
+const reportPanel = read('src/renderer/components/ExecutionReportPanel.tsx');
 const app = read('src/renderer/App.tsx');
 const store = read('src/renderer/store/index.ts');
 const preload = read('src/preload/index.ts');
@@ -68,6 +69,12 @@ describe('plan approval panel wiring', () => {
     expect(panel).toContain("t('planPanel.conflicts.item'");
     expect(planGraph).toContain("t('planPanel.graph.conflict')");
     expect(workflowTypes).toContain('writeConflicts: WriteScopeConflict[];');
+  });
+
+  it('shows a task that a corrective retry recovered', () => {
+    expect(reportPanel).toContain('res.recovered');
+    expect(reportPanel).toContain("t('planPanel.report.recovered', { count: res.attempts })");
+    expect(workflowTypes).toContain('recovered?: boolean;');
   });
 
   it('keeps the IPC contract in shared so preload never imports main', () => {

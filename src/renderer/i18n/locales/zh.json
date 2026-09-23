@@ -1683,6 +1683,7 @@
       "verification": "验证",
       "verified": "所有标准已验证",
       "unverified": "发现 {{count}} 个问题",
+      "recovered": "在 {{count}} 次尝试后恢复",
       "taskStatus": {
         "succeeded": "成功",
         "failed": "失败",

@@ -1682,6 +1682,7 @@
       "verification": "Vérification",
       "verified": "Tous les critères vérifiés",
       "unverified": "{{count}} problème(s) trouvé(s)",
+      "recovered": "récupérée après {{count}} tentative(s)",
       "taskStatus": {
         "succeeded": "Réussie",
         "failed": "Échouée",

@@ -1683,6 +1683,7 @@
       "verification": "Verification",
       "verified": "All criteria verified",
       "unverified": "{{count}} issue(s) found",
+      "recovered": "recovered after {{count}} attempts",
       "taskStatus": {
         "succeeded": "Succeeded",
         "failed": "Failed",

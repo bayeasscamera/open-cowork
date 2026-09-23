@@ -174,6 +174,9 @@ describe('WorkflowExecutor', () => {
       policy: createDefaultPermissionPolicy('/ws'),
       workspaceRoot: '/ws',
       runProof,
+      // Recovery is exercised by its own tests; this one asserts the single
+      // proof re-run and the evidence it records.
+      proofRecoveryAttempts: 0,
     });
 
     const report = await executor.executePlan();
@@ -355,6 +358,84 @@ describe('WorkflowExecutor', () => {
     expect(report.results[0].verification?.ok).toBe(true);
   });
 
+  it('recovers from a failing proof with one corrective attempt', async () => {
+    const { orchestrator } = makeApprovedOrchestrator();
+    const prompts: string[] = [];
+    const runTask = vi.fn(async (context: WorkflowTaskContext) => {
+      prompts.push(context.prompt);
+      return { success: true, summary: 'Fixed.' };
+    });
+    let proofCalls = 0;
+    const runProof = vi.fn(async () => {
+      proofCalls += 1;
+      return proofCalls === 1
+        ? { exitCode: 1, output: '1 failed', timedOut: false }
+        : { exitCode: 0, output: 'all pass', timedOut: false };
+    });
+
+    const executor = new WorkflowExecutor({
+      orchestrator,
+      runTask,
+      policy: createDefaultPermissionPolicy('/ws'),
+      workspaceRoot: '/ws',
+      runProof,
+    });
+
+    const report = await executor.executePlan();
+
+    expect(runTask).toHaveBeenCalledTimes(2);
+    expect(prompts[0]).not.toContain('## Previous attempt failed');
+    expect(prompts[1]).toContain('## Previous attempt failed');
+    expect(prompts[1]).toContain('1 failed');
+    expect(report.results[0].status).toBe('succeeded');
+    expect(report.results[0].attempts).toBe(2);
+    expect(report.results[0].recovered).toBe(true);
+    expect(report.phase).toBe('completed');
+  });
+
+  it('gives up after one recovery when the proof keeps failing', async () => {
+    const { orchestrator } = makeApprovedOrchestrator();
+    const runTask = vi.fn(async () => ({ success: true, summary: 'Done.' }));
+    const runProof = vi.fn(async () => ({
+      exitCode: 1,
+      output: 'still failing',
+      timedOut: false,
+    }));
+
+    const executor = new WorkflowExecutor({
+      orchestrator,
+      runTask,
+      policy: createDefaultPermissionPolicy('/ws'),
+      workspaceRoot: '/ws',
+      runProof,
+    });
+
+    const report = await executor.executePlan();
+
+    expect(runTask).toHaveBeenCalledTimes(2);
+    expect(report.results[0].status).toBe('failed');
+    expect(report.results[0].recovered).toBeUndefined();
+    expect(report.phase).toBe('failed');
+  });
+
+  it('does not retry a task whose runner reported failure', async () => {
+    const { orchestrator } = makeApprovedOrchestrator();
+    const runTask = vi.fn(async () => ({ success: false, summary: 'nope', error: 'nope' }));
+
+    const executor = new WorkflowExecutor({
+      orchestrator,
+      runTask,
+      policy: createDefaultPermissionPolicy('/ws'),
+      workspaceRoot: '/ws',
+      runProof: okProof,
+    });
+
+    const report = await executor.executePlan();
+
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(report.results[0].status).toBe('failed');
+  });
+
   it('runs the task in a worktree when isolation is requested', async () => {
     const { orchestrator } = makeApprovedOrchestrator();
     const calls: string[] = [];
@@ -473,6 +554,40 @@ describe('buildTaskPrompt', () => {
     expect(prompt).toContain('npm test');
     expect(prompt).toContain('Implement');
     expect(prompt).toContain('cannot be proven, say so explicitly');
+  });
+
+  it('hands a failing proof back to the next attempt', () => {
+    const prompt = buildTaskPrompt(makeTask(), makeContract(), {
+      attempt: 1,
+      reason: 'Proof command "npm test" exited with code 1.',
+      proofCommand: 'npm test',
+      proofOutput: '1 failed: expected 2 to be 3',
+    });
+    expect(prompt).toContain('## Previous attempt failed');
+    expect(prompt).toContain('exited with code 1');
+    expect(prompt).toContain('npm test');
+    expect(prompt).toContain('1 failed: expected 2 to be 3');
+    expect(prompt).toContain('until that exact command exits 0');
+  });
+
+  it('truncates a long proof output to its tail', () => {
+    const prompt = buildTaskPrompt(makeTask(), makeContract(), {
+      attempt: 1,
+      reason: 'failed',
+      proofCommand: 'npm test',
+      proofOutput: 'x'.repeat(5000) + 'THE-END',
+    });
+    expect(prompt).toContain('THE-END');
+    expect(prompt).not.toContain('x'.repeat(5000));
+  });
+
+  it('describes a failure that carried no proof', () => {
+    const prompt = buildTaskPrompt(makeTask(), makeContract(), {
+      attempt: 2,
+      reason: 'The task did not succeed.',
+    });
+    expect(prompt).toContain('## Previous attempt failed');
+    expect(prompt).toContain('repeating the same approach unchanged');
   });
 
   it('tells a read-only task not to write', () => {

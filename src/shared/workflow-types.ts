@@ -225,6 +225,8 @@ export interface TaskRunResult {
   costUsd?: number;
   /** Tokens the task consumed, when the runner reported usage. */
   tokens?: number;
+  /** True when a bounded corrective retry turned a failed task into a success. */
+  recovered?: boolean;
 }
 
 /**

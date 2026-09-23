@@ -170,6 +170,11 @@ export function ExecutionReportPanel({ report, totalTasks }: ExecutionReportPane
                   <span>${res.costUsd.toFixed(4)}</span>
                 )}
                 {res.isolated && <span>isolated</span>}
+                {res.recovered && (
+                  <span className="text-emerald-400">
+                    {t('planPanel.report.recovered', { count: res.attempts })}
+                  </span>
+                )}
                 {res.evidenceKinds.length > 0 && (
                   <span>evidence: {res.evidenceKinds.join(', ')}</span>
                 )}
