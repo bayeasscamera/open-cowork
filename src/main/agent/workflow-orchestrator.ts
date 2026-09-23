@@ -355,6 +355,46 @@ export class WorkflowOrchestrator {
     return this.emit();
   }
 
+  /**
+   * Stop starting new tasks. The task currently running is allowed to finish,
+   * so a pause never leaves a half-applied write behind. Resume with
+   * `startExecution()`: completed tasks are remembered, so the run continues
+   * where it stopped instead of replaying work.
+   */
+  public pause(reason = 'Execution paused by the user.'): WorkflowState {
+    if (this.phase !== 'executing' && this.phase !== 'verifying') {
+      return this.getState();
+    }
+    this.phase = 'paused';
+    this.audit?.append({
+      action: 'workflow.execution-paused',
+      justification: reason,
+      authorization: 'approved',
+      capability: 'write',
+    });
+    return this.emit();
+  }
+
+  /**
+   * Stop the run for good. The reason is recorded as a blocker so the UI and
+   * the audit trail show why nothing else ran; a new approval is required
+   * before any further write.
+   */
+  public cancel(reason = 'Execution cancelled by the user.'): WorkflowState {
+    if (this.phase === 'completed' || this.phase === 'failed' || this.phase === 'cancelled') {
+      return this.getState();
+    }
+    this.phase = 'cancelled';
+    this.blockers = [reason];
+    this.audit?.append({
+      action: 'workflow.execution-cancelled',
+      justification: reason,
+      authorization: 'rejected',
+      capability: 'write',
+    });
+    return this.emit();
+  }
+
   /** Roll the whole plan back to its checkpoints. */
   public async restorePlan(): Promise<WorkflowState> {
     const result = await this.checkpoints.restorePlan();

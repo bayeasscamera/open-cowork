@@ -896,6 +896,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('workflow.executePlan', sessionId),
     executeReadyTasks: (sessionId: string): Promise<TaskRunResult[]> =>
       ipcRenderer.invoke('workflow.executeReadyTasks', sessionId),
+    pause: (sessionId: string): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.pause', sessionId),
+    cancel: (sessionId: string): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.cancel', sessionId),
     verifyTask: (sessionId: string, taskId: string): Promise<TaskVerification> =>
       ipcRenderer.invoke('workflow.verifyTask', sessionId, taskId),
     persist: (sessionId: string): Promise<boolean> =>
@@ -1533,6 +1537,8 @@ declare global {
         cleanupAllIsolation: (sessionId: string) => Promise<string[]>;
         executePlan: (sessionId: string) => Promise<WorkflowExecutionReport>;
         executeReadyTasks: (sessionId: string) => Promise<TaskRunResult[]>;
+        pause: (sessionId: string) => Promise<WorkflowState>;
+        cancel: (sessionId: string) => Promise<WorkflowState>;
         verifyTask: (sessionId: string, taskId: string) => Promise<TaskVerification>;
         persist: (sessionId: string) => Promise<boolean>;
       };

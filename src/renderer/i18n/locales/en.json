@@ -1588,6 +1588,7 @@
       "planning": "Planning",
       "awaiting-approval": "Awaiting approval",
       "executing": "Executing",
+      "paused": "Paused",
       "verifying": "Verifying",
       "completed": "Completed",
       "failed": "Blocked",
@@ -1663,6 +1664,7 @@
         "budget-exceeded": "Budget exceeded",
         "forbidden": "Forbidden",
         "skipped": "Skipped",
+        "cancelled": "Cancelled",
         "pending": "Pending"
       },
       "remaining": "Remaining tasks",
@@ -1719,6 +1721,9 @@
     "openCenter": "Open center",
     "blockers": "{{count}} blocker(s)",
     "open": "Open plan",
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel",
     "dismiss": "Dismiss"
   }
 }

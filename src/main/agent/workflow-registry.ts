@@ -12,6 +12,7 @@ import { CheckpointManager } from './checkpoint-manager';
 import { IsolationManager } from './isolation-manager';
 import { createDefaultPermissionPolicy, type PermissionPolicy } from './permission-policy';
 import {
+  MutableRunControl,
   WorkflowExecutor,
   type WorkflowExecutorOptions,
   type WorkflowTaskRunner,
@@ -67,6 +68,8 @@ export const DEFAULT_PERSIST_DEBOUNCE_MS = 250;
 export class WorkflowRegistry {
   private readonly entries = new Map<string, WorkflowEntry>();
   private readonly workspaceKeys = new Map<string, string>();
+  /** Run controls for executions currently in flight, keyed by session. */
+  private readonly runs = new Map<string, MutableRunControl>();
   private readonly options: WorkflowRegistryOptions;
   private readonly pendingSaves = new Map<string, NodeJS.Timeout>();
 
@@ -215,6 +218,50 @@ export class WorkflowRegistry {
         this.options.onTaskProgress?.(sessionId, progress);
       },
     });
+  }
+
+  /** Open a run and return its control; the caller closes it in a finally. */
+  public beginRun(sessionId: string): MutableRunControl {
+    const control = new MutableRunControl();
+    this.runs.set(sessionId, control);
+    return control;
+  }
+
+  /** Close a run, so a late pause/cancel for it becomes a no-op. */
+  public endRun(sessionId: string): void {
+    this.runs.delete(sessionId);
+  }
+
+  /**
+   * Ask a running execution to stop after the task in flight. When nothing is
+   * running the phase moves directly, so the action still does the obvious
+   * thing on a plan left mid-execution by a restart.
+   */
+  public pauseRun(sessionId: string): WorkflowState | null {
+    const entry = this.entries.get(sessionId);
+    if (!entry) {
+      return null;
+    }
+    const control = this.runs.get(sessionId);
+    if (control) {
+      control.requestPause();
+      return entry.orchestrator.getState();
+    }
+    return entry.orchestrator.pause();
+  }
+
+  /** Stop a running execution for good; the in-flight task is aborted. */
+  public cancelRun(sessionId: string): WorkflowState | null {
+    const entry = this.entries.get(sessionId);
+    if (!entry) {
+      return null;
+    }
+    const control = this.runs.get(sessionId);
+    if (control) {
+      control.requestCancel();
+      return entry.orchestrator.getState();
+    }
+    return entry.orchestrator.cancel();
   }
 
   /** Build the persisted snapshot for one session. */

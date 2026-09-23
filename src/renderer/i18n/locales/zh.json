@@ -1588,6 +1588,7 @@
       "planning": "规划中",
       "awaiting-approval": "等待审批",
       "executing": "执行中",
+      "paused": "已暂停",
       "verifying": "验证中",
       "completed": "已完成",
       "failed": "已阻塞",
@@ -1663,6 +1664,7 @@
         "budget-exceeded": "超出预算",
         "forbidden": "禁止",
         "skipped": "已跳过",
+        "cancelled": "已取消",
         "pending": "等待中"
       },
       "remaining": "剩余任务",
@@ -1719,6 +1721,9 @@
     "openCenter": "打开控制中心",
     "blockers": "{{count}} 个阻塞",
     "open": "打开计划",
+    "pause": "暂停",
+    "resume": "继续",
+    "cancel": "取消",
     "dismiss": "隐藏"
   }
 }

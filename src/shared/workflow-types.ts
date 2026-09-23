@@ -124,6 +124,7 @@ export type WorkflowPhase =
   | 'planning'
   | 'awaiting-approval'
   | 'executing'
+  | 'paused'
   | 'verifying'
   | 'completed'
   | 'failed'
@@ -195,6 +196,7 @@ export type TaskRunStatus =
   | 'succeeded'
   | 'failed'
   | 'skipped'
+  | 'cancelled'
   | 'budget-exceeded'
   | 'forbidden';
 

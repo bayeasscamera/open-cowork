@@ -21,6 +21,7 @@ import type {
   IsolationPlan,
   NewCheckpointEvidence,
   RolePlanInput,
+  WorkflowState,
 } from '../../shared/workflow-types';
 import { planIsolation } from '../agent/isolation-planner';
 import type { ProofRunner } from '../agent/proof-runner';
@@ -29,6 +30,7 @@ import type { WorkflowEntry } from '../agent/workflow-registry';
 import type {
   WorkflowExecutor,
   WorkflowExecutorOptions,
+  WorkflowRunControl,
   WorkflowTaskRunner,
 } from '../agent/workflow-executor';
 import { log, logError } from '../utils/logger';
@@ -44,6 +46,11 @@ export interface WorkflowRegistryLike {
   ): WorkflowExecutor | null;
   /** Durable snapshot write; omitted when no persistence is configured. */
   persist?(sessionId: string): Promise<boolean>;
+  /** Run control, so pause/cancel reach the execution in flight. */
+  beginRun?(sessionId: string): WorkflowRunControl | undefined;
+  endRun?(sessionId: string): void;
+  pauseRun?(sessionId: string): WorkflowState | null;
+  cancelRun?(sessionId: string): WorkflowState | null;
 }
 
 export interface WorkflowIpcContext {
@@ -97,7 +104,10 @@ export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
    * Build the executor that actually drives approved tasks. The LLM runner is
    * injected at bootstrap so this module never imports the agent session stack.
    */
-  const requireExecutor = (sessionId: string): WorkflowExecutor => {
+  const requireExecutor = (
+    sessionId: string,
+    overrides: Partial<WorkflowExecutorOptions> = {}
+  ): WorkflowExecutor => {
     const runTask = context.runWorkflowTask;
     if (!runTask || typeof registry.executorFor !== 'function') {
       throw new Error('Workflow execution is not available in this build.');
@@ -105,11 +115,29 @@ export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
     requireEntry(sessionId);
     const executor = registry.executorFor(sessionId, runTask, {
       runProof: context.runProof,
+      ...overrides,
     });
     if (!executor) {
       throw new Error('No workspace is available for session "' + sessionId + '".');
     }
     return executor;
+  };
+
+  /**
+   * Drive a plan under a fresh run control, so `workflow.pause` and
+   * `workflow.cancel` can reach the execution that is in flight instead of
+   * waiting for it to finish.
+   */
+  const runWithControl = async <T>(
+    sessionId: string,
+    run: (executor: WorkflowExecutor) => Promise<T>
+  ): Promise<T> => {
+    const control = registry.beginRun?.(sessionId);
+    try {
+      return await run(requireExecutor(sessionId, control ? { control } : {}));
+    } finally {
+      registry.endRun?.(sessionId);
+    }
   };
 
   ipcMain.handle('workflow.getState', (_event, sessionId: string) =>
@@ -304,13 +332,31 @@ export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
   // process, and the outcome is recorded on the orchestrator.
 
   ipcMain.handle('workflow.executePlan', (_event, sessionId: string) =>
-    safeAsync('workflow.executePlan', async () => requireExecutor(sessionId).executePlan())
+    safeAsync('workflow.executePlan', () =>
+      runWithControl(sessionId, (executor) => executor.executePlan())
+    )
   );
 
   ipcMain.handle('workflow.executeReadyTasks', (_event, sessionId: string) =>
-    safeAsync('workflow.executeReadyTasks', async () =>
-      requireExecutor(sessionId).executeReadyTasks()
+    safeAsync('workflow.executeReadyTasks', () =>
+      runWithControl(sessionId, (executor) => executor.executeReadyTasks())
     )
+  );
+
+  // Pause and cancel act on the run in flight. Pause lets the running task
+  // finish (no half-applied write); cancel aborts it immediately.
+  ipcMain.handle('workflow.pause', (_event, sessionId: string) =>
+    safe('workflow.pause', () => {
+      const entry = requireEntry(sessionId);
+      return registry.pauseRun?.(sessionId) ?? entry.orchestrator.getState();
+    })
+  );
+
+  ipcMain.handle('workflow.cancel', (_event, sessionId: string) =>
+    safe('workflow.cancel', () => {
+      const entry = requireEntry(sessionId);
+      return registry.cancelRun?.(sessionId) ?? entry.orchestrator.getState();
+    })
   );
 
   ipcMain.handle('workflow.verifyTask', (_event, sessionId: string, taskId: string) =>

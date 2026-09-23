@@ -125,10 +125,13 @@ describe('workflow state push plumbing', () => {
       expect(json.workflowBanner, locale).toBeDefined();
       expect(Object.keys(json.workflowBanner ?? {}).sort()).toEqual([
         'blockers',
+        'cancel',
         'dismiss',
         'open',
         'openCenter',
+        'pause',
         'progress',
+        'resume',
         'subagents',
         'tokens',
       ]);

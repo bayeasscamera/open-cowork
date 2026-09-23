@@ -49,6 +49,7 @@ function statusIcon(status: TaskRunResult['status']): JSX.Element {
       return <XCircle className="h-3.5 w-3.5 text-red-400" />;
     case 'forbidden':
     case 'skipped':
+    case 'cancelled':
       return <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />;
     default:
       return <Clock className="h-3.5 w-3.5 text-text-muted" />;

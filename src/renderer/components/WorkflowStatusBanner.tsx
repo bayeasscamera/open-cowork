@@ -8,10 +8,10 @@
  * renderer window existed.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Bot, ChevronRight, Loader2, X } from 'lucide-react';
-import type { WorkflowPhase } from '../../shared/workflow-types';
+import type { WorkflowPhase, WorkflowState } from '../../shared/workflow-types';
 import { useSubagentStates } from '../hooks/useSubagentProgress';
 import { useAppStore } from '../store';
 
@@ -21,6 +21,7 @@ const PHASE_STYLES: Record<WorkflowPhase, string> = {
   planning: 'border-sky-500/40 bg-sky-500/10 text-sky-400',
   'awaiting-approval': 'border-amber-500/40 bg-amber-500/10 text-amber-400',
   executing: 'border-accent bg-accent/10 text-text-primary',
+  paused: 'border-amber-500/40 bg-amber-500/10 text-amber-400',
   verifying: 'border-violet-500/40 bg-violet-500/10 text-violet-400',
   completed: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
   failed: 'border-red-500/40 bg-red-500/10 text-red-400',
@@ -49,6 +50,7 @@ function formatTokens(count: number): string {
 
 export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation();
+  const api = typeof window !== 'undefined' ? window.electronAPI?.workflow : undefined;
   const state = useAppStore((s) => s.workflowStates[sessionId] ?? null);
   const results = useAppStore((s) => s.workflowTaskResults[sessionId] ?? null);
   const progress = useAppStore((s) => s.workflowTaskProgress[sessionId] ?? null);
@@ -58,12 +60,55 @@ export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
   const planPanelVisible = useAppStore((s) => s.planPanelVisible);
   const subagents = useSubagentStates(sessionId);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  /** Apply a state returned by a control call without waiting for a push. */
+  const applyState = useCallback(
+    (next: WorkflowState | null) => {
+      if (next) {
+        setWorkflowState(sessionId, next);
+      }
+    },
+    [sessionId, setWorkflowState]
+  );
+
+  const pauseRun = useCallback(() => {
+    if (!api) {
+      return;
+    }
+    setBusy(true);
+    void api
+      .pause(sessionId)
+      .then(applyState)
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  }, [api, sessionId, applyState]);
+
+  const cancelRun = useCallback(() => {
+    if (!api) {
+      return;
+    }
+    setBusy(true);
+    void api
+      .cancel(sessionId)
+      .then(applyState)
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  }, [api, sessionId, applyState]);
+
+  const resumeRun = useCallback(() => {
+    if (!api) {
+      return;
+    }
+    // The plan keeps running in the main process; pushed state events drive
+    // the UI, so this call is deliberately not awaited to completion.
+    void api.executePlan(sessionId).catch(() => undefined);
+  }, [api, sessionId]);
 
   // Re-fetch on session switch so a restored workflow is not invisible, and
   // reset the dismissal so the banner returns for the newly selected session.
   useEffect(() => {
     setDismissedAt(null);
-    const api = typeof window !== 'undefined' ? window.electronAPI?.workflow : undefined;
     if (!api) {
       return;
     }
@@ -81,7 +126,7 @@ export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, setWorkflowState]);
+  }, [api, sessionId, setWorkflowState]);
 
   // Finished results win over live progress: a task that already reported its
   // final usage must not be counted twice.
@@ -202,6 +247,47 @@ export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
             <AlertTriangle className="h-3 w-3" />
             {t('workflowBanner.blockers', { count: state.blockers.length })}
           </span>
+        )}
+
+        {state.phase === 'executing' && (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={pauseRun}
+              className="rounded-md border border-border px-2 py-0.5 font-medium hover:bg-surface-hover disabled:opacity-40"
+            >
+              {t('workflowBanner.pause')}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={cancelRun}
+              className="rounded-md border border-border px-2 py-0.5 font-medium text-red-400 hover:bg-surface-hover disabled:opacity-40"
+            >
+              {t('workflowBanner.cancel')}
+            </button>
+          </>
+        )}
+
+        {state.phase === 'paused' && (
+          <>
+            <button
+              type="button"
+              onClick={resumeRun}
+              className="rounded-md border border-border px-2 py-0.5 font-medium hover:bg-surface-hover"
+            >
+              {t('workflowBanner.resume')}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={cancelRun}
+              className="rounded-md border border-border px-2 py-0.5 font-medium text-red-400 hover:bg-surface-hover disabled:opacity-40"
+            >
+              {t('workflowBanner.cancel')}
+            </button>
+          </>
         )}
 
         {!planPanelVisible && (

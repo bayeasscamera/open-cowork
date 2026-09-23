@@ -1587,6 +1587,7 @@
       "planning": "Planification",
       "awaiting-approval": "En attente d’approbation",
       "executing": "Exécution",
+      "paused": "En pause",
       "verifying": "Vérification",
       "completed": "Terminé",
       "failed": "Bloqué",
@@ -1662,6 +1663,7 @@
         "budget-exceeded": "Budget dépassé",
         "forbidden": "Interdite",
         "skipped": "Ignorée",
+        "cancelled": "Annulée",
         "pending": "En attente"
       },
       "remaining": "Tâches restantes",
@@ -1718,6 +1720,9 @@
     "openCenter": "Ouvrir le centre",
     "blockers": "{{count}} blocage(s)",
     "open": "Ouvrir le plan",
+    "pause": "Pause",
+    "resume": "Reprendre",
+    "cancel": "Annuler",
     "dismiss": "Masquer"
   }
 }

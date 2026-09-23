@@ -86,6 +86,47 @@ export interface WorkflowTaskOutcome {
 
 export type WorkflowTaskRunner = (context: WorkflowTaskContext) => Promise<WorkflowTaskOutcome>;
 
+/**
+ * Run-level control for one plan execution, shared by the IPC layer (which
+ * asks for a pause or a cancel) and the executor (which obeys it between
+ * tasks). Cancelling aborts the task that is in flight; pausing lets it
+ * finish and stops the next one from starting, so a pause can never leave a
+ * half-applied write behind.
+ */
+export interface WorkflowRunControl {
+  readonly signal: AbortSignal;
+  readonly cancelled: boolean;
+  readonly paused: boolean;
+}
+
+/** The writable side of a run control, owned by the registry. */
+export class MutableRunControl implements WorkflowRunControl {
+  private readonly controller = new AbortController();
+  private cancelRequested = false;
+  private pauseRequested = false;
+
+  public get signal(): AbortSignal {
+    return this.controller.signal;
+  }
+
+  public get cancelled(): boolean {
+    return this.cancelRequested;
+  }
+
+  public get paused(): boolean {
+    return this.pauseRequested;
+  }
+
+  public requestPause(): void {
+    this.pauseRequested = true;
+  }
+
+  public requestCancel(): void {
+    this.cancelRequested = true;
+    this.controller.abort();
+  }
+}
+
 export interface WorkflowExecutorOptions {
   orchestrator: WorkflowOrchestrator;
   runTask: WorkflowTaskRunner;
@@ -105,6 +146,8 @@ export interface WorkflowExecutorOptions {
   onTaskResult?: (result: TaskRunResult) => void;
   /** Throttled live budget updates while a task is still running. */
   onTaskProgress?: (progress: TaskRunProgress) => void;
+  /** Pause/cancel handle for the run this executor is driving. */
+  control?: WorkflowRunControl;
 }
 
 /** Evidence kinds the agent's own text can satisfy. */
@@ -314,6 +357,16 @@ export class WorkflowExecutor {
     const prompt = buildTaskPrompt(task, contract);
     const budget = new BudgetGuard(task.budget, { now: this.now });
     const controller = new AbortController();
+    // A run-level cancel must interrupt the task that is in flight, not only
+    // stop the next one from starting.
+    const runControl = this.options.control;
+    if (runControl) {
+      if (runControl.cancelled) {
+        controller.abort();
+      } else {
+        runControl.signal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
+    }
     let progressReportedAt = 0;
     // Live visibility: the UI must see tokens and cost accrue while a long
     // task runs, not only once it ends. Throttled so a chatty runner cannot
@@ -411,8 +464,16 @@ export class WorkflowExecutor {
     let error: string | undefined;
     let verification: TaskVerification | undefined;
 
+    // A cancelled run is not a failure of the task: it was interrupted before
+    // it could prove itself, so it must not fail the plan either.
+    const interrupted = runControl?.cancelled === true && outcome?.success !== true;
+
     const budgetReason = budget.reason();
-    if (budgetReason) {
+    if (interrupted) {
+      status = 'cancelled';
+      summary = 'Cancelled by the user before the task could prove itself.';
+      error = undefined;
+    } else if (budgetReason) {
       status = 'budget-exceeded';
       summary = budgetReason;
       error = budgetReason;
@@ -604,6 +665,9 @@ export class WorkflowExecutor {
     }
     const results: TaskRunResult[] = [];
     for (const taskId of this.options.orchestrator.readyTaskIds()) {
+      if (this.options.control?.cancelled || this.options.control?.paused) {
+        break;
+      }
       const task = this.taskById(taskId);
       if (!task) {
         continue;
@@ -614,7 +678,21 @@ export class WorkflowExecutor {
         break;
       }
     }
+    this.applyRunControl();
     return results;
+  }
+
+  /**
+   * Translate a pending pause/cancel into a final phase once the loop stopped.
+   * Cancel wins over pause, and neither may be overwritten by verification.
+   */
+  private applyRunControl(): void {
+    const control = this.options.control;
+    if (control?.cancelled) {
+      this.options.orchestrator.cancel();
+    } else if (control?.paused) {
+      this.options.orchestrator.pause();
+    }
   }
 
   /**
@@ -630,7 +708,12 @@ export class WorkflowExecutor {
     const results: TaskRunResult[] = [];
     let ran = 0;
 
-    while (ran < maxTasks && this.options.orchestrator.getPhase() === 'executing') {
+    while (
+      ran < maxTasks &&
+      this.options.orchestrator.getPhase() === 'executing' &&
+      !this.options.control?.cancelled &&
+      !this.options.control?.paused
+    ) {
       const ready = this.options.orchestrator.readyTaskIds();
       if (ready.length === 0) {
         break;
@@ -638,6 +721,9 @@ export class WorkflowExecutor {
       let progressed = false;
       for (const taskId of ready) {
         if (ran >= maxTasks) {
+          break;
+        }
+        if (this.options.control?.cancelled || this.options.control?.paused) {
           break;
         }
         const task = this.taskById(taskId);
@@ -657,7 +743,14 @@ export class WorkflowExecutor {
       }
     }
 
-    const verification: VerificationReport | null = this.options.orchestrator.verify().report ?? null;
+    this.applyRunControl();
+    // A paused or cancelled run must not be verified: verification would
+    // overwrite the phase and claim the plan completed.
+    const stopped =
+      this.options.control?.cancelled === true || this.options.control?.paused === true;
+    const verification = stopped
+      ? null
+      : (this.options.orchestrator.verify().report ?? null);
     return this.buildReport(true, [], results, verification);
   }
 
@@ -684,7 +777,12 @@ export class WorkflowExecutor {
       skippedTaskIds: Array.from(
         new Set(
           results
-            .filter((result) => result.status === 'forbidden' || result.status === 'skipped')
+            .filter(
+              (result) =>
+                result.status === 'forbidden' ||
+                result.status === 'skipped' ||
+                result.status === 'cancelled'
+            )
             .map((result) => result.taskId)
         )
       ),
