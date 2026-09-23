@@ -126,6 +126,41 @@ describe('WorkflowPersistence', () => {
     expect(loaded?.workflow.objective).toBe('Ship it');
   });
 
+  it('keeps the previous snapshot intact when a write fails', async () => {
+    const persistence = new WorkflowPersistence({ baseDir: dir, now: () => 42 });
+    const snapshot = {
+      version: WORKFLOW_SNAPSHOT_VERSION,
+      sessionId: 'session-atomic',
+      workspaceRoot: '/ws',
+      savedAt: 0,
+      workflow: {
+        phase: 'planning' as const,
+        mode: 'execute' as const,
+        contractId: 'contract-1',
+        objective: 'Ship it',
+        tasks: [makeTask()],
+        completedTaskIds: [],
+        blockers: [],
+      },
+      checkpoints: { sequence: 0, entries: [], dropped: 0 },
+      memory: [],
+    };
+    await persistence.saveSession(snapshot);
+    const target = persistence.sessionPath('session-atomic');
+    const before = await fs.readFile(target, 'utf8');
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    await persistence.saveSession({ ...snapshot, memory: [circular] as never });
+
+    // The failed write must not truncate the previous good snapshot...
+    expect(await fs.readFile(target, 'utf8')).toBe(before);
+    expect(persistence.loadSession('session-atomic')?.workflow.objective).toBe('Ship it');
+    // ...and must not leave its temp file behind.
+    const entries = await fs.readdir(path.dirname(target));
+    expect(entries.filter((name) => name.includes('.tmp-'))).toEqual([]);
+  });
+
   it('ignores a corrupt or version-mismatched file instead of throwing', async () => {
     const persistence = new WorkflowPersistence({ baseDir: dir });
     await fs.mkdir(path.join(dir, 'sessions'), { recursive: true });

@@ -52,6 +52,10 @@ export class BudgetGuard {
     return this.toolCallCount;
   }
 
+  public get tokens(): number {
+    return this.tokenCount;
+  }
+
   public get elapsedMs(): number {
     return Math.max(0, this.now() - this.startedAt);
   }

@@ -59,6 +59,10 @@ export interface WorkflowTaskContext {
   signal: AbortSignal;
   /** The runner must call this for every tool call it performs. */
   onToolCall: (count?: number) => void;
+  /** The runner calls this with the tokens each model turn consumed. */
+  onTokens?: (count?: number) => void;
+  /** Called when a guard refuses a tool call, i.e. a human must decide. */
+  onToolBlocked?: () => void;
 }
 
 export interface WorkflowTaskOutcome {
@@ -69,6 +73,12 @@ export interface WorkflowTaskOutcome {
   error?: string;
   toolCalls?: number;
   costUsd?: number;
+  /** Tokens the run consumed, summed across model turns. */
+  tokens?: number;
+  /** Evidence kinds actually observed during the run (tool-level facts). */
+  evidenceKinds?: EvidenceKind[];
+  /** Shell commands that exited non-zero, used as a regression signal. */
+  failedCommands?: number;
 }
 
 export type WorkflowTaskRunner = (context: WorkflowTaskContext) => Promise<WorkflowTaskOutcome>;
@@ -157,6 +167,9 @@ export function buildTaskPrompt(task: AtomicTask, contract: TaskContract): strin
   const budgetParts: string[] = [];
   if (budget.maxToolCalls !== undefined) {
     budgetParts.push('at most ' + budget.maxToolCalls + ' tool calls');
+  }
+  if (budget.maxTokens !== undefined) {
+    budgetParts.push('at most ' + budget.maxTokens + ' tokens');
   }
   if (budget.maxDurationMs !== undefined) {
     budgetParts.push('at most ' + Math.round(budget.maxDurationMs / 1000) + 's');
@@ -302,6 +315,12 @@ export class WorkflowExecutor {
         controller.abort();
       }
     };
+    const onTokens = (count = 1): void => {
+      budget.recordTokens(count);
+      if (budget.exceeded && !controller.signal.aborted) {
+        controller.abort();
+      }
+    };
 
     const maxAttempts = Math.max(1, this.options.attempts ?? DEFAULT_TASK_ATTEMPTS);
     let outcome: WorkflowTaskOutcome | null = null;
@@ -322,6 +341,7 @@ export class WorkflowExecutor {
           isolated: effectiveIsolated,
           signal: controller.signal,
           onToolCall,
+          onTokens,
         });
         lastError = outcome.error ?? '';
         if (outcome.success) {
@@ -338,6 +358,10 @@ export class WorkflowExecutor {
     }
     if (outcome?.costUsd !== undefined) {
       budget.recordCost(outcome.costUsd);
+    }
+    // Reconcile in case the runner reported a total without streaming it.
+    if (outcome?.tokens !== undefined && outcome.tokens > budget.tokens) {
+      budget.recordTokens(outcome.tokens - budget.tokens);
     }
 
     const evidence = await this.collectEvidence(task, outcome, effectiveIsolated, worktreePath);
@@ -410,6 +434,7 @@ export class WorkflowExecutor {
       ...(error ? { error } : {}),
       ...(worktreePath ? { worktreePath } : {}),
       ...(budget.usage().costUsd > 0 ? { costUsd: budget.usage().costUsd } : {}),
+      ...(budget.usage().tokens > 0 ? { tokens: budget.usage().tokens } : {}),
     };
 
     this.options.audit?.append({
@@ -535,10 +560,19 @@ export class WorkflowExecutor {
     return undefined;
   }
 
-  /** Run every task that is ready right now. One pass, dependencies respected. */
+  /**
+   * Run every task that is ready right now. One pass, dependencies respected.
+   *
+   * A freshly approved plan is still in "planning": the UI's "run ready tasks"
+   * action is the first execution step, so start the plan here rather than
+   * silently returning an empty list.
+   */
   public async executeReadyTasks(): Promise<TaskRunResult[]> {
     if (this.options.orchestrator.getPhase() !== 'executing') {
-      return [];
+      const start = this.options.orchestrator.startExecution();
+      if (!start.started) {
+        return [];
+      }
     }
     const results: TaskRunResult[] = [];
     for (const taskId of this.options.orchestrator.readyTaskIds()) {

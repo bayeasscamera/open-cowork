@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   REFERENCE_SCENARIOS,
   compareMetrics,
+  evaluateScenarioRun,
   summarizeMetrics,
+  textualEvidenceKinds,
   type RunMetrics,
 } from '../src/main/agent/reference-scenarios';
 
@@ -34,12 +36,19 @@ describe('reference-scenarios', () => {
     ]);
   });
 
-  it('gives every scenario a budget, criteria and expected evidence', () => {
+  it('gives every scenario a budget, criteria, expected evidence and a write scope', () => {
     for (const scenario of REFERENCE_SCENARIOS) {
       expect(scenario.budget.maxTokens).toBeGreaterThan(0);
       expect(scenario.successCriteria.length).toBeGreaterThan(0);
       expect(scenario.expectedEvidence.length).toBeGreaterThan(0);
+      expect(Array.isArray(scenario.writeScope)).toBe(true);
     }
+  });
+
+  it('declares the security audit as read-only and the others as writers', () => {
+    const audit = REFERENCE_SCENARIOS.find((scenario) => scenario.id === 'security-audit');
+    expect(audit?.writeScope).toEqual([]);
+    expect(REFERENCE_SCENARIOS.filter((scenario) => scenario.writeScope.length > 0)).toHaveLength(4);
   });
 
   it('returns zeroed metrics for an empty run set', () => {
@@ -82,5 +91,67 @@ describe('reference-scenarios', () => {
     const regressed = compareMetrics(baseline, worse);
     expect(regressed.noRegression).toBe(false);
     expect(regressed.avgTurns).toBe(-2);
+  });
+});
+
+describe('evaluateScenarioRun', () => {
+  const bugfix = REFERENCE_SCENARIOS.find((scenario) => scenario.id === 'bugfix-null-guard')!;
+  const audit = REFERENCE_SCENARIOS.find((scenario) => scenario.id === 'security-audit')!;
+
+  it('fails when an expected evidence kind was never produced', () => {
+    const result = evaluateScenarioRun(bugfix, {
+      success: true,
+      summary: 'Applied the fix.',
+      evidenceKinds: ['diff'],
+    });
+    expect(result.success).toBe(false);
+    expect(result.missingEvidence).toEqual(['test']);
+    expect(result.evidenceCount).toBe(1);
+  });
+
+  it('passes only when every expected evidence kind was observed', () => {
+    const result = evaluateScenarioRun(bugfix, {
+      success: true,
+      summary: 'Applied the fix and ran the suite.',
+      evidenceKinds: ['diff', 'test'],
+    });
+    expect(result.success).toBe(true);
+    expect(result.missingEvidence).toEqual([]);
+    expect(result.evidenceCount).toBe(2);
+  });
+
+  it('does not trust the agent when the run itself failed', () => {
+    const result = evaluateScenarioRun(bugfix, {
+      success: false,
+      summary: 'Applied the fix.',
+      evidenceKinds: ['diff', 'test'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('counts failed commands as regressions', () => {
+    const result = evaluateScenarioRun(bugfix, {
+      success: true,
+      summary: 'Done.',
+      evidenceKinds: ['diff', 'test'],
+      failedCommands: 2,
+    });
+    expect(result.regressions).toBe(2);
+  });
+
+  it('fails a read-only scenario that wrote a file', () => {
+    const result = evaluateScenarioRun(audit, {
+      success: true,
+      summary: 'Findings with file:line references.',
+      evidenceKinds: ['note', 'review', 'diff'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('recognises a report that cites file and line as a review', () => {
+    const kinds = textualEvidenceKinds('src/main/agent/chat.ts:212 — unsafe URL.');
+    expect(kinds).toContain('review');
+    expect(kinds).toContain('note');
+    expect(textualEvidenceKinds('looks risky')).not.toContain('review');
   });
 });

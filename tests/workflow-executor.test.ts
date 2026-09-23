@@ -273,6 +273,53 @@ describe('WorkflowExecutor', () => {
     expect(report.results[0].toolCalls).toBe(5);
   });
 
+  it('marks a task that overruns its token budget', async () => {
+    const budgeted = makeTask({ budget: { maxTokens: 100, maxToolCalls: 50 } });
+    const { orchestrator } = makeApprovedOrchestrator([budgeted]);
+    const runTask = vi.fn(async (context: WorkflowTaskContext) => {
+      // The runner streams the tokens each model turn consumed.
+      context.onTokens?.(500);
+      return { success: true, summary: 'Kept going anyway.' };
+    });
+
+    const executor = new WorkflowExecutor({
+      orchestrator,
+      runTask,
+      policy: createDefaultPermissionPolicy('/ws'),
+      workspaceRoot: '/ws',
+      runProof: okProof,
+    });
+
+    const report = await executor.executePlan();
+
+    expect(report.results[0].status).toBe('budget-exceeded');
+    expect(report.results[0].error).toContain('Token budget exceeded');
+    expect(report.results[0].tokens).toBe(500);
+  });
+
+  it('reconciles a token total reported only in the outcome', async () => {
+    const budgeted = makeTask({ budget: { maxTokens: 100, maxToolCalls: 50 } });
+    const { orchestrator } = makeApprovedOrchestrator([budgeted]);
+    const runTask = vi.fn(async () => ({
+      success: true,
+      summary: 'Done.',
+      tokens: 250,
+    }));
+
+    const executor = new WorkflowExecutor({
+      orchestrator,
+      runTask,
+      policy: createDefaultPermissionPolicy('/ws'),
+      workspaceRoot: '/ws',
+      runProof: okProof,
+    });
+
+    const report = await executor.executePlan();
+
+    expect(report.results[0].status).toBe('budget-exceeded');
+    expect(report.results[0].tokens).toBe(250);
+  });
+
   it('runs a task whose capabilities the policy allows', async () => {
     // Regression guard: workspace-relative paths are "inside" and must not be
     // mistaken for out-of-workspace access.
@@ -378,6 +425,23 @@ describe('WorkflowExecutor', () => {
 
     await executor.executePlan();
     expect(results).toEqual(['t1:succeeded']);
+  });
+
+  it('starts an approved plan when only the ready tasks are requested', async () => {
+    const { orchestrator } = makeApprovedOrchestrator();
+    const executor = new WorkflowExecutor({
+      orchestrator,
+      runTask: async () => ({ success: true, summary: 'Fine.' }),
+      policy: createDefaultPermissionPolicy('/ws'),
+      workspaceRoot: '/ws',
+      runProof: okProof,
+    });
+
+    const results = await executor.executeReadyTasks();
+
+    expect(results.map((result) => result.status)).toEqual(['succeeded']);
+    // Running only the ready tasks does not run the final plan verification.
+    expect(orchestrator.getPhase()).toBe('verifying');
   });
 
   it('returns an empty list when the plan is not executing', async () => {

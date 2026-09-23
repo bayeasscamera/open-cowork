@@ -76,6 +76,8 @@ function parseJson(raw: string): unknown {
 export class WorkflowPersistence {
   private readonly baseDir: string;
   private readonly now: () => number;
+  /** Tail of the write chain per target, so writes land in initiation order. */
+  private readonly writes = new Map<string, Promise<void>>();
 
   constructor(options: WorkflowPersistenceOptions = {}) {
     this.baseDir = options.baseDir ?? defaultBaseDir();
@@ -94,13 +96,38 @@ export class WorkflowPersistence {
     return path.join(this.baseDir, 'queue.json');
   }
 
+  /**
+   * Serialise writes per file and publish them with a rename, so a reader never
+   * sees a truncated snapshot and a debounced save that started earlier can
+   * never land after — and clobber — a newer explicit snapshot.
+   */
   private writeJson(target: string, value: unknown): Promise<void> {
-    return fsPromises
-      .mkdir(path.dirname(target), { recursive: true })
-      .then(() => fsPromises.writeFile(target, JSON.stringify(value), 'utf8'))
-      .catch((error: unknown) => {
-        logWarn('[workflow-persistence] failed to write ' + target, error);
-      });
+    let payload: string;
+    try {
+      payload = JSON.stringify(value);
+    } catch (error: unknown) {
+      logWarn('[workflow-persistence] failed to serialise ' + target, error);
+      return Promise.resolve();
+    }
+    const previous = this.writes.get(target) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(() => this.renameIntoPlace(target, payload));
+    this.writes.set(target, next);
+    return next;
+  }
+
+  private async renameIntoPlace(target: string, payload: string): Promise<void> {
+    const temp =
+      target + '.tmp-' + process.pid + '-' + Math.random().toString(36).slice(2);
+    try {
+      await fsPromises.mkdir(path.dirname(target), { recursive: true });
+      await fsPromises.writeFile(temp, payload, 'utf8');
+      await fsPromises.rename(temp, target);
+    } catch (error: unknown) {
+      logWarn('[workflow-persistence] failed to write ' + target, error);
+      await fsPromises.rm(temp, { force: true }).catch(() => undefined);
+    }
   }
 
   private readJson(target: string): unknown {
@@ -142,7 +169,15 @@ export class WorkflowPersistence {
   }
 
   public removeSession(sessionId: string): Promise<void> {
-    return fsPromises.rm(this.sessionPath(sessionId), { force: true }).catch(() => undefined);
+    const target = this.sessionPath(sessionId);
+    // Chain the removal after any write already queued for this file, so a
+    // late-landing snapshot cannot resurrect a dropped session.
+    const previous = this.writes.get(target) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(() => fsPromises.rm(target, { force: true }).catch(() => undefined));
+    this.writes.set(target, next);
+    return next;
   }
 
   public saveQueue(tasks: DetachedTask[]): Promise<void> {

@@ -310,16 +310,16 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={busy || !api}
-                    onClick={() => api && void run(() => api.startExecution(sessionId))}
+                    disabled={busy || !api || !approved || blockers.length > 0}
+                    onClick={() => api && void run(() => api.executePlan(sessionId))}
                     className="rounded-lg border border-border px-3 py-1 text-xs text-text-secondary disabled:opacity-40"
                   >
                     {t('planPanel.actions.start')}
                   </button>
                   <button
                     type="button"
-                    disabled={busy || !api}
-                    onClick={() => api && void run(() => api.startReadyTasks(sessionId))}
+                    disabled={busy || !api || !approved || blockers.length > 0}
+                    onClick={() => api && void run(() => api.executeReadyTasks(sessionId))}
                     className="rounded-lg border border-border px-3 py-1 text-xs text-text-secondary disabled:opacity-40"
                   >
                     {t('planPanel.actions.startReady')}

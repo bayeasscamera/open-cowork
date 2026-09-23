@@ -216,6 +216,8 @@ export interface TaskRunResult {
   /** Outcome of verifying this task's own exit criteria against its proof. */
   verification?: TaskVerification;
   costUsd?: number;
+  /** Tokens the task consumed, when the runner reported usage. */
+  tokens?: number;
 }
 
 export interface WorkflowExecutionReport {

@@ -18,11 +18,19 @@ import {
   DefaultResourceLoader,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
+import type { EvidenceKind } from '../../shared/task-contract';
 import { configStore } from '../config/config-store';
 import { logWarn } from '../utils/logger';
+import { normalizeTokenUsage } from './agent-runner-formatting';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resolution';
-import { createWriteScopeGuard, type ToolBlock } from './write-scope-guard';
+import {
+  SHELL_TOOLS,
+  WRITE_TOOLS,
+  createWriteScopeGuard,
+  toolCallCommand,
+  type ToolBlock,
+} from './write-scope-guard';
 import type { WorkflowTaskContext, WorkflowTaskOutcome, WorkflowTaskRunner } from './workflow-executor';
 
 export const DEFAULT_TASK_TIMEOUT_MS = 600_000;
@@ -32,7 +40,11 @@ export interface TaskSessionEvent {
   type?: string;
   messages?: unknown[];
   toolName?: string;
+  toolCallId?: string;
   isError?: boolean;
+  args?: unknown;
+  /** Present on message_end; carries the provider token usage. */
+  message?: unknown;
 }
 
 export interface TaskSession {
@@ -89,6 +101,23 @@ function lastAssistantText(messages: unknown[] | undefined): string {
     }
   }
   return '';
+}
+
+/** A command that runs a test suite is proof of the "test" evidence kind. */
+const TEST_COMMAND_PATTERN =
+  /\b(vitest|jest|pytest|mocha|ava)\b|(^|\s)(npm|pnpm|yarn|bun)\s+(run\s+)?test\b/i;
+
+/** Evidence kinds a tool call can produce, observed before the call runs. */
+function evidenceKindsForTool(toolName: string | undefined, args: unknown): EvidenceKind[] {
+  const name = (toolName ?? '').trim();
+  if (WRITE_TOOLS.includes(name)) {
+    return ['diff'];
+  }
+  if (SHELL_TOOLS.includes(name)) {
+    const command = toolCallCommand(args);
+    return command && TEST_COMMAND_PATTERN.test(command) ? ['command', 'test'] : ['command'];
+  }
+  return [];
 }
 
 function resolveTimeout(context: WorkflowTaskContext, options: AgentTaskRunnerOptions): number {
@@ -201,7 +230,14 @@ export async function createPiTaskSession(context: WorkflowTaskContext): Promise
   const child = session as unknown as TaskSession;
   const guard = createWriteScopeGuard(context.task, context.cwd);
   if (typeof child.setBeforeToolCall === 'function') {
-    child.setBeforeToolCall((call) => guard(call));
+    child.setBeforeToolCall((call) => {
+      const verdict = guard(call);
+      if (verdict?.block) {
+        // A refusal is a policy boundary: the run cannot proceed unattended.
+        context.onToolBlocked?.();
+      }
+      return verdict;
+    });
   } else {
     logWarn(
       '[WorkflowTaskRunner] Child session does not support setBeforeToolCall; write-scope guard inactive'
@@ -228,10 +264,46 @@ export async function runAgentTask(
 
   let toolCalls = 0;
   let finalText = '';
+  let tokens = 0;
+  let sawTokens = false;
+  let failedCommands = 0;
+  const evidenceKinds = new Set<EvidenceKind>();
+  const pendingEvidence = new Map<string, EvidenceKind[]>();
+
   const unsubscribe = session.subscribe((event) => {
     if (event.type === 'tool_execution_start') {
       toolCalls += 1;
       context.onToolCall(1);
+      const kinds = evidenceKindsForTool(event.toolName, event.args);
+      if (kinds.length > 0) {
+        pendingEvidence.set(event.toolCallId ?? event.toolName ?? 'call-' + toolCalls, kinds);
+      }
+    }
+    if (event.type === 'tool_execution_end') {
+      const key = event.toolCallId ?? event.toolName ?? '';
+      const pending = pendingEvidence.get(key);
+      if (event.isError) {
+        // A failed (or guard-blocked) call proves nothing about the workspace.
+        if (pending?.includes('command') || pending?.includes('test')) {
+          failedCommands += 1;
+        }
+        pendingEvidence.delete(key);
+      } else if (pending) {
+        for (const kind of pending) {
+          evidenceKinds.add(kind);
+        }
+        pendingEvidence.delete(key);
+      }
+    }
+    if (event.type === 'message_end') {
+      const message = event.message as { usage?: unknown } | undefined;
+      const usage = normalizeTokenUsage(message?.usage);
+      if (usage) {
+        const delta = usage.input + usage.output;
+        tokens += delta;
+        sawTokens = true;
+        context.onTokens?.(delta);
+      }
     }
     if (event.type === 'agent_end') {
       const text = lastAssistantText(event.messages);
@@ -252,8 +324,14 @@ export async function runAgentTask(
   }
 
   const summary = finalText.trim().slice(0, MAX_TASK_SUMMARY_CHARS);
+  const observed = [...evidenceKinds];
+  const usage = {
+    ...(sawTokens ? { tokens } : {}),
+    evidenceKinds: observed,
+    failedCommands,
+  };
   if (failure) {
-    return { success: false, summary, error: failure, toolCalls };
+    return { success: false, summary, error: failure, toolCalls, ...usage };
   }
   if (summary.length === 0) {
     return {
@@ -261,9 +339,10 @@ export async function runAgentTask(
       summary: '',
       error: 'The task session produced no output.',
       toolCalls,
+      ...usage,
     };
   }
-  return { success: true, summary, toolCalls };
+  return { success: true, summary, toolCalls, ...usage };
 }
 
 /** WorkflowTaskRunner backed by real pi agent sessions. */
