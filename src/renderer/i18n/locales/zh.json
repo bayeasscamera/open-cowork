@@ -168,6 +168,8 @@
     "panelDesc": "配置工作区、工具以及账号相关行为。",
     "general": "通用",
     "generalDesc": "外观、语言等通用偏好",
+    "diagnostics": "诊断",
+    "diagnosticsDesc": "检查凭据、工作区、沙箱与存储",
     "groupModel": "模型与 AI",
     "groupExtensions": "扩展与工具",
     "groupPersonal": "个性化",
@@ -1714,6 +1716,59 @@
         "not-required": "无需"
       }
     }
+  },
+  "diagnostics": {
+    "subtitle": "当前生效设置的凭据、工作区、沙箱与存储",
+    "overall": {
+      "ok": "一切正常",
+      "warn": "可用，但有警告",
+      "fail": "存在阻塞问题"
+    },
+    "refresh": "重新检查",
+    "running": "检查中…",
+    "effectiveTitle": "生效中的设置",
+    "decidedAt": "ConfigSet 由 {{configSet}} 层级决定，模型由 {{model}} 层级决定",
+    "check": {
+      "credentials": "提供商凭据",
+      "model": "已选模型",
+      "workspace": "会话工作区",
+      "sandbox": "沙箱隔离",
+      "storage": "应用存储",
+      "native-tools": "原生工具"
+    },
+    "checkDetail": {
+      "credentials": "生效的 ConfigSet 可以连接其提供商",
+      "model": "层级中已固定某个模型",
+      "workspace": "会话运行所在的文件夹",
+      "sandbox": "工具执行的位置",
+      "storage": "配置与数据库目录",
+      "native-tools": "git 用于 worktree 隔离"
+    },
+    "fix": {
+      "credentials": "打开“模型与 AI”设置，为该 ConfigSet 添加 API 密钥。",
+      "model": "在设置层级或 ConfigSet 中选择模型。",
+      "workspace": "为该会话重新选择一个存在的文件夹。",
+      "sandbox": "未检测到沙箱后端：工具将在宿主机上运行。请安装 WSL 或 Lima，或关闭沙箱。",
+      "storage": "应用目录不可写，请检查其权限。",
+      "native-tools": "PATH 中未找到 git：worktree 隔离不可用。"
+    },
+    "actions": "操作",
+    "probe": "检查连接",
+    "exportBundle": "导出诊断包",
+    "openLogs": "打开日志目录",
+    "probeOk": "提供商可达（{{ms}} 毫秒）",
+    "probeFail": "在 {{step}} 步骤失败（{{ms}} 毫秒）",
+    "step": {
+      "dns": "DNS",
+      "tcp": "TCP",
+      "tls": "TLS",
+      "auth": "认证",
+      "model": "模型"
+    },
+    "reportFailed": "无法生成健康报告。",
+    "probeFailed": "连接检查无法执行。",
+    "bundleExported": "诊断包已写入 {{path}}",
+    "bundleFailed": "诊断包导出失败。"
   },
   "settingsLevels": {
     "title": "设置层级",

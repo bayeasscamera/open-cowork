@@ -168,6 +168,8 @@
     "panelDesc": "Configure your workspace, tools, and account behavior.",
     "general": "General",
     "generalDesc": "Appearance, language & preferences",
+    "diagnostics": "Diagnostics",
+    "diagnosticsDesc": "Check credentials, workspace, sandbox and storage",
     "groupModel": "Model & AI",
     "groupExtensions": "Extensions & Tools",
     "groupPersonal": "Personalization",
@@ -1714,6 +1716,59 @@
         "not-required": "not required"
       }
     }
+  },
+  "diagnostics": {
+    "subtitle": "Credentials, workspace, sandbox and storage of the settings in effect",
+    "overall": {
+      "ok": "Everything looks healthy",
+      "warn": "Usable, with warnings",
+      "fail": "Something is blocking"
+    },
+    "refresh": "Re-run checks",
+    "running": "Checking…",
+    "effectiveTitle": "Settings in effect",
+    "decidedAt": "ConfigSet decided at the {{configSet}} level, model at the {{model}} level",
+    "check": {
+      "credentials": "Provider credentials",
+      "model": "Model selected",
+      "workspace": "Session workspace",
+      "sandbox": "Sandbox isolation",
+      "storage": "App storage",
+      "native-tools": "Native tools"
+    },
+    "checkDetail": {
+      "credentials": "The ConfigSet in effect can reach its provider",
+      "model": "A model is pinned somewhere in the ladder",
+      "workspace": "The folder the session runs in",
+      "sandbox": "Where tools are executed",
+      "storage": "Configuration and database directory",
+      "native-tools": "git powers worktree isolation"
+    },
+    "fix": {
+      "credentials": "Open Model & AI settings and add an API key for this ConfigSet.",
+      "model": "Pick a model in the settings ladder or in the ConfigSet.",
+      "workspace": "Re-select an existing folder for this session.",
+      "sandbox": "No sandbox backend was detected: tools run on the host. Install WSL or Lima, or turn the sandbox off.",
+      "storage": "The app folder is not writable. Check its permissions.",
+      "native-tools": "git was not found on PATH: worktree isolation is unavailable."
+    },
+    "actions": "Actions",
+    "probe": "Check the connection",
+    "exportBundle": "Export the diagnostic bundle",
+    "openLogs": "Open the log folder",
+    "probeOk": "Provider reachable ({{ms}} ms)",
+    "probeFail": "Failed at the {{step}} step ({{ms}} ms)",
+    "step": {
+      "dns": "DNS",
+      "tcp": "TCP",
+      "tls": "TLS",
+      "auth": "authentication",
+      "model": "model"
+    },
+    "reportFailed": "Could not build the health report.",
+    "probeFailed": "The connection check could not run.",
+    "bundleExported": "Bundle written to {{path}}",
+    "bundleFailed": "The bundle could not be exported."
   },
   "settingsLevels": {
     "title": "Settings levels",

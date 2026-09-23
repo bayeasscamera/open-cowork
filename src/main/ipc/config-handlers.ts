@@ -25,6 +25,8 @@ import type {
   ProviderModelInfo,
 } from '../../shared/types';
 import type { SessionManager } from '../session/session-manager';
+import { getSharedProjectStore } from '../projects/project-store';
+import { collectHealthReport } from '../utils/health-report-collector';
 
 /** Accessors for app-level state owned by main/index.ts. */
 interface ConfigIpcContext {
@@ -228,6 +230,29 @@ export function registerConfigIpcHandlers(context: ConfigIpcContext): void {
       throw error;
     }
   });
+
+  /**
+   * Whole-app health report for the diagnostics page. The projection uses the
+   * same global -> project -> session ladder as the agent runner, so the
+   * credentials being probed are the ones a run would actually use.
+   */
+  ipcMain.handle(
+    'diagnostics.report',
+    (_event, payload?: { sessionId?: string | null }): unknown => {
+      try {
+        const session = payload?.sessionId
+          ? context.getSessionManager()?.loadSession(payload.sessionId) ?? null
+          : null;
+        const project = session?.projectId
+          ? getSharedProjectStore().get(session.projectId) ?? null
+          : null;
+        return collectHealthReport({ session, project });
+      } catch (error) {
+        logError('[Config] Error building the health report:', error);
+        return collectHealthReport({});
+      }
+    }
+  );
 
   ipcMain.handle('config.discover-local', async (_event, payload?: { baseUrl?: string }) => {
     try {

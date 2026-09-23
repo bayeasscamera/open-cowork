@@ -35,6 +35,7 @@ import type {
   DelegationStats,
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
+import type { HealthReport } from '../shared/health-report';
 import type {
   McpServerConfig,
   McpTool,
@@ -510,6 +511,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.diagnose', input),
     discoverLocal: (payload?: { baseUrl?: string }): Promise<LocalOllamaDiscoveryResult> =>
       ipcRenderer.invoke('config.discover-local', payload),
+  },
+
+  /**
+   * Whole-app diagnostics. The report is built in the main process from real
+   * probes (credentials of the ConfigSet in effect, workspace, sandbox,
+   * storage, git) — the renderer only renders it.
+   */
+  diagnostics: {
+    report: (sessionId?: string | null): Promise<HealthReport> =>
+      ipcRenderer.invoke('diagnostics.report', { sessionId: sessionId ?? null }),
   },
 
   // Window control methods
@@ -1228,6 +1239,9 @@ declare global {
           limit?: number
         ) => Promise<Array<{ path: string; modifiedAt: number; size: number }>>;
         readFile: (filePath: string) => Promise<string>;
+      };
+      diagnostics: {
+        report: (sessionId?: string | null) => Promise<HealthReport>;
       };
       config: {
         get: () => Promise<AppConfig>;

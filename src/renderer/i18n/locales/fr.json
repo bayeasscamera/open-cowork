@@ -294,6 +294,8 @@
     "panelDesc": "Configurez votre espace de travail, vos outils et le comportement du compte.",
     "general": "Général",
     "generalDesc": "Apparence, langue et préférences",
+    "diagnostics": "Diagnostics",
+    "diagnosticsDesc": "Vérifier identifiants, espace de travail, bac à sable et stockage",
     "groupModel": "Modèle & IA",
     "groupExtensions": "Extensions & Outils",
     "groupPersonal": "Personnalisation",
@@ -1713,6 +1715,59 @@
         "not-required": "non requis"
       }
     }
+  },
+  "diagnostics": {
+    "subtitle": "Identifiants, espace de travail, bac à sable et stockage des réglages effectifs",
+    "overall": {
+      "ok": "Tout est sain",
+      "warn": "Utilisable, avec des avertissements",
+      "fail": "Quelque chose bloque"
+    },
+    "refresh": "Relancer les vérifications",
+    "running": "Vérification…",
+    "effectiveTitle": "Réglages effectifs",
+    "decidedAt": "ConfigSet décidé au niveau {{configSet}}, modèle au niveau {{model}}",
+    "check": {
+      "credentials": "Identifiants du fournisseur",
+      "model": "Modèle sélectionné",
+      "workspace": "Espace de travail de la session",
+      "sandbox": "Isolation du bac à sable",
+      "storage": "Stockage de l'application",
+      "native-tools": "Outils natifs"
+    },
+    "checkDetail": {
+      "credentials": "Le ConfigSet effectif peut joindre son fournisseur",
+      "model": "Un modèle est épinglé quelque part dans l'échelle",
+      "workspace": "Le dossier dans lequel la session s'exécute",
+      "sandbox": "Là où les outils sont exécutés",
+      "storage": "Répertoire de configuration et de base de données",
+      "native-tools": "git alimente l'isolation par worktree"
+    },
+    "fix": {
+      "credentials": "Ouvrez les réglages Modèle & IA et ajoutez une clé API pour ce ConfigSet.",
+      "model": "Choisissez un modèle dans l'échelle de réglages ou dans le ConfigSet.",
+      "workspace": "Resélectionnez un dossier existant pour cette session.",
+      "sandbox": "Aucun moteur de bac à sable détecté : les outils s'exécutent sur l'hôte. Installez WSL ou Lima, ou désactivez le bac à sable.",
+      "storage": "Le dossier de l'application n'est pas accessible en écriture. Vérifiez ses permissions.",
+      "native-tools": "git est introuvable dans le PATH : l'isolation par worktree est indisponible."
+    },
+    "actions": "Actions",
+    "probe": "Tester la connexion",
+    "exportBundle": "Exporter le paquet de diagnostic",
+    "openLogs": "Ouvrir le dossier des journaux",
+    "probeOk": "Fournisseur joignable ({{ms}} ms)",
+    "probeFail": "Échec à l'étape {{step}} ({{ms}} ms)",
+    "step": {
+      "dns": "DNS",
+      "tcp": "TCP",
+      "tls": "TLS",
+      "auth": "authentification",
+      "model": "modèle"
+    },
+    "reportFailed": "Impossible de construire le rapport de santé.",
+    "probeFailed": "Le test de connexion n'a pas pu s'exécuter.",
+    "bundleExported": "Paquet écrit dans {{path}}",
+    "bundleFailed": "Le paquet n'a pas pu être exporté."
   },
   "settingsLevels": {
     "title": "Niveaux de réglages",

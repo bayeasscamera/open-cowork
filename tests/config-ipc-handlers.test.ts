@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
   listOllamaModels: vi.fn(),
   exportOnConfigChange: vi.fn(),
   sendToRenderer: vi.fn(),
+  collectHealthReport: vi.fn(),
+  projectStoreGet: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -43,6 +45,12 @@ vi.mock('../src/main/utils/logger', () => ({
   log: vi.fn(),
   logWarn: vi.fn(),
   logError: vi.fn(),
+}));
+vi.mock('../src/main/utils/health-report-collector', () => ({
+  collectHealthReport: mocks.collectHealthReport,
+}));
+vi.mock('../src/main/projects/project-store', () => ({
+  getSharedProjectStore: () => ({ get: mocks.projectStoreGet }),
 }));
 
 import { registerConfigIpcHandlers } from '../src/main/ipc/config-handlers';
@@ -91,7 +99,19 @@ describe('config IPC handlers', () => {
       'config.save',
       'config.switchSet',
       'config.test',
+      'diagnostics.report',
     ]);
+  });
+
+  it('diagnostics.report delegates to the health collector', async () => {
+    mocks.collectHealthReport.mockReturnValue({ status: 'ok', checks: [], generatedAt: 1 });
+    register();
+    expect(await invoke('diagnostics.report', { sessionId: null })).toEqual({
+      status: 'ok',
+      checks: [],
+      generatedAt: 1,
+    });
+    expect(mocks.collectHealthReport).toHaveBeenCalledWith({ session: null, project: null });
   });
 
   it('config.get returns the store snapshot and swallows store errors', async () => {

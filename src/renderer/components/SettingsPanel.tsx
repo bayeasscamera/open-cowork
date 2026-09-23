@@ -13,6 +13,7 @@ import {
   BrainCircuit,
   Network,
   ExternalLink,
+  Stethoscope,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -24,6 +25,7 @@ import { SettingsConnectors } from './settings/SettingsConnectors';
 import { SettingsSkills } from './settings/SettingsSkills';
 import { SettingsMods } from './settings/SettingsMods';
 import { SettingsSchedule } from './settings/SettingsSchedule';
+import { SettingsDiagnostics } from './settings/SettingsDiagnostics';
 import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
@@ -42,6 +44,7 @@ interface SettingsPanelProps {
     | 'schedule'
     | 'remote'
     | 'logs'
+    | 'diagnostics'
     | 'general';
 }
 
@@ -56,6 +59,7 @@ type TabId =
   | 'schedule'
   | 'remote'
   | 'logs'
+  | 'diagnostics'
   | 'general';
 
 const VALID_TABS = new Set<TabId>([
@@ -69,6 +73,7 @@ const VALID_TABS = new Set<TabId>([
   'schedule',
   'remote',
   'logs',
+  'diagnostics',
   'general',
 ]);
 
@@ -82,7 +87,7 @@ const TAB_GROUPS: TabGroup[] = [
   { labelKey: 'settings.groupExtensions', tabs: ['connectors', 'skills'] },
   { labelKey: 'settings.groupPersonal', tabs: ['personalization', 'memory'] },
   { labelKey: 'settings.groupAutomation', tabs: ['schedule', 'remote'] },
-  { labelKey: 'settings.groupSystem', tabs: ['logs', 'general'] },
+  { labelKey: 'settings.groupSystem', tabs: ['diagnostics', 'logs', 'general'] },
 ];
 
 /**
@@ -224,6 +229,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.general'),
       icon: Globe,
       description: t('settings.generalDesc'),
+    },
+    {
+      id: 'diagnostics' as TabId,
+      label: t('settings.diagnostics'),
+      icon: Stethoscope,
+      description: t('settings.diagnosticsDesc'),
     },
   ];
   const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
@@ -405,6 +416,11 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
                 </div>
                 <div className={activeTab === 'general' ? '' : 'hidden'}>
                   {viewedTabs.has('general') && <SettingsGeneral />}
+                </div>
+                <div className={activeTab === 'diagnostics' ? '' : 'hidden'}>
+                  {viewedTabs.has('diagnostics') && (
+                    <SettingsDiagnostics isActive={activeTab === 'diagnostics'} />
+                  )}
                 </div>
               </div>
             </div>
