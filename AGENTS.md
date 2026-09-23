@@ -108,7 +108,6 @@ Only after the commit is done:
 | `agent/agent-runner.ts` | Core agent execution loop. Orchestrates LLM calls, tool execution, compaction |
 | `agent/elite-coding-intelligence.ts` | System prompt for elite engineering. `EliteCodingIntelligence.getElitePrompt()` |
 | `agent/self-healing-runner.ts` | Retry & self-repair loop on agent failures |
-| `agent/surgical-patcher.ts` | Applies minimal surgical patches (avoids full-file rewrites) |
 | `agent/model-router.ts` | Routes tasks to cheapest capable model |
 | `agent/multi-agent-coordinator.ts` | Coordinates parallel sub-agents |
 | `memory/memory-manager.ts` | **The brain**: LLM summaries, causal error-pattern memory, context compression |

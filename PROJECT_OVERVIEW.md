@@ -117,7 +117,7 @@
 
 ### Ce qui fonctionne et est stable
 - Boucle d'agent complète avec exécution d'outils, streaming de réponses et thinking.
-- Système de fichiers, lecture/écriture chirurgicale (`surgical-patcher`), recherche AST et linter.
+- Système de fichiers, recherche AST et linter.
 - Recherche Web intégrée (`web_search` DuckDuckGo/Brave/Tavily et `web_fetch`).
 - Gestion de sessions complètes : création, archivage, épinglage, renommage et suppression.
 - Système d'édition de messages utilisateur et relance (Retry) de réponses.
