@@ -1644,6 +1644,11 @@
     "blockers": {
       "title": "执行被阻塞"
     },
+    "conflicts": {
+      "title": "写入冲突已串行化",
+      "hint": "这些任务声明的文件相互重叠，因此改为依次执行而不是并行执行。",
+      "item": "{{a}} 和 {{b}} 都会写入 {{paths}}"
+    },
     "approval": {
       "title": "审批",
       "approve": "批准计划",
@@ -1710,6 +1715,7 @@
       "empty": "尚无任务图。",
       "group": "第 {{index}} 组",
       "parallel": "{{count}} 个节点",
+      "conflict": "写入冲突",
       "dependsOn": "依赖",
       "tokens": "{{count}} tokens",
       "files": "{{count}} 个文件",

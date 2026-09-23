@@ -1643,6 +1643,11 @@
     "blockers": {
       "title": "Exécution bloquée"
     },
+    "conflicts": {
+      "title": "Conflits d’écriture sérialisés",
+      "hint": "Ces tâches déclarent des fichiers qui se recouvrent : elles sont exécutées l’une après l’autre au lieu d’en parallèle.",
+      "item": "{{a}} et {{b}} écrivent tous les deux {{paths}}"
+    },
     "approval": {
       "title": "Approbation",
       "approve": "Approuver le plan",
@@ -1709,6 +1714,7 @@
       "empty": "Aucun graphe de tâches pour le moment.",
       "group": "Groupe {{index}}",
       "parallel": "{{count}} nœud(s)",
+      "conflict": "conflit d’écriture",
       "dependsOn": "dépend de",
       "tokens": "{{count}} jetons",
       "files": "{{count}} fichier(s)",

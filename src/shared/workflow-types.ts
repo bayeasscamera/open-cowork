@@ -18,6 +18,7 @@ import type {
   WorkflowMode,
 } from './task-contract';
 import type { ApprovalDecision } from './task-contract';
+import type { WriteScopeConflict } from './write-scope-conflicts';
 
 export type {
   AgentRole,
@@ -30,6 +31,7 @@ export type {
   TaskContract,
   WorkflowMode,
 };
+export type { WriteScopeConflict } from './write-scope-conflicts';
 
 // ---------------------------------------------------------------------------
 // Permissions (Phase 5)
@@ -136,7 +138,10 @@ export interface WorkflowState {
   contractId: string | null;
   objective: string;
   tasks: AtomicTask[];
+  /** Dependency groups, split further so no group holds two conflicting writers. */
   groups: AtomicTask[][];
+  /** Unordered task pairs whose write scopes overlap (serialised at run time). */
+  writeConflicts: WriteScopeConflict[];
   completedTaskIds: string[];
   readyTaskIds: string[];
   approval: ApprovalRequest | null;

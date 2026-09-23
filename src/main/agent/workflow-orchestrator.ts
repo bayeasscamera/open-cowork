@@ -33,7 +33,8 @@ import type {
 } from './checkpoint-manager';
 import type { AuditLog } from './audit-log';
 import type { PermissionPolicy } from './permission-policy';
-import { assertExecutablePlan, computeExecutionGroups } from './task-planner';
+import { assertExecutablePlan, planConflictFreeGroups } from './task-planner';
+import { overlappingScopePaths, writeScopesOverlap } from '../../shared/write-scope-conflicts';
 import { verifyPlan, verifyTask } from './verification';
 
 /** Everything the orchestrator needs to survive a restart (Phase 1.6). */
@@ -203,9 +204,13 @@ export class WorkflowOrchestrator {
   }
 
   /**
-   * Phase 3.3 — start every task that has no unmet dependency in one call. Tasks
-   * flagged `parallelizable: false` (writers) are started sequentially so two
-   * agents never race on the same files.
+   * Phase 3.3 — start every task that has no unmet dependency in one call.
+   *
+   * A task is deferred when it is flagged `parallelizable: false` and a writer
+   * already started, or when its write scope provably overlaps an already
+   * started task (Lot D). The scope check is the real guarantee: the boolean
+   * alone ignored the paths, so two tasks that both declared `src/a.ts` could
+   * be started together and the last writer would silently win.
    */
   public async startReadyTasks(): Promise<{
     started: TaskCheckpoint[];
@@ -224,9 +229,35 @@ export class WorkflowOrchestrator {
     const started: TaskCheckpoint[] = [];
     const skipped: string[] = [];
     const reasons: string[] = [];
+    const startedTasks: AtomicTask[] = [];
     let startedWriter = false;
 
     for (const task of ready) {
+      // Two writers must never race on the same file. The boolean flag below
+      // only knows "this task writes"; it cannot tell whether the paths
+      // collide, so an explicit scope comparison runs first.
+      const overlap =
+        task.writeScope.length > 0
+          ? startedTasks.find(
+              (candidate) =>
+                candidate.writeScope.length > 0 &&
+                writeScopesOverlap(task.writeScope, candidate.writeScope)
+            )
+          : undefined;
+      if (overlap) {
+        skipped.push(task.id);
+        reasons.push(
+          'Task "' +
+            task.id +
+            '" overlaps task "' +
+            overlap.id +
+            '" on ' +
+            overlappingScopePaths(task.writeScope, overlap.writeScope).join(', ') +
+            '; started one at a time.'
+        );
+        continue;
+      }
+
       const writer = !task.parallelizable;
       if (writer && startedWriter) {
         skipped.push(task.id);
@@ -234,6 +265,7 @@ export class WorkflowOrchestrator {
         continue;
       }
       started.push(await this.startTask(task.id));
+      startedTasks.push(task);
       if (writer) {
         startedWriter = true;
       }
@@ -531,13 +563,15 @@ export class WorkflowOrchestrator {
   }
 
   public getState(): WorkflowState {
+    const grouping = planConflictFreeGroups(this.tasks);
     return {
       phase: this.phase,
       mode: this.mode,
       contractId: this.contract?.id ?? null,
       objective: this.contract?.objective ?? '',
       tasks: this.tasks,
-      groups: computeExecutionGroups(this.tasks),
+      groups: grouping.groups,
+      writeConflicts: grouping.conflicts,
       completedTaskIds: Array.from(this.completedTaskIds),
       readyTaskIds: this.readyTaskIds(),
       approval: this.approval,

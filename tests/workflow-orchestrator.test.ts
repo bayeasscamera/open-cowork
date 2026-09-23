@@ -53,6 +53,16 @@ function executeContract() {
   });
 }
 
+function wideContract() {
+  return createTaskContract({
+    objective: 'Ship it',
+    allowedFiles: ['src/**'],
+    acceptanceCriteria: [criterion],
+    expectedEvidence: [evidence],
+    budget: { maxTokens: 100 },
+  });
+}
+
 function executeTask(overrides: Record<string, unknown> = {}) {
   return createAtomicTask({
     id: 't1',
@@ -205,6 +215,50 @@ describe('workflow-orchestrator', () => {
     orchestrator.loadContract(executeContract(), [executeTask(), dependent]);
     const state = orchestrator.getState();
     expect(state.groups).toHaveLength(2);
+  });
+
+  it('serialises two ready writers that share a file', async () => {
+    const { orchestrator } = makeOrchestrator();
+    orchestrator.loadContract(wideContract(), [
+      executeTask({ id: 't1', title: 'First' }),
+      executeTask({ id: 't2', title: 'Second' }),
+    ]);
+    orchestrator.requestApproval();
+    orchestrator.approve({ approved: true });
+    orchestrator.startExecution();
+
+    const run = await orchestrator.startReadyTasks();
+    expect(run.started.map((checkpoint) => checkpoint.taskId)).toEqual(['t1']);
+    expect(run.skipped).toEqual(['t2']);
+    expect(run.reasons[0]).toContain('overlaps task "t1"');
+    expect(run.reasons[0]).toContain('src/a.ts');
+  });
+
+  it('starts two ready writers whose scopes are disjoint', async () => {
+    const { orchestrator } = makeOrchestrator();
+    orchestrator.loadContract(wideContract(), [
+      executeTask({ id: 't1', title: 'First', writeScope: ['src/a.ts'] }),
+      executeTask({ id: 't2', title: 'Second', writeScope: ['src/b.ts'] }),
+    ]);
+    orchestrator.requestApproval();
+    orchestrator.approve({ approved: true });
+    orchestrator.startExecution();
+
+    const run = await orchestrator.startReadyTasks();
+    expect(run.started.map((checkpoint) => checkpoint.taskId)).toEqual(['t1', 't2']);
+    expect(run.skipped).toEqual([]);
+  });
+
+  it('reports write conflicts and conflict-free groups in the state', () => {
+    const { orchestrator } = makeOrchestrator();
+    orchestrator.loadContract(wideContract(), [
+      executeTask({ id: 't1', title: 'First' }),
+      executeTask({ id: 't2', title: 'Second' }),
+    ]);
+
+    const state = orchestrator.getState();
+    expect(state.writeConflicts).toEqual([{ a: 't1', b: 't2', paths: ['src/a.ts'] }]);
+    expect(state.groups.map((group) => group.map((task) => task.id))).toEqual([['t1'], ['t2']]);
   });
 
   it('emits a state change for every transition', async () => {

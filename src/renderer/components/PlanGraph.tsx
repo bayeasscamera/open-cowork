@@ -71,6 +71,9 @@ export function PlanGraph({ state }: PlanGraphProps) {
             {group.map((task) => {
               const checkpoint = state.checkpoints.find((item) => item.taskId === task.id);
               const status = statusFor(task, state, checkpoint);
+              const conflicted = state.writeConflicts.some(
+                (conflict) => conflict.a === task.id || conflict.b === task.id
+              );
               return (
                 <li
                   key={task.id}
@@ -84,6 +87,14 @@ export function PlanGraph({ state }: PlanGraphProps) {
                     <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
                       {t('planPanel.role.' + task.role)}
                     </span>
+                    {conflicted && (
+                      <span
+                        className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] text-amber-400"
+                        title={t('planPanel.conflicts.hint')}
+                      >
+                        {t('planPanel.graph.conflict')}
+                      </span>
+                    )}
                     <span className="ml-auto text-[10px] text-text-muted">
                       {t('planPanel.graph.status.' + status)}
                     </span>

@@ -120,6 +120,7 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
 
   const approval = state?.approval ?? null;
   const blockers = state?.blockers ?? [];
+  const writeConflicts = state?.writeConflicts ?? [];
   const approved = state?.approvalOutcome?.approved === true;
 
   return (
@@ -258,6 +259,29 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
                 <ul className="mt-1 space-y-0.5 text-xs text-amber-300/90">
                   {blockers.map((blocker) => (
                     <li key={blocker}>{blocker}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {writeConflicts.length > 0 && (
+              <section className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-amber-400">
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  {t('planPanel.conflicts.title')}
+                </div>
+                <p className="mt-1 text-[11px] text-amber-300/90">
+                  {t('planPanel.conflicts.hint')}
+                </p>
+                <ul className="mt-1 space-y-0.5 text-xs text-amber-300/90">
+                  {writeConflicts.map((conflict) => (
+                    <li key={conflict.a + '|' + conflict.b}>
+                      {t('planPanel.conflicts.item', {
+                        a: conflict.a,
+                        b: conflict.b,
+                        paths: conflict.paths.join(', '),
+                      })}
+                    </li>
                   ))}
                 </ul>
               </section>

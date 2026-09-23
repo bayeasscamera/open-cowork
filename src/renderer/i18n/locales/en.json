@@ -1644,6 +1644,11 @@
     "blockers": {
       "title": "Execution blocked"
     },
+    "conflicts": {
+      "title": "Write conflicts serialised",
+      "hint": "These tasks declare overlapping files, so they run one at a time instead of in parallel.",
+      "item": "{{a}} and {{b}} both write {{paths}}"
+    },
     "approval": {
       "title": "Approval",
       "approve": "Approve plan",
@@ -1710,6 +1715,7 @@
       "empty": "No task graph yet.",
       "group": "Group {{index}}",
       "parallel": "{{count}} node(s)",
+      "conflict": "write conflict",
       "dependsOn": "depends on",
       "tokens": "{{count}} tokens",
       "files": "{{count}} file(s)",

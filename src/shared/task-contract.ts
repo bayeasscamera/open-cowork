@@ -14,6 +14,8 @@
  *   5. What must be proven, and who must approve? -> `expectedEvidence`, `approvalPolicy`
  */
 
+import type { WriteScopeConflict } from './write-scope-conflicts';
+
 // ---------------------------------------------------------------------------
 // Workflow modes (Phase 1)
 // ---------------------------------------------------------------------------
@@ -438,6 +440,12 @@ export interface PlanSummary {
   totalBudget: TaskBudget;
   highestRisk: RiskLevel;
   roles: AgentRole[];
+  /**
+   * Pairs of unordered tasks whose declared write scopes overlap. They are
+   * reported here and serialised at run time; an empty list means the plan is
+   * safe to run fully in parallel.
+   */
+  writeConflicts: WriteScopeConflict[];
 }
 
 export function createAtomicTask(

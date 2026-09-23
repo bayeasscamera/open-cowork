@@ -4,6 +4,7 @@ import {
   collectPlannedCommands,
   collectRequestedCapabilities,
   computeExecutionGroups,
+  planConflictFreeGroups,
   summarizePlan,
   topologicalSort,
   validateTaskGraph,
@@ -165,12 +166,42 @@ describe('task-planner', () => {
 
     const summary = summarizePlan(tasks);
     expect(summary.taskCount).toBe(2);
-    expect(summary.groupCount).toBe(1);
+    // Both tasks declare `src/b.ts`, so they are not actually parallel: the
+    // conflict-free grouping splits them instead of reporting one group.
+    expect(summary.groupCount).toBe(2);
+    expect(summary.writeConflicts).toEqual([{ a: 'a', b: 'b', paths: ['src/b.ts'] }]);
     expect(summary.filesTouched).toEqual(['src/a.ts', 'src/b.ts']);
     expect(summary.highestRisk).toBe('high');
     expect(summary.totalBudget.maxTokens).toBe(150);
     expect(summary.totalBudget.estimatedCostUsd).toBeCloseTo(0.05);
     expect(summary.roles.sort()).toEqual(['implementer', 'security']);
+  });
+
+  it('serialises conflicting writers into separate groups', () => {
+    const tasks = [
+      createAtomicTask({ id: 'a', title: 'A', writeScope: ['src/shared.ts'] }),
+      createAtomicTask({ id: 'b', title: 'B', writeScope: ['src/shared.ts'] }),
+      createAtomicTask({ id: 'c', title: 'C', writeScope: ['src/other.ts'] }),
+    ];
+
+    const grouping = planConflictFreeGroups(tasks);
+    expect(grouping.conflicts).toEqual([{ a: 'a', b: 'b', paths: ['src/shared.ts'] }]);
+    expect(grouping.groups.map((group) => group.map((task) => task.id))).toEqual([
+      ['a', 'c'],
+      ['b'],
+    ]);
+    expect(grouping.serialized).toEqual([{ before: 'a', after: 'b' }]);
+  });
+
+  it('keeps ordered writers in one dependency chain', () => {
+    const tasks = [
+      createAtomicTask({ id: 'a', title: 'A', writeScope: ['src/a.ts'] }),
+      createAtomicTask({ id: 'b', title: 'B', writeScope: ['src/a.ts'], dependsOn: ['a'] }),
+    ];
+
+    const grouping = planConflictFreeGroups(tasks);
+    expect(grouping.conflicts).toEqual([]);
+    expect(grouping.groups).toHaveLength(2);
   });
 
   it('collects capabilities and planned commands without duplicates', () => {

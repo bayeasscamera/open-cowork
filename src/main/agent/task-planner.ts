@@ -17,6 +17,11 @@ import type {
   TaskContract,
 } from '../../shared/task-contract';
 import { maxRisk } from '../../shared/task-contract';
+import {
+  findWriteScopeConflicts,
+  serializeConflictingGroups,
+  type WriteScopeConflict,
+} from '../../shared/write-scope-conflicts';
 import { matchGlob } from './permission-policy';
 
 export type TaskGraphIssueCode =
@@ -214,6 +219,42 @@ export function computeExecutionGroups(tasks: AtomicTask[]): AtomicTask[][] {
   return groups;
 }
 
+export interface ConflictFreeGrouping {
+  /** Dependency groups with conflicting writers pushed into a later group. */
+  groups: AtomicTask[][];
+  /** Every unordered pair of tasks whose write scopes overlap. */
+  conflicts: WriteScopeConflict[];
+  /** Ordering edges added to remove a conflict: `before` runs first. */
+  serialized: Array<{ before: string; after: string }>;
+}
+
+/**
+ * Phase 3.3 + Lot D: the groups a plan may *actually* run in parallel.
+ *
+ * `computeExecutionGroups` only knows about dependencies, so two implementers
+ * that both declare `src/a.ts` end up in the same group and race. This splits
+ * each dependency group until no group holds two conflicting writers, and
+ * reports the conflicts so the UI can explain the extra sequencing instead of
+ * silently showing a parallelism that would lose a write.
+ */
+export function planConflictFreeGroups(tasks: AtomicTask[]): ConflictFreeGrouping {
+  const conflicts = findWriteScopeConflicts(tasks);
+  const dependencyGroups = computeExecutionGroups(tasks).map((group) =>
+    group.map((task) => task.id)
+  );
+  const { groups, serialized } = serializeConflictingGroups(dependencyGroups, conflicts);
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  return {
+    groups: groups.map((group) =>
+      group
+        .map((id) => byId.get(id))
+        .filter((task): task is AtomicTask => task !== undefined)
+    ),
+    conflicts,
+    serialized,
+  };
+}
+
 export interface PlanGateResult {
   executable: boolean;
   issues: TaskGraphIssue[];
@@ -279,9 +320,13 @@ export function summarizePlan(tasks: AtomicTask[]): PlanSummary {
     }
   }
 
+  const grouping = planConflictFreeGroups(tasks);
+
   return {
     taskCount: tasks.length,
-    groupCount: computeExecutionGroups(tasks).length,
+    // Conflict-free: a group is only counted as parallel when its writers do
+    // not overlap, which is what the run will actually do.
+    groupCount: grouping.groups.length,
     filesTouched: Array.from(filesTouched).sort(),
     totalBudget: {
       maxTokens: hasTokens ? maxTokens : undefined,
@@ -291,6 +336,7 @@ export function summarizePlan(tasks: AtomicTask[]): PlanSummary {
     },
     highestRisk,
     roles: Array.from(roles),
+    writeConflicts: grouping.conflicts,
   };
 }
 
