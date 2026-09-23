@@ -29,7 +29,7 @@ export interface CachedPiSession {
   thinkingLevel: string;
   runtimeSignature: string;
   skillsSignature?: string;
-  refreshMemoryContext?: boolean;
+  sessionContextSignature?: string;
   ollamaNumCtx?: { value: number };
 }
 
@@ -59,7 +59,7 @@ export interface CreatePiSessionDeps {
   customTools: ResolvedSessionOptions['customTools'];
   runtimeSignature: string;
   skillsSignature: string;
-  refreshMemoryContext?: boolean;
+  sessionContextSignature?: string;
   sessions: Map<string, CachedPiSession>;
   maxCachedSessions: number;
   installPermissionHook: (piSession: PiAgentSession) => void;
@@ -174,7 +174,7 @@ export async function createPiSession(deps: CreatePiSessionDeps): Promise<PiAgen
     thinkingLevel: deps.thinkingLevel,
     runtimeSignature: deps.runtimeSignature,
     skillsSignature: deps.skillsSignature,
-    refreshMemoryContext: deps.refreshMemoryContext,
+    sessionContextSignature: deps.sessionContextSignature,
   });
 
   // Outgoing-payload hook (Ollama num_ctx + relay thinking-part repair).

@@ -20,6 +20,11 @@ import { assembleContextualPrompt } from './contextual-prompt';
 import { buildPiSessionTools } from './pi-session-tools';
 import { createPiSession, type CachedPiSession } from './create-pi-session';
 import { reusePiSession } from './reuse-pi-session';
+import {
+  evictCachedPiSession,
+  hasSessionContextChanged,
+  resolvePiSessionRecreateReason,
+} from './pi-session-lifecycle';
 import { resolveProjectContext, type ProjectContextResolution } from '../projects/project-context';
 import {
   buildDraftDetailText,
@@ -899,28 +904,17 @@ export class CoworkAgentRunner {
       // For cold starts (new SDK session with existing DB history), we inject
       // a token-budgeted summary of recent history as a preamble.
       let cachedSession = this.piSessions.get(session.id);
-      if (cachedSession && cachedSession.runtimeSignature !== sessionRuntimeSignature) {
-        logCtx('[CoworkAgentRunner] Runtime changed, recreating cached pi session:', session.id);
-        try {
-          cachedSession.session.dispose();
-        } catch (disposeError) {
-          logWarn('[CoworkAgentRunner] dispose error while recreating pi session:', disposeError);
+      if (cachedSession) {
+        // Runtime wiring and skill paths are creation-time state too; the
+        // lifecycle module owns the check order and the per-reason log wording.
+        const recreateReason = resolvePiSessionRecreateReason(cachedSession, {
+          runtimeSignature: sessionRuntimeSignature,
+          skillsSignature,
+        });
+        if (recreateReason) {
+          evictCachedPiSession(this.piSessions, session.id, recreateReason);
+          cachedSession = undefined;
         }
-        this.piSessions.delete(session.id);
-        cachedSession = undefined;
-      }
-      if (cachedSession && cachedSession.skillsSignature !== skillsSignature) {
-        logCtx('[CoworkAgentRunner] Skills changed, recreating cached pi session:', session.id);
-        try {
-          cachedSession.session.dispose();
-        } catch (disposeError) {
-          logWarn(
-            '[CoworkAgentRunner] dispose error while recreating pi session for skills:',
-            disposeError
-          );
-        }
-        this.piSessions.delete(session.id);
-        cachedSession = undefined;
       }
 
       const extensionResult = this.extensionManager
@@ -940,13 +934,8 @@ export class CoworkAgentRunner {
       const memoryEnabled = extensionResult.memoryEnabled === true;
       // SDK tools/system prompt are creation-time state. Rebuild before history
       // reconstruction, including the first disabled turn after an enabled run.
-      if (cachedSession && (extensionResult.refreshSession || cachedSession.refreshMemoryContext)) {
-        try {
-          cachedSession.session.dispose();
-        } catch {
-          logWarn('[CoworkAgentRunner] Could not dispose memory session cache');
-        }
-        this.piSessions.delete(session.id);
+      if (cachedSession && hasSessionContextChanged(cachedSession, extensionResult)) {
+        evictCachedPiSession(this.piSessions, session.id, 'context');
         cachedSession = undefined;
       }
 
@@ -1063,7 +1052,7 @@ export class CoworkAgentRunner {
           customTools,
           runtimeSignature: sessionRuntimeSignature,
           skillsSignature,
-          refreshMemoryContext: extensionResult.refreshSession,
+          sessionContextSignature: extensionResult.sessionContextSignature,
           sessions: this.piSessions,
           maxCachedSessions: CoworkAgentRunner.MAX_CACHED_SESSIONS,
           installPermissionHook: (target) => this.installPermissionHook(target, session.id),
@@ -1569,19 +1558,7 @@ export class CoworkAgentRunner {
           // Invalidate the cached SDK session so the next retry does a clean
           // cold start. Reusing a session whose AbortController is already
           // triggered causes the upstream to reject the next request with 400.
-          const errCached = this.piSessions.get(session.id);
-          if (errCached) {
-            try {
-              errCached.session.dispose();
-            } catch {
-              /* ignore dispose errors */
-            }
-            this.piSessions.delete(session.id);
-            logCtx(
-              '[CoworkAgentRunner] Evicted corrupted pi session after stream error:',
-              session.id
-            );
-          }
+          evictCachedPiSession(this.piSessions, session.id, 'stream-error');
         } else {
           logCtx('[CoworkAgentRunner] Aborted by user');
           this.sendTraceUpdate(session.id, thinkingStepId, {
@@ -1625,19 +1602,7 @@ export class CoworkAgentRunner {
       // state (message history partially written, abort signal fired, etc.).
       // Forcing a cold start on the next retry is safer than reusing it.
       if (terminalErrorText) {
-        const finalCached = this.piSessions.get(session.id);
-        if (finalCached) {
-          try {
-            finalCached.session.dispose();
-          } catch {
-            /* ignore */
-          }
-          this.piSessions.delete(session.id);
-          logCtx(
-            '[CoworkAgentRunner] Evicted pi session after terminal error (finally):',
-            session.id
-          );
-        }
+        evictCachedPiSession(this.piSessions, session.id, 'terminal-error');
       }
 
       // Sync changes from sandbox back to the host OS (but don't cleanup - the

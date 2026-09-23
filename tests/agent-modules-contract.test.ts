@@ -90,6 +90,7 @@ const EXTRACTED_MODULES = [
   'loop-guard-controller',
   'runtime-config-summary',
   'skills-directory-setup',
+  'pi-session-lifecycle',
 ];
 
 describe('extracted agent modules — environment boundary', () => {
@@ -127,6 +128,11 @@ const WIRING: Array<{ module: string; iface: string; declaration: string }> = [
     module: 'reuse-pi-session',
     iface: 'ReusePiSessionDeps',
     declaration: 'await reusePiSession(',
+  },
+  {
+    module: 'pi-session-lifecycle',
+    iface: 'PiSessionInfrastructureSignatures',
+    declaration: 'resolvePiSessionRecreateReason(cachedSession, {',
   },
   {
     module: 'session-event-logging',

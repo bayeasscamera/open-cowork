@@ -38,6 +38,7 @@ export class AgentRuntimeExtensionManager {
     const customTools: AgentRuntimeCustomTool[] = [];
     const systemContexts: string[] = [];
     let refreshSession = false;
+    let sessionContextSignature: string | undefined = undefined;
     let memoryEnabled: boolean | undefined = undefined;
 
     for (const extension of this.extensions) {
@@ -54,6 +55,9 @@ export class AgentRuntimeExtensionManager {
         }
         if (result.systemContext) systemContexts.push(result.systemContext);
         refreshSession ||= result.refreshSession === true;
+        if (result.sessionContextSignature !== undefined) {
+          sessionContextSignature = result.sessionContextSignature;
+        }
         if (result.memoryEnabled !== undefined) memoryEnabled = result.memoryEnabled;
         if (result.customTools?.length) {
           customTools.push(...result.customTools);
@@ -71,6 +75,7 @@ export class AgentRuntimeExtensionManager {
       customTools: mergeCustomTools(customTools),
       systemContext: systemContexts.join('\n\n') || undefined,
       refreshSession,
+      sessionContextSignature,
       memoryEnabled,
     };
   }

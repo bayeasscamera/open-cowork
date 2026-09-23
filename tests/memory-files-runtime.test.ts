@@ -73,7 +73,8 @@ describe('versioned memory service and extension integration', () => {
     ]);
     expect(result.promptPrefix).toBe('legacy core and experience');
     expect(result.memoryEnabled).toBe(true);
-    expect(result.refreshSession).toBe(true);
+    expect(result.sessionContextSignature).toEqual(expect.any(String));
+    expect(result.sessionContextSignature).not.toBe('');
   });
 
   it('retains local memory tools and profile when auxiliary retrieval fails', async () => {
@@ -155,12 +156,29 @@ describe('versioned memory service and extension integration', () => {
     expect(before.systemContext).toContain('before');
     expect(after.systemContext).toContain('after');
     expect(after.systemContext).not.toContain(initial.version);
-    expect(after.refreshSession).toBe(true);
+    // The profile changed, so the creation-time context signature must change
+    // too — that is what makes the runner rebuild the cached SDK session.
+    expect(before.sessionContextSignature).toEqual(expect.any(String));
+    expect(after.sessionContextSignature).not.toBe(before.sessionContextSignature);
     state.enabled = false;
     const disabled = await manager.beforeSessionRun(context());
     expect(disabled.customTools).toEqual([]);
     expect(disabled.systemContext).toBeUndefined();
     expect(disabled.memoryEnabled).toBe(false);
+  });
+
+  it('keeps a stable context signature while the memory files are unchanged', async () => {
+    const { extension, raw } = setup();
+    const store = new MemoryFilesStore(raw);
+    store.write('local-installation', '/profile.md', 'stable preference', 'new');
+
+    const first = await extension.beforeSessionRun(context());
+    const second = await extension.beforeSessionRun(context());
+
+    expect(first.sessionContextSignature).toBeTruthy();
+    expect(second.sessionContextSignature).toBe(first.sessionContextSignature);
+    // No forced refresh: the runner decides from the signature alone.
+    expect(first.refreshSession).toBeUndefined();
   });
 
   it('without trusted host retains legacy tools but never personal file context/tools', async () => {

@@ -42,9 +42,11 @@ describe('memory integration wiring', () => {
     expect(runner).toContain("path.join(plugin.runtimePath, 'skills')");
     expect(runner).toContain('this.extensionManager.beforeSessionRun');
     expect(runner).toContain('skillsSignature');
-    expect(memoryExtension).toContain('customTools: this.memoryService.getTools(session)');
+    expect(memoryExtension).toContain('this.memoryService.getTools(session)');
+    expect(memoryExtension).toContain('buildMemorySessionContextSignature');
     expect(runner).toContain('extensionResult.systemContext');
-    expect(runner).toContain('cachedSession.refreshMemoryContext');
+    // The reuse/rebuild decision now delegates to the lifecycle module.
+    expect(runner).toContain('hasSessionContextChanged(cachedSession, extensionResult)');
   });
 
   it('adds a dedicated Memory settings tab and preload bridge', () => {

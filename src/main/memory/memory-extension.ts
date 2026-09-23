@@ -1,8 +1,33 @@
+import { createHash } from 'node:crypto';
 import type {
   AgentRuntimeExtension,
   BeforeSessionRunResult,
 } from '../extensions/agent-runtime-extension';
 import type { MemoryService } from './memory-service';
+
+/**
+ * Stable signature of the creation-time memory context: the system-prompt block
+ * plus the tool surface. The runner rebuilds a cached SDK session only when this
+ * changes, so an unchanged memory context keeps the conversation — and the model
+ * hot-swap path — reusable across turns.
+ */
+export function buildMemorySessionContextSignature(
+  systemContext: string,
+  tools: ReadonlyArray<{ name?: string; description?: string }>
+): string {
+  // Canonical tool surface: only the name and description are creation-time
+  // state the SDK sees, and the order the service returns them in carries no
+  // meaning. Sorting keeps the signature stable across equivalent tool sets so
+  // the runner does not rebuild the cached SDK session for a reorder.
+  const toolSurface = tools
+    .map((tool) => `${tool.name ?? ''}\u0000${tool.description ?? ''}`)
+    .sort();
+  return createHash('sha256')
+    .update(systemContext)
+    .update('\u0000')
+    .update(toolSurface.join('\u0001'))
+    .digest('hex');
+}
 
 export class MemoryExtension implements AgentRuntimeExtension {
   readonly name = 'memory';
@@ -24,15 +49,19 @@ export class MemoryExtension implements AgentRuntimeExtension {
         // Auxiliary retrieval must not disable the independent local file store.
       }
       if (!this.memoryService.isSessionEnabled(session)) return { memoryEnabled: false };
+      const systemContext = this.memoryService.buildFileSystemContext(session);
+      const customTools = this.memoryService.getTools(session);
       return {
         promptPrefix,
-        systemContext: this.memoryService.buildFileSystemContext(session),
-        customTools: this.memoryService.getTools(session),
+        systemContext,
+        customTools,
         memoryEnabled: true,
-        refreshSession: true,
+        sessionContextSignature: buildMemorySessionContextSignature(systemContext, customTools),
       };
     } catch {
-      return { memoryEnabled: false, refreshSession: true };
+      // No signature on failure: the runner treats it as a context change and
+      // rebuilds a session that previously carried memory state.
+      return { memoryEnabled: false };
     }
   }
 

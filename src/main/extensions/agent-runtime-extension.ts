@@ -17,6 +17,12 @@ export interface BeforeSessionRunResult {
   systemContext?: string;
   // Recreate SDK state rather than retaining memory context/tools between turns.
   refreshSession?: boolean;
+  /**
+   * Stable signature of the creation-time context this extension contributes
+   * (system-prompt block + tool surface). The runner only rebuilds a cached SDK
+   * session when it changes, so an unchanged context stays reusable across turns.
+   */
+  sessionContextSignature?: string;
   memoryEnabled?: boolean;
 }
 

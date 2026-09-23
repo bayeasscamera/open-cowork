@@ -72,7 +72,7 @@ function makeDeps(over: Partial<CreatePiSessionDeps> = {}): CreatePiSessionDeps 
     customTools: [] as CreatePiSessionDeps['customTools'],
     runtimeSignature: 'runtime-sig',
     skillsSignature: 'skills-sig',
-    refreshMemoryContext: false,
+    sessionContextSignature: 'ctx-sig',
     sessions: new Map(),
     maxCachedSessions: 50,
     installPermissionHook: vi.fn(),
@@ -106,7 +106,7 @@ describe('createPiSession', () => {
       thinkingLevel: 'medium',
       runtimeSignature: 'runtime-sig',
       skillsSignature: 'skills-sig',
-      refreshMemoryContext: false,
+      sessionContextSignature: 'ctx-sig',
     });
   });
 

@@ -31,6 +31,11 @@ const createPiSessionPath = path.resolve(process.cwd(), 'src/main/agent/create-p
 const createPiSessionContent = readFileSync(createPiSessionPath, 'utf8');
 const piSessionToolsPath = path.resolve(process.cwd(), 'src/main/agent/pi-session-tools.ts');
 const piSessionToolsContent = readFileSync(piSessionToolsPath, 'utf8');
+const piSessionLifecyclePath = path.resolve(
+  process.cwd(),
+  'src/main/agent/pi-session-lifecycle.ts'
+);
+const piSessionLifecycleContent = readFileSync(piSessionLifecyclePath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
@@ -129,11 +134,14 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
     expect(agentRunnerContent).toContain(
       'const sessionRuntimeSignature = buildPiSessionRuntimeSignature({'
     );
-    expect(agentRunnerContent).toContain(
-      'cachedSession.runtimeSignature !== sessionRuntimeSignature'
+    // The comparison and its log wording moved to the lifecycle module; the
+    // runner only wires the freshly resolved signatures in.
+    expect(piSessionLifecycleContent).toContain(
+      'cachedSession.runtimeSignature !== current.runtimeSignature'
     );
-    expect(agentRunnerContent).toContain('Runtime changed, recreating cached pi session:');
+    expect(piSessionLifecycleContent).toContain('Runtime changed, recreating cached pi session:');
     expect(agentRunnerContent).toContain('runtimeSignature: sessionRuntimeSignature');
+    expect(agentRunnerContent).toContain('resolvePiSessionRecreateReason(cachedSession, {');
   });
 
   it('uses the normalized route protocol so openrouter follows the openai-compatible path', () => {
