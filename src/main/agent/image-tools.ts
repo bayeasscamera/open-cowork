@@ -3,13 +3,15 @@
  *
  * Native image READ (vision) and GENERATION tools for the agent runtime.
  *
- * Transport reuses what the app already has rather than inventing a new
- * channel: an image is either (a) a base64 data URL / inline part sent to a
- * provider SDK that is already a dependency (@anthropic-ai/sdk, @google/genai,
- * openai) — the same shape mcp/gui/vision.ts already uses — or (b) an
- * openCoworkImages detail on the tool result, which the existing normalizer
- * (agent/tool-result-utils.ts) turns into ToolResultContent.images and
- * ChatView renders inline. No new transport.
+ * Transport: vision reuses what the app already has — a base64 data URL /
+ * inline part sent to a provider SDK that is already a dependency
+ * (@anthropic-ai/sdk, @google/genai, openai), the same shape mcp/gui/vision.ts
+ * uses. Generation does NOT reuse the chat SDK: it goes through
+ * ./image-generation, which builds /images/generations from the API root
+ * (never a chat URL) and handles synchronous and asynchronous (job + poll)
+ * providers alike. Results ride on an openCoworkImages detail, which the
+ * existing normalizer (agent/tool-result-utils.ts) turns into
+ * ToolResultContent.images and ChatView renders inline.
  *
  * Confinement: every read goes through resolveConfinedReadPath() and every
  * write through resolveConfinedWritePath(); both resolve symlinks (realpath)
@@ -35,8 +37,15 @@ import { GoogleGenAI } from '@google/genai';
 import { isPathWithinRoot } from '../tools/path-containment';
 import { configStore } from '../config/config-store';
 import { log, logWarn } from '../utils/logger';
+import {
+  createOpenAiImageTransport,
+  detectImageMimeType,
+  type ImageMimeType,
+} from './image-generation';
 
-type ImageMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+// Re-exported so existing importers (and tests) keep a single entry point.
+export { detectImageMimeType };
+export type { ImageMimeType };
 
 /** Image protocols we can talk to. Anthropic has no image-generation model. */
 type ImageProtocol = 'anthropic' | 'openai' | 'gemini';
@@ -124,33 +133,6 @@ const DEFAULT_VISION_PROMPT =
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-
-/** Detect an image MIME type from magic bytes — never trust the extension. */
-export function detectImageMimeType(buffer: Buffer): ImageMimeType | null {
-  if (
-    buffer.length >= 8 &&
-    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-  ) {
-    return 'image/png';
-  }
-  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return 'image/jpeg';
-  }
-  if (buffer.length >= 6 && buffer.subarray(0, 6).toString('ascii') === 'GIF87a') {
-    return 'image/gif';
-  }
-  if (buffer.length >= 6 && buffer.subarray(0, 6).toString('ascii') === 'GIF89a') {
-    return 'image/gif';
-  }
-  if (
-    buffer.length >= 12 &&
-    buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
-    buffer.subarray(8, 12).toString('ascii') === 'WEBP'
-  ) {
-    return 'image/webp';
-  }
-  return null;
-}
 
 const MIME_EXTENSION: Record<ImageMimeType, string> = {
   'image/png': 'png',
@@ -496,18 +478,6 @@ async function callVisionWithSdk(request: VisionRequest): Promise<string> {
   );
 }
 
-async function downloadAsBase64(
-  url: string
-): Promise<{ base64: string; mimeType: ImageMimeType }> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error('image download failed: HTTP ' + response.status);
-  }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const mimeType = detectImageMimeType(buffer) ?? 'image/png';
-  return { base64: buffer.toString('base64'), mimeType };
-}
-
 async function callGenerationWithSdk(request: GenerationRequest): Promise<GenerationResult> {
   const { config } = request;
   if (!supportsImageGeneration(config)) {
@@ -564,33 +534,26 @@ async function callGenerationWithSdk(request: GenerationRequest): Promise<Genera
         };
       }
 
-      const client = new OpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.baseUrl || undefined,
-      });
-      // The SDK's size/quality unions are narrower than the strings we pass
-      // through from the tool schema; the provider validates the value.
-      const response = await client.images.generate({
+      // OpenAI-compatible generation goes through the dedicated image
+      // transport: it derives /images/generations from the API ROOT (never a
+      // chat URL) and handles both synchronous responses and asynchronous
+      // create -> poll -> download jobs (xKiro and similar gateways).
+      const transport = createOpenAiImageTransport();
+      const generated = await transport({
+        provider: config.provider,
         model: config.model,
         prompt: request.prompt,
-        n: 1,
-        ...(request.size ? { size: request.size as 'auto' } : {}),
-        ...(request.quality ? { quality: request.quality as 'high' } : {}),
+        apiKey: config.apiKey,
+        baseUrl: config.baseUrl,
+        size: request.size,
+        quality: request.quality,
       });
-      const item = response.data?.[0];
-      if (item?.b64_json) {
-        return {
-          base64: item.b64_json,
-          mimeType: 'image/png',
-          model: config.model,
-          provider: config.provider,
-        };
-      }
-      if (item?.url) {
-        const downloaded = await downloadAsBase64(item.url);
-        return { ...downloaded, model: config.model, provider: config.provider };
-      }
-      throw new Error('provider returned no image data');
+      return {
+        base64: generated.base64,
+        mimeType: generated.mimeType,
+        model: config.model,
+        provider: config.provider,
+      };
     })(),
     GENERATION_TIMEOUT_MS,
     'generate_image'
