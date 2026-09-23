@@ -1023,6 +1023,8 @@
     "copyMessage": "Copy message",
     "editMessage": "Edit message",
     "retryResponse": "Retry response",
+    "copyResponse": "Copy response",
+    "copied": "Copied!",
     "save": "Save & Submit",
     "cancel": "Cancel",
     "revealInFolder": "Reveal in folder",

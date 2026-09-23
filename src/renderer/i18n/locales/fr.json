@@ -200,6 +200,8 @@
     "copyMessage": "Copier le message",
     "editMessage": "Modifier le message",
     "retryResponse": "Relancer la réponse",
+    "copyResponse": "Copier la réponse",
+    "copied": "Copié !",
     "save": "Enregistrer & Envoyer",
     "cancel": "Annuler",
     "revealInFolder": "Afficher dans le dossier",

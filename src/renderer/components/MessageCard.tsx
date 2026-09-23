@@ -220,17 +220,27 @@ export const MessageCard = memo(function MessageCard({
               />
             );
           })}
-          {/* Retry button — visible on hover, only when not streaming */}
-          {onRetry && !isStreaming && (
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity pt-1">
+          {/* Action buttons — visible on hover, only when not streaming */}
+          {!isStreaming && (
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity pt-1 flex items-center gap-1.5">
               <button
-                onClick={() => onRetry(message.id)}
+                onClick={handleCopy}
                 className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-lg bg-surface-muted hover:bg-surface-active text-text-muted hover:text-text-secondary transition-all"
-                title={t('messageCard.retryResponse')}
+                title={t('messageCard.copyResponse')}
               >
-                <RefreshCw className="w-3 h-3" />
-                {t('messageCard.retryResponse')}
+                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copied ? t('messageCard.copied') : t('messageCard.copyResponse')}
               </button>
+              {onRetry && (
+                <button
+                  onClick={() => onRetry(message.id)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-lg bg-surface-muted hover:bg-surface-active text-text-muted hover:text-text-secondary transition-all"
+                  title={t('messageCard.retryResponse')}
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  {t('messageCard.retryResponse')}
+                </button>
+              )}
             </div>
           )}
         </div>
