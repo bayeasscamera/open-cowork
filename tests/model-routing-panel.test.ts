@@ -53,13 +53,22 @@ describe('model routing panel wiring', () => {
     for (const match of handlers.matchAll(channelPattern)) {
       handlerChannels.add(match[1]);
     }
-    expect(handlerChannels.size).toBe(7);
+    expect(handlerChannels.size).toBe(10);
 
     for (const channel of handlerChannels) {
       expect(preload, 'preload is missing modelRouting.' + channel).toContain(
         'modelRouting.' + channel
       );
     }
+  });
+
+  it('lets the user opt into adaptive routing from the panel', () => {
+    expect(panel).toContain('api.state()');
+    expect(panel).toContain('void setEnabled(event.target.checked)');
+    expect(panel).toContain('api.setActiveProfile(');
+    expect(panel).toContain("t('modelRouting.adaptive.use', { profile: profile.label })");
+    expect(panel).toContain("t('modelRouting.adaptive.active', { profile: routing.activeProfile })");
+    expect(types).toContain('export interface ModelRoutingState');
   });
 
   it('keeps the routing types shared so preload never imports main', () => {

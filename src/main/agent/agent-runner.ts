@@ -19,6 +19,8 @@ import { getSharedProjectStore } from '../projects/project-store';
 import { assembleContextualPrompt } from './contextual-prompt';
 import { buildPiSessionTools } from './pi-session-tools';
 import { createPiSession, type CachedPiSession } from './create-pi-session';
+import { ToolActivityRecorder } from './tool-activity-recorder';
+import type { ActivityTracker } from './activity-tracker';
 import { reusePiSession } from './reuse-pi-session';
 import {
   evictCachedPiSession,
@@ -263,9 +265,25 @@ async function enrichProcessPathForBuild(): Promise<void> {
 
 // Shared pi-ai auth storage — created once, reused across sessions.
 
+/**
+ * Phase 7 model routing: what the runner needs to ask for an adaptive model
+ * decision. The callback returns a model id, or undefined to keep the
+ * configured model.
+ */
+export interface AgentModelResolutionInput {
+  sessionId: string;
+  prompt: string;
+  /** Model that would be used without adaptive routing. */
+  fallbackModel: string;
+}
+
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
   saveMessage?: (message: Message) => void;
+  /** Phase 6 control center: records tool executions in the activity feed. */
+  activityTracker?: ActivityTracker;
+  /** Phase 7 model routing: adaptive model selection for this run. */
+  modelResolver?: (input: AgentModelResolutionInput) => string | undefined;
   requestSudoPassword?: (
     sessionId: string,
     toolUseId: string,
@@ -306,6 +324,8 @@ export class CoworkAgentRunner {
   private _pluginRuntimeService?: PluginRuntimeService;
   private _skillsAdapter?: SkillsAdapter;
   private extensionManager?: AgentRuntimeExtensionManager;
+  private activityTracker?: ActivityTracker;
+  private modelResolver?: (input: AgentModelResolutionInput) => string | undefined;
   private activeControllers: Map<string, AbortController> = new Map();
   private piSessions: Map<string, CachedPiSession> = new Map();
   private toolDisplayNameCache: Map<string, string> = new Map();
@@ -452,6 +472,8 @@ export class CoworkAgentRunner {
     this._skillsAdapter = skillsAdapter;
     this.extensionManager = extensionManager;
     this.memoryManager = memoryManager;
+    this.activityTracker = options.activityTracker;
+    this.modelResolver = options.modelResolver;
 
     log('[CoworkAgentRunner] Initialized with Open Cowork agent SDK');
     log('[CoworkAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
@@ -548,19 +570,47 @@ export class CoworkAgentRunner {
     return displayName;
   }
 
+  /** Phase 6 control center: swap the activity sink (or clear it). */
+  public setActivityTracker(tracker?: ActivityTracker): void {
+    this.activityTracker = tracker;
+  }
+
+  /** Phase 7 model routing: swap the adaptive model resolver (or clear it). */
+  public setModelResolver(
+    resolver?: (input: AgentModelResolutionInput) => string | undefined
+  ): void {
+    this.modelResolver = resolver;
+  }
+
   /**
-   * Resolve current model string from runtime config.
+   * Resolve current model string from runtime config, optionally deferring to
+   * the Phase 7 adaptive router.
    */
-  private getCurrentModelString(preferredModel?: string): string {
+  private getCurrentModelString(
+    preferredModel?: string,
+    routing?: { sessionId: string; prompt: string; allowAdaptive: boolean }
+  ): string {
     const routeModel = preferredModel?.trim();
     const configuredModel = configStore.get('model')?.trim();
-    const model = routeModel || configuredModel || 'anthropic/claude-sonnet-4-6';
-    logCtx('[CoworkAgentRunner] Current model:', model);
+    const fallback = routeModel || configuredModel || 'anthropic/claude-sonnet-4-6';
+    const routed = routing?.allowAdaptive
+      ? this.modelResolver?.({
+          sessionId: routing.sessionId,
+          prompt: routing.prompt,
+          fallbackModel: fallback,
+        })?.trim()
+      : undefined;
+    if (routed) {
+      logCtx('[CoworkAgentRunner] Current model:', routed);
+      logCtx('[CoworkAgentRunner] Model source:', 'modelRouting');
+      return routed;
+    }
+    logCtx('[CoworkAgentRunner] Current model:', fallback);
     logCtx(
       '[CoworkAgentRunner] Model source:',
       routeModel ? 'runtimeRoute.model' : configuredModel ? 'configStore.model' : 'default'
     );
-    return model;
+    return fallback;
   }
 
   async run(session: Session, prompt: string, existingMessages: Message[]): Promise<void> {
@@ -575,6 +625,12 @@ export class CoworkAgentRunner {
       // 旧运行时不支持 EventTarget 调整监听上限时忽略即可。
     }
     this.activeControllers.set(session.id, controller);
+
+    // Phase 6 control center: tool executions are mirrored into the activity
+    // feed. One recorder per run keeps the toolCallId mapping session-scoped.
+    const toolActivity = this.activityTracker
+      ? new ToolActivityRecorder(this.activityTracker, session.id)
+      : undefined;
 
     // Sandbox isolation state (defined outside try for finally access)
     let sandboxPath: string | null = null;
@@ -718,7 +774,13 @@ export class CoworkAgentRunner {
               effectiveConfigModelId ?? undefined
             )
           : undefined) || configStore.getAll();
-      const modelString = this.getCurrentModelString(runtimeConfig.model);
+      // A project-pinned config set (or pinned model id) is an explicit human
+      // choice and always wins; adaptive routing only fills the default slot.
+      const modelString = this.getCurrentModelString(runtimeConfig.model, {
+        sessionId: session.id,
+        prompt,
+        allowAdaptive: !effectiveConfigSetId && !effectiveConfigModelId,
+      });
       const configProtocol = resolvePiRouteProtocol(
         runtimeConfig.provider,
         runtimeConfig.customProtocol
@@ -1244,6 +1306,7 @@ export class CoworkAgentRunner {
         getToolDisplayName: (toolName) => this.getToolDisplayName(toolName),
         emitTerminalError,
         sanitizeOutputPaths: (content) => sanitizeOutputPaths(content),
+        toolActivity,
       };
 
       const unsubscribe = piSession.subscribe((event) => {
@@ -1593,6 +1656,9 @@ export class CoworkAgentRunner {
         }
       }
     } finally {
+      // Close activities the provider never completed (abort, stream error,
+      // crash) so the control center never shows a stuck "running" tool.
+      toolActivity?.cancelRunning('The run ended before this tool call completed.');
       this.activeControllers.delete(session.id);
       this.pathResolver.unregisterSession(session.id);
 

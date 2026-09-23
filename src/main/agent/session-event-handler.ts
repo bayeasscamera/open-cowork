@@ -41,6 +41,15 @@ export interface PiSessionEventTelemetry {
   getFirstStreamLatencyMs(): number | null;
 }
 
+/**
+ * Phase 6 control center bridge: the runner records the tool lifecycle in the
+ * activity feed. Optional so the handler stays usable without a control center.
+ */
+export interface PiSessionToolActivity {
+  start(input: { toolCallId: string; toolName: string; label: string; args?: unknown }): void;
+  end(input: { toolCallId: string; toolName: string; isError: boolean; output?: string }): void;
+}
+
 /** Everything the handler needs from the runner; no implicit singleton. */
 export interface PiSessionEventContext {
   sessionId: string;
@@ -60,6 +69,8 @@ export interface PiSessionEventContext {
   getToolDisplayName(toolName: string): string;
   emitTerminalError(errorText: string, options?: { abort?: boolean }): void;
   sanitizeOutputPaths(content: string): string;
+  /** Records tool executions in the control center activity feed. */
+  toolActivity?: PiSessionToolActivity;
 }
 
 /** Bridges agent SDK session events to the Open Cowork ServerEvent protocol. */
@@ -268,6 +279,12 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
         ctx.loopGuard.recordToolInvocation(event.toolName),
         'tool_execution_start'
       );
+      ctx.toolActivity?.start({
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        label: ctx.getToolDisplayName(event.toolName),
+        args: event.args,
+      });
       break;
     }
 
@@ -278,6 +295,12 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
       const normalizedToolResult = normalizeToolExecutionResultForUi(event.result);
       const outputText = normalizedToolResult.content;
       const toolDisplayName = ctx.getToolDisplayName(event.toolName);
+      ctx.toolActivity?.end({
+        toolCallId,
+        toolName: event.toolName,
+        isError,
+        output: outputText,
+      });
       ctx.sendTraceUpdate(toolCallId, {
         status: isError ? 'error' : 'completed',
         title: toolDisplayName,

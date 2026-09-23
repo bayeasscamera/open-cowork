@@ -35,6 +35,9 @@ import {
 } from '../sandbox/sandbox-adapter';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { CoworkAgentRunner } from '../agent/agent-runner';
+import type { ActivityTracker } from '../agent/activity-tracker';
+import type { NotificationCenter } from '../agent/notification-center';
+import { summarizeToolActivityDetail } from '../agent/tool-activity-recorder';
 import { configStore } from '../config/config-store';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
@@ -78,6 +81,14 @@ interface AgentRunner {
   getContextUsage?(
     sessionId: string
   ): { tokens: number | null; contextWindow: number; percent: number | null } | null;
+  /** Phase 6 control center: attach or clear the tool activity sink. */
+  setActivityTracker?(tracker?: ActivityTracker): void;
+  /** Phase 7 model routing: attach or clear the adaptive model resolver. */
+  setModelResolver?(
+    resolver?: (input: { sessionId: string; prompt: string; fallbackModel: string }) =>
+      | string
+      | undefined
+  ): void;
 }
 
 const WORKSPACE_MOUNT_VIRTUAL_PATH = '/mnt/workspace';
@@ -100,6 +111,16 @@ export class SessionManager {
   private mcpManager: MCPManager;
   private pluginRuntimeService?: PluginRuntimeService;
   private extensionManager?: AgentRuntimeExtensionManager;
+  /** Phase 6 control center: tool activity sink, injected after construction. */
+  private activityTracker?: ActivityTracker;
+  /** Phase 6 control center: approval/blocker notifications, injected later. */
+  private notificationCenter?: NotificationCenter;
+  /** Phase 7 model routing: adaptive model selection, injected later. */
+  private modelResolver?: (input: {
+    sessionId: string;
+    prompt: string;
+    fallbackModel: string;
+  }) => string | undefined;
   private activeSessions: Map<string, AbortController> = new Map();
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> =
     new Map();
@@ -154,11 +175,37 @@ export class SessionManager {
     log('[SessionManager] Using Open Cowork agent runner');
   }
 
+  /**
+   * Phase 6 control center: attach the activity feed. Safe to call before or
+   * after the runner exists — the tracker is re-applied on every rebuild.
+   */
+  public setActivityTracker(tracker?: ActivityTracker): void {
+    this.activityTracker = tracker;
+    this.agentRunner?.setActivityTracker?.(tracker);
+  }
+
+  /** Phase 6 control center: attach the approval notification sink. */
+  public setNotificationCenter(center?: NotificationCenter): void {
+    this.notificationCenter = center;
+  }
+
+  /** Phase 7 model routing: attach the adaptive model resolver. */
+  public setModelResolver(
+    resolver?: (input: { sessionId: string; prompt: string; fallbackModel: string }) =>
+      | string
+      | undefined
+  ): void {
+    this.modelResolver = resolver;
+    this.agentRunner?.setModelResolver?.(resolver);
+  }
+
   private createCoworkAgentRunner(): CoworkAgentRunner {
     return new CoworkAgentRunner(
       {
         sendToRenderer: this.sendToRenderer,
         saveMessage: (message: Message) => this.saveMessage(message),
+        ...(this.activityTracker ? { activityTracker: this.activityTracker } : {}),
+        ...(this.modelResolver ? { modelResolver: this.modelResolver } : {}),
         requestSudoPassword: (sessionId: string, toolUseId: string, command: string) =>
           this.requestSudoPassword(sessionId, toolUseId, command),
         requestPermission: (
@@ -1366,13 +1413,31 @@ export class SessionManager {
     input: Record<string, unknown>
   ): Promise<PermissionResult> {
     return new Promise((resolve) => {
+      // Phase 6 control center: an approval request is exactly the "the agent
+      // needs a human" event the notification center exists for. The title is
+      // the technical subject (tool name); the renderer supplies the label.
+      const notification = this.notificationCenter?.notify({
+        sessionId,
+        kind: 'approval',
+        title: toolName,
+        ...(summarizeToolActivityDetail(input)
+          ? { detail: summarizeToolActivityDetail(input) }
+          : {}),
+      });
+      const acknowledge = () => {
+        if (notification) {
+          this.notificationCenter?.acknowledge(notification.id);
+        }
+      };
       const timeoutId = setTimeout(() => {
         this.pendingPermissions.delete(toolUseId);
+        acknowledge();
         resolve('deny');
         this.sendToRenderer({ type: 'permission.dismiss', payload: { toolUseId } });
       }, 60_000);
       this.pendingPermissions.set(toolUseId, (result: PermissionResult) => {
         clearTimeout(timeoutId);
+        acknowledge();
         resolve(result);
       });
       this.sendToRenderer({

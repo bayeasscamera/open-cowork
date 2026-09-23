@@ -1379,6 +1379,14 @@
     "short": "模型",
     "close": "关闭",
     "refresh": "刷新",
+    "adaptive": {
+      "title": "自适应路由",
+      "description": "启用后，Cowork 会按当前配置为每个请求选择模型。项目固定的模型仍然优先。",
+      "enabled": "对新请求使用自适应路由",
+      "use": "使用 {{profile}}",
+      "active": "当前配置：{{profile}}",
+      "inactive": "没有启用的配置 — 将使用已配置的模型。"
+    },
     "profiles": {
       "title": "配置",
       "cost": "成本层级 {{tier}}",

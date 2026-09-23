@@ -14,6 +14,7 @@ vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logError: vi.fn() }))
 
 import { registerModelRoutingIpcHandlers } from '../src/main/ipc/model-routing-handlers';
 import { ModelBenchmarkStore } from '../src/main/agent/model-benchmark';
+import { ModelRoutingService } from '../src/main/agent/model-routing-service';
 import type { ModelBenchmark, ModelProfile, RegistryValidation, RoutingDecision } from '../src/shared/model-routing-types';
 
 const invoke = async (channel: string, ...args: unknown[]): Promise<unknown> => {
@@ -24,11 +25,13 @@ const invoke = async (channel: string, ...args: unknown[]): Promise<unknown> => 
 
 describe('model-routing-ipc-handlers', () => {
   let benchmarks: ModelBenchmarkStore;
+  let service: ModelRoutingService;
 
   beforeEach(() => {
     mocks.handlers.clear();
     benchmarks = new ModelBenchmarkStore();
-    registerModelRoutingIpcHandlers({ benchmarks });
+    service = new ModelRoutingService({ benchmarks });
+    registerModelRoutingIpcHandlers({ service });
   });
 
   it('registers the full model routing channel surface', () => {
@@ -39,6 +42,9 @@ describe('model-routing-ipc-handlers', () => {
       'modelRouting.profiles',
       'modelRouting.recordBenchmark',
       'modelRouting.route',
+      'modelRouting.setActiveProfile',
+      'modelRouting.setEnabled',
+      'modelRouting.state',
       'modelRouting.validateRegistry',
     ]);
   });
@@ -109,6 +115,30 @@ describe('model-routing-ipc-handlers', () => {
     })) as RegistryValidation;
     expect(rejected.valid).toBe(false);
     expect(rejected.reasons[0]).toContain('not an allowlisted registry');
+  });
+
+  it('exposes and updates the adaptive routing state', async () => {
+    expect(await invoke('modelRouting.state')).toEqual({ enabled: false, activeProfile: null });
+
+    expect(await invoke('modelRouting.setActiveProfile', 'strong')).toEqual({
+      enabled: true,
+      activeProfile: 'strong',
+    });
+    expect(service.resolveModel({ sessionId: 's', prompt: 'fix the bug', fallbackModel: 'm' })).toBe(
+      'claude-opus-4-6'
+    );
+
+    expect(await invoke('modelRouting.setEnabled', false)).toEqual({
+      enabled: false,
+      activeProfile: 'strong',
+    });
+    expect(await invoke('modelRouting.setActiveProfile', null)).toEqual({
+      enabled: false,
+      activeProfile: null,
+    });
+    await expect(invoke('modelRouting.setActiveProfile', 'nope')).rejects.toThrow(
+      'Unknown model profile'
+    );
   });
 
   it('refuses an unknown local provider without probing', async () => {

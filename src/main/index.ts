@@ -87,6 +87,7 @@ import { registerControlCenterIpcHandlers } from './ipc/control-center-handlers'
 import { registerModelRoutingIpcHandlers } from './ipc/model-routing-handlers';
 import { WorkflowRegistry } from './agent/workflow-registry';
 import { ControlCenterService } from './agent/control-center-service';
+import { ModelRoutingService } from './agent/model-routing-service';
 import type { ProjectMemoryStore } from './memory/project-memory-store';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods } from './mods/builtin-mods';
@@ -969,6 +970,7 @@ app
         pluginRuntimeService,
         headlessExtensionManager
       );
+      attachAgentServices(sessionManager);
 
       skillsManager = new SkillsManager(db, {
         getConfiguredGlobalSkillsPath: () => configStore.get('globalSkillsPath') || '',
@@ -1364,6 +1366,7 @@ app
     // Initialize session manager before creating an interactive window.
     // This avoids session.start racing the startup path and hitting a null manager.
     sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService, extensionManager);
+    attachAgentServices(sessionManager);
     skillsManager = new SkillsManager(db, {
       getConfiguredGlobalSkillsPath: () => configStore.get('globalSkillsPath') || '',
       setConfiguredGlobalSkillsPath: (nextPath: string) => {
@@ -1936,8 +1939,21 @@ const controlCenterService = new ControlCenterService({
 registerControlCenterIpcHandlers({ service: controlCenterService });
 
 // Model routing (Phase 7): named profiles, local benchmark store, local provider
-// detection and validated registry entries.
-registerModelRoutingIpcHandlers({});
+// detection and validated registry entries. The service also backs adaptive
+// model selection in the agent runner, but only once a user picks a profile.
+const modelRoutingService = new ModelRoutingService();
+registerModelRoutingIpcHandlers({ service: modelRoutingService });
+
+/**
+ * Wire the Phase 6 control center and the Phase 7 router into a freshly
+ * created SessionManager. Both services are created at module scope, so the
+ * async bootstrap that builds the manager always sees them initialized.
+ */
+function attachAgentServices(manager: SessionManager): void {
+  manager.setActivityTracker(controlCenterService.activity);
+  manager.setNotificationCenter(controlCenterService.notifications);
+  manager.setModelResolver((input) => modelRoutingService.resolveModel(input));
+}
 
 // Client event dispatch lives in its own module; wire the app-level state it
 // needs here so the dependency surface stays explicit.

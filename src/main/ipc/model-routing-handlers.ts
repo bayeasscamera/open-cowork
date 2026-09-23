@@ -23,15 +23,14 @@ import {
   MODEL_PROFILE_IDS,
   TASK_KINDS,
 } from '../../shared/model-routing-types';
-import { DEFAULT_MODEL_PROFILES, routeModel } from '../agent/model-profiles';
-import { ModelBenchmarkStore } from '../agent/model-benchmark';
+import type { ModelRoutingService, ModelRoutingState } from '../agent/model-routing-service';
+import { ModelRoutingService as ModelRoutingServiceImpl } from '../agent/model-routing-service';
 import { probeAllLocalProviders, probeLocalProvider } from '../agent/local-providers';
 import { validateRegistryEntry } from '../agent/model-registry';
 import { logError } from '../utils/logger';
 
 export interface ModelRoutingIpcContext {
-  profiles?: readonly ModelProfile[];
-  benchmarks?: ModelBenchmarkStore;
+  service?: ModelRoutingService;
 }
 
 function requireNonEmpty(value: unknown, label: string): string {
@@ -145,33 +144,53 @@ function coerceRegistryInput(value: unknown): RegistryEntryInput {
 }
 
 export function registerModelRoutingIpcHandlers(context: ModelRoutingIpcContext = {}): void {
-  const profiles = context.profiles ?? DEFAULT_MODEL_PROFILES;
-  const benchmarks = context.benchmarks ?? new ModelBenchmarkStore();
+  const service = context.service ?? new ModelRoutingServiceImpl();
 
-  ipcMain.handle('modelRouting.profiles', (): ModelProfile[] =>
-    profiles.map((profile) => ({ ...profile, capabilities: { ...profile.capabilities } }))
+  ipcMain.handle(
+    'modelRouting.state',
+    (): ModelRoutingState => service.state()
   );
 
-  ipcMain.handle('modelRouting.route', (_event, request: unknown): RoutingDecision =>
-    routeModel(coerceRoutingRequest(request), profiles, benchmarks.list())
+  ipcMain.handle(
+    'modelRouting.setEnabled',
+    (_event, enabled: unknown): ModelRoutingState => service.setEnabled(enabled === true)
+  );
+
+  ipcMain.handle(
+    'modelRouting.setActiveProfile',
+    (_event, profile: unknown): ModelRoutingState =>
+      service.setActiveProfile(profile === null || profile === undefined || profile === '' ? null : coerceProfileId(profile))
+  );
+
+  ipcMain.handle(
+    'modelRouting.profiles',
+    (): ModelProfile[] =>
+      service.profiles.map((profile) => ({ ...profile, capabilities: { ...profile.capabilities } }))
+  );
+
+  ipcMain.handle(
+    'modelRouting.route',
+    (_event, request: unknown): RoutingDecision => service.route(coerceRoutingRequest(request))
   );
 
   ipcMain.handle(
     'modelRouting.benchmarks',
     (_event, modelId?: unknown, taskKind?: unknown): ModelBenchmark[] =>
-      benchmarks.list(
+      service.benchmarks.list(
         typeof modelId === 'string' && modelId.length > 0 ? modelId : undefined,
         taskKind === undefined ? undefined : coerceTaskKind(taskKind)
       )
   );
 
-  ipcMain.handle('modelRouting.recordBenchmark', (_event, input: unknown): ModelBenchmark =>
-    benchmarks.record(coerceBenchmarkInput(input))
+  ipcMain.handle(
+    'modelRouting.recordBenchmark',
+    (_event, input: unknown): ModelBenchmark => service.recordBenchmark(coerceBenchmarkInput(input))
   );
 
-  ipcMain.handle('modelRouting.clearBenchmarks', (): { cleared: number } => ({
-    cleared: benchmarks.clear(),
-  }));
+  ipcMain.handle(
+    'modelRouting.clearBenchmarks',
+    (): { cleared: number } => ({ cleared: service.benchmarks.clear() })
+  );
 
   ipcMain.handle(
     'modelRouting.probeLocal',

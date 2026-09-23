@@ -58,6 +58,12 @@ export interface RoutingDecision {
   local: boolean;
 }
 
+/** Phase 7: whether adaptive routing is active, and which profile drives it. */
+export interface ModelRoutingState {
+  enabled: boolean;
+  activeProfile: ModelProfileId | null;
+}
+
 export interface BenchmarkRecordInput {
   modelId: string;
   taskKind: TaskKind;

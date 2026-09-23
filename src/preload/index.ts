@@ -81,6 +81,8 @@ import type {
   LocalProviderProbe,
   ModelBenchmark,
   ModelProfile,
+  ModelProfileId,
+  ModelRoutingState,
   RegistryEntryInput,
   RegistryValidation,
   RoutingDecision,
@@ -957,6 +959,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   modelRouting: {
+    state: (): Promise<ModelRoutingState> => ipcRenderer.invoke('modelRouting.state'),
+    setEnabled: (enabled: boolean): Promise<ModelRoutingState> =>
+      ipcRenderer.invoke('modelRouting.setEnabled', enabled),
+    setActiveProfile: (profile: ModelProfileId | null): Promise<ModelRoutingState> =>
+      ipcRenderer.invoke('modelRouting.setActiveProfile', profile),
     profiles: (): Promise<ModelProfile[]> => ipcRenderer.invoke('modelRouting.profiles'),
     route: (request: RoutingRequest): Promise<RoutingDecision> =>
       ipcRenderer.invoke('modelRouting.route', request),
@@ -1526,6 +1533,9 @@ declare global {
         acknowledgeAll: (sessionId?: string) => Promise<{ acknowledged: number }>;
       };
       modelRouting: {
+        state: () => Promise<ModelRoutingState>;
+        setEnabled: (enabled: boolean) => Promise<ModelRoutingState>;
+        setActiveProfile: (profile: ModelProfileId | null) => Promise<ModelRoutingState>;
         profiles: () => Promise<ModelProfile[]>;
         route: (request: RoutingRequest) => Promise<RoutingDecision>;
         benchmarks: (modelId?: string, taskKind?: TaskKind) => Promise<ModelBenchmark[]>;

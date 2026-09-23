@@ -5,6 +5,8 @@ import type {
   LocalProviderProbe,
   ModelBenchmark,
   ModelProfile,
+  ModelProfileId,
+  ModelRoutingState,
   RegistryValidation,
   RoutingDecision,
   RoutingRequest,
@@ -25,6 +27,7 @@ export function ModelRoutingPanel({ onClose }: { onClose: () => void }) {
 
   const [profiles, setProfiles] = useState<ModelProfile[]>([]);
   const [benchmarks, setBenchmarks] = useState<ModelBenchmark[]>([]);
+  const [routing, setRouting] = useState<ModelRoutingState | null>(null);
   const [taskKind, setTaskKind] = useState<TaskKind>('implementation');
   const [requiresTools, setRequiresTools] = useState(true);
   const [requiresVision, setRequiresVision] = useState(false);
@@ -44,9 +47,14 @@ export function ModelRoutingPanel({ onClose }: { onClose: () => void }) {
       return;
     }
     try {
-      const [nextProfiles, nextBenchmarks] = await Promise.all([api.profiles(), api.benchmarks()]);
+      const [nextProfiles, nextBenchmarks, nextRouting] = await Promise.all([
+        api.profiles(),
+        api.benchmarks(),
+        api.state(),
+      ]);
       setProfiles(nextProfiles);
       setBenchmarks(nextBenchmarks);
+      setRouting(nextRouting);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -56,6 +64,36 @@ export function ModelRoutingPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const setEnabled = useCallback(
+    async (enabled: boolean) => {
+      if (!api) {
+        return;
+      }
+      try {
+        setRouting(await api.setEnabled(enabled));
+        setError(null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [api]
+  );
+
+  const toggleProfile = useCallback(
+    async (profile: ModelProfileId) => {
+      if (!api) {
+        return;
+      }
+      try {
+        setRouting(await api.setActiveProfile(routing?.activeProfile === profile ? null : profile));
+        setError(null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [api, routing]
+  );
 
   const route = useCallback(async () => {
     if (!api) {
@@ -147,6 +185,46 @@ export function ModelRoutingPanel({ onClose }: { onClose: () => void }) {
             {error}
           </div>
         )}
+
+        <section className="space-y-2">
+          <h3 className="text-xs font-medium text-text-secondary">{t('modelRouting.adaptive.title')}</h3>
+          <p className="text-[11px] text-text-muted">
+            {t('modelRouting.adaptive.description')}
+          </p>
+          <label className="flex items-center gap-1.5 text-xs text-text-secondary">
+            <input
+              type="checkbox"
+              disabled={!api}
+              checked={routing?.enabled ?? false}
+              onChange={(event) => void setEnabled(event.target.checked)}
+            />
+            {t('modelRouting.adaptive.enabled')}
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            {profiles.map((profile) => (
+              <button
+                key={profile.id}
+                type="button"
+                disabled={!api}
+                aria-pressed={routing?.activeProfile === profile.id}
+                onClick={() => void toggleProfile(profile.id)}
+                className={
+                  'rounded-lg border px-3 py-1 text-xs transition-colors disabled:opacity-40 ' +
+                  (routing?.activeProfile === profile.id
+                    ? 'border-accent bg-accent/10 text-text-primary'
+                    : 'border-border text-text-secondary hover:bg-surface-hover')
+                }
+              >
+                {t('modelRouting.adaptive.use', { profile: profile.label })}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-text-muted">
+            {routing?.activeProfile
+              ? t('modelRouting.adaptive.active', { profile: routing.activeProfile })
+              : t('modelRouting.adaptive.inactive')}
+          </p>
+        </section>
 
         <section className="space-y-2">
           <h3 className="text-xs font-medium text-text-secondary">{t('modelRouting.profiles.title')}</h3>

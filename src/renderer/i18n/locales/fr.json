@@ -1378,6 +1378,14 @@
     "short": "Modèles",
     "close": "Fermer",
     "refresh": "Rafraîchir",
+    "adaptive": {
+      "title": "Routage adaptatif",
+      "description": "Activé, Cowork choisit le modèle de chaque requête à partir du profil actif. Un modèle épinglé au projet reste prioritaire.",
+      "enabled": "Utiliser le routage adaptatif pour les nouvelles requêtes",
+      "use": "Utiliser {{profile}}",
+      "active": "Profil actif : {{profile}}",
+      "inactive": "Aucun profil actif — le modèle configuré est utilisé."
+    },
     "profiles": {
       "title": "Profils",
       "cost": "palier de coût {{tier}}",

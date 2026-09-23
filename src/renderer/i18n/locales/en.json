@@ -1379,6 +1379,14 @@
     "short": "Models",
     "close": "Close",
     "refresh": "Refresh",
+    "adaptive": {
+      "title": "Adaptive routing",
+      "description": "When enabled, Cowork picks the model for each request from the active profile. A project-pinned model still wins.",
+      "enabled": "Use adaptive routing for new requests",
+      "use": "Use {{profile}}",
+      "active": "Active profile: {{profile}}",
+      "inactive": "No active profile — the configured model is used."
+    },
     "profiles": {
       "title": "Profiles",
       "cost": "cost tier {{tier}}",
