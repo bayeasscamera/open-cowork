@@ -586,6 +586,12 @@ function CostSection({ t }: { t: (key: string, options?: Record<string, unknown>
   const crossSwarms = swarm?.crossVerificationSwarms ?? 0;
   const crossCalls = swarm?.crossVerificationCalls ?? 0;
   const crossPerSwarm = crossSwarms > 0 ? (crossCalls / crossSwarms).toFixed(1) : null;
+  // Measured teammate-question cost (opt-in team mode): 0 on every standard
+  // swarm and on team-mode runs whose agents never needed to ask.
+  const teammateSwarms = swarm?.teammateSwarms ?? 0;
+  const teammateCalls = swarm?.teammateCalls ?? 0;
+  const teammatePerSwarm =
+    teammateSwarms > 0 ? (teammateCalls / teammateSwarms).toFixed(1) : null;
 
   const openSkillDoctor = () => {
     // Leave the dedicated view, land on Settings › Skills (Skill doctor lives there).
@@ -638,6 +644,15 @@ function CostSection({ t }: { t: (key: string, options?: Record<string, unknown>
                   })
                 : t('subAgents.crossVerificationNever')}
             </p>
+            <p className="mt-2 border-t border-border-subtle pt-2">
+              {teammateSwarms > 0
+                ? t('subAgents.teammateMeasured', {
+                    swarms: teammateSwarms,
+                    calls: teammateCalls,
+                    perSwarm: teammatePerSwarm ?? '0',
+                  })
+                : t('subAgents.teammateNever')}
+            </p>
           </div>
         )}
       </SettingsContentSection>
@@ -672,6 +687,11 @@ function CostSection({ t }: { t: (key: string, options?: Record<string, unknown>
           <Stat
             label={t('subAgents.statCrossVerification')}
             value={swarm ? String(crossCalls) : '—'}
+            loading={loading}
+          />
+          <Stat
+            label={t('subAgents.statTeammateCalls')}
+            value={swarm ? String(teammateCalls) : '—'}
             loading={loading}
           />
         </div>

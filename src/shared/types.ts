@@ -139,6 +139,10 @@ export interface SwarmStats {
   crossVerificationSwarms?: number;
   /** Extra model calls cross-verification actually spent (measured cost). */
   crossVerificationCalls?: number;
+  /** Swarms run with the OPT-IN team mode (ask_teammate available). */
+  teammateSwarms?: number;
+  /** Model calls teammate questions actually spent (measured cost). */
+  teammateCalls?: number;
 }
 
 /** Delegated task stats (main screen transparency section). */

@@ -24,6 +24,8 @@ let stats: SwarmStats = {
   fallbackTasks: 0,
   crossVerificationSwarms: 0,
   crossVerificationCalls: 0,
+  teammateSwarms: 0,
+  teammateCalls: 0,
 };
 let file: string | null = null;
 let loaded = false;
@@ -64,6 +66,8 @@ export function initSwarmStats(userDataDir: string): void {
     fallbackTasks: 0,
     crossVerificationSwarms: 0,
     crossVerificationCalls: 0,
+    teammateSwarms: 0,
+    teammateCalls: 0,
   };
   loaded = false;
   ensureLoaded();
@@ -113,6 +117,17 @@ export function recordSwarmExecution(plan: MultiAgentPlan, durationMs: number): 
     const calls = (plan.crossVerificationResults ?? []).reduce((sum, r) => sum + r.modelCalls, 0);
     stats.crossVerificationCalls = (stats.crossVerificationCalls ?? 0) + calls;
   }
+  // Measured teammate-question cost: each exchange is owned by exactly one
+  // asking task, so summing them never double-counts a model call.
+  if (plan.teamMode) {
+    stats.teammateSwarms = (stats.teammateSwarms ?? 0) + 1;
+    const calls = plan.tasks.reduce(
+      (sum, task) =>
+        sum + (task.teammateExchanges ?? []).reduce((s, exchange) => s + exchange.modelCalls, 0),
+      0
+    );
+    stats.teammateCalls = (stats.teammateCalls ?? 0) + calls;
+  }
   persist();
 }
 
@@ -131,6 +146,8 @@ export function __resetSwarmStatsForTest(): void {
     fallbackTasks: 0,
     crossVerificationSwarms: 0,
     crossVerificationCalls: 0,
+    teammateSwarms: 0,
+    teammateCalls: 0,
   };
   loaded = true;
 }

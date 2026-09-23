@@ -91,6 +91,7 @@ const EXTRACTED_MODULES = [
   'runtime-config-summary',
   'skills-directory-setup',
   'pi-session-lifecycle',
+  'teammate-bus',
 ];
 
 describe('extracted agent modules — environment boundary', () => {

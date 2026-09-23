@@ -59,8 +59,31 @@ import {
   resolvePiRouteProtocol,
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
-import type { AgentTask, SubAgentRunResult, SubAgentRunnerFn } from './multi-agent-coordinator';
+import type {
+  AgentRole,
+  AgentTask,
+  SubAgentRunResult,
+  SubAgentRunnerFn,
+} from './multi-agent-coordinator';
 import { buildCorrectiveContext } from './cross-verification';
+import {
+  buildAskTeammateTool,
+  buildTeammateResponder,
+  ASK_TEAMMATE_TRIGGER_RULE,
+} from './teammate-tool';
+import {
+  drainTeammate,
+  getTeammateExchanges,
+  getTeammateTeam,
+  markTeammateBoundary,
+  registerTeammate,
+  unregisterTeammate,
+  MAX_TEAMMATE_CALLS_PER_TASK,
+  type TeammateExchange,
+} from './teammate-bus';
+
+/** Every role that can exist in a swarm plan — the teammate targets. */
+const TEAMMATE_ROLES: AgentRole[] = ['architect', 'developer', 'reviewer', 'security'];
 
 // ---------------------------------------------------------------------------
 // Profile resolution
@@ -576,18 +599,43 @@ export interface SubAgentSessionResult {
   modifiedFiles: string[];
   /** Cumulative token usage of the session, when the provider reports it. */
   tokenUsage?: { input: number; output: number };
+  /** Teammate questions ASKED by this session (team mode only), with cost. */
+  teammateExchanges?: TeammateExchange[];
 }
 
-function buildChildSystemPrompt(task: AgentTask): string {
-  return [
+export function buildChildSystemPrompt(task: AgentTask): string {
+  const lines = [
     'You are a focused sub-agent inside a collaborative multi-agent swarm.',
     `Your role: ${task.role}. Task title: ${task.title}.`,
     'Complete the task using only the provided file tools and return ONLY the result.',
-    'Do not ask questions. Do not access or modify anything outside the workspace.',
-    '',
-    '## Task',
-    task.prompt,
-  ].join('\n');
+    // Team mode ONLY swaps this one line: without it the prompt is byte-for-byte
+    // the classic one, so a default swarm's prompt and cost are unchanged.
+    task.teamMode
+      ? 'Do not ask the human questions. Do not access or modify anything outside the workspace.'
+      : 'Do not ask questions. Do not access or modify anything outside the workspace.',
+  ];
+  if (task.teamMode) {
+    lines.push(
+      '',
+      '## Teammates (opt-in team mode)',
+      'You may call ask_teammate at most ' +
+        `${MAX_TEAMMATE_CALLS_PER_TASK} times to ask ONE other sub-agent of this swarm a question you are BLOCKED on, when nothing you can read or infer lets you continue.`,
+      ASK_TEAMMATE_TRIGGER_RULE,
+      'One question, one answer: there is no dialogue, and a follow-up counts as a second question. If no answer arrives within 30 seconds, continue with your best judgment and state the assumption in your final report.'
+    );
+  }
+  lines.push('', '## Task', task.prompt);
+  return lines.join('\n');
+}
+
+/** Extract the assistant text of one message, if any. */
+function extractAssistantText(msg: unknown): string {
+  const message = msg as { role?: string; content?: unknown } | undefined;
+  if (!message || message.role !== 'assistant' || !Array.isArray(message.content)) return '';
+  return (message.content as Array<{ type: string; text?: string }>)
+    .filter((block) => block.type === 'text' && block.text)
+    .map((block) => block.text)
+    .join('');
 }
 
 /**
@@ -734,6 +782,35 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
         }))
       : [];
 
+  // OPT-IN team mode: register this sub-agent as an answerable teammate and
+  // hand it the `ask_teammate` tool. When team mode is off, `teammateTools` is
+  // an empty array — the tool palette, the system prompt and the model-call
+  // cost of the run stay exactly those of the classic DAG.
+  const teamId = args.task.teamId;
+  const team = args.task.teamMode && teamId ? getTeammateTeam(teamId) : null;
+  let liveText = '';
+  if (team) {
+    registerTeammate(team, {
+      role: args.task.role,
+      taskId: args.task.id,
+      responder: buildTeammateResponder({
+        task: args.task,
+        config: args.config,
+        getContext: () => liveText,
+      }),
+    });
+  }
+  const teammateTools = team
+    ? [
+        buildAskTeammateTool({
+          team,
+          role: args.task.role,
+          taskId: args.task.id,
+          targetRoles: TEAMMATE_ROLES.filter((role) => role !== args.task.role),
+        }),
+      ]
+    : [];
+
   // Role persona + system prompt are ADDED to project/agent instructions —
   // a complement (like project_context alongside AGENTS.md), never a replace.
   const rolePrompt = args.systemPrompt?.trim() || '';
@@ -764,6 +841,7 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
         braveApiKey: args.config.braveApiKey || '',
       }),
       ...subAgentDelegationTool,
+      ...teammateTools,
       // Proposal-only skill drafting (static markdown, human-gated) — every
       // sub-agent carries it; it can never activate or execute anything.
       buildProposeSkillTool(),
@@ -835,16 +913,16 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
         outputTokens += usage.output;
         sawUsage = true;
       }
+      const text = extractAssistantText(msg);
+      if (text) liveText = text;
     }
     if (event.type === 'agent_end') {
       const messages = (event as { messages?: unknown[] }).messages || [];
       for (let i = messages.length - 1; i >= 0; i -= 1) {
-        const msg = messages[i] as { role?: string; content?: unknown } | undefined;
-        if (msg && msg.role === 'assistant' && Array.isArray(msg.content)) {
-          finalText = (msg.content as Array<{ type: string; text?: string }>)
-            .filter((b) => b.type === 'text' && b.text)
-            .map((b) => b.text)
-            .join('');
+        const text = extractAssistantText(messages[i]);
+        if (text) {
+          finalText = text;
+          liveText = text;
           break;
         }
       }
@@ -860,6 +938,11 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
       if (modified) {
         modifiedFiles.add(modified);
       }
+    }
+    if (event.type === 'tool_execution_end' && team) {
+      // A finished action is the target's boundary: answer any teammate blocked
+      // on this sub-agent WITHOUT interrupting its own reasoning.
+      markTeammateBoundary(team, args.task.id);
     }
   });
 
@@ -889,6 +972,17 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
     unsubscribe();
+    if (team) {
+      // Last boundary: answer questions that arrived just before the task
+      // ended, then stop being answerable. A failing drain must never break
+      // the task teardown.
+      try {
+        await drainTeammate(team, args.task.id);
+      } catch {
+        // Nothing to propagate: the asker already got its timeout fallback.
+      }
+      unregisterTeammate(team, args.task.id);
+    }
     try {
       const abortResult = piSession.abort?.();
       if (abortResult && typeof abortResult === 'object' && 'then' in abortResult) {
@@ -900,10 +994,17 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
     piSession.dispose?.();
   }
 
+  // Cost attribution: only the questions ASKED by this task are charged to it,
+  // so each exchange is counted exactly once across the whole plan.
+  const teammateExchanges = team
+    ? getTeammateExchanges(team).filter((exchange) => exchange.fromTaskId === args.task.id)
+    : [];
+
   return {
     output: finalText,
     modifiedFiles: [...modifiedFiles],
     tokenUsage: sawUsage ? { input: inputTokens, output: outputTokens } : undefined,
+    ...(teammateExchanges.length ? { teammateExchanges } : {}),
   };
 }
 
@@ -988,6 +1089,7 @@ async function finalizeTaskResult(
 ): Promise<SubAgentRunResult> {
   let output = result.output;
   let modifiedFiles = result.modifiedFiles;
+  const teammateExchanges: TeammateExchange[] = [...(result.teammateExchanges ?? [])];
   const usage = { input: 0, output: 0 };
   let sawUsage = false;
   const addUsage = (u?: { input: number; output: number }) => {
@@ -1025,6 +1127,9 @@ async function finalizeTaskResult(
     output = retry.output;
     modifiedFiles = retry.modifiedFiles;
     addUsage(retry.tokenUsage);
+    if (retry.teammateExchanges?.length) {
+      teammateExchanges.push(...retry.teammateExchanges);
+    }
     syntaxIssues = await checkModifiedFilesSyntax(modifiedFiles);
   }
 
@@ -1037,6 +1142,7 @@ async function finalizeTaskResult(
       ? syntaxIssues.map((i) => `${i.file}:${i.line} ${i.message}`)
       : undefined,
     tokenUsage: sawUsage ? usage : undefined,
+    ...(teammateExchanges.length ? { teammateExchanges } : {}),
   };
 }
 

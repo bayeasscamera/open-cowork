@@ -32,6 +32,53 @@ describe('MultiAgentCoordinator Swarm', () => {
     expect(executedTaskOrder.slice(2)).toContain('security');
   });
 
+  it('stamps team ids only when team mode is explicitly enabled', () => {
+    const coordinator = new MultiAgentCoordinator(async () => ({ output: 'ok' }));
+
+    const standard = coordinator.createCollaborativePlan('standard goal');
+    expect(standard.teamMode).toBeUndefined();
+    expect(standard.tasks.every((t) => t.teamMode === undefined && t.teamId === undefined)).toBe(
+      true
+    );
+
+    const team = coordinator.createCollaborativePlan('team goal', { teamMode: true });
+    expect(team.teamMode).toBe(true);
+    expect(team.tasks.every((t) => t.teamMode === true)).toBe(true);
+    expect(new Set(team.tasks.map((t) => t.teamId))).toEqual(new Set([team.id]));
+    // Team mode is INDEPENDENT of the cross-verification opt-in.
+    expect(team.crossVerification).toBe(false);
+    expect(standard.crossVerification).toBe(false);
+  });
+
+  it('accumulates teammate exchanges on the task that asked them', async () => {
+    const coordinator = new MultiAgentCoordinator(async (task) =>
+      task.role === 'developer'
+        ? {
+            output: 'ok',
+            teammateExchanges: [
+              {
+                id: 'tq-1',
+                fromRole: 'developer',
+                fromTaskId: task.id,
+                targetRole: 'architect',
+                question: 'q',
+                answer: 'a',
+                status: 'answered' as const,
+                modelCalls: 1,
+                at: 0,
+                durationMs: 5,
+              },
+            ],
+          }
+        : { output: 'ok' }
+    );
+    const plan = coordinator.createCollaborativePlan('g', { teamMode: true });
+    const executed = await coordinator.executePlan(plan.id);
+    const developer = executed.tasks.find((t) => t.role === 'developer');
+    expect(developer?.teammateExchanges).toHaveLength(1);
+    expect(executed.tasks.find((t) => t.role === 'reviewer')?.teammateExchanges).toBeUndefined();
+  });
+
   it('invalidates the shared codegraph index for files a sub-agent modified', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cowork-swarm-'));
     const fileA = join(dir, 'a.ts');

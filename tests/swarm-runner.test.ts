@@ -50,6 +50,7 @@ import type { AppConfig } from '../src/main/config/config-store';
 import type { AgentRole, AgentTask } from '../src/main/agent/multi-agent-coordinator';
 import { MultiAgentCoordinator } from '../src/main/agent/multi-agent-coordinator';
 import {
+  buildChildSystemPrompt,
   buildConfinementHook,
   collectModifiedPath,
   createSwarmRunner,
@@ -60,6 +61,13 @@ import {
   withTaskTimeout,
   type SubAgentSessionArgs,
 } from '../src/main/agent/swarm-runner';
+import { ASK_TEAMMATE_TRIGGER_RULE } from '../src/main/agent/teammate-tool';
+import {
+  __resetTeammateTeamsForTest,
+  getTeammateTeam,
+  markTeammateBoundary,
+  registerTeammate,
+} from '../src/main/agent/teammate-bus';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { createAgentSession } from '@mariozechner/pi-coding-agent';
 
@@ -688,5 +696,95 @@ describe('createSwarmRunner', () => {
     const result = await runner(makeTask('developer'), '');
 
     expect(result.tokenUsage).toBeUndefined();
+  });
+
+  it('adds exactly the ask_teammate tool in team mode, and nothing on the default path', async () => {
+    __resetTeammateTeamsForTest();
+    const palettes: string[][] = [];
+    vi.mocked(createAgentSession).mockImplementation(async (options) => {
+      palettes.push((options.customTools ?? []).map((tool) => tool.name));
+      return {
+        session: { subscribe: () => () => undefined, prompt: async () => undefined },
+      } as never;
+    });
+    const runner = createSwarmRunner({ cwd, getConfig: () => makeConfig({}) });
+
+    const plain = await runner({ ...makeTask('developer'), id: 'plain-1' }, '');
+    const teamed = await runner(
+      { ...makeTask('developer'), id: 'teamed-1', teamMode: true, teamId: 'team-x' },
+      ''
+    );
+
+    // Never-invoked team mode adds ZERO teammate exchanges and ZERO model calls.
+    expect(plain.teammateExchanges).toBeUndefined();
+    expect(teamed.teammateExchanges).toBeUndefined();
+    expect(getTeammateTeam('team-x').exchanges).toHaveLength(0);
+
+    // Strict structural proof: team mode adds exactly ONE tool, removes none.
+    expect(palettes).toHaveLength(2);
+    const [plainPalette, teamedPalette] = palettes;
+    expect(plainPalette).not.toContain('ask_teammate');
+    expect(teamedPalette).toContain('ask_teammate');
+    expect(teamedPalette.filter((name) => !plainPalette.includes(name))).toEqual(['ask_teammate']);
+    expect(plainPalette.filter((name) => !teamedPalette.includes(name))).toEqual([]);
+
+    // The classic prompt is unchanged without team mode, and gains the rule with it.
+    expect(buildChildSystemPrompt(makeTask('developer'))).not.toContain('ask_teammate');
+    expect(buildChildSystemPrompt(makeTask('developer'))).toContain('Do not ask questions.');
+    const teamedPrompt = buildChildSystemPrompt({
+      ...makeTask('developer'),
+      teamMode: true,
+      teamId: 'team-x',
+    });
+    expect(teamedPrompt).toContain(ASK_TEAMMATE_TRIGGER_RULE);
+    expect(teamedPrompt).not.toContain('Do not ask questions.');
+  });
+
+  it('team mode: a blocked sub-agent gets its teammate answer and the cost is traced', async () => {
+    __resetTeammateTeamsForTest();
+    const team = getTeammateTeam('team-e2e');
+    registerTeammate(team, {
+      role: 'architect',
+      taskId: 'arch-1',
+      responder: async () => 'Use FooService through the container.',
+    });
+
+    let toolText = '';
+    vi.mocked(createAgentSession).mockImplementation(async (options) => {
+      const askTool = (options.customTools ?? []).find((tool) => tool.name === 'ask_teammate');
+      return {
+        session: {
+          subscribe: () => () => undefined,
+          prompt: async () => {
+            if (!askTool) return;
+            const pending = askTool.execute('call-1', {
+              target_role: 'architect',
+              question: 'Which service?',
+            });
+            // The architect reaches a task boundary and answers.
+            markTeammateBoundary(team, 'arch-1');
+            const result = (await pending) as { content: Array<{ text: string }> };
+            toolText = result.content[0].text;
+          },
+        },
+      } as never;
+    });
+
+    const runner = createSwarmRunner({ cwd, getConfig: () => makeConfig({}) });
+    const result = await runner(
+      { ...makeTask('developer'), id: 'dev-1', teamMode: true, teamId: 'team-e2e' },
+      ''
+    );
+
+    expect(toolText).toContain('Use FooService');
+    expect(result.teammateExchanges).toHaveLength(1);
+    expect(result.teammateExchanges?.[0]).toMatchObject({
+      status: 'answered',
+      targetRole: 'architect',
+      fromTaskId: 'dev-1',
+      modelCalls: 1,
+    });
+    // The member stops being answerable once its task is over.
+    expect(getTeammateTeam('team-e2e').members.has('dev-1')).toBe(false);
   });
 });

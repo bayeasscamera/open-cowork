@@ -10,6 +10,7 @@ import { EventEmitter } from 'events';
 import { log, logError } from '../utils/logger';
 import { getCodeGraphIndexer } from '../memory/codegraph-indexer';
 import { markTaskCriticality } from './swarm-criticality';
+import type { TeammateExchange } from './teammate-bus';
 import {
   CROSS_VERIFICATION_COST,
   buildCodeReviewResult,
@@ -58,6 +59,16 @@ export interface AgentTask {
   retried?: boolean;
   /** True when a retry recovered a previously failed task. */
   recovered?: boolean;
+  /**
+   * OPT-IN team mode: this task may ask ONE of its teammates a blocking
+   * question through the `ask_teammate` tool. Off by default, independent of
+   * cross-verification.
+   */
+  teamMode?: boolean;
+  /** Shared bus id for the task's team (the plan id when team mode is on). */
+  teamId?: string;
+  /** Traced teammate questions this task asked, with their measured cost. */
+  teammateExchanges?: TeammateExchange[];
 }
 
 export interface MultiAgentPlan {
@@ -75,6 +86,12 @@ export interface MultiAgentPlan {
   crossVerification?: boolean;
   /** Cross-verification outcomes (peer challenge, code review, research). */
   crossVerificationResults?: CrossVerificationResult[];
+  /**
+   * OPT-IN team mode (default false): sub-agents may ask a teammate a blocking
+   * question (hard cap 2 per task, 30s deadline). Independent of
+   * cross-verification and never enabled on a standard swarm.
+   */
+  teamMode?: boolean;
   /** Explicit policy applied when some tasks fail. Defaults to 'fail-all'. */
   aggregationPolicy: AggregationPolicy;
   /** Outcome counts computed at the end of executePlan(). */
@@ -114,6 +131,8 @@ export interface SubAgentRunResult {
   syntaxIssues?: string[];
   /** Cumulative token usage across the run (including any corrective re-run). */
   tokenUsage?: { input: number; output: number };
+  /** Teammate questions asked by this task (team mode only), with their cost. */
+  teammateExchanges?: TeammateExchange[];
 }
 
 /** Maximum upstream context each dependent sub-agent receives. */
@@ -153,9 +172,15 @@ export class MultiAgentCoordinator extends EventEmitter {
    */
   public createCollaborativePlan(
     goal: string,
-    options?: { crossVerification?: boolean; aggregationPolicy?: AggregationPolicy }
+    options?: {
+      crossVerification?: boolean;
+      aggregationPolicy?: AggregationPolicy;
+      /** OPT-IN team mode (default false): enable the `ask_teammate` tool. */
+      teamMode?: boolean;
+    }
   ): MultiAgentPlan {
     const crossVerification = options?.crossVerification === true;
+    const teamMode = options?.teamMode === true;
     const aggregationPolicy = options?.aggregationPolicy ?? 'fail-all';
     const planId = `swarm-${Date.now()}`;
     const tasks: AgentTask[] = [
@@ -206,8 +231,18 @@ export class MultiAgentCoordinator extends EventEmitter {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       crossVerification,
+      ...(teamMode ? { teamMode: true } : {}),
       aggregationPolicy,
     };
+
+    // Team mode stamps a shared bus id on every task so the swarm runner can
+    // register each sub-agent as an answerable teammate for this one plan.
+    if (teamMode) {
+      for (const task of tasks) {
+        task.teamMode = true;
+        task.teamId = planId;
+      }
+    }
 
     this.activePlans.set(planId, plan);
     this.emit('plan:created', plan);
@@ -376,6 +411,11 @@ export class MultiAgentCoordinator extends EventEmitter {
     task.modelUsed = run.modelUsed;
     task.syntaxIssues = run.syntaxIssues;
     task.tokenUsage = run.tokenUsage;
+    // Accumulate teammate exchanges across a retry rather than overwriting
+    // them: a question that was actually asked was actually paid for.
+    if (run.teammateExchanges?.length) {
+      task.teammateExchanges = [...(task.teammateExchanges ?? []), ...run.teammateExchanges];
+    }
     task.error = undefined;
     if (run.modelUsed) {
       log(
@@ -533,6 +573,12 @@ export class MultiAgentCoordinator extends EventEmitter {
           developer.result = run.output;
           developer.modifiedFiles = run.modifiedFiles ?? developer.modifiedFiles;
           developer.modelUsed = run.modelUsed ?? developer.modelUsed;
+          if (run.teammateExchanges?.length) {
+            developer.teammateExchanges = [
+              ...(developer.teammateExchanges ?? []),
+              ...run.teammateExchanges,
+            ];
+          }
           // Same freshness rule as the DAG path: files this re-run touched are
           // no longer fresh in the codegraph index.
           this.invalidateModifiedFiles(run.modifiedFiles ?? []);

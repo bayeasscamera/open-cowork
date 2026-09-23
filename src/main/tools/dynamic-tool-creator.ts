@@ -36,6 +36,11 @@ import { listProposals, proposeSkill } from '../skills/skill-proposals';
 import { startDelegation, listDelegations, subAgentGate } from '../agent/background-delegations';
 import { recordSwarmExecution } from '../agent/swarm-stats';
 import {
+  disposeTeammateTeam,
+  formatTeammateReportSection,
+  summarizeTeammateExchanges,
+} from '../agent/teammate-bus';
+import {
   CROSS_VERIFICATION_COST,
   renderCrossVerificationSection,
   summarizeCrossVerification,
@@ -1052,7 +1057,9 @@ export function buildAgentMetaTools(
         'Partial-failure aggregation is EXPLICIT (aggregationPolicy): fail-all (default), partial-ok, or retry-failed-only — a swarm never silently reports success with skipped tasks. ' +
         `OPT-IN crossVerification adds up to ${CROSS_VERIFICATION_COST.peerChallenge + CROSS_VERIFICATION_COST.codeReviewRerun} extra model calls (reviewer↔security peer challenge = ${CROSS_VERIFICATION_COST.peerChallenge}; conditional developer re-run on a substantive review point = 0-${CROSS_VERIFICATION_COST.codeReviewRerun}). ` +
         'It makes agents CHALLENGE each other instead of producing independent reports, and surfaces unresolved disagreements rather than forcing consensus. ' +
-        'OFF by default — enable it only for high-stakes tasks where a wrong conclusion is costly.',
+        'OFF by default — enable it only for high-stakes tasks where a wrong conclusion is costly. ' +
+        'OPT-IN teamMode lets a BLOCKED sub-agent ask ONE teammate a single blocking question through ask_teammate (hard cap 2 questions per task, 30s deadline, one question/one answer). ' +
+        'Its measured cost is reported: 1 extra model call per ANSWERED question, 0 when nobody asked. OFF by default — a standard swarm is unchanged.',
       parameters: Type.Object({
         goal: Type.String({
           description: 'Overall project or engineering goal to plan and coordinate',
@@ -1076,12 +1083,19 @@ export function buildAgentMetaTools(
             }
           )
         ),
+        teamMode: Type.Optional(
+          Type.Boolean({
+            description:
+              'OPT-IN team mode (default false). Gives every sub-agent the ask_teammate tool so it can ask ONE other teammate a single blocking question it cannot continue without (hard cap 2 questions per task, 30s deadline, one question / one answer, no dialogue). Measured cost: 1 extra model call per answered question and 0 when the tool is never used, shown in this report and in the swarm stats.',
+          })
+        ),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as {
           goal: string;
           crossVerification?: boolean;
           aggregationPolicy?: AggregationPolicy;
+          teamMode?: boolean;
         };
         const config = configStore.getAll();
         // Every sub-agent is confined to the default workspace.
@@ -1095,9 +1109,15 @@ export function buildAgentMetaTools(
         coordinator.setRunner(createSwarmRunner({ cwd: swarmCwd, gate: subAgentGate }));
         const plan = coordinator.createCollaborativePlan(args.goal, {
           crossVerification: args.crossVerification === true,
+          ...(args.teamMode ? { teamMode: true } : {}),
           ...(args.aggregationPolicy ? { aggregationPolicy: args.aggregationPolicy } : {}),
         });
-        const executed = await coordinator.executePlan(plan.id);
+        // The teammate bus is per-plan scratch state: drop it as soon as the
+        // plan settles (even on failure). Exchanges live on the tasks, so the
+        // report is unaffected.
+        const executed = await coordinator
+          .executePlan(plan.id)
+          .finally(() => disposeTeammateTeam(plan.id));
         recordSwarmExecution(executed, Date.now() - swarmStartedAt);
 
         const taskSummary = executed.tasks
@@ -1140,6 +1160,12 @@ export function buildAgentMetaTools(
         const crossSection = renderCrossVerificationSection(executed.crossVerificationResults);
         const crossSummary = summarizeCrossVerification(executed.crossVerificationResults);
 
+        // Teammate questions are surfaced explicitly (who asked what, the answer
+        // and the measured extra model calls) — empty when team mode was off.
+        const teammateExchanges = executed.tasks.flatMap((t) => t.teammateExchanges ?? []);
+        const teammateSection = formatTeammateReportSection(teammateExchanges);
+        const teammateSummary = summarizeTeammateExchanges(teammateExchanges);
+
         return {
           content: [
             {
@@ -1150,10 +1176,11 @@ export function buildAgentMetaTools(
                 `Status: ${executed.status}\n` +
                 aggregationLine +
                 `\nTask Results:\n${taskSummary}` +
-                (crossSection ? `\n${crossSection}` : ''),
+                (crossSection ? `\n${crossSection}` : '') +
+                (teammateSection ? `\n${teammateSection}` : ''),
             },
           ],
-          details: { ...executed, crossVerificationSummary: crossSummary },
+          details: { ...executed, crossVerificationSummary: crossSummary, teammateSummary },
         };
       },
     },

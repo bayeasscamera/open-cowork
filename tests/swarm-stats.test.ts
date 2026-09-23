@@ -144,6 +144,71 @@ describe('swarm-stats', () => {
     expect(stats.crossVerificationCalls).toBe(3);
   });
 
+  it('measures the OPT-IN teammate question cost separately from the default path', () => {
+    initSwarmStats(testRoot);
+
+    // Default swarm: no team mode, zero teammate calls.
+    recordSwarmExecution(plan({ tasks: [] }), 100);
+    expect(getSwarmStats().teammateCalls).toBe(0);
+    expect(getSwarmStats().teammateSwarms).toBe(0);
+
+    // Team mode ON but nobody asked: still zero extra model calls.
+    recordSwarmExecution(
+      plan({
+        teamMode: true,
+        tasks: [{ id: 't1', role: 'developer', title: 'a', prompt: '', status: 'completed' }],
+      }),
+      150
+    );
+    expect(getSwarmStats().teammateSwarms).toBe(1);
+    expect(getSwarmStats().teammateCalls).toBe(0);
+
+    // One answered question costs 1; a timeout costs 0 (measured, not assumed).
+    recordSwarmExecution(
+      plan({
+        teamMode: true,
+        tasks: [
+          {
+            id: 't1',
+            role: 'developer',
+            title: 'a',
+            prompt: '',
+            status: 'completed',
+            teammateExchanges: [
+              {
+                id: 'x1',
+                fromRole: 'developer',
+                fromTaskId: 't1',
+                targetRole: 'architect',
+                question: 'q',
+                answer: 'a',
+                status: 'answered',
+                modelCalls: 1,
+                at: 0,
+                durationMs: 3,
+              },
+              {
+                id: 'x2',
+                fromRole: 'architect',
+                fromTaskId: 't1',
+                targetRole: 'reviewer',
+                question: 'q',
+                answer: 'fallback',
+                status: 'timeout',
+                modelCalls: 0,
+                at: 0,
+                durationMs: 30_000,
+              },
+            ],
+          },
+        ],
+      }),
+      200
+    );
+    expect(getSwarmStats().teammateSwarms).toBe(2);
+    expect(getSwarmStats().teammateCalls).toBe(1);
+  });
+
   it('counts a done-but-partial plan as a partial swarm, never a success', () => {
     initSwarmStats(testRoot);
     // partial-ok: the plan finished 'done' but one task never completed.
