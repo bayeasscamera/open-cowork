@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { File, Folder, Play, RefreshCw } from 'lucide-react';
+import { File, Folder, Play, RefreshCw, RotateCcw } from 'lucide-react';
 import type {
   GitStatusSummary,
+  RerunFailedTestsOutcome,
   TestCommandId,
   TestRunResult,
   WorkspaceEntry,
@@ -63,6 +64,7 @@ export function WorkspacePane({ sessionId }: { sessionId: string }) {
   const [selected, setSelected] = useState<WorkspaceEntry | null>(null);
   const [preview, setPreview] = useState<string>('');
   const [test, setTest] = useState<TestRunResult | null>(null);
+  const [rerun, setRerun] = useState<RerunFailedTestsOutcome | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,6 +112,7 @@ export function WorkspacePane({ sessionId }: { sessionId: string }) {
         return;
       }
       setBusy(true);
+      setRerun(null);
       try {
         setTest(await api.runTests(sessionId, commandId));
         setError(null);
@@ -121,6 +124,25 @@ export function WorkspacePane({ sessionId }: { sessionId: string }) {
     },
     [api, sessionId]
   );
+
+  const rerunFailed = useCallback(async () => {
+    if (!api) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const outcome = await api.rerunFailedTests(sessionId);
+      setRerun(outcome);
+      if (outcome.ran && outcome.result) {
+        setTest(outcome.result);
+      }
+      setError(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [api, sessionId]);
 
   const gitLists: Array<{ key: string; label: string; paths: string[] }> = git
     ? [
@@ -202,7 +224,28 @@ export function WorkspacePane({ sessionId }: { sessionId: string }) {
               {t('controlCenter.workspace.test.' + commandId)}
             </button>
           ))}
+          {test && !test.ok && (
+            <button
+              type="button"
+              disabled={busy || !api}
+              onClick={() => void rerunFailed()}
+              className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-secondary disabled:opacity-40"
+            >
+              <RotateCcw className="h-3 w-3" />
+              {t('controlCenter.workspace.rerunFailed')}
+            </button>
+          )}
         </div>
+        {rerun && rerun.ran && (
+          <p className="text-[11px] text-text-muted">
+            {t('controlCenter.workspace.rerunRan', { count: rerun.files?.length ?? 0 })}
+          </p>
+        )}
+        {rerun && !rerun.ran && rerun.reason && (
+          <p className="text-[11px] text-amber-400">
+            {t('controlCenter.workspace.rerun.' + rerun.reason)}
+          </p>
+        )}
         {test && (
           <div className="rounded-lg border border-border-subtle bg-background/60 px-3 py-2 text-[11px]">
             <div className="flex flex-wrap items-center gap-3">

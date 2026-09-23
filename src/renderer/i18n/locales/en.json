@@ -1526,7 +1526,15 @@
       "exitCode": "exit {{code}}",
       "truncated": "output truncated",
       "empty": "The workspace is empty.",
-      "previewEmpty": "Select a file to preview it."
+      "previewEmpty": "Select a file to preview it.",
+      "rerunFailed": "Re-run failed files",
+      "rerunRan": "Re-ran {{count}} file(s)",
+      "rerun": {
+        "no_workspace": "No workspace is available for this session.",
+        "no_previous_run": "Run a failing check first.",
+        "no_failed_files": "No failed test file could be identified in the last output.",
+        "unsupported_command": "This check cannot be narrowed to specific files."
+      }
     },
     "queue": {
       "title": "Detached tasks",

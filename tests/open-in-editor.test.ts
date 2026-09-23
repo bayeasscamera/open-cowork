@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -7,7 +7,6 @@ import {
   detectEditorSchemes,
   normalizeEditorLine,
   openFileInEditor,
-  resolveEditorTarget,
   type EditorOpener,
 } from '../src/main/utils/open-in-editor';
 
@@ -21,8 +20,6 @@ beforeAll(() => {
   writeFileSync(outsideFile, 'outside\n');
   mkdirSync(join(root, 'nested'));
   writeFileSync(join(root, 'nested', 'deep.ts'), 'export const b = 2;\n');
-  mkdirSync(join(root, 'folder'));
-  symlinkSync(outsideFile, join(root, 'escape.ts'));
 });
 
 afterAll(() => {
@@ -160,52 +157,6 @@ describe('buildEditorUrl', () => {
 
   it('normalizes Windows separators', () => {
     expect(buildEditorUrl('vscode', 'C:\\proj\\src.ts', 3)).toBe('vscode://file/C:/proj/src.ts:3:1');
-  });
-});
-
-describe('resolveEditorTarget', () => {
-  it('resolves a relative path inside the root', () => {
-    expect(resolveEditorTarget(root, 'src.ts')).toBe(join(root, 'src.ts'));
-  });
-
-  it('resolves a nested relative path', () => {
-    expect(resolveEditorTarget(root, 'nested/deep.ts')).toBe(join(root, 'nested', 'deep.ts'));
-  });
-
-  it('accepts an absolute path inside the root', () => {
-    expect(resolveEditorTarget(root, join(root, 'src.ts'))).toBe(join(root, 'src.ts'));
-  });
-
-  it('refuses a traversal escape', () => {
-    expect(resolveEditorTarget(root, '../outside.ts')).toBeNull();
-  });
-
-  it('refuses an absolute path outside the root', () => {
-    expect(resolveEditorTarget(root, outsideFile)).toBeNull();
-  });
-
-  it('refuses a symlink pointing outside the root', () => {
-    expect(resolveEditorTarget(root, 'escape.ts')).toBeNull();
-  });
-
-  it('refuses a directory', () => {
-    expect(resolveEditorTarget(root, 'folder')).toBeNull();
-  });
-
-  it('refuses a missing file', () => {
-    expect(resolveEditorTarget(root, 'nope.ts')).toBeNull();
-  });
-
-  it('refuses blank and non-string input', () => {
-    expect(resolveEditorTarget(root, '   ')).toBeNull();
-    expect(resolveEditorTarget(root, '')).toBeNull();
-    expect(resolveEditorTarget(root, 42)).toBeNull();
-    expect(resolveEditorTarget(root, null)).toBeNull();
-  });
-
-  it('refuses control characters', () => {
-    expect(resolveEditorTarget(root, 'src.ts\u0000')).toBeNull();
-    expect(resolveEditorTarget(root, 'src\u0007.ts')).toBeNull();
   });
 });
 

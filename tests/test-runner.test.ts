@@ -4,6 +4,7 @@ import {
   isTestCommandId,
   resolveTestCommand,
   runTestCommand,
+  supportsTargetedRerun,
   truncateTestOutput,
   type CommandRunner,
 } from '../src/main/workspace/test-runner';
@@ -30,6 +31,89 @@ describe('truncateTestOutput', () => {
     expect(result.truncated).toBe(true);
     expect(result.text).toBe(long.slice(-10));
     expect(truncateTestOutput('short', 10)).toEqual({ text: 'short', truncated: false });
+  });
+});
+
+describe('runTestCommand targeted re-run', () => {
+  const okRunner = (seen: string[]): CommandRunner => ({
+    run: async (_command, args) => {
+      seen.push(...args);
+      return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+    },
+  });
+
+  it('appends the test files after the npm separator', async () => {
+    const seen: string[] = [];
+    const result = await runTestCommand({
+      id: 'npm-test',
+      cwd: '/ws',
+      filter: ['tests/a.test.ts', 'tests/b.test.ts'],
+      runner: okRunner(seen),
+    });
+    expect(seen).toEqual(['test', '--', 'tests/a.test.ts', 'tests/b.test.ts']);
+    expect(result.command).toBe('npm test -- tests/a.test.ts tests/b.test.ts');
+    expect(result.filter).toEqual(['tests/a.test.ts', 'tests/b.test.ts']);
+    expect(result.commandId).toBe('npm-test');
+  });
+
+  it('appends the files directly for vitest and pytest', async () => {
+    for (const id of ['vitest', 'pytest'] as const) {
+      const seen: string[] = [];
+      await runTestCommand({ id, cwd: '/ws', filter: ['tests/a.test.ts'], runner: okRunner(seen) });
+      expect(seen[seen.length - 1]).toBe('tests/a.test.ts');
+      expect(seen).not.toContain('--');
+    }
+  });
+
+  it('drops anything that is not a safe relative test path', async () => {
+    const seen: string[] = [];
+    await runTestCommand({
+      id: 'vitest',
+      cwd: '/ws',
+      filter: ['/etc/passwd.test.ts', '../evil.test.ts', '--flag', 'tests/ok.test.ts'],
+      runner: okRunner(seen),
+    });
+    expect(seen).toEqual(['vitest', 'run', 'tests/ok.test.ts']);
+  });
+
+  it('runs the whole suite when no file survives validation', async () => {
+    const seen: string[] = [];
+    await runTestCommand({ id: 'vitest', cwd: '/ws', filter: ['nope.txt'], runner: okRunner(seen) });
+    expect(seen).toEqual(['vitest', 'run']);
+  });
+
+  it('refuses a filter on a command that cannot be narrowed', async () => {
+    const result = await runTestCommand({
+      id: 'npm-lint',
+      cwd: '/ws',
+      filter: ['tests/a.test.ts'],
+      runner: {
+        run: async () => {
+          throw new Error('must not run');
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.stderr).toContain('cannot be narrowed');
+    expect(result.commandId).toBe('npm-lint');
+  });
+
+  it('exposes which commands support a targeted re-run', () => {
+    expect(supportsTargetedRerun('npm-test')).toBe(true);
+    expect(supportsTargetedRerun('vitest')).toBe(true);
+    expect(supportsTargetedRerun('pytest')).toBe(true);
+    expect(supportsTargetedRerun('npm-lint')).toBe(false);
+    expect(supportsTargetedRerun('go-test')).toBe(false);
+    expect(supportsTargetedRerun('nope')).toBe(false);
+  });
+
+  it('records the command id on every result', async () => {
+    const result = await runTestCommand({
+      id: 'cargo-test',
+      cwd: '/ws',
+      runner: runnerOf(async () => ({ exitCode: 0, stdout: '', stderr: '', timedOut: false })),
+    });
+    expect(result.commandId).toBe('cargo-test');
   });
 });
 

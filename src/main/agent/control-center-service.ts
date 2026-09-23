@@ -9,6 +9,7 @@
 import type {
   ControlCenterSnapshot,
   GitStatusSummary,
+  RerunFailedTestsOutcome,
   TerminalSessionInfo,
   TerminalSnapshot,
   TestCommandId,
@@ -24,7 +25,14 @@ import { createGitRunner } from './checkpoint-backends';
 import type { GitRunner } from './checkpoint-manager';
 import { readGitStatus } from '../workspace/git-status';
 import { listWorkspaceTree, readWorkspaceFile } from '../workspace/workspace-explorer';
-import { createExecFileRunner, runTestCommand, type CommandRunner } from '../workspace/test-runner';
+import {
+  createExecFileRunner,
+  resolveTestCommand,
+  runTestCommand,
+  type CommandRunner,
+} from '../workspace/test-runner';
+import { parseFailedTestFiles } from '../../shared/test-failures';
+import { resolveWorkspaceFile } from '../utils/workspace-path';
 import { TerminalManager, type TerminalManagerOptions } from '../workspace/terminal-manager';
 import {
   createShellEditorOpener,
@@ -186,6 +194,42 @@ export class ControlCenterService {
 
   public lastTestResult(sessionId: string): TestRunResult | null {
     return this.lastTests.get(sessionId) ?? null;
+  }
+
+  /**
+   * Re-run only the test files that failed in the last run. The files come from
+   * our own captured output, are validated to be real files inside the
+   * workspace, and are only accepted by commands that support a narrowed run.
+   */
+  public async rerunFailedTests(sessionId: string): Promise<RerunFailedTestsOutcome> {
+    const root = this.workspaceRoot(sessionId);
+    if (!root) {
+      return { ran: false, reason: 'no_workspace' };
+    }
+    const previous = this.lastTests.get(sessionId);
+    if (!previous || previous.ok) {
+      return { ran: false, reason: 'no_previous_run' };
+    }
+    const spec = resolveTestCommand(previous.commandId);
+    if (!spec || spec.filterMode !== 'append') {
+      return { ran: false, reason: 'unsupported_command' };
+    }
+    const files = parseFailedTestFiles(previous.stdout + '\n' + previous.stderr).filter(
+      (file) => resolveWorkspaceFile(root, file) !== null
+    );
+    if (files.length === 0) {
+      return { ran: false, reason: 'no_failed_files' };
+    }
+    const result = await runTestCommand({
+      id: spec.id,
+      cwd: root,
+      runner: this.runner,
+      filter: files,
+      now: this.options.now,
+      idFactory: this.options.idFactory,
+    });
+    this.lastTests.set(sessionId, result);
+    return { ran: true, files, result };
   }
 
   /**

@@ -1526,7 +1526,15 @@
       "exitCode": "退出码 {{code}}",
       "truncated": "输出已截断",
       "empty": "工作区为空。",
-      "previewEmpty": "选择文件以预览。"
+      "previewEmpty": "选择文件以预览。",
+      "rerunFailed": "重新运行失败的文件",
+      "rerunRan": "已重新运行 {{count}} 个文件",
+      "rerun": {
+        "no_workspace": "此会话没有可用的工作区。",
+        "no_previous_run": "请先运行一次失败的检查。",
+        "no_failed_files": "无法从上次输出中识别失败的测试文件。",
+        "unsupported_command": "此检查无法缩小到特定文件。"
+      }
     },
     "queue": {
       "title": "分离任务",

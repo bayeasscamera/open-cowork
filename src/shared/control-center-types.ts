@@ -93,6 +93,8 @@ export type TestCommandId =
 
 export interface TestRunResult {
   id: string;
+  /** Whitelisted command this run came from, so it can be re-run. */
+  commandId: TestCommandId;
   command: string;
   cwd: string;
   ok: boolean;
@@ -102,6 +104,23 @@ export interface TestRunResult {
   stderr: string;
   truncated: boolean;
   ranAt: number;
+  /** Test files this run was narrowed to, relative to the workspace root. */
+  filter?: string[];
+}
+
+/** Why a targeted re-run did not happen. */
+export type RerunFailureReason =
+  | 'no_workspace'
+  | 'no_previous_run'
+  | 'no_failed_files'
+  | 'unsupported_command';
+
+export interface RerunFailedTestsOutcome {
+  ran: boolean;
+  reason?: RerunFailureReason;
+  /** Test files that were re-run, relative to the workspace root. */
+  files?: string[];
+  result?: TestRunResult;
 }
 
 export type TerminalStream = 'stdout' | 'stderr';

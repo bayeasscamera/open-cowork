@@ -1525,7 +1525,15 @@
       "exitCode": "code {{code}}",
       "truncated": "sortie tronquée",
       "empty": "L'espace de travail est vide.",
-      "previewEmpty": "Sélectionnez un fichier pour l'aperçu."
+      "previewEmpty": "Sélectionnez un fichier pour l'aperçu.",
+      "rerunFailed": "Relancer les fichiers en échec",
+      "rerunRan": "{{count}} fichier(s) relancé(s)",
+      "rerun": {
+        "no_workspace": "Aucun espace de travail n'est disponible pour cette session.",
+        "no_previous_run": "Lancez d'abord une vérification en échec.",
+        "no_failed_files": "Aucun fichier de test en échec n'a pu être identifié dans la dernière sortie.",
+        "unsupported_command": "Cette vérification ne peut pas être limitée à des fichiers précis."
+      }
     },
     "queue": {
       "title": "Tâches détachées",

@@ -30,6 +30,13 @@ describe('control center panel wiring', () => {
     expect(panel).toContain('<SettingsLevelsPane sessionId={sessionId} />');
   });
 
+  it('re-runs only the failed test files from the workspace pane', () => {
+    expect(workspace).toContain('api.rerunFailedTests(sessionId)');
+    expect(workspace).toContain("t('controlCenter.workspace.rerunFailed')");
+    expect(workspace).toContain("t('controlCenter.workspace.rerun.' + rerun.reason)");
+    expect(workspace).toContain('outcome.ran && outcome.result');
+  });
+
   it('drives the embedded terminal from its pane', () => {
     expect(terminal).toContain('api.terminalList(sessionId)');
     expect(terminal).toContain('api.terminalOpen(sessionId)');
@@ -101,7 +108,7 @@ describe('control center panel wiring', () => {
     for (const match of handlers.matchAll(channelPattern)) {
       handlerChannels.add(match[1]);
     }
-    expect(handlerChannels.size).toBe(24);
+    expect(handlerChannels.size).toBe(25);
 
     for (const channel of handlerChannels) {
       expect(preload, 'preload is missing controlCenter.' + channel).toContain(

@@ -70,6 +70,7 @@ import type {
   DetachedTaskStatus,
   GitStatusSummary,
   NotificationInput,
+  RerunFailedTestsOutcome,
   TerminalSessionInfo,
   TerminalSnapshot,
   TestCommandId,
@@ -980,6 +981,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('controlCenter.gitStatus', sessionId),
     runTests: (sessionId: string, commandId: TestCommandId): Promise<TestRunResult> =>
       ipcRenderer.invoke('controlCenter.runTests', sessionId, commandId),
+    rerunFailedTests: (sessionId: string): Promise<RerunFailedTestsOutcome> =>
+      ipcRenderer.invoke('controlCenter.rerunFailedTests', sessionId),
     openInEditor: (
       sessionId: string,
       filePath: string,
@@ -1610,6 +1613,7 @@ declare global {
         ) => Promise<WorkspaceFileContent>;
         gitStatus: (sessionId: string) => Promise<GitStatusSummary | null>;
         runTests: (sessionId: string, commandId: TestCommandId) => Promise<TestRunResult>;
+        rerunFailedTests: (sessionId: string) => Promise<RerunFailedTestsOutcome>;
         openInEditor: (
           sessionId: string,
           filePath: string,

@@ -135,6 +135,7 @@ describe('control-center-ipc-handlers', () => {
       'controlCenter.queue',
       'controlCenter.readFile',
       'controlCenter.recordActivity',
+      'controlCenter.rerunFailedTests',
       'controlCenter.runTests',
       'controlCenter.snapshot',
       'controlCenter.terminalClear',
@@ -196,6 +197,20 @@ describe('control-center-ipc-handlers', () => {
     const result = (await invoke('controlCenter.runTests', 's1', 'npm-test')) as { ok: boolean; command: string };
     expect(result.ok).toBe(true);
     expect(result.command).toBe('npm test');
+  });
+
+  it('delegates a targeted re-run to the service', async () => {
+    expect(await invoke('controlCenter.rerunFailedTests', 's1')).toEqual({
+      ran: false,
+      reason: 'no_previous_run',
+    });
+    expect(await invoke('controlCenter.rerunFailedTests', 's2')).toEqual({
+      ran: false,
+      reason: 'no_workspace',
+    });
+    await expect(invoke('controlCenter.rerunFailedTests', '')).rejects.toThrow(
+      'A session id is required.'
+    );
   });
 
   it('returns empty probes without a workspace', async () => {

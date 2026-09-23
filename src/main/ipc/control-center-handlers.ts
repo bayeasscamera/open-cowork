@@ -204,6 +204,10 @@ export function registerControlCenterIpcHandlers(context: ControlCenterIpcContex
     service.runTests(requireSessionId(sessionId), coerceTestCommandId(commandId))
   );
 
+  ipcMain.handle('controlCenter.rerunFailedTests', (_event, sessionId: unknown) =>
+    service.rerunFailedTests(requireSessionId(sessionId))
+  );
+
   // The workspace root is resolved from the session inside the service; the
   // renderer only names a file, never a root or an editor.
   ipcMain.handle(

@@ -10,11 +10,12 @@
  * the action always has a defined outcome instead of a broken protocol dialog.
  */
 
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, isAbsolute, join, resolve, sep } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { shell } from 'electron';
 import { log, logWarn } from './logger';
+import { resolveWorkspaceFile } from './workspace-path';
 
 export interface EditorCandidate {
   id: string;
@@ -108,46 +109,6 @@ export function buildEditorUrl(scheme: string, filePath: string, line: number | 
   return line === null ? base : base + ':' + line + ':1';
 }
 
-function realPathOf(target: string): string {
-  try {
-    return realpathSync(target);
-  } catch {
-    return target;
-  }
-}
-
-/** Control characters would corrupt the editor URI or the editor argv. */
-function hasControlCharacters(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
-
-/**
- * Resolve a requested path to a real file inside the workspace root. Returns
- * null when the path escapes the root (lexically or through a symlink), does
- * not exist, is not a regular file, or carries control characters.
- */
-export function resolveEditorTarget(root: string, requested: unknown): string | null {
-  if (typeof requested !== 'string') return null;
-  const trimmed = requested.trim();
-  if (!trimmed) return null;
-  if (hasControlCharacters(trimmed)) return null;
-  const normalizedRoot = resolve(root);
-  const target = isAbsolute(trimmed) ? resolve(trimmed) : resolve(normalizedRoot, trimmed);
-  const realRoot = realPathOf(normalizedRoot);
-  const realTarget = realPathOf(target);
-  if (realTarget !== realRoot && !realTarget.startsWith(realRoot + sep)) return null;
-  try {
-    if (!statSync(realTarget).isFile()) return null;
-  } catch {
-    return null;
-  }
-  return target;
-}
-
 export interface EditorOpener {
   openExternal(url: string): Promise<void>;
   /** Returns an error message when the OS could not open the path. */
@@ -182,7 +143,7 @@ export async function openFileInEditor(
   request: OpenInEditorRequest,
   opener: EditorOpener = createShellEditorOpener()
 ): Promise<OpenInEditorResult> {
-  const target = resolveEditorTarget(request.root, request.path);
+  const target = resolveWorkspaceFile(request.root, request.path);
   if (!target) {
     logWarn('[openInEditor] refused a target outside the workspace, or missing');
     return { success: false, error: 'invalid_target' };
