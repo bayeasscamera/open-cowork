@@ -37,6 +37,13 @@ describe('control center panel wiring', () => {
     expect(workspace).toContain('outcome.ran && outcome.result');
   });
 
+  it('opens the local preview through the sandboxed bridge', () => {
+    expect(workspace).toContain('previewApi.open(previewUrl)');
+    expect(workspace).toContain('previewApi.close()');
+    expect(workspace).toContain('previewApi.state()');
+    expect(workspace).toContain("t('controlCenter.workspace.previewInvalid')");
+  });
+
   it('drives the embedded terminal from its pane', () => {
     expect(terminal).toContain('api.terminalList(sessionId)');
     expect(terminal).toContain('api.terminalOpen(sessionId)');

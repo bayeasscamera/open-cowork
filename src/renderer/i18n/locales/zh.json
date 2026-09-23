@@ -1534,7 +1534,12 @@
         "no_previous_run": "请先运行一次失败的检查。",
         "no_failed_files": "无法从上次输出中识别失败的测试文件。",
         "unsupported_command": "此检查无法缩小到特定文件。"
-      }
+      },
+      "preview": "本地预览",
+      "previewUrl": "预览地址",
+      "previewOpen": "打开预览",
+      "previewClose": "关闭预览",
+      "previewInvalid": "只能预览本地 http(s) 地址（localhost、127.0.0.1、::1）。"
     },
     "queue": {
       "title": "分离任务",

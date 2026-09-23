@@ -84,6 +84,8 @@ import { registerModsIpcHandlers } from './ipc/mods-handlers';
 import { registerWorkflowIpcHandlers } from './ipc/workflow-handlers';
 import { registerProjectMemoryIpcHandlers } from './ipc/project-memory-handlers';
 import { registerControlCenterIpcHandlers } from './ipc/control-center-handlers';
+import { registerPreviewIpcHandlers } from './ipc/preview-handlers';
+import { closePreviewWindow } from './preview/preview-window';
 import { registerModelRoutingIpcHandlers } from './ipc/model-routing-handlers';
 import { registerMetricsIpcHandlers } from './ipc/metrics-handlers';
 import { WorkflowRegistry, DEFAULT_PERSIST_DEBOUNCE_MS } from './agent/workflow-registry';
@@ -1664,6 +1666,8 @@ async function cleanupSandboxResources(): Promise<void> {
   }
   tray?.destroy();
   tray = null;
+  // The preview window owns a renderer process of its own.
+  closePreviewWindow();
 
   // Independent shutdown steps run in parallel so the worst case is bounded
   // by the slowest pipeline (~7s: session sync-back 5s + adapter 3s) instead
@@ -2039,6 +2043,9 @@ if (restoredQueue.length > 0) {
   controlCenterService.queue.restore(restoredQueue);
 }
 registerControlCenterIpcHandlers({ service: controlCenterService });
+
+// Local dev-server preview: a hardened, loopback-only child window.
+registerPreviewIpcHandlers();
 
 // Model routing (Phase 7): named profiles, local benchmark store, local provider
 // detection and validated registry entries. The service also backs adaptive

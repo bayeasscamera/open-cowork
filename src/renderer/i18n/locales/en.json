@@ -1534,7 +1534,12 @@
         "no_previous_run": "Run a failing check first.",
         "no_failed_files": "No failed test file could be identified in the last output.",
         "unsupported_command": "This check cannot be narrowed to specific files."
-      }
+      },
+      "preview": "Local preview",
+      "previewUrl": "Preview URL",
+      "previewOpen": "Open preview",
+      "previewClose": "Close preview",
+      "previewInvalid": "Only a loopback http(s) URL (localhost, 127.0.0.1, ::1) can be previewed."
     },
     "queue": {
       "title": "Detached tasks",

@@ -1533,7 +1533,12 @@
         "no_previous_run": "Lancez d'abord une vérification en échec.",
         "no_failed_files": "Aucun fichier de test en échec n'a pu être identifié dans la dernière sortie.",
         "unsupported_command": "Cette vérification ne peut pas être limitée à des fichiers précis."
-      }
+      },
+      "preview": "Aperçu local",
+      "previewUrl": "URL de l'aperçu",
+      "previewOpen": "Ouvrir l'aperçu",
+      "previewClose": "Fermer l'aperçu",
+      "previewInvalid": "Seule une URL http(s) locale (localhost, 127.0.0.1, ::1) peut être prévisualisée."
     },
     "queue": {
       "title": "Tâches détachées",

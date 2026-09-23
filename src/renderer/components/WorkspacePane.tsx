@@ -59,12 +59,16 @@ function TreeNodes({
 export function WorkspacePane({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation();
   const api = typeof window !== 'undefined' ? window.electronAPI?.controlCenter : undefined;
+  const previewApi = typeof window !== 'undefined' ? window.electronAPI?.preview : undefined;
   const [tree, setTree] = useState<WorkspaceEntry[]>([]);
   const [git, setGit] = useState<GitStatusSummary | null>(null);
   const [selected, setSelected] = useState<WorkspaceEntry | null>(null);
   const [preview, setPreview] = useState<string>('');
   const [test, setTest] = useState<TestRunResult | null>(null);
   const [rerun, setRerun] = useState<RerunFailedTestsOutcome | null>(null);
+  const [previewUrl, setPreviewUrl] = useState('http://localhost:3000');
+  const [previewWindow, setPreviewWindow] = useState<{ open: boolean; url: string | null } | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,17 +77,19 @@ export function WorkspacePane({ sessionId }: { sessionId: string }) {
       return;
     }
     try {
-      const [nextTree, nextGit] = await Promise.all([
+      const [nextTree, nextGit, nextPreview] = await Promise.all([
         api.workspaceTree(sessionId, { maxDepth: 3, maxEntries: 400 }),
         api.gitStatus(sessionId),
+        previewApi ? previewApi.state() : Promise.resolve(null),
       ]);
       setTree(nextTree);
       setGit(nextGit);
+      setPreviewWindow(nextPreview);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [api, sessionId]);
+  }, [api, previewApi, sessionId]);
 
   useEffect(() => {
     void refresh();
@@ -143,6 +149,33 @@ export function WorkspacePane({ sessionId }: { sessionId: string }) {
       setBusy(false);
     }
   }, [api, sessionId]);
+
+  const openPreview = useCallback(async () => {
+    if (!previewApi) {
+      return;
+    }
+    setPreviewFailed(false);
+    try {
+      const result = await previewApi.open(previewUrl);
+      setPreviewWindow(result.state);
+      if (!result.success) {
+        setPreviewFailed(true);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [previewApi, previewUrl]);
+
+  const closePreview = useCallback(async () => {
+    if (!previewApi) {
+      return;
+    }
+    try {
+      setPreviewWindow(await previewApi.close());
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [previewApi]);
 
   const gitLists: Array<{ key: string; label: string; paths: string[] }> = git
     ? [
@@ -267,6 +300,48 @@ export function WorkspacePane({ sessionId }: { sessionId: string }) {
               </pre>
             )}
           </div>
+        )}
+      </section>
+
+      <section className="space-y-1.5">
+        <h3 className="text-xs font-medium text-text-secondary">
+          {t('controlCenter.workspace.preview')}
+        </h3>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input
+            value={previewUrl}
+            onChange={(event) => setPreviewUrl(event.target.value)}
+            aria-label={t('controlCenter.workspace.previewUrl')}
+            placeholder="http://localhost:3000"
+            className="w-56 rounded-lg border border-border bg-background px-2 py-1 font-mono text-xs text-text-secondary"
+          />
+          <button
+            type="button"
+            disabled={!previewApi}
+            onClick={() => void openPreview()}
+            className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-secondary disabled:opacity-40"
+          >
+            <Play className="h-3 w-3" />
+            {t('controlCenter.workspace.previewOpen')}
+          </button>
+          {previewWindow?.open && (
+            <button
+              type="button"
+              disabled={!previewApi}
+              onClick={() => void closePreview()}
+              className="rounded-lg border border-border px-2 py-1 text-xs text-text-secondary disabled:opacity-40"
+            >
+              {t('controlCenter.workspace.previewClose')}
+            </button>
+          )}
+        </div>
+        {previewFailed && (
+          <p className="text-[11px] text-amber-400">
+            {t('controlCenter.workspace.previewInvalid')}
+          </p>
+        )}
+        {previewWindow?.open && previewWindow.url && (
+          <p className="break-all font-mono text-[11px] text-text-muted">{previewWindow.url}</p>
         )}
       </section>
 

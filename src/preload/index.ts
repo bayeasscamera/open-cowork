@@ -734,6 +734,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }> => ipcRenderer.invoke('diff.getSessionFiles', sessionId),
   },
 
+  // Local dev-server preview: a hardened, loopback-only child window.
+  preview: {
+    open: (
+      url: string
+    ): Promise<{
+      success: boolean;
+      error?: string;
+      state: { open: boolean; url: string | null };
+    }> => ipcRenderer.invoke('preview.open', url),
+    close: (): Promise<{ open: boolean; url: string | null }> =>
+      ipcRenderer.invoke('preview.close'),
+    state: (): Promise<{ open: boolean; url: string | null }> =>
+      ipcRenderer.invoke('preview.state'),
+  },
   // Skill doctor (context cost analyzer)
   skillsDoctor: (): Promise<{
     success: boolean;
@@ -1491,6 +1505,17 @@ declare global {
             diff: string;
           }>;
         }>;
+      };
+      preview: {
+        open: (
+          url: string
+        ) => Promise<{
+          success: boolean;
+          error?: string;
+          state: { open: boolean; url: string | null };
+        }>;
+        close: () => Promise<{ open: boolean; url: string | null }>;
+        state: () => Promise<{ open: boolean; url: string | null }>;
       };
       skillsDoctor: () => Promise<{
         success: boolean;
