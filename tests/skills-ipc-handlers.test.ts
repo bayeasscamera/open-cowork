@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
@@ -218,9 +221,20 @@ describe('skills and plugin IPC handlers', () => {
     );
   });
 
-  it('skills.doctor scans the built-in and user skill directories', async () => {
+  it('skills.doctor analyses the same roots the agent loads', async () => {
     register();
-    mocks.doctor.loadSkillSourcesFromDir.mockReturnValue([{ name: 'a' }]);
+    const root = mkdtempSync(path.join(os.tmpdir(), 'doctor-skills-'));
+    const skillDir = path.join(root, 'pdf');
+    mkdirSync(skillDir, { recursive: true });
+    const content = '---\nname: pdf\n---\nbody';
+    writeFileSync(path.join(skillDir, 'SKILL.md'), content, 'utf-8');
+
+    mocks.runtime.resolveSources.mockResolvedValue([{ root, kind: 'global' }]);
+    mocks.runtime.describe.mockReturnValue({
+      sources: [{ root, kind: 'global', skills: [{ name: 'pdf', path: skillDir, enabled: true }] }],
+      loaded: 1,
+      disabled: 0,
+    });
     mocks.doctor.buildSkillDoctorReport.mockReturnValue({ total: 2 });
     mocks.store.get.mockReturnValue(200000);
 
@@ -228,10 +242,12 @@ describe('skills and plugin IPC handlers', () => {
       success: true,
       report: { total: 2 },
     });
-    expect(mocks.doctor.loadSkillSourcesFromDir).toHaveBeenCalledTimes(2);
+    expect(mocks.runtime.resolveSources).toHaveBeenCalledWith(mocks.plugins);
     expect(mocks.doctor.buildSkillDoctorReport).toHaveBeenCalledWith(
-      [{ name: 'a' }, { name: 'a' }],
+      [{ name: 'pdf', path: path.join(skillDir, 'SKILL.md'), content }],
       200000
     );
+
+    rmSync(root, { recursive: true, force: true });
   });
 });

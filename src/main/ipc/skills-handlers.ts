@@ -7,13 +7,10 @@
  */
 
 import { app, ipcMain, shell } from 'electron';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { configStore } from '../config/config-store';
-import {
-  buildSkillDoctorReport,
-  loadSkillSourcesFromDir,
-  type SkillDoctorSkillSource,
-} from '../mods/skill-doctor';
+import { buildSkillDoctorReport, type SkillDoctorSkillSource } from '../mods/skill-doctor';
 import { approveProposal, listProposals, rejectProposal } from '../skills/skill-proposals';
 import { describeSkillRuntime } from '../skills/skill-runtime-view';
 import { resolveRuntimeSkillSources } from '../skills/skill-runtime-sources';
@@ -303,15 +300,26 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('skills.doctor', async () => {
     try {
+      // Analyse the same roots the agent loads, so the doctor and the
+      // capability pane can never disagree about which skills exist. Disabled
+      // skills are included on purpose — the report recommends which to switch
+      // off, so hiding them would defeat it.
+      const view = describeSkillRuntime(await resolveRuntimeSkillSources(pluginRuntimeService));
       const sources: SkillDoctorSkillSource[] = [];
-      // Built-in skills (bundled with the app)
-      const builtinDir = app.isPackaged
-        ? join(process.resourcesPath, 'skills')
-        : join(__dirname, '../../.claude', 'skills');
-      sources.push(...loadSkillSourcesFromDir(builtinDir));
-      // User skills directory
-      const userDir = join(app.getPath('userData'), 'claude', 'skills');
-      sources.push(...loadSkillSourcesFromDir(userDir));
+      for (const source of view.sources) {
+        for (const skill of source.skills) {
+          const skillFile = join(skill.path, 'SKILL.md');
+          try {
+            sources.push({
+              name: skill.name,
+              path: skillFile,
+              content: readFileSync(skillFile, 'utf-8'),
+            });
+          } catch {
+            // Unreadable skill — the doctor simply skips it.
+          }
+        }
+      }
       const contextWindow = Number(configStore.get('contextWindow')) || null;
       return { success: true, report: buildSkillDoctorReport(sources, contextWindow) };
     } catch (error) {
