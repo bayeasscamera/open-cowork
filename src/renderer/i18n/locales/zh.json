@@ -1045,6 +1045,8 @@
     "copyMessage": "复制消息",
     "editMessage": "编辑消息",
     "retryResponse": "重新生成回复",
+    "copyResponse": "复制回复",
+    "copied": "已复制！",
     "save": "保存并发送",
     "cancel": "取消",
     "revealInFolder": "在文件夹中定位",
