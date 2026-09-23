@@ -8,6 +8,7 @@ const panel = read('src/renderer/components/ControlCenterPanel.tsx');
 const activity = read('src/renderer/components/ActivityFeed.tsx');
 const workspace = read('src/renderer/components/WorkspacePane.tsx');
 const queue = read('src/renderer/components/TaskQueuePane.tsx');
+const terminal = read('src/renderer/components/TerminalPane.tsx');
 const app = read('src/renderer/App.tsx');
 const store = read('src/renderer/store/index.ts');
 const preload = read('src/preload/index.ts');
@@ -15,12 +16,26 @@ const handlers = read('src/main/ipc/control-center-handlers.ts');
 const types = read('src/shared/control-center-types.ts');
 
 describe('control center panel wiring', () => {
-  it('renders the three control-center panes as tabs', () => {
-    expect(panel).toContain("const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue'];");
+  it('renders the four control-center panes as tabs', () => {
+    expect(panel).toContain(
+      "const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue', 'terminal'];"
+    );
     expect(panel).toContain("t('controlCenter.tab.' + candidate)");
     expect(panel).toContain('<ActivityFeed sessionId={sessionId} />');
     expect(panel).toContain('<WorkspacePane sessionId={sessionId} />');
     expect(panel).toContain('<TaskQueuePane sessionId={sessionId} />');
+    expect(panel).toContain('<TerminalPane sessionId={sessionId} />');
+  });
+
+  it('drives the embedded terminal from its pane', () => {
+    expect(terminal).toContain('api.terminalList(sessionId)');
+    expect(terminal).toContain('api.terminalOpen(sessionId)');
+    expect(terminal).toContain('api.terminalSnapshot(sessionId, activeId, cursor.current)');
+    expect(terminal).toContain('api.terminalWrite(sessionId, activeId, input)');
+    expect(terminal).toContain('api.terminalClear(sessionId, activeId)');
+    expect(terminal).toContain('api.terminalClose(sessionId, activeId)');
+    expect(terminal).toContain("t('controlCenter.terminal.hint')");
+    expect(terminal).toContain("t('controlCenter.terminal.exited'");
   });
 
   it('summarizes the workspace, branch, running tasks and unread notifications', () => {
@@ -71,7 +86,7 @@ describe('control center panel wiring', () => {
     for (const match of handlers.matchAll(channelPattern)) {
       handlerChannels.add(match[1]);
     }
-    expect(handlerChannels.size).toBe(17);
+    expect(handlerChannels.size).toBe(23);
 
     for (const channel of handlerChannels) {
       expect(preload, 'preload is missing controlCenter.' + channel).toContain(

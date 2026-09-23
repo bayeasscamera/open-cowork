@@ -20,6 +20,7 @@ import { log, logError } from '../utils/logger';
 import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resolution';
 import type { ServerEvent } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
+import type { TaskQueue } from './task-queue';
 
 const MAX_TIMEOUT_MS = 300_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -90,7 +91,8 @@ function createSpawnSubagentTool(
   parentSessionId: string,
   requestPermission: PermissionHandler | null,
   getParentAbortSignal: () => AbortSignal | null,
-  concurrencyState: { active: number }
+  concurrencyState: { active: number },
+  taskQueue: TaskQueue | null = null
 ): AgentRuntimeCustomTool {
   return {
     name: 'spawn_subagent',
@@ -179,6 +181,20 @@ function createSpawnSubagentTool(
           task: task.slice(0, 200),
         })
       );
+
+      // Phase 6 control center: a spawned subagent is a detached task, so the
+      // queue shows it, its outcome, and restores it as queued after a restart.
+      let queueTaskId: string | null = null;
+      if (taskQueue) {
+        const queued = taskQueue.enqueue({
+          sessionId: parentSessionId,
+          kind: 'subagent',
+          label: task.slice(0, 120),
+          resumeToken: subagentId,
+        });
+        taskQueue.start(queued.id);
+        queueTaskId = queued.id;
+      }
 
       try {
         const config = configStore.getAll();
@@ -396,6 +412,10 @@ function createSpawnSubagentTool(
         const durationMs = Date.now() - startTime;
         log(`[SubagentExtension] Child ${subagentId} completed in ${durationMs}ms`);
 
+        if (queueTaskId) {
+          taskQueue?.complete(queueTaskId);
+        }
+
         safeSendEvent(
           sendEvent,
           buildProgressEvent(parentSessionId, subagentId, {
@@ -417,6 +437,14 @@ function createSpawnSubagentTool(
 
         const isTimeout = err instanceof SubagentTimeoutError;
         const isCancelled = err instanceof ParentCancelledError;
+
+        if (queueTaskId) {
+          if (isCancelled) {
+            taskQueue?.cancel(queueTaskId, 'cancelled');
+          } else {
+            taskQueue?.fail(queueTaskId, isTimeout ? 'timeout' : message.slice(0, 200));
+          }
+        }
 
         safeSendEvent(
           sendEvent,
@@ -455,7 +483,8 @@ export class SubagentExtension implements AgentRuntimeExtension {
     private readonly getMcpManager: () => MCPManager | null,
     private readonly sendEvent: SendEvent,
     private readonly requestPermission: PermissionHandler | null = null,
-    private readonly getParentAbortSignal: () => AbortSignal | null = () => null
+    private readonly getParentAbortSignal: () => AbortSignal | null = () => null,
+    private readonly taskQueue: TaskQueue | null = null
   ) {}
 
   async beforeSessionRun(context: BeforeSessionRunContext): Promise<BeforeSessionRunResult> {
@@ -467,7 +496,8 @@ export class SubagentExtension implements AgentRuntimeExtension {
           context.session.id,
           this.requestPermission,
           this.getParentAbortSignal,
-          this.concurrencyState
+          this.concurrencyState,
+          this.taskQueue
         ),
       ],
     };

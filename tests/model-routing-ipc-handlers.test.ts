@@ -125,7 +125,7 @@ describe('model-routing-ipc-handlers', () => {
       activeProfile: 'strong',
     });
     expect(service.resolveModel({ sessionId: 's', prompt: 'fix the bug', fallbackModel: 'm' })).toBe(
-      'claude-opus-4-6'
+      'anthropic/claude-opus-4-6'
     );
 
     expect(await invoke('modelRouting.setEnabled', false)).toEqual({

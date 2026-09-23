@@ -43,7 +43,7 @@ describe('ModelRoutingService', () => {
     expect(service.setActiveProfile('fast')).toEqual({ enabled: true, activeProfile: 'fast' });
     expect(
       service.resolveModel({ sessionId: 's', prompt: 'fix the bug', fallbackModel: 'm' })
-    ).toBe('claude-haiku-4-5');
+    ).toBe('anthropic/claude-haiku-4-5');
   });
 
   it('clears the active profile without touching the switch', () => {
@@ -86,6 +86,41 @@ describe('ModelRoutingService', () => {
       latencyMs: 200,
     });
     expect(service.benchmarks.size()).toBe(1);
+  });
+
+  it('normalizes observed model ids onto the profile model', () => {
+    const service = new ModelRoutingService();
+    expect(service.normalizeBenchmarkModelId('anthropic/claude-sonnet-4-6')).toBe(
+      'claude-sonnet-4-6'
+    );
+    expect(service.normalizeBenchmarkModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+    expect(service.normalizeBenchmarkModelId('  ollama/qwen2.5-coder:7b ')).toBe(
+      'qwen2.5-coder:7b'
+    );
+    expect(service.normalizeBenchmarkModelId('unknown/model')).toBe('unknown/model');
+  });
+
+  it('records a real run so later routing has local evidence', () => {
+    const service = new ModelRoutingService();
+    const recorded = service.recordRun({
+      modelId: 'anthropic/claude-sonnet-4-6',
+      prompt: 'Fix the failing test',
+      success: true,
+      latencyMs: 900,
+    });
+    expect(recorded).toMatchObject({
+      modelId: 'claude-sonnet-4-6',
+      taskKind: 'implementation',
+      runs: 1,
+      successes: 1,
+    });
+    expect(service.benchmarks.size()).toBe(1);
+  });
+
+  it('ignores an unusable run record instead of throwing', () => {
+    const service = new ModelRoutingService();
+    expect(service.recordRun({ modelId: '   ', prompt: 'x', success: true, latencyMs: 1 })).toBeNull();
+    expect(service.recordRun({ modelId: 'm', prompt: 'x', success: false, latencyMs: NaN })).not.toBeNull();
   });
 
   it('never throws out of resolveModel when no profile is eligible', () => {

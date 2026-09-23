@@ -16,13 +16,81 @@ import { registerControlCenterIpcHandlers } from '../src/main/ipc/control-center
 import { ControlCenterService } from '../src/main/agent/control-center-service';
 import type { GitRunner } from '../src/main/agent/checkpoint-manager';
 import type { CommandRunner } from '../src/main/workspace/test-runner';
-import type { ActivityEvent, DetachedTask, ApprovalNotification } from '../src/shared/control-center-types';
+import type { TerminalChildProcess, TerminalSpawn } from '../src/main/workspace/terminal-manager';
+import type {
+  ActivityEvent,
+  DetachedTask,
+  ApprovalNotification,
+  TerminalSnapshot,
+} from '../src/shared/control-center-types';
 
 const git: GitRunner = {
   run: async () => ({ exitCode: 0, stdout: '## main...origin/main\n M src/a.ts\n', stderr: '' }),
 };
 const runner: CommandRunner = {
   run: async () => ({ exitCode: 0, stdout: 'green', stderr: '', timedOut: false }),
+};
+
+interface FakeTerminalChild extends TerminalChildProcess {
+  written: string[];
+  killCount: number;
+  emitExit(code: number): void;
+  emitStdout(chunk: unknown): void;
+}
+
+const spawnedTerminals: FakeTerminalChild[] = [];
+
+const fakeSpawn: TerminalSpawn = () => {
+  const exitListeners: ((code: unknown) => void)[] = [];
+  const stdoutListeners: ((chunk: unknown) => void)[] = [];
+  const written: string[] = [];
+  let killCount = 0;
+
+  const child: FakeTerminalChild = {
+    pid: 7,
+    stdin: {
+      write: (data: string) => {
+        written.push(data);
+        return true;
+      },
+    },
+    stdout: {
+      on: (_event: string, listener: (chunk: unknown) => void) => {
+        stdoutListeners.push(listener);
+        return undefined;
+      },
+    },
+    stderr: { on: () => undefined },
+    on: (event: string, listener: (...args: unknown[]) => void) => {
+      if (event === 'exit') {
+        exitListeners.push(listener as (code: unknown) => void);
+      }
+      return undefined;
+    },
+    kill: () => {
+      killCount += 1;
+      return true;
+    },
+    get written() {
+      return written;
+    },
+    get killCount() {
+      return killCount;
+    },
+    emitExit: (code: number) => {
+      for (const listener of exitListeners) {
+        listener(code);
+      }
+    },
+    emitStdout: (chunk: unknown) => {
+      for (const listener of stdoutListeners) {
+        listener(chunk);
+      }
+    },
+  };
+
+  spawnedTerminals.push(child);
+  return child;
 };
 
 const invoke = async (channel: string, ...args: unknown[]): Promise<unknown> => {
@@ -36,12 +104,14 @@ describe('control-center-ipc-handlers', () => {
 
   beforeEach(() => {
     mocks.handlers.clear();
+    spawnedTerminals.length = 0;
     let counter = 0;
     service = new ControlCenterService({
       resolveWorkspaceRoot: (sessionId) => (sessionId === 's1' ? '/ws' : null),
       gitFactory: () => git,
       runner,
       idFactory: () => 'id-' + ++counter,
+      terminal: { spawn: fakeSpawn, isDirectory: () => true },
     });
     registerControlCenterIpcHandlers({ service });
   });
@@ -63,6 +133,12 @@ describe('control-center-ipc-handlers', () => {
       'controlCenter.recordActivity',
       'controlCenter.runTests',
       'controlCenter.snapshot',
+      'controlCenter.terminalClear',
+      'controlCenter.terminalClose',
+      'controlCenter.terminalList',
+      'controlCenter.terminalOpen',
+      'controlCenter.terminalSnapshot',
+      'controlCenter.terminalWrite',
       'controlCenter.updateTask',
       'controlCenter.workspaceTree',
     ]);
@@ -196,5 +272,44 @@ describe('control-center-ipc-handlers', () => {
     expect(snapshot.notifications).toHaveLength(1);
     expect(snapshot.git.branch).toBe('main');
     expect(snapshot.tests.ok).toBe(true);
+  });
+
+  it('drives an embedded terminal through the IPC surface', async () => {
+    const opened = (await invoke('controlCenter.terminalOpen', 's1')) as TerminalSnapshot;
+    expect(opened.session.cwd).toBe('/ws');
+    expect(opened.session.sessionId).toBe('s1');
+    expect(opened.session.running).toBe(true);
+
+    const child = spawnedTerminals[spawnedTerminals.length - 1];
+    child.emitStdout('hello\n');
+
+    const snapshot = (await invoke(
+      'controlCenter.terminalSnapshot',
+      's1',
+      opened.session.id,
+      0
+    )) as TerminalSnapshot;
+    expect(snapshot.output.map((chunk) => chunk.text)).toEqual(['hello\n']);
+
+    expect(await invoke('controlCenter.terminalWrite', 's1', opened.session.id, 'ls')).toEqual({
+      ok: true,
+    });
+    expect(child.written).toEqual(['ls\n']);
+
+    expect((await invoke('controlCenter.terminalList', 's1')) as unknown[]).toHaveLength(1);
+    expect(await invoke('controlCenter.terminalClear', 's1', opened.session.id)).toEqual({
+      cleared: 1,
+    });
+    expect(await invoke('controlCenter.terminalClose', 's1', opened.session.id)).toEqual({
+      closed: true,
+    });
+    expect(child.killCount).toBe(1);
+  });
+
+  it('refuses to open a terminal outside a workspace', async () => {
+    await expect(invoke('controlCenter.terminalOpen', 's2')).rejects.toThrow(
+      'No workspace is available'
+    );
+    expect(spawnedTerminals).toHaveLength(0);
   });
 });

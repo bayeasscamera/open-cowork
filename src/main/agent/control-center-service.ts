@@ -9,6 +9,8 @@
 import type {
   ControlCenterSnapshot,
   GitStatusSummary,
+  TerminalSessionInfo,
+  TerminalSnapshot,
   TestCommandId,
   TestRunResult,
   WorkspaceEntry,
@@ -23,6 +25,7 @@ import type { GitRunner } from './checkpoint-manager';
 import { readGitStatus } from '../workspace/git-status';
 import { listWorkspaceTree, readWorkspaceFile } from '../workspace/workspace-explorer';
 import { createExecFileRunner, runTestCommand, type CommandRunner } from '../workspace/test-runner';
+import { TerminalManager, type TerminalManagerOptions } from '../workspace/terminal-manager';
 
 export interface ControlCenterServiceOptions {
   /** Resolve the workspace root for a session; null when unknown. */
@@ -31,6 +34,8 @@ export interface ControlCenterServiceOptions {
   idFactory?: () => string;
   gitFactory?: (workspaceRoot: string) => GitRunner;
   runner?: CommandRunner;
+  /** Embedded terminal options (shell, spawn, limits). */
+  terminal?: Pick<TerminalManagerOptions, 'shell' | 'spawn' | 'maxTerminals' | 'maxChunks' | 'isDirectory'>;
   activityLimit?: number;
   queueLimit?: number;
   notificationLimit?: number;
@@ -40,6 +45,7 @@ export class ControlCenterService {
   public readonly activity: ActivityTracker;
   public readonly queue: TaskQueue;
   public readonly notifications: NotificationCenter;
+  public readonly terminals: TerminalManager;
 
   private readonly options: ControlCenterServiceOptions;
   private readonly gitFactory: (workspaceRoot: string) => GitRunner;
@@ -65,6 +71,53 @@ export class ControlCenterService {
       idFactory: options.idFactory,
       limit: options.notificationLimit,
     });
+    this.terminals = new TerminalManager({
+      now: options.now,
+      idFactory: options.idFactory,
+      ...(options.terminal ?? {}),
+    });
+  }
+
+  /**
+   * Open an embedded terminal rooted at the session workspace. The renderer
+   * never picks the working directory, so a terminal cannot escape the
+   * workspace the session is bound to.
+   */
+  public openTerminal(sessionId: string, shell?: string): TerminalSnapshot {
+    const root = this.workspaceRoot(sessionId);
+    if (!root) {
+      throw new Error('No workspace is available for session "' + sessionId + '".');
+    }
+    return this.terminals.open({ sessionId, cwd: root, ...(shell ? { shell } : {}) });
+  }
+
+  public terminalSnapshot(
+    sessionId: string,
+    terminalId: string,
+    sinceSeq?: number
+  ): TerminalSnapshot {
+    return this.terminals.snapshot(sessionId, terminalId, sinceSeq);
+  }
+
+  public writeTerminal(sessionId: string, terminalId: string, data: string): void {
+    this.terminals.write(sessionId, terminalId, data);
+  }
+
+  public closeTerminal(sessionId: string, terminalId: string): boolean {
+    return this.terminals.close(sessionId, terminalId);
+  }
+
+  public clearTerminal(sessionId: string, terminalId: string): number {
+    return this.terminals.clear(sessionId, terminalId);
+  }
+
+  public terminalsFor(sessionId: string): TerminalSessionInfo[] {
+    return this.terminals.list(sessionId);
+  }
+
+  /** Kill every embedded terminal; called from the app shutdown path. */
+  public closeAllTerminals(): number {
+    return this.terminals.closeAll();
   }
 
   public workspaceRoot(sessionId: string): string | null {

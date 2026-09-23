@@ -89,6 +89,15 @@ interface AgentRunner {
       | string
       | undefined
   ): void;
+  /** Phase 7 model routing: attach or clear the local benchmark sink. */
+  setBenchmarkRecorder?(
+    recorder?: (input: {
+      modelId: string;
+      prompt: string;
+      success: boolean;
+      latencyMs: number;
+    }) => void
+  ): void;
 }
 
 const WORKSPACE_MOUNT_VIRTUAL_PATH = '/mnt/workspace';
@@ -121,6 +130,13 @@ export class SessionManager {
     prompt: string;
     fallbackModel: string;
   }) => string | undefined;
+  /** Phase 7 model routing: local benchmark sink, injected later. */
+  private benchmarkRecorder?: (input: {
+    modelId: string;
+    prompt: string;
+    success: boolean;
+    latencyMs: number;
+  }) => void;
   private activeSessions: Map<string, AbortController> = new Map();
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> =
     new Map();
@@ -199,6 +215,19 @@ export class SessionManager {
     this.agentRunner?.setModelResolver?.(resolver);
   }
 
+  /** Phase 7 model routing: attach the local benchmark sink. */
+  public setBenchmarkRecorder(
+    recorder?: (input: {
+      modelId: string;
+      prompt: string;
+      success: boolean;
+      latencyMs: number;
+    }) => void
+  ): void {
+    this.benchmarkRecorder = recorder;
+    this.agentRunner?.setBenchmarkRecorder?.(recorder);
+  }
+
   private createCoworkAgentRunner(): CoworkAgentRunner {
     return new CoworkAgentRunner(
       {
@@ -206,6 +235,7 @@ export class SessionManager {
         saveMessage: (message: Message) => this.saveMessage(message),
         ...(this.activityTracker ? { activityTracker: this.activityTracker } : {}),
         ...(this.modelResolver ? { modelResolver: this.modelResolver } : {}),
+        ...(this.benchmarkRecorder ? { benchmarkRecorder: this.benchmarkRecorder } : {}),
         requestSudoPassword: (sessionId: string, toolUseId: string, command: string) =>
           this.requestSudoPassword(sessionId, toolUseId, command),
         requestPermission: (

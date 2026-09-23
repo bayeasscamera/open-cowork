@@ -1459,7 +1459,20 @@
     "tab": {
       "activity": "Activité",
       "workspace": "Espace",
-      "queue": "File"
+      "queue": "File",
+      "terminal": "Terminal"
+    },
+    "terminal": {
+      "open": "Nouveau terminal",
+      "clear": "Effacer la sortie",
+      "close": "Arrêter le terminal",
+      "send": "Exécuter",
+      "placeholder": "Saisissez une commande puis Entrée",
+      "empty": "Aucune sortie pour l'instant.",
+      "noTerminal": "Aucun terminal ouvert pour cette session.",
+      "running": "en cours",
+      "exited": "terminé ({{code}})",
+      "hint": "Les commandes s'exécutent dans un shell à tuyaux, à la racine du workspace de la session. Les programmes plein écran nécessitant un TTY ne sont pas pris en charge."
     },
     "summary": {
       "workspace": "Espace de travail",

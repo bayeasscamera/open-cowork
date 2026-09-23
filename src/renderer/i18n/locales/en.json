@@ -1460,7 +1460,20 @@
     "tab": {
       "activity": "Activity",
       "workspace": "Workspace",
-      "queue": "Queue"
+      "queue": "Queue",
+      "terminal": "Terminal"
+    },
+    "terminal": {
+      "open": "New terminal",
+      "clear": "Clear output",
+      "close": "Stop terminal",
+      "send": "Run",
+      "placeholder": "Type a command and press Enter",
+      "empty": "No output yet.",
+      "noTerminal": "No terminal is open for this session.",
+      "running": "running",
+      "exited": "exited ({{code}})",
+      "hint": "Commands run in a piped shell rooted at the session workspace. Full-screen programs that need a TTY are not supported."
     },
     "summary": {
       "workspace": "Workspace",

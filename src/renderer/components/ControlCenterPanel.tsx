@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, FolderTree, ListChecks, RefreshCw, X } from 'lucide-react';
+import { Activity, FolderTree, ListChecks, RefreshCw, SquareTerminal, X } from 'lucide-react';
 import type { ControlCenterSnapshot } from '../../shared/control-center-types';
 import { ActivityFeed } from './ActivityFeed';
 import { TaskQueuePane } from './TaskQueuePane';
+import { TerminalPane } from './TerminalPane';
 import { WorkspacePane } from './WorkspacePane';
 
-type ControlCenterTab = 'activity' | 'workspace' | 'queue';
+type ControlCenterTab = 'activity' | 'workspace' | 'queue' | 'terminal';
 
-const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue'];
+const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue', 'terminal'];
 
 const TAB_ICON: Record<ControlCenterTab, typeof Activity> = {
   activity: Activity,
   workspace: FolderTree,
   queue: ListChecks,
+  terminal: SquareTerminal,
 };
 
 interface ControlCenterPanelProps {
@@ -124,6 +126,7 @@ export function ControlCenterPanel({ sessionId, onClose }: ControlCenterPanelPro
         {tab === 'activity' && <ActivityFeed sessionId={sessionId} />}
         {tab === 'workspace' && <WorkspacePane sessionId={sessionId} />}
         {tab === 'queue' && <TaskQueuePane sessionId={sessionId} />}
+        {tab === 'terminal' && <TerminalPane sessionId={sessionId} />}
       </div>
     </div>
   );

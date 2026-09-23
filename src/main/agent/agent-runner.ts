@@ -277,6 +277,14 @@ export interface AgentModelResolutionInput {
   fallbackModel: string;
 }
 
+/** One finished run, reported so Phase 7 can build a local benchmark. */
+export interface AgentRunBenchmarkInput {
+  modelId: string;
+  prompt: string;
+  success: boolean;
+  latencyMs: number;
+}
+
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
   saveMessage?: (message: Message) => void;
@@ -284,6 +292,8 @@ interface AgentRunnerOptions {
   activityTracker?: ActivityTracker;
   /** Phase 7 model routing: adaptive model selection for this run. */
   modelResolver?: (input: AgentModelResolutionInput) => string | undefined;
+  /** Phase 7 model routing: local evidence recorded after every run. */
+  benchmarkRecorder?: (input: AgentRunBenchmarkInput) => void;
   requestSudoPassword?: (
     sessionId: string,
     toolUseId: string,
@@ -326,6 +336,7 @@ export class CoworkAgentRunner {
   private extensionManager?: AgentRuntimeExtensionManager;
   private activityTracker?: ActivityTracker;
   private modelResolver?: (input: AgentModelResolutionInput) => string | undefined;
+  private benchmarkRecorder?: (input: AgentRunBenchmarkInput) => void;
   private activeControllers: Map<string, AbortController> = new Map();
   private piSessions: Map<string, CachedPiSession> = new Map();
   private toolDisplayNameCache: Map<string, string> = new Map();
@@ -582,6 +593,13 @@ export class CoworkAgentRunner {
     this.modelResolver = resolver;
   }
 
+  /** Phase 7 model routing: swap the local benchmark sink (or clear it). */
+  public setBenchmarkRecorder(
+    recorder?: (input: AgentRunBenchmarkInput) => void
+  ): void {
+    this.benchmarkRecorder = recorder;
+  }
+
   /**
    * Resolve current model string from runtime config, optionally deferring to
    * the Phase 7 adaptive router.
@@ -631,6 +649,9 @@ export class CoworkAgentRunner {
     const toolActivity = this.activityTracker
       ? new ToolActivityRecorder(this.activityTracker, session.id)
       : undefined;
+    // Phase 7: the model that actually ran, reported to the benchmark sink in
+    // the finally block. Hoisted because it is resolved inside the try.
+    let usedModelString: string | undefined;
 
     // Sandbox isolation state (defined outside try for finally access)
     let sandboxPath: string | null = null;
@@ -781,6 +802,7 @@ export class CoworkAgentRunner {
         prompt,
         allowAdaptive: !effectiveConfigSetId && !effectiveConfigModelId,
       });
+      usedModelString = modelString;
       const configProtocol = resolvePiRouteProtocol(
         runtimeConfig.provider,
         runtimeConfig.customProtocol
@@ -1659,6 +1681,27 @@ export class CoworkAgentRunner {
       // Close activities the provider never completed (abort, stream error,
       // crash) so the control center never shows a stuck "running" tool.
       toolActivity?.cancelRunning('The run ended before this tool call completed.');
+
+      // Phase 7: record local evidence for this run so routing gets better with
+      // use. Telemetry never breaks the loop, so failures are logged and dropped.
+      if (usedModelString) {
+        try {
+          this.benchmarkRecorder?.({
+            modelId: usedModelString,
+            prompt,
+            success:
+              !controller.signal.aborted &&
+              !terminalErrorText &&
+              !abortedByTimeout &&
+              !abortedByLoopGuard &&
+              !abortedByStreamError,
+            latencyMs: Date.now() - runStartTime,
+          });
+        } catch (benchmarkError) {
+          logWarn('[CoworkAgentRunner] Benchmark recording failed:', benchmarkError);
+        }
+      }
+
       this.activeControllers.delete(session.id);
       this.pathResolver.unregisterSession(session.id);
 

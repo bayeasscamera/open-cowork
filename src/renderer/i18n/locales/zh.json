@@ -1460,7 +1460,20 @@
     "tab": {
       "activity": "活动",
       "workspace": "工作区",
-      "queue": "队列"
+      "queue": "队列",
+      "terminal": "终端"
+    },
+    "terminal": {
+      "open": "新建终端",
+      "clear": "清空输出",
+      "close": "停止终端",
+      "send": "运行",
+      "placeholder": "输入命令后按回车",
+      "empty": "暂无输出。",
+      "noTerminal": "此会话尚未打开终端。",
+      "running": "运行中",
+      "exited": "已退出（{{code}}）",
+      "hint": "命令在会话工作区根目录下的管道 shell 中运行。需要 TTY 的全屏程序不受支持。"
     },
     "summary": {
       "workspace": "工作区",

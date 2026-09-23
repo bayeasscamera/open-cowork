@@ -69,6 +69,8 @@ import type {
   DetachedTaskStatus,
   GitStatusSummary,
   NotificationInput,
+  TerminalSessionInfo,
+  TerminalSnapshot,
   TestCommandId,
   TestRunResult,
   WorkspaceEntry,
@@ -956,6 +958,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('controlCenter.acknowledgeNotification', sessionId, id),
     acknowledgeAll: (sessionId?: string): Promise<{ acknowledged: number }> =>
       ipcRenderer.invoke('controlCenter.acknowledgeAll', sessionId),
+    terminalOpen: (sessionId: string, shell?: string): Promise<TerminalSnapshot> =>
+      ipcRenderer.invoke('controlCenter.terminalOpen', sessionId, shell),
+    terminalList: (sessionId: string): Promise<TerminalSessionInfo[]> =>
+      ipcRenderer.invoke('controlCenter.terminalList', sessionId),
+    terminalSnapshot: (
+      sessionId: string,
+      terminalId: string,
+      sinceSeq?: number
+    ): Promise<TerminalSnapshot> =>
+      ipcRenderer.invoke('controlCenter.terminalSnapshot', sessionId, terminalId, sinceSeq),
+    terminalWrite: (sessionId: string, terminalId: string, data: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke('controlCenter.terminalWrite', sessionId, terminalId, data),
+    terminalClear: (sessionId: string, terminalId: string): Promise<{ cleared: number }> =>
+      ipcRenderer.invoke('controlCenter.terminalClear', sessionId, terminalId),
+    terminalClose: (sessionId: string, terminalId: string): Promise<{ closed: boolean }> =>
+      ipcRenderer.invoke('controlCenter.terminalClose', sessionId, terminalId),
   },
 
   modelRouting: {
@@ -1531,6 +1549,20 @@ declare global {
           id: string
         ) => Promise<ApprovalNotification | null>;
         acknowledgeAll: (sessionId?: string) => Promise<{ acknowledged: number }>;
+        terminalOpen: (sessionId: string, shell?: string) => Promise<TerminalSnapshot>;
+        terminalList: (sessionId: string) => Promise<TerminalSessionInfo[]>;
+        terminalSnapshot: (
+          sessionId: string,
+          terminalId: string,
+          sinceSeq?: number
+        ) => Promise<TerminalSnapshot>;
+        terminalWrite: (
+          sessionId: string,
+          terminalId: string,
+          data: string
+        ) => Promise<{ ok: true }>;
+        terminalClear: (sessionId: string, terminalId: string) => Promise<{ cleared: number }>;
+        terminalClose: (sessionId: string, terminalId: string) => Promise<{ closed: boolean }>;
       };
       modelRouting: {
         state: () => Promise<ModelRoutingState>;

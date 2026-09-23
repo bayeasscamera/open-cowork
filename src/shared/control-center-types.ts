@@ -104,6 +104,36 @@ export interface TestRunResult {
   ranAt: number;
 }
 
+export type TerminalStream = 'stdout' | 'stderr';
+
+/** One piece of terminal output, numbered so the renderer can poll by cursor. */
+export interface TerminalChunk {
+  seq: number;
+  stream: TerminalStream;
+  text: string;
+  at: number;
+}
+
+export interface TerminalSessionInfo {
+  id: string;
+  sessionId: string;
+  cwd: string;
+  shell: string;
+  running: boolean;
+  exitCode: number | null;
+  startedAt: number;
+  endedAt?: number;
+}
+
+export interface TerminalSnapshot {
+  session: TerminalSessionInfo;
+  /** Chunks newer than the requested cursor, oldest first. */
+  output: TerminalChunk[];
+  /** True once the buffer started dropping the oldest output. */
+  truncated: boolean;
+  droppedChunks: number;
+}
+
 export type DetachedTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface DetachedTask {

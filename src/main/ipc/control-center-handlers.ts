@@ -263,4 +263,60 @@ export function registerControlCenterIpcHandlers(context: ControlCenterIpcContex
       throw error;
     }
   });
+
+  // ── Embedded terminal ────────────────────────────────────────────────────
+  // The working directory is resolved from the session workspace inside the
+  // service; the renderer can never choose where a terminal starts.
+
+  ipcMain.handle('controlCenter.terminalOpen', (_event, sessionId: unknown, shell?: unknown) => {
+    try {
+      return service.openTerminal(
+        requireSessionId(sessionId),
+        typeof shell === 'string' && shell.trim().length > 0 ? shell.trim() : undefined
+      );
+    } catch (error: unknown) {
+      logError('[controlCenter] terminalOpen failed', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('controlCenter.terminalList', (_event, sessionId: unknown) =>
+    service.terminalsFor(requireSessionId(sessionId))
+  );
+
+  ipcMain.handle(
+    'controlCenter.terminalSnapshot',
+    (_event, sessionId: unknown, terminalId: unknown, sinceSeq?: unknown) =>
+      service.terminalSnapshot(
+        requireSessionId(sessionId),
+        requireNonEmpty(terminalId, 'Terminal id'),
+        typeof sinceSeq === 'number' && Number.isFinite(sinceSeq) ? Math.max(0, sinceSeq) : 0
+      )
+  );
+
+  ipcMain.handle(
+    'controlCenter.terminalWrite',
+    (_event, sessionId: unknown, terminalId: unknown, data: unknown) => {
+      service.writeTerminal(
+        requireSessionId(sessionId),
+        requireNonEmpty(terminalId, 'Terminal id'),
+        typeof data === 'string' ? data : ''
+      );
+      return { ok: true };
+    }
+  );
+
+  ipcMain.handle('controlCenter.terminalClear', (_event, sessionId: unknown, terminalId: unknown) => ({
+    cleared: service.clearTerminal(
+      requireSessionId(sessionId),
+      requireNonEmpty(terminalId, 'Terminal id')
+    ),
+  }));
+
+  ipcMain.handle('controlCenter.terminalClose', (_event, sessionId: unknown, terminalId: unknown) => ({
+    closed: service.closeTerminal(
+      requireSessionId(sessionId),
+      requireNonEmpty(terminalId, 'Terminal id')
+    ),
+  }));
 }

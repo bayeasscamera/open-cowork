@@ -922,7 +922,9 @@ app
           () => sessionManager?.getMCPManager() ?? null,
           sendToRenderer,
           async (toolName, toolInput) =>
-            resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>)
+            resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>),
+          undefined,
+          controlCenterService.queue
         ),
       ]);
 
@@ -1359,7 +1361,9 @@ app
         () => sessionManager?.getMCPManager() ?? null,
         sendToRenderer,
         async (toolName, toolInput) =>
-          resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>)
+          resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>),
+        undefined,
+        controlCenterService.queue
       ),
     ]);
 
@@ -1719,6 +1723,18 @@ async function cleanupSandboxResources(): Promise<void> {
         logError('[App] Error shutting down MCP servers:', error);
       }
     })(),
+
+    // Kill embedded control-center terminals so no shell outlives the app.
+    (async () => {
+      try {
+        const closed = controlCenterService.closeAllTerminals();
+        if (closed > 0) {
+          log('[App] Closed ' + closed + ' embedded terminal(s)');
+        }
+      } catch (error) {
+        logError('[App] Error closing embedded terminals:', error);
+      }
+    })(),
   ];
 
   await Promise.all(cleanupTasks);
@@ -1953,6 +1969,9 @@ function attachAgentServices(manager: SessionManager): void {
   manager.setActivityTracker(controlCenterService.activity);
   manager.setNotificationCenter(controlCenterService.notifications);
   manager.setModelResolver((input) => modelRoutingService.resolveModel(input));
+  manager.setBenchmarkRecorder((input) => {
+    modelRoutingService.recordRun(input);
+  });
 }
 
 // Client event dispatch lives in its own module; wire the app-level state it

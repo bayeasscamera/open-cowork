@@ -11,6 +11,7 @@ const index = read('src/main/index.ts');
 const preload = read('src/preload/index.ts');
 const recorder = read('src/main/agent/tool-activity-recorder.ts');
 const routingService = read('src/main/agent/model-routing-service.ts');
+const subagentExtension = read('src/main/agent/subagent-extension.ts');
 
 describe('control center wired into the agent loop', () => {
   it('mirrors tool executions into the activity tracker', () => {
@@ -73,8 +74,53 @@ describe('model routing wired into live model selection', () => {
     expect(preload).not.toContain("from '../main/");
   });
 
+  it('records a benchmark for every run through the routing service', () => {
+    expect(runner).toContain('public setBenchmarkRecorder(');
+    expect(runner).toContain('this.benchmarkRecorder?.({');
+    expect(runner).toContain('modelId: usedModelString,');
+    expect(sessionManager).toContain('public setBenchmarkRecorder(');
+    expect(sessionManager).toContain('this.agentRunner?.setBenchmarkRecorder?.(recorder);');
+    expect(sessionManager).toContain(
+      '...(this.benchmarkRecorder ? { benchmarkRecorder: this.benchmarkRecorder } : {}),'
+    );
+    expect(index).toContain('manager.setBenchmarkRecorder((input) => {');
+    expect(index).toContain('modelRoutingService.recordRun(input);');
+    expect(routingService).toContain(
+      'public recordRun(input: ModelRunInput): ModelBenchmark | null'
+    );
+  });
+
   it('keeps the activity recorder free of console output', () => {
     expect(recorder).not.toContain('console.log');
     expect(routingService).not.toContain('console.log');
+  });
+});
+
+describe('detached tasks and the embedded terminal are wired end to end', () => {
+  it('feeds the detached-task queue from spawned subagents', () => {
+    expect(subagentExtension).toContain("import type { TaskQueue } from './task-queue';");
+    expect(subagentExtension).toContain('taskQueue.enqueue({');
+    expect(subagentExtension).toContain('taskQueue.start(queued.id);');
+    expect(subagentExtension).toContain('taskQueue?.complete(queueTaskId);');
+    expect(subagentExtension).toContain('taskQueue?.fail(queueTaskId,');
+    expect(subagentExtension).toContain('taskQueue?.cancel(queueTaskId,');
+    expect(index).toContain('controlCenterService.queue');
+  });
+
+  it('declares the embedded terminal channels in the preload bridge', () => {
+    for (const channel of [
+      'terminalOpen',
+      'terminalList',
+      'terminalSnapshot',
+      'terminalWrite',
+      'terminalClear',
+      'terminalClose',
+    ]) {
+      expect(preload).toContain('controlCenter.' + channel);
+    }
+  });
+
+  it('kills every terminal on shutdown', () => {
+    expect(index).toContain('controlCenterService.closeAllTerminals()');
   });
 });

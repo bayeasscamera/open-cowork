@@ -27,6 +27,15 @@ export interface ModelRoutingServiceOptions {
   benchmarks?: ModelBenchmarkStore;
 }
 
+/** One finished run, as observed by the agent runner. */
+export interface ModelRunInput {
+  modelId: string;
+  prompt: string;
+  success: boolean;
+  latencyMs: number;
+  costUsd?: number;
+}
+
 /** Input the runner passes when it needs a model for one prompt. */
 export interface ModelResolutionInput {
   sessionId: string;
@@ -208,12 +217,64 @@ export class ModelRoutingService {
       // therefore refines routing without silently overriding the human.
       const preferred = profileById(this.activeProfile, this.profiles);
       if (preferred && isProfileEligible(preferred, request).eligible) {
-        return preferred.model;
+        return qualify(preferred.provider, preferred.model);
       }
-      const modelId = routeModel(request, this.profiles, this.benchmarks.list()).model?.trim();
-      return modelId && modelId.length > 0 ? modelId : undefined;
+      const decision = routeModel(request, this.profiles, this.benchmarks.list());
+      return qualify(decision.provider, decision.model);
     } catch {
       return undefined;
     }
   }
+
+  /**
+   * Map an observed model id onto the profile it belongs to, so a benchmark
+   * recorded for "anthropic/claude-sonnet-4-6" also matches the bare
+   * "claude-sonnet-4-6" a profile declares. Unknown ids pass through unchanged.
+   */
+  public normalizeBenchmarkModelId(modelId: string): string {
+    const trimmed = modelId.trim();
+    const profile = this.profiles.find(
+      (candidate) =>
+        candidate.model === trimmed || candidate.provider + '/' + candidate.model === trimmed
+    );
+    return profile ? profile.model : trimmed;
+  }
+
+  /**
+   * Record the outcome of one real run so later routing decisions are backed by
+   * local evidence. Returns null when there is nothing usable to record, and
+   * never throws: telemetry must not break the agent loop.
+   */
+  public recordRun(input: ModelRunInput): ModelBenchmark | null {
+    const modelId = this.normalizeBenchmarkModelId(input.modelId ?? '');
+    if (modelId.length === 0) {
+      return null;
+    }
+    try {
+      return this.benchmarks.record({
+        modelId,
+        taskKind: inferTaskKind(input.prompt ?? ''),
+        success: input.success === true,
+        latencyMs:
+          typeof input.latencyMs === 'number' && Number.isFinite(input.latencyMs)
+            ? Math.max(0, input.latencyMs)
+            : 0,
+        ...(typeof input.costUsd === 'number' && Number.isFinite(input.costUsd)
+          ? { costUsd: Math.max(0, input.costUsd) }
+          : {}),
+      });
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** "provider/model" so the pi registry can resolve the profile's provider. */
+function qualify(provider: string, model: string): string | undefined {
+  const modelId = model?.trim();
+  if (!modelId || modelId.length === 0) {
+    return undefined;
+  }
+  const providerId = provider?.trim();
+  return providerId && !modelId.includes('/') ? providerId + '/' + modelId : modelId;
 }
