@@ -41,6 +41,29 @@ describe('plan approval panel wiring', () => {
     expect(panel).toContain('api.rejectTask(sessionId, task.id)');
     expect(panel).toContain('api.restoreTask(sessionId, task.id)');
     expect(panel).toContain('api.restorePlan(sessionId)');
+    expect(panel).toContain('api.completeTask(sessionId, task.id, [');
+  });
+
+  it('completes a manually started task with a visible human attestation', () => {
+    // Only a started (checkpointed), not-yet-completed task offers this.
+    expect(panel).toContain('!completed && (');
+    expect(panel).toContain("kind: 'note'");
+    expect(panel).toContain("t('planPanel.task.complete')");
+    expect(panel).toContain("t('planPanel.task.completeHint')");
+    expect(panel).toContain("t('planPanel.task.completeNote')");
+  });
+
+  it('declares the manual-completion strings in every locale', () => {
+    for (const locale of ['en', 'fr', 'zh']) {
+      const messages = JSON.parse(read('src/renderer/i18n/locales/' + locale + '.json'));
+      expect(messages.planPanel.task.complete, locale + ' complete').toBeTruthy();
+      expect(messages.planPanel.task.completeNote, locale + ' completeNote').toBeTruthy();
+      expect(messages.planPanel.task.completeHint, locale + ' completeHint').toBeTruthy();
+    }
+    // The hint must say that command proofs are still demanded — completing
+    // by hand may not launder a plan whose tests never ran.
+    const en = JSON.parse(read('src/renderer/i18n/locales/en.json'));
+    expect(en.planPanel.task.completeHint).toContain('still require');
   });
 
   it('is mounted from the app shell behind a store flag', () => {

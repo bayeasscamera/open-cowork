@@ -438,6 +438,27 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
                             >
                               {t('planPanel.task.start')}
                             </button>
+                            {!completed && (
+                              <button
+                                type="button"
+                                disabled={busy || !api}
+                                title={t('planPanel.task.completeHint')}
+                                onClick={() =>
+                                  api &&
+                                  void run(() =>
+                                    api.completeTask(sessionId, task.id, [
+                                      {
+                                        kind: 'note',
+                                        description: t('planPanel.task.completeNote'),
+                                      },
+                                    ])
+                                  )
+                                }
+                                className="rounded border border-border px-2 py-0.5 text-[10px] disabled:opacity-40"
+                              >
+                                {t('planPanel.task.complete')}
+                              </button>
+                            )}
                             <button
                               type="button"
                               disabled={busy || !api}

@@ -1796,6 +1796,9 @@
     },
     "task": {
       "start": "检查点",
+      "complete": "完成",
+      "completeHint": "将任务标记为完成，并以备注形式记录您的确认。命令类标准（测试、lint……）仍需要真实的证明。",
+      "completeNote": "由用户在计划面板中标记为完成。",
       "accept": "接受",
       "reject": "拒绝",
       "restore": "恢复",

@@ -1796,6 +1796,9 @@
     },
     "task": {
       "start": "Checkpoint",
+      "complete": "Complete",
+      "completeHint": "Marks the task done and records your attestation as a note. Command criteria (tests, lint…) still require their real proofs.",
+      "completeNote": "Marked complete by the user from the plan panel.",
       "accept": "Accept",
       "reject": "Reject",
       "restore": "Restore",
