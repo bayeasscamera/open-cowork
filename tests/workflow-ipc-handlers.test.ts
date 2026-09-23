@@ -94,7 +94,6 @@ describe('workflow-ipc-handlers', () => {
     expect(channels).toContain('workflow.exportAuditLog');
     expect(channels).toContain('workflow.acceptTask');
     expect(channels).toContain('workflow.restoreTask');
-    expect(channels).toContain('workflow.startReadyTasks');
     expect(channels).toContain('workflow.planIsolation');
     expect(channels).toContain('workflow.cleanupAllIsolation');
     expect(channels).toContain('workflow.executePlan');
@@ -103,7 +102,7 @@ describe('workflow-ipc-handlers', () => {
     expect(channels).toContain('workflow.cancel');
     expect(channels).toContain('workflow.verifyTask');
     expect(channels).toContain('workflow.persist');
-    expect(channels).toHaveLength(28);
+    expect(channels).toHaveLength(27);
   });
 
   it('returns null state when no workspace is available', async () => {

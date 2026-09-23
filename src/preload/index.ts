@@ -890,10 +890,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('workflow.approve', sessionId, decision),
     startExecution: (sessionId: string): Promise<{ started: boolean; reasons: string[] }> =>
       ipcRenderer.invoke('workflow.startExecution', sessionId),
-    startReadyTasks: (
-      sessionId: string
-    ): Promise<{ started: TaskCheckpoint[]; skipped: string[]; reasons: string[] }> =>
-      ipcRenderer.invoke('workflow.startReadyTasks', sessionId),
+
     startTask: (sessionId: string, taskId: string): Promise<TaskCheckpoint> =>
       ipcRenderer.invoke('workflow.startTask', sessionId, taskId),
     completeTask: (
@@ -1576,9 +1573,7 @@ declare global {
           decision: ApprovalDecisionInput
         ) => Promise<ApprovalOutcome>;
         startExecution: (sessionId: string) => Promise<{ started: boolean; reasons: string[] }>;
-        startReadyTasks: (
-          sessionId: string
-        ) => Promise<{ started: TaskCheckpoint[]; skipped: string[]; reasons: string[] }>;
+
         startTask: (sessionId: string, taskId: string) => Promise<TaskCheckpoint>;
         completeTask: (
           sessionId: string,

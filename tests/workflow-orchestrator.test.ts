@@ -221,38 +221,6 @@ describe('workflow-orchestrator', () => {
     expect(state.groups).toHaveLength(2);
   });
 
-  it('serialises two ready writers that share a file', async () => {
-    const { orchestrator } = makeOrchestrator();
-    orchestrator.loadContract(wideContract(), [
-      executeTask({ id: 't1', title: 'First' }),
-      executeTask({ id: 't2', title: 'Second' }),
-    ]);
-    orchestrator.requestApproval();
-    orchestrator.approve({ approved: true });
-    orchestrator.startExecution();
-
-    const run = await orchestrator.startReadyTasks();
-    expect(run.started.map((checkpoint) => checkpoint.taskId)).toEqual(['t1']);
-    expect(run.skipped).toEqual(['t2']);
-    expect(run.reasons[0]).toContain('overlaps task "t1"');
-    expect(run.reasons[0]).toContain('src/a.ts');
-  });
-
-  it('starts two ready writers whose scopes are disjoint', async () => {
-    const { orchestrator } = makeOrchestrator();
-    orchestrator.loadContract(wideContract(), [
-      executeTask({ id: 't1', title: 'First', writeScope: ['src/a.ts'] }),
-      executeTask({ id: 't2', title: 'Second', writeScope: ['src/b.ts'] }),
-    ]);
-    orchestrator.requestApproval();
-    orchestrator.approve({ approved: true });
-    orchestrator.startExecution();
-
-    const run = await orchestrator.startReadyTasks();
-    expect(run.started.map((checkpoint) => checkpoint.taskId)).toEqual(['t1', 't2']);
-    expect(run.skipped).toEqual([]);
-  });
-
   it('fails plan verification when a contract criterion was never proven', async () => {
     const { orchestrator } = makeOrchestrator();
     const contract = createTaskContract({

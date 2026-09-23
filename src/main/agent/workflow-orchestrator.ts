@@ -34,7 +34,6 @@ import type {
 import type { AuditLog } from './audit-log';
 import type { PermissionPolicy } from './permission-policy';
 import { assertExecutablePlan, planConflictFreeGroups } from './task-planner';
-import { overlappingScopePaths, writeScopesOverlap } from '../../shared/write-scope-conflicts';
 import { verifyContractCriteria, verifyPlan, verifyTask } from './verification';
 
 /** Everything the orchestrator needs to survive a restart (Phase 1.6). */
@@ -201,77 +200,6 @@ export class WorkflowOrchestrator {
     });
     this.emit();
     return { started: true, reasons: [] };
-  }
-
-  /**
-   * Phase 3.3 — start every task that has no unmet dependency in one call.
-   *
-   * A task is deferred when it is flagged `parallelizable: false` and a writer
-   * already started, or when its write scope provably overlaps an already
-   * started task (Lot D). The scope check is the real guarantee: the boolean
-   * alone ignored the paths, so two tasks that both declared `src/a.ts` could
-   * be started together and the last writer would silently win.
-   */
-  public async startReadyTasks(): Promise<{
-    started: TaskCheckpoint[];
-    skipped: string[];
-    reasons: string[];
-  }> {
-    if (this.phase !== 'executing') {
-      return {
-        started: [],
-        skipped: [],
-        reasons: ['Execution has not started (phase "' + this.phase + '").'],
-      };
-    }
-
-    const ready = this.tasks.filter((task) => this.readyTaskIds().includes(task.id));
-    const started: TaskCheckpoint[] = [];
-    const skipped: string[] = [];
-    const reasons: string[] = [];
-    const startedTasks: AtomicTask[] = [];
-    let startedWriter = false;
-
-    for (const task of ready) {
-      // Two writers must never race on the same file. The boolean flag below
-      // only knows "this task writes"; it cannot tell whether the paths
-      // collide, so an explicit scope comparison runs first.
-      const overlap =
-        task.writeScope.length > 0
-          ? startedTasks.find(
-              (candidate) =>
-                candidate.writeScope.length > 0 &&
-                writeScopesOverlap(task.writeScope, candidate.writeScope)
-            )
-          : undefined;
-      if (overlap) {
-        skipped.push(task.id);
-        reasons.push(
-          'Task "' +
-            task.id +
-            '" overlaps task "' +
-            overlap.id +
-            '" on ' +
-            overlappingScopePaths(task.writeScope, overlap.writeScope).join(', ') +
-            '; started one at a time.'
-        );
-        continue;
-      }
-
-      const writer = !task.parallelizable;
-      if (writer && startedWriter) {
-        skipped.push(task.id);
-        reasons.push('Task "' + task.id + '" writes to the workspace; started one at a time.');
-        continue;
-      }
-      started.push(await this.startTask(task.id));
-      startedTasks.push(task);
-      if (writer) {
-        startedWriter = true;
-      }
-    }
-
-    return { started, skipped, reasons };
   }
 
   /** Tasks whose dependencies are all completed and that are still pending. */

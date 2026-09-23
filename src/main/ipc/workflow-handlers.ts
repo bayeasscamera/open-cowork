@@ -201,11 +201,6 @@ export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
     )
   );
 
-  ipcMain.handle('workflow.startReadyTasks', (_event, sessionId: string) =>
-    safe('workflow.startReadyTasks', () =>
-      requireEntry(sessionId).orchestrator.startReadyTasks()
-    )
-  );
 
   ipcMain.handle('workflow.startTask', (_event, sessionId: string, taskId: string) =>
     safe('workflow.startTask', () =>
