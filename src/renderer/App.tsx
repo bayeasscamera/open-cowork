@@ -47,6 +47,16 @@ const ProjectMemoryPanel = lazy(() =>
     default: module.ProjectMemoryPanel,
   }))
 );
+const ControlCenterPanel = lazy(() =>
+  import('./components/ControlCenterPanel').then((module) => ({
+    default: module.ControlCenterPanel,
+  }))
+);
+const ModelRoutingPanel = lazy(() =>
+  import('./components/ModelRoutingPanel').then((module) => ({
+    default: module.ModelRoutingPanel,
+  }))
+);
 const ConfigModal = lazy(() =>
   import('./components/ConfigModal').then((module) => ({ default: module.ConfigModal }))
 );
@@ -117,6 +127,10 @@ function App() {
   const setPlanPanelVisible = useAppStore((s) => s.setPlanPanelVisible);
   const memoryPanelVisible = useAppStore((s) => s.memoryPanelVisible);
   const setMemoryPanelVisible = useAppStore((s) => s.setMemoryPanelVisible);
+  const controlCenterVisible = useAppStore((s) => s.controlCenterVisible);
+  const setControlCenterVisible = useAppStore((s) => s.setControlCenterVisible);
+  const modelRoutingVisible = useAppStore((s) => s.modelRoutingVisible);
+  const setModelRoutingVisible = useAppStore((s) => s.setModelRoutingVisible);
   const projectsPage = useAppStore((s) => s.projectsPage);
   const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
   const documentPanelVisible = useAppStore((s) => s.documentPanelVisible);
@@ -261,6 +275,25 @@ function App() {
                 <ProjectsPages />
               </Suspense>
             </PanelErrorBoundary>
+          ) : modelRoutingVisible ? (
+            <PanelErrorBoundary name="ModelRoutingPanel" fallback={<MainPanelFallback />}>
+              <Suspense fallback={<MainPanelFallback />}>
+                <ModelRoutingPanel onClose={() => setModelRoutingVisible(false)} />
+              </Suspense>
+            </PanelErrorBoundary>
+          ) : controlCenterVisible && activeSessionId ? (
+            <PanelErrorBoundary
+              name="ControlCenterPanel"
+              resetKey={activeSessionId}
+              fallback={<MainPanelFallback />}
+            >
+              <Suspense fallback={<MainPanelFallback />}>
+                <ControlCenterPanel
+                  sessionId={activeSessionId}
+                  onClose={() => setControlCenterVisible(false)}
+                />
+              </Suspense>
+            </PanelErrorBoundary>
           ) : memoryPanelVisible && activeSessionId ? (
             <PanelErrorBoundary
               name="ProjectMemoryPanel"
@@ -303,7 +336,13 @@ function App() {
         </main>
 
         {/* Context Panel - only show when in session and not in settings/projects pages */}
-        {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && !planPanelVisible && (
+        {activeSessionId &&
+          !showSettings &&
+          !projectsPage &&
+          !subAgentsVisible &&
+          !planPanelVisible &&
+          !controlCenterVisible &&
+          !modelRoutingVisible && (
           <PanelErrorBoundary
             name="ContextPanel"
             resetKey={activeSessionId}
@@ -317,6 +356,30 @@ function App() {
       {/* Diff Panel toggle + live session diff (local mods only) */}
       {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
         <>
+          <button
+            type="button"
+            aria-pressed={modelRoutingVisible}
+            onClick={() => setModelRoutingVisible(!modelRoutingVisible)}
+            className={`fixed bottom-4 right-64 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
+              modelRoutingVisible
+                ? 'border-accent bg-accent/10 text-text-primary'
+                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
+            }`}
+          >
+            {t('modelRouting.short')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={controlCenterVisible}
+            onClick={() => setControlCenterVisible(!controlCenterVisible)}
+            className={`fixed bottom-4 right-52 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
+              controlCenterVisible
+                ? 'border-accent bg-accent/10 text-text-primary'
+                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
+            }`}
+          >
+            {t('controlCenter.short')}
+          </button>
           <button
             type="button"
             aria-pressed={memoryPanelVisible}

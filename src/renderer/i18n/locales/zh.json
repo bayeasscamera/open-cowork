@@ -1373,6 +1373,154 @@
     "readError": "读取文档失败",
     "writeError": "写入文档失败"
   },
+  "modelRouting": {
+    "title": "模型路由",
+    "subtitle": "命名配置、本地优先路由与受校验的仓库",
+    "short": "模型",
+    "close": "关闭",
+    "refresh": "刷新",
+    "profiles": {
+      "title": "配置",
+      "cost": "成本层级 {{tier}}",
+      "local": "本地",
+      "remote": "云端",
+      "capability": {
+        "tools": "工具",
+        "vision": "视觉",
+        "json": "JSON"
+      }
+    },
+    "route": {
+      "title": "路由任务",
+      "run": "路由",
+      "decision": "已选择",
+      "requiresTools": "需要工具",
+      "requiresVision": "需要视觉",
+      "requiresJson": "需要 JSON",
+      "confidential": "机密",
+      "estimatedCost": "≈ {{cost}} USD",
+      "fallbacks": "备选",
+      "taskKind": {
+        "general": "通用",
+        "exploration": "探索",
+        "implementation": "实现",
+        "review": "评审"
+      }
+    },
+    "benchmarks": {
+      "title": "本地基准",
+      "empty": "暂无基准记录。",
+      "clear": "清空",
+      "model": "模型",
+      "task": "任务",
+      "runs": "次数",
+      "success": "成功率",
+      "score": "评分"
+    },
+    "local": {
+      "title": "本地提供方",
+      "detect": "检测",
+      "detecting": "检测中…",
+      "reachable": "可访问",
+      "unreachable": "不可访问",
+      "noModels": "未报告模型",
+      "kind": {
+        "ollama": "Ollama",
+        "lm-studio": "LM Studio",
+        "vllm": "vLLM",
+        "openai-compatible": "兼容 OpenAI"
+      }
+    },
+    "registry": {
+      "title": "仓库校验",
+      "repoId": "org/model-GGUF",
+      "url": "https://huggingface.co/org/model-GGUF",
+      "sha256": "sha256（可选）",
+      "validate": "校验",
+      "valid": "条目已接受",
+      "invalid": "条目已拒绝",
+      "suggested": "建议配置：{{profile}}"
+    }
+  },
+  "controlCenter": {
+    "title": "智能体控制中心",
+    "subtitle": "活动、工作区、队列与审批集中呈现",
+    "short": "中心",
+    "close": "关闭",
+    "refresh": "刷新",
+    "none": "无",
+    "tab": {
+      "activity": "活动",
+      "workspace": "工作区",
+      "queue": "队列"
+    },
+    "summary": {
+      "workspace": "工作区",
+      "branch": "分支",
+      "running": "{{count}} 个运行中",
+      "unread": "{{count}} 条未读"
+    },
+    "activity": {
+      "count": "{{count}} 次工具调用",
+      "clear": "清空",
+      "empty": "暂无工具活动。",
+      "duration": "{{ms}} 毫秒",
+      "status": {
+        "running": "运行中",
+        "ok": "成功",
+        "error": "错误",
+        "cancelled": "已取消"
+      }
+    },
+    "workspace": {
+      "git": "Git 状态",
+      "noGit": "未检测到 Git 仓库",
+      "branch": "分支",
+      "ahead": "领先 {{count}}",
+      "behind": "落后 {{count}}",
+      "clean": "工作区干净",
+      "staged": "已暂存",
+      "modified": "已修改",
+      "untracked": "未跟踪",
+      "deleted": "已删除",
+      "tests": "检查",
+      "test": {
+        "npm-test": "npm test",
+        "npm-typecheck": "typecheck",
+        "npm-lint": "lint",
+        "vitest": "vitest"
+      },
+      "passed": "通过",
+      "failed": "失败",
+      "exitCode": "退出码 {{code}}",
+      "truncated": "输出已截断",
+      "empty": "工作区为空。",
+      "previewEmpty": "选择文件以预览。"
+    },
+    "queue": {
+      "title": "分离任务",
+      "empty": "暂无分离任务。",
+      "start": "开始",
+      "cancel": "取消",
+      "notifications": "通知",
+      "noNotifications": "暂无通知。",
+      "acknowledge": "确认",
+      "acknowledgeAll": "全部确认",
+      "status": {
+        "queued": "排队中",
+        "running": "运行中",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消"
+      },
+      "kind": {
+        "approval": "审批",
+        "blocker": "阻塞",
+        "completion": "完成",
+        "error": "错误"
+      }
+    }
+  },
   "projectMemory": {
     "title": "Cowork 对此项目的了解",
     "subtitle": "四个层，带来源，可编辑与过期",

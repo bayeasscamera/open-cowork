@@ -59,6 +59,35 @@ import type {
   UpsertMemoryInput,
 } from '../shared/project-memory-types';
 import type {
+  ActivityEvent,
+  ActivityEventInput,
+  ActivityStatus,
+  ApprovalNotification,
+  ControlCenterSnapshot,
+  DetachedTask,
+  DetachedTaskInput,
+  DetachedTaskStatus,
+  GitStatusSummary,
+  NotificationInput,
+  TestCommandId,
+  TestRunResult,
+  WorkspaceEntry,
+  WorkspaceFileContent,
+  WorkspaceTreeOptions,
+} from '../shared/control-center-types';
+import type {
+  BenchmarkRecordInput,
+  LocalProviderKind,
+  LocalProviderProbe,
+  ModelBenchmark,
+  ModelProfile,
+  RegistryEntryInput,
+  RegistryValidation,
+  RoutingDecision,
+  RoutingRequest,
+  TaskKind,
+} from '../shared/model-routing-types';
+import type {
   ApprovalDecisionInput,
   ApprovalOutcome,
   ApprovalRequest,
@@ -871,6 +900,77 @@ contextBridge.exposeInMainWorld('electronAPI', {
     seedFromAudit: (sessionId: string, entries: AuditEntry[]): Promise<{ added: number }> =>
       ipcRenderer.invoke('projectMemory.seedFromAudit', sessionId, entries),
   },
+  controlCenter: {
+    snapshot: (sessionId: string): Promise<ControlCenterSnapshot> =>
+      ipcRenderer.invoke('controlCenter.snapshot', sessionId),
+    activity: (sessionId: string, limit?: number): Promise<ActivityEvent[]> =>
+      ipcRenderer.invoke('controlCenter.activity', sessionId, limit),
+    recordActivity: (sessionId: string, input: ActivityEventInput): Promise<ActivityEvent> =>
+      ipcRenderer.invoke('controlCenter.recordActivity', sessionId, input),
+    finishActivity: (
+      sessionId: string,
+      id: string,
+      outcome: { status: ActivityStatus; error?: string; detail?: string }
+    ): Promise<ActivityEvent | null> =>
+      ipcRenderer.invoke('controlCenter.finishActivity', sessionId, id, outcome),
+    clearActivity: (sessionId?: string): Promise<{ removed: number }> =>
+      ipcRenderer.invoke('controlCenter.clearActivity', sessionId),
+    workspaceTree: (
+      sessionId: string,
+      options?: WorkspaceTreeOptions
+    ): Promise<WorkspaceEntry[]> =>
+      ipcRenderer.invoke('controlCenter.workspaceTree', sessionId, options),
+    readFile: (
+      sessionId: string,
+      relativePath: string,
+      maxBytes?: number
+    ): Promise<WorkspaceFileContent> =>
+      ipcRenderer.invoke('controlCenter.readFile', sessionId, relativePath, maxBytes),
+    gitStatus: (sessionId: string): Promise<GitStatusSummary | null> =>
+      ipcRenderer.invoke('controlCenter.gitStatus', sessionId),
+    runTests: (sessionId: string, commandId: TestCommandId): Promise<TestRunResult> =>
+      ipcRenderer.invoke('controlCenter.runTests', sessionId, commandId),
+    queue: (sessionId?: string): Promise<DetachedTask[]> =>
+      ipcRenderer.invoke('controlCenter.queue', sessionId),
+    enqueueTask: (sessionId: string, input: DetachedTaskInput): Promise<DetachedTask> =>
+      ipcRenderer.invoke('controlCenter.enqueueTask', sessionId, input),
+    updateTask: (
+      sessionId: string,
+      id: string,
+      status: DetachedTaskStatus,
+      error?: string
+    ): Promise<DetachedTask | null> =>
+      ipcRenderer.invoke('controlCenter.updateTask', sessionId, id, status, error),
+    cancelTask: (sessionId: string, id: string): Promise<DetachedTask | null> =>
+      ipcRenderer.invoke('controlCenter.cancelTask', sessionId, id),
+    notifications: (sessionId?: string): Promise<ApprovalNotification[]> =>
+      ipcRenderer.invoke('controlCenter.notifications', sessionId),
+    notify: (sessionId: string, input: NotificationInput): Promise<ApprovalNotification> =>
+      ipcRenderer.invoke('controlCenter.notify', sessionId, input),
+    acknowledgeNotification: (
+      sessionId: string,
+      id: string
+    ): Promise<ApprovalNotification | null> =>
+      ipcRenderer.invoke('controlCenter.acknowledgeNotification', sessionId, id),
+    acknowledgeAll: (sessionId?: string): Promise<{ acknowledged: number }> =>
+      ipcRenderer.invoke('controlCenter.acknowledgeAll', sessionId),
+  },
+
+  modelRouting: {
+    profiles: (): Promise<ModelProfile[]> => ipcRenderer.invoke('modelRouting.profiles'),
+    route: (request: RoutingRequest): Promise<RoutingDecision> =>
+      ipcRenderer.invoke('modelRouting.route', request),
+    benchmarks: (modelId?: string, taskKind?: TaskKind): Promise<ModelBenchmark[]> =>
+      ipcRenderer.invoke('modelRouting.benchmarks', modelId, taskKind),
+    recordBenchmark: (input: BenchmarkRecordInput): Promise<ModelBenchmark> =>
+      ipcRenderer.invoke('modelRouting.recordBenchmark', input),
+    clearBenchmarks: (): Promise<{ cleared: number }> =>
+      ipcRenderer.invoke('modelRouting.clearBenchmarks'),
+    probeLocal: (kind?: LocalProviderKind): Promise<LocalProviderProbe[]> =>
+      ipcRenderer.invoke('modelRouting.probeLocal', kind),
+    validateRegistry: (input: RegistryEntryInput): Promise<RegistryValidation> =>
+      ipcRenderer.invoke('modelRouting.validateRegistry', input),
+  },
 });
 
 // Type declaration for the renderer process
@@ -1389,6 +1489,50 @@ declare global {
         purgeExpired: (sessionId: string) => Promise<{ removed: string[] }>;
         preview: (sessionId: string, query: string, limit?: number) => Promise<MemoryInjection>;
         seedFromAudit: (sessionId: string, entries: AuditEntry[]) => Promise<{ added: number }>;
+      };
+      controlCenter: {
+        snapshot: (sessionId: string) => Promise<ControlCenterSnapshot>;
+        activity: (sessionId: string, limit?: number) => Promise<ActivityEvent[]>;
+        recordActivity: (sessionId: string, input: ActivityEventInput) => Promise<ActivityEvent>;
+        finishActivity: (
+          sessionId: string,
+          id: string,
+          outcome: { status: ActivityStatus; error?: string; detail?: string }
+        ) => Promise<ActivityEvent | null>;
+        clearActivity: (sessionId?: string) => Promise<{ removed: number }>;
+        workspaceTree: (sessionId: string, options?: WorkspaceTreeOptions) => Promise<WorkspaceEntry[]>;
+        readFile: (
+          sessionId: string,
+          relativePath: string,
+          maxBytes?: number
+        ) => Promise<WorkspaceFileContent>;
+        gitStatus: (sessionId: string) => Promise<GitStatusSummary | null>;
+        runTests: (sessionId: string, commandId: TestCommandId) => Promise<TestRunResult>;
+        queue: (sessionId?: string) => Promise<DetachedTask[]>;
+        enqueueTask: (sessionId: string, input: DetachedTaskInput) => Promise<DetachedTask>;
+        updateTask: (
+          sessionId: string,
+          id: string,
+          status: DetachedTaskStatus,
+          error?: string
+        ) => Promise<DetachedTask | null>;
+        cancelTask: (sessionId: string, id: string) => Promise<DetachedTask | null>;
+        notifications: (sessionId?: string) => Promise<ApprovalNotification[]>;
+        notify: (sessionId: string, input: NotificationInput) => Promise<ApprovalNotification>;
+        acknowledgeNotification: (
+          sessionId: string,
+          id: string
+        ) => Promise<ApprovalNotification | null>;
+        acknowledgeAll: (sessionId?: string) => Promise<{ acknowledged: number }>;
+      };
+      modelRouting: {
+        profiles: () => Promise<ModelProfile[]>;
+        route: (request: RoutingRequest) => Promise<RoutingDecision>;
+        benchmarks: (modelId?: string, taskKind?: TaskKind) => Promise<ModelBenchmark[]>;
+        recordBenchmark: (input: BenchmarkRecordInput) => Promise<ModelBenchmark>;
+        clearBenchmarks: () => Promise<{ cleared: number }>;
+        probeLocal: (kind?: LocalProviderKind) => Promise<LocalProviderProbe[]>;
+        validateRegistry: (input: RegistryEntryInput) => Promise<RegistryValidation>;
       };
     };
   }

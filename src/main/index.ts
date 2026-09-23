@@ -83,7 +83,10 @@ import { registerWindowIpcHandlers } from './ipc/window-handlers';
 import { registerModsIpcHandlers } from './ipc/mods-handlers';
 import { registerWorkflowIpcHandlers } from './ipc/workflow-handlers';
 import { registerProjectMemoryIpcHandlers } from './ipc/project-memory-handlers';
+import { registerControlCenterIpcHandlers } from './ipc/control-center-handlers';
+import { registerModelRoutingIpcHandlers } from './ipc/model-routing-handlers';
 import { WorkflowRegistry } from './agent/workflow-registry';
+import { ControlCenterService } from './agent/control-center-service';
 import type { ProjectMemoryStore } from './memory/project-memory-store';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods } from './mods/builtin-mods';
@@ -1923,6 +1926,18 @@ registerProjectMemoryIpcHandlers({
     return { store: entry.memory as ProjectMemoryStore, workspaceKey };
   },
 });
+
+// Control center (Phase 6): activity feed, detached-task queue, notifications
+// and read-only workspace probes, all rooted at the session workspace.
+const controlCenterService = new ControlCenterService({
+  resolveWorkspaceRoot: (sessionId) =>
+    workflowRegistry.getOrCreate(sessionId)?.workspaceRoot ?? getWorkingDir(),
+});
+registerControlCenterIpcHandlers({ service: controlCenterService });
+
+// Model routing (Phase 7): named profiles, local benchmark store, local provider
+// detection and validated registry entries.
+registerModelRoutingIpcHandlers({});
 
 // Client event dispatch lives in its own module; wire the app-level state it
 // needs here so the dependency surface stays explicit.

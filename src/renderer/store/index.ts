@@ -130,6 +130,8 @@ interface AppState {
   diffPanelVisible: boolean;
   planPanelVisible: boolean;
   memoryPanelVisible: boolean;
+  controlCenterVisible: boolean;
+  modelRoutingVisible: boolean;
   documentPanelVisible: boolean;
   showSettings: boolean;
   settingsTab: string | null;
@@ -218,6 +220,8 @@ interface AppState {
   setDiffPanelVisible: (visible: boolean) => void;
   setPlanPanelVisible: (visible: boolean) => void;
   setMemoryPanelVisible: (visible: boolean) => void;
+  setControlCenterVisible: (visible: boolean) => void;
+  setModelRoutingVisible: (visible: boolean) => void;
   setDocumentPanelVisible: (visible: boolean) => void;
   setShowSettings: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
@@ -311,6 +315,8 @@ export const useAppStore = create<AppState>((set) => ({
   diffPanelVisible: false,
   planPanelVisible: false,
   memoryPanelVisible: false,
+  controlCenterVisible: false,
+  modelRoutingVisible: false,
   documentPanelVisible: false,
   showSettings: false,
   settingsTab: null,
@@ -673,6 +679,8 @@ export const useAppStore = create<AppState>((set) => ({
   setDiffPanelVisible: (visible) => set({ diffPanelVisible: visible }),
   setPlanPanelVisible: (visible) => set({ planPanelVisible: visible }),
   setMemoryPanelVisible: (visible) => set({ memoryPanelVisible: visible }),
+  setControlCenterVisible: (visible) => set({ controlCenterVisible: visible }),
+  setModelRoutingVisible: (visible) => set({ modelRoutingVisible: visible }),
   setDocumentPanelVisible: (visible) => set({ documentPanelVisible: visible }),
   setShowSettings: (show) => set({ showSettings: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),

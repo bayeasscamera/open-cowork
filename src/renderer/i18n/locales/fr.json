@@ -1372,6 +1372,154 @@
     "readError": "Échec de lecture du document",
     "writeError": "Échec d'enregistrement du document"
   },
+  "modelRouting": {
+    "title": "Routage des modèles",
+    "subtitle": "Profils nommés, routage local-first et registres validés",
+    "short": "Modèles",
+    "close": "Fermer",
+    "refresh": "Rafraîchir",
+    "profiles": {
+      "title": "Profils",
+      "cost": "palier de coût {{tier}}",
+      "local": "local",
+      "remote": "cloud",
+      "capability": {
+        "tools": "outils",
+        "vision": "vision",
+        "json": "json"
+      }
+    },
+    "route": {
+      "title": "Router une tâche",
+      "run": "Router",
+      "decision": "Sélectionné",
+      "requiresTools": "outils requis",
+      "requiresVision": "vision requise",
+      "requiresJson": "JSON requis",
+      "confidential": "confidentiel",
+      "estimatedCost": "≈ {{cost}} USD",
+      "fallbacks": "Replis",
+      "taskKind": {
+        "general": "Général",
+        "exploration": "Exploration",
+        "implementation": "Implémentation",
+        "review": "Revue"
+      }
+    },
+    "benchmarks": {
+      "title": "Benchmark local",
+      "empty": "Aucun benchmark enregistré.",
+      "clear": "Effacer",
+      "model": "Modèle",
+      "task": "Tâche",
+      "runs": "Exécutions",
+      "success": "Réussite",
+      "score": "Score"
+    },
+    "local": {
+      "title": "Fournisseurs locaux",
+      "detect": "Détecter",
+      "detecting": "Détection…",
+      "reachable": "joignable",
+      "unreachable": "injoignable",
+      "noModels": "aucun modèle signalé",
+      "kind": {
+        "ollama": "Ollama",
+        "lm-studio": "LM Studio",
+        "vllm": "vLLM",
+        "openai-compatible": "Compatible OpenAI"
+      }
+    },
+    "registry": {
+      "title": "Validation du registre",
+      "repoId": "org/model-GGUF",
+      "url": "https://huggingface.co/org/model-GGUF",
+      "sha256": "sha256 (optionnel)",
+      "validate": "Valider",
+      "valid": "Entrée acceptée",
+      "invalid": "Entrée refusée",
+      "suggested": "Profil suggéré : {{profile}}"
+    }
+  },
+  "controlCenter": {
+    "title": "Centre de contrôle de l'agent",
+    "subtitle": "Activité, espace de travail, file d'attente et approbations au même endroit",
+    "short": "Centre",
+    "close": "Fermer",
+    "refresh": "Rafraîchir",
+    "none": "n/a",
+    "tab": {
+      "activity": "Activité",
+      "workspace": "Espace",
+      "queue": "File"
+    },
+    "summary": {
+      "workspace": "Espace de travail",
+      "branch": "Branche",
+      "running": "{{count}} en cours",
+      "unread": "{{count}} non lues"
+    },
+    "activity": {
+      "count": "{{count}} appels d'outil",
+      "clear": "Effacer",
+      "empty": "Aucune activité d'outil pour l'instant.",
+      "duration": "{{ms}} ms",
+      "status": {
+        "running": "en cours",
+        "ok": "ok",
+        "error": "erreur",
+        "cancelled": "annulé"
+      }
+    },
+    "workspace": {
+      "git": "État Git",
+      "noGit": "Aucun dépôt Git détecté",
+      "branch": "Branche",
+      "ahead": "{{count}} en avance",
+      "behind": "{{count}} en retard",
+      "clean": "Arbre de travail propre",
+      "staged": "Indexé",
+      "modified": "Modifié",
+      "untracked": "Non suivi",
+      "deleted": "Supprimé",
+      "tests": "Vérifications",
+      "test": {
+        "npm-test": "npm test",
+        "npm-typecheck": "typecheck",
+        "npm-lint": "lint",
+        "vitest": "vitest"
+      },
+      "passed": "Réussi",
+      "failed": "Échoué",
+      "exitCode": "code {{code}}",
+      "truncated": "sortie tronquée",
+      "empty": "L'espace de travail est vide.",
+      "previewEmpty": "Sélectionnez un fichier pour l'aperçu."
+    },
+    "queue": {
+      "title": "Tâches détachées",
+      "empty": "Aucune tâche détachée.",
+      "start": "Démarrer",
+      "cancel": "Annuler",
+      "notifications": "Notifications",
+      "noNotifications": "Aucune notification.",
+      "acknowledge": "Accuser réception",
+      "acknowledgeAll": "Tout accuser",
+      "status": {
+        "queued": "en attente",
+        "running": "en cours",
+        "completed": "terminée",
+        "failed": "échouée",
+        "cancelled": "annulée"
+      },
+      "kind": {
+        "approval": "approbation",
+        "blocker": "blocage",
+        "completion": "achèvement",
+        "error": "erreur"
+      }
+    }
+  },
   "projectMemory": {
     "title": "Ce que Cowork sait de ce projet",
     "subtitle": "Quatre couches, avec provenance, éditables et expirables",

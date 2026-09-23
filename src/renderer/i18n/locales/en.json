@@ -1373,6 +1373,154 @@
     "readError": "Failed to read document",
     "writeError": "Failed to write document"
   },
+  "modelRouting": {
+    "title": "Model routing",
+    "subtitle": "Named profiles, local-first routing and validated registries",
+    "short": "Models",
+    "close": "Close",
+    "refresh": "Refresh",
+    "profiles": {
+      "title": "Profiles",
+      "cost": "cost tier {{tier}}",
+      "local": "local",
+      "remote": "cloud",
+      "capability": {
+        "tools": "tools",
+        "vision": "vision",
+        "json": "json"
+      }
+    },
+    "route": {
+      "title": "Route a task",
+      "run": "Route",
+      "decision": "Selected",
+      "requiresTools": "needs tools",
+      "requiresVision": "needs vision",
+      "requiresJson": "needs JSON",
+      "confidential": "confidential",
+      "estimatedCost": "≈ {{cost}} USD",
+      "fallbacks": "Fallbacks",
+      "taskKind": {
+        "general": "General",
+        "exploration": "Exploration",
+        "implementation": "Implementation",
+        "review": "Review"
+      }
+    },
+    "benchmarks": {
+      "title": "Local benchmark",
+      "empty": "No benchmark recorded yet.",
+      "clear": "Clear",
+      "model": "Model",
+      "task": "Task",
+      "runs": "Runs",
+      "success": "Success",
+      "score": "Score"
+    },
+    "local": {
+      "title": "Local providers",
+      "detect": "Detect",
+      "detecting": "Detecting…",
+      "reachable": "reachable",
+      "unreachable": "unreachable",
+      "noModels": "no model reported",
+      "kind": {
+        "ollama": "Ollama",
+        "lm-studio": "LM Studio",
+        "vllm": "vLLM",
+        "openai-compatible": "OpenAI-compatible"
+      }
+    },
+    "registry": {
+      "title": "Registry validation",
+      "repoId": "org/model-GGUF",
+      "url": "https://huggingface.co/org/model-GGUF",
+      "sha256": "sha256 (optional)",
+      "validate": "Validate",
+      "valid": "Entry accepted",
+      "invalid": "Entry rejected",
+      "suggested": "Suggested profile: {{profile}}"
+    }
+  },
+  "controlCenter": {
+    "title": "Agent control center",
+    "subtitle": "Activity, workspace, queue and approvals in one place",
+    "short": "Center",
+    "close": "Close",
+    "refresh": "Refresh",
+    "none": "n/a",
+    "tab": {
+      "activity": "Activity",
+      "workspace": "Workspace",
+      "queue": "Queue"
+    },
+    "summary": {
+      "workspace": "Workspace",
+      "branch": "Branch",
+      "running": "{{count}} running",
+      "unread": "{{count}} unread"
+    },
+    "activity": {
+      "count": "{{count}} tool calls",
+      "clear": "Clear",
+      "empty": "No tool activity yet.",
+      "duration": "{{ms}} ms",
+      "status": {
+        "running": "running",
+        "ok": "ok",
+        "error": "error",
+        "cancelled": "cancelled"
+      }
+    },
+    "workspace": {
+      "git": "Git status",
+      "noGit": "No git repository detected",
+      "branch": "Branch",
+      "ahead": "ahead {{count}}",
+      "behind": "behind {{count}}",
+      "clean": "Working tree clean",
+      "staged": "Staged",
+      "modified": "Modified",
+      "untracked": "Untracked",
+      "deleted": "Deleted",
+      "tests": "Checks",
+      "test": {
+        "npm-test": "npm test",
+        "npm-typecheck": "typecheck",
+        "npm-lint": "lint",
+        "vitest": "vitest"
+      },
+      "passed": "Passed",
+      "failed": "Failed",
+      "exitCode": "exit {{code}}",
+      "truncated": "output truncated",
+      "empty": "The workspace is empty.",
+      "previewEmpty": "Select a file to preview it."
+    },
+    "queue": {
+      "title": "Detached tasks",
+      "empty": "No detached tasks.",
+      "start": "Start",
+      "cancel": "Cancel",
+      "notifications": "Notifications",
+      "noNotifications": "No notifications.",
+      "acknowledge": "Acknowledge",
+      "acknowledgeAll": "Acknowledge all",
+      "status": {
+        "queued": "queued",
+        "running": "running",
+        "completed": "completed",
+        "failed": "failed",
+        "cancelled": "cancelled"
+      },
+      "kind": {
+        "approval": "approval",
+        "blocker": "blocker",
+        "completion": "completion",
+        "error": "error"
+      }
+    }
+  },
   "projectMemory": {
     "title": "What Cowork knows about this project",
     "subtitle": "Four layers, with provenance, editable and expirable",
