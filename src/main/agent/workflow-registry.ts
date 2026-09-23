@@ -9,7 +9,9 @@
 import { AuditLog } from './audit-log';
 import { createFsSnapshotBackend, createGitRunner } from './checkpoint-backends';
 import { CheckpointManager } from './checkpoint-manager';
+import { IsolationManager } from './isolation-manager';
 import { createDefaultPermissionPolicy } from './permission-policy';
+import { ProjectMemoryStore, workspaceKeyFor } from '../memory/project-memory-store';
 import { WorkflowOrchestrator, type WorkflowState } from './workflow-orchestrator';
 
 export interface WorkflowEntry {
@@ -17,6 +19,8 @@ export interface WorkflowEntry {
   workspaceRoot: string;
   audit: AuditLog;
   checkpoints: CheckpointManager;
+  isolation: IsolationManager;
+  memory: ProjectMemoryStore;
   orchestrator: WorkflowOrchestrator;
 }
 
@@ -31,6 +35,7 @@ export interface WorkflowRegistryOptions {
 
 export class WorkflowRegistry {
   private readonly entries = new Map<string, WorkflowEntry>();
+  private readonly workspaceKeys = new Map<string, string>();
   private readonly options: WorkflowRegistryOptions;
 
   constructor(options: WorkflowRegistryOptions) {
@@ -46,6 +51,8 @@ export class WorkflowRegistry {
   public getOrCreate(sessionId: string): WorkflowEntry | null {
     const existing = this.entries.get(sessionId);
     if (existing) {
+      // Sessions can change workspace (workdir.set); keep the key in sync.
+      this.workspaceKeys.set(sessionId, workspaceKeyFor(existing.workspaceRoot));
       return existing;
     }
 
@@ -56,12 +63,14 @@ export class WorkflowRegistry {
     }
 
     const audit = new AuditLog(this.options.now);
+    const git = createGitRunner(workspaceRoot);
     const checkpoints = new CheckpointManager({
       backend: createFsSnapshotBackend(workspaceRoot),
-      git: createGitRunner(workspaceRoot),
+      git,
       audit,
       now: this.options.now,
     });
+    const isolation = new IsolationManager({ git, audit });
     const orchestrator = new WorkflowOrchestrator({
       policy: createDefaultPermissionPolicy(workspaceRoot),
       checkpoints,
@@ -72,17 +81,33 @@ export class WorkflowRegistry {
         : undefined,
     });
 
-    const entry: WorkflowEntry = { sessionId, workspaceRoot, audit, checkpoints, orchestrator };
+    const entry: WorkflowEntry = {
+      sessionId,
+      workspaceRoot,
+      audit,
+      checkpoints,
+      isolation,
+      memory: new ProjectMemoryStore({ now: this.options.now }),
+      orchestrator,
+    };
+    this.workspaceKeys.set(sessionId, workspaceKeyFor(workspaceRoot));
     this.entries.set(sessionId, entry);
     return entry;
   }
 
+  /** Workspace key (normalized root) for a session that already has an entry. */
+  public workspaceKey(sessionId: string): string | null {
+    return this.workspaceKeys.get(sessionId) ?? null;
+  }
+
   public remove(sessionId: string): void {
     this.entries.delete(sessionId);
+    this.workspaceKeys.delete(sessionId);
   }
 
   public clear(): void {
     this.entries.clear();
+    this.workspaceKeys.clear();
   }
 
   public sessionIds(): string[] {

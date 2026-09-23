@@ -42,6 +42,11 @@ const PlanApprovalPanel = lazy(() =>
     default: module.PlanApprovalPanel,
   }))
 );
+const ProjectMemoryPanel = lazy(() =>
+  import('./components/ProjectMemoryPanel').then((module) => ({
+    default: module.ProjectMemoryPanel,
+  }))
+);
 const ConfigModal = lazy(() =>
   import('./components/ConfigModal').then((module) => ({ default: module.ConfigModal }))
 );
@@ -110,6 +115,8 @@ function App() {
   const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
   const planPanelVisible = useAppStore((s) => s.planPanelVisible);
   const setPlanPanelVisible = useAppStore((s) => s.setPlanPanelVisible);
+  const memoryPanelVisible = useAppStore((s) => s.memoryPanelVisible);
+  const setMemoryPanelVisible = useAppStore((s) => s.setMemoryPanelVisible);
   const projectsPage = useAppStore((s) => s.projectsPage);
   const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
   const documentPanelVisible = useAppStore((s) => s.documentPanelVisible);
@@ -254,6 +261,19 @@ function App() {
                 <ProjectsPages />
               </Suspense>
             </PanelErrorBoundary>
+          ) : memoryPanelVisible && activeSessionId ? (
+            <PanelErrorBoundary
+              name="ProjectMemoryPanel"
+              resetKey={activeSessionId}
+              fallback={<MainPanelFallback />}
+            >
+              <Suspense fallback={<MainPanelFallback />}>
+                <ProjectMemoryPanel
+                  sessionId={activeSessionId}
+                  onClose={() => setMemoryPanelVisible(false)}
+                />
+              </Suspense>
+            </PanelErrorBoundary>
           ) : planPanelVisible && activeSessionId ? (
             <PanelErrorBoundary
               name="PlanApprovalPanel"
@@ -297,6 +317,18 @@ function App() {
       {/* Diff Panel toggle + live session diff (local mods only) */}
       {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
         <>
+          <button
+            type="button"
+            aria-pressed={memoryPanelVisible}
+            onClick={() => setMemoryPanelVisible(!memoryPanelVisible)}
+            className={`fixed bottom-4 right-36 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
+              memoryPanelVisible
+                ? 'border-accent bg-accent/10 text-text-primary'
+                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
+            }`}
+          >
+            Memory
+          </button>
           <button
             type="button"
             aria-pressed={planPanelVisible}

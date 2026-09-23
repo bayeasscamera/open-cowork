@@ -187,6 +187,46 @@ export class WorkflowOrchestrator {
     return { started: true, reasons: [] };
   }
 
+  /**
+   * Phase 3.3 — start every task that has no unmet dependency in one call. Tasks
+   * flagged `parallelizable: false` (writers) are started sequentially so two
+   * agents never race on the same files.
+   */
+  public async startReadyTasks(): Promise<{
+    started: TaskCheckpoint[];
+    skipped: string[];
+    reasons: string[];
+  }> {
+    if (this.phase !== 'executing') {
+      return {
+        started: [],
+        skipped: [],
+        reasons: ['Execution has not started (phase "' + this.phase + '").'],
+      };
+    }
+
+    const ready = this.tasks.filter((task) => this.readyTaskIds().includes(task.id));
+    const started: TaskCheckpoint[] = [];
+    const skipped: string[] = [];
+    const reasons: string[] = [];
+    let startedWriter = false;
+
+    for (const task of ready) {
+      const writer = !task.parallelizable;
+      if (writer && startedWriter) {
+        skipped.push(task.id);
+        reasons.push('Task "' + task.id + '" writes to the workspace; started one at a time.');
+        continue;
+      }
+      started.push(await this.startTask(task.id));
+      if (writer) {
+        startedWriter = true;
+      }
+    }
+
+    return { started, skipped, reasons };
+  }
+
   /** Tasks whose dependencies are all completed and that are still pending. */
   public readyTaskIds(): string[] {
     return this.tasks

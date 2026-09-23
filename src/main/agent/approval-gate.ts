@@ -16,11 +16,13 @@ import {
   summarizePlan,
 } from './task-planner';
 import { evaluatePermission, type PermissionPolicy } from './permission-policy';
+import { appendAdversarialReview, buildRoleTasks } from './role-planner';
 import type {
   ApprovalDecisionInput,
   ApprovalOutcome,
   ApprovalRequest,
   PermissionEvaluation,
+  RolePlanInput,
 } from '../../shared/workflow-types';
 
 export type { ApprovalDecisionInput, ApprovalOutcome, ApprovalRequest };
@@ -122,6 +124,15 @@ export function evaluateApproval(
     };
   }
   return { approved: true, reasons: [] };
+}
+
+/**
+ * Phase 3.1 — example tasks shown on the approval page before the agent commits
+ * to a concrete plan. The page can therefore show the real scope, roles and
+ * estimated cost even when the model has not produced its task list yet.
+ */
+export function buildForecastTasks(contract: TaskContract, input: RolePlanInput): AtomicTask[] {
+  return appendAdversarialReview(buildRoleTasks(input, contract), contract);
 }
 
 /** One-line summary used in the audit log and notifications. */

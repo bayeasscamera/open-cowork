@@ -82,7 +82,9 @@ import { registerSkillsIpcHandlers } from './ipc/skills-handlers';
 import { registerWindowIpcHandlers } from './ipc/window-handlers';
 import { registerModsIpcHandlers } from './ipc/mods-handlers';
 import { registerWorkflowIpcHandlers } from './ipc/workflow-handlers';
+import { registerProjectMemoryIpcHandlers } from './ipc/project-memory-handlers';
 import { WorkflowRegistry } from './agent/workflow-registry';
+import type { ProjectMemoryStore } from './memory/project-memory-store';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore } from './projects/project-store';
@@ -1905,6 +1907,22 @@ const workflowRegistry = new WorkflowRegistry({
   fallbackWorkspaceRoot: () => currentWorkingDir,
 });
 registerWorkflowIpcHandlers({ registry: workflowRegistry });
+
+// Project memory (Phase 4): four-layer memory per workspace, with the same
+// per-session workspace resolution as the workflow registry.
+registerProjectMemoryIpcHandlers({
+  resolve: (sessionId) => {
+    const entry = workflowRegistry.getOrCreate(sessionId);
+    if (!entry) {
+      return null;
+    }
+    const workspaceKey = workflowRegistry.workspaceKey(sessionId);
+    if (!workspaceKey) {
+      return null;
+    }
+    return { store: entry.memory as ProjectMemoryStore, workspaceKey };
+  },
+});
 
 // Client event dispatch lives in its own module; wire the app-level state it
 // needs here so the dependency surface stays explicit.

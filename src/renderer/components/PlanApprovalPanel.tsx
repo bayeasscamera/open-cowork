@@ -25,6 +25,7 @@ import type {
   WorkflowMode,
   WorkflowState,
 } from '../../shared/workflow-types';
+import { PlanGraph } from './PlanGraph';
 
 const MODES: WorkflowMode[] = ['explore', 'plan', 'execute'];
 
@@ -295,6 +296,13 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
             </section>
 
             <section className="space-y-2">
+              <span className="text-xs font-medium text-text-secondary">
+                {t('planPanel.graph.title')}
+              </span>
+              <PlanGraph state={state} />
+            </section>
+
+            <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-text-secondary">
                   {t('planPanel.tasks.title')}
@@ -307,6 +315,14 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
                     className="rounded-lg border border-border px-3 py-1 text-xs text-text-secondary disabled:opacity-40"
                   >
                     {t('planPanel.actions.start')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !api}
+                    onClick={() => api && void run(() => api.startReadyTasks(sessionId))}
+                    className="rounded-lg border border-border px-3 py-1 text-xs text-text-secondary disabled:opacity-40"
+                  >
+                    {t('planPanel.actions.startReady')}
                   </button>
                   <button
                     type="button"

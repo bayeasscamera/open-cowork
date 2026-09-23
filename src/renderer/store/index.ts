@@ -129,6 +129,7 @@ interface AppState {
   contextPanelCollapsed: boolean;
   diffPanelVisible: boolean;
   planPanelVisible: boolean;
+  memoryPanelVisible: boolean;
   documentPanelVisible: boolean;
   showSettings: boolean;
   settingsTab: string | null;
@@ -216,6 +217,7 @@ interface AppState {
   setContextPanelCollapsed: (collapsed: boolean) => void;
   setDiffPanelVisible: (visible: boolean) => void;
   setPlanPanelVisible: (visible: boolean) => void;
+  setMemoryPanelVisible: (visible: boolean) => void;
   setDocumentPanelVisible: (visible: boolean) => void;
   setShowSettings: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
@@ -308,6 +310,7 @@ export const useAppStore = create<AppState>((set) => ({
   contextPanelCollapsed: false,
   diffPanelVisible: false,
   planPanelVisible: false,
+  memoryPanelVisible: false,
   documentPanelVisible: false,
   showSettings: false,
   settingsTab: null,
@@ -669,6 +672,7 @@ export const useAppStore = create<AppState>((set) => ({
   setContextPanelCollapsed: (collapsed) => set({ contextPanelCollapsed: collapsed }),
   setDiffPanelVisible: (visible) => set({ diffPanelVisible: visible }),
   setPlanPanelVisible: (visible) => set({ planPanelVisible: visible }),
+  setMemoryPanelVisible: (visible) => set({ memoryPanelVisible: visible }),
   setDocumentPanelVisible: (visible) => set({ documentPanelVisible: visible }),
   setShowSettings: (show) => set({ showSettings: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),

@@ -18,9 +18,11 @@ import type {
 import { createAtomicTask, createTaskContract, isWorkflowMode } from '../../shared/task-contract';
 import type {
   ApprovalDecisionInput,
+  IsolationPlan,
   NewCheckpointEvidence,
   RolePlanInput,
 } from '../../shared/workflow-types';
+import { planIsolation } from '../agent/isolation-planner';
 import { planRoles } from '../agent/role-planner';
 import type { WorkflowEntry } from '../agent/workflow-registry';
 import { log, logError } from '../utils/logger';
@@ -121,6 +123,12 @@ export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
     )
   );
 
+  ipcMain.handle('workflow.startReadyTasks', (_event, sessionId: string) =>
+    safe('workflow.startReadyTasks', () =>
+      requireEntry(sessionId).orchestrator.startReadyTasks()
+    )
+  );
+
   ipcMain.handle('workflow.startTask', (_event, sessionId: string, taskId: string) =>
     safe('workflow.startTask', () =>
       requireEntry(sessionId).orchestrator.startTask(taskId)
@@ -187,11 +195,56 @@ export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
     })
   );
 
-  ipcMain.handle('workflow.exportAuditLog', (_event, sessionId: string) =>
-    safe('workflow.exportAuditLog', () => {
+  ipcMain.handle(
+    'workflow.exportAuditLog',
+    (_event, sessionId: string, format?: string) =>
+      safe('workflow.exportAuditLog', () => {
+        const entry = requireEntry(sessionId);
+        log('[workflow] exporting audit log for session ' + sessionId);
+        switch (format) {
+          case 'ndjson':
+            return entry.audit.exportNdjson();
+          case 'csv':
+            return entry.audit.exportCsv();
+          default:
+            return entry.audit.exportJson();
+        }
+      })
+  );
+
+  ipcMain.handle('workflow.planIsolation', (_event, sessionId: string, taskIds?: string[]) =>
+    safe('workflow.planIsolation', () => {
       const entry = requireEntry(sessionId);
-      log('[workflow] exporting audit log for session ' + sessionId);
-      return entry.audit.exportJson();
+      const state = entry.orchestrator.getState();
+      const selected =
+        Array.isArray(taskIds) && taskIds.length > 0
+          ? state.tasks.filter((task) => taskIds.includes(task.id))
+          : state.tasks;
+      return planIsolation(selected, entry.workspaceRoot);
     })
+  );
+
+  ipcMain.handle(
+    'workflow.createIsolation',
+    (_event, sessionId: string, plan: IsolationPlan) =>
+      safe('workflow.createIsolation', () =>
+        requireEntry(sessionId).isolation.create(plan)
+      )
+  );
+
+  ipcMain.handle('workflow.isolationStatus', (_event, sessionId: string) =>
+    safe('workflow.isolationStatus', () => requireEntry(sessionId).isolation.activeTaskIds())
+  );
+
+  ipcMain.handle('workflow.cleanupIsolation', (_event, sessionId: string, taskId: string) =>
+    safe('workflow.cleanupIsolation', () =>
+      requireEntry(sessionId).isolation.cleanup(taskId)
+    )
+  );
+
+  ipcMain.handle('workflow.cleanupAllIsolation', (_event, sessionId: string) =>
+    safe('workflow.cleanupAllIsolation', () =>
+      requireEntry(sessionId).isolation.cleanupAll()
+    )
   );
 }

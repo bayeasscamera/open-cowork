@@ -166,6 +166,37 @@ export interface RoleAssignment {
 }
 
 // ---------------------------------------------------------------------------
+// Project memory (Phase 4)
+// ---------------------------------------------------------------------------
+
+export type {
+  MemoryInjection,
+  MemoryLayer,
+  MemoryProvenance,
+  MemoryQuery,
+  MemorySource,
+  ProjectMemoryItem,
+  ProjectMemoryOverview,
+  ScoredMemoryItem,
+  UpsertMemoryInput,
+} from './project-memory-types';
+export { MEMORY_LAYERS } from './project-memory-types';
+
+// ---------------------------------------------------------------------------
+// Isolation (Phase 5.3)
+// ---------------------------------------------------------------------------
+
+export interface IsolationPlan {
+  taskId: string;
+  mode: 'worktree' | 'sandbox' | 'none';
+  workspaceRoot: string;
+  worktreePath: string;
+  files: string[];
+  /** Ephemeral worktrees are removed once the task is settled. */
+  ephemeral: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Audit log (Phase 5)
 // ---------------------------------------------------------------------------
 

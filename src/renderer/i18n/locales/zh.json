@@ -1373,6 +1373,28 @@
     "readError": "读取文档失败",
     "writeError": "写入文档失败"
   },
+  "projectMemory": {
+    "title": "Cowork 对此项目的了解",
+    "subtitle": "四个层，带来源，可编辑与过期",
+    "refresh": "刷新",
+    "close": "关闭",
+    "purge": "清除已过期",
+    "add": "添加",
+    "delete": "删除",
+    "preview": "预览注入",
+    "previewTitle": "本任务的注入内容",
+    "placeholder": "一条规则、一个决策、当前任务状态或过往回归…",
+    "empty": "该层尚无记录。",
+    "noExpiry": "永不过期",
+    "expires": "{{date}} 过期",
+    "expired": "{{count}} 条已过期待清除",
+    "layer": {
+      "rules": "规则",
+      "decisions": "决策",
+      "task-state": "当前任务",
+      "errors": "错误与回归"
+    }
+  },
   "planPanel": {
     "title": "计划与审批",
     "subtitle": "在任何写入前审查范围、命令、风险与成本",
@@ -1445,6 +1467,7 @@
       "start": "开始执行",
       "verify": "验证",
       "restorePlan": "恢复计划",
+      "startReady": "启动就绪任务",
       "exportAudit": "导出审计日志"
     },
     "task": {
@@ -1460,6 +1483,23 @@
         "rejected": "已拒绝",
         "restored": "已恢复",
         "completed": "已完成"
+      }
+    },
+    "graph": {
+      "title": "实时计划图",
+      "empty": "尚无任务图。",
+      "group": "第 {{index}} 组",
+      "parallel": "{{count}} 个节点",
+      "dependsOn": "依赖",
+      "tokens": "{{count}} tokens",
+      "files": "{{count}} 个文件",
+      "evidence": "{{count}} 项证据",
+      "status": {
+        "done": "已完成",
+        "running": "进行中",
+        "ready": "就绪",
+        "blocked": "等待中",
+        "rejected": "已拒绝"
       }
     },
     "audit": {

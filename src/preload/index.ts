@@ -53,10 +53,17 @@ import type {
   WorkflowMode,
 } from '../shared/task-contract';
 import type {
+  MemoryInjection,
+  ProjectMemoryItem,
+  ProjectMemoryOverview,
+  UpsertMemoryInput,
+} from '../shared/project-memory-types';
+import type {
   ApprovalDecisionInput,
   ApprovalOutcome,
   ApprovalRequest,
   AuditEntry,
+  IsolationPlan,
   NewCheckpointEvidence,
   RoleAssignment,
   RolePlanInput,
@@ -798,6 +805,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('workflow.approve', sessionId, decision),
     startExecution: (sessionId: string): Promise<{ started: boolean; reasons: string[] }> =>
       ipcRenderer.invoke('workflow.startExecution', sessionId),
+    startReadyTasks: (
+      sessionId: string
+    ): Promise<{ started: TaskCheckpoint[]; skipped: string[]; reasons: string[] }> =>
+      ipcRenderer.invoke('workflow.startReadyTasks', sessionId),
     startTask: (sessionId: string, taskId: string): Promise<TaskCheckpoint> =>
       ipcRenderer.invoke('workflow.startTask', sessionId, taskId),
     completeTask: (
@@ -820,8 +831,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('workflow.planRoles', sessionId, input),
     getAuditLog: (sessionId: string): Promise<AuditEntry[]> =>
       ipcRenderer.invoke('workflow.getAuditLog', sessionId),
-    exportAuditLog: (sessionId: string): Promise<string> =>
-      ipcRenderer.invoke('workflow.exportAuditLog', sessionId),
+    exportAuditLog: (
+      sessionId: string,
+      format?: 'json' | 'ndjson' | 'csv'
+    ): Promise<string> => ipcRenderer.invoke('workflow.exportAuditLog', sessionId, format),
+    planIsolation: (sessionId: string, taskIds?: string[]): Promise<IsolationPlan[]> =>
+      ipcRenderer.invoke('workflow.planIsolation', sessionId, taskIds),
+    createIsolation: (
+      sessionId: string,
+      plan: IsolationPlan
+    ): Promise<{ plan: IsolationPlan; branch: string; created: boolean; error?: string }> =>
+      ipcRenderer.invoke('workflow.createIsolation', sessionId, plan),
+    isolationStatus: (sessionId: string): Promise<string[]> =>
+      ipcRenderer.invoke('workflow.isolationStatus', sessionId),
+    cleanupIsolation: (
+      sessionId: string,
+      taskId: string
+    ): Promise<{ removed: boolean; reason?: string }> =>
+      ipcRenderer.invoke('workflow.cleanupIsolation', sessionId, taskId),
+    cleanupAllIsolation: (sessionId: string): Promise<string[]> =>
+      ipcRenderer.invoke('workflow.cleanupAllIsolation', sessionId),
+  },
+
+  projectMemory: {
+    overview: (sessionId: string): Promise<ProjectMemoryOverview> =>
+      ipcRenderer.invoke('projectMemory.overview', sessionId),
+    list: (sessionId: string, layer?: string): Promise<ProjectMemoryItem[]> =>
+      ipcRenderer.invoke('projectMemory.list', sessionId, layer),
+    upsert: (sessionId: string, input: UpsertMemoryInput): Promise<ProjectMemoryItem> =>
+      ipcRenderer.invoke('projectMemory.upsert', sessionId, input),
+    remove: (sessionId: string, id: string): Promise<{ removed: boolean }> =>
+      ipcRenderer.invoke('projectMemory.remove', sessionId, id),
+    clear: (sessionId: string, layer?: string): Promise<{ removed: number }> =>
+      ipcRenderer.invoke('projectMemory.clear', sessionId, layer),
+    purgeExpired: (sessionId: string): Promise<{ removed: string[] }> =>
+      ipcRenderer.invoke('projectMemory.purgeExpired', sessionId),
+    preview: (sessionId: string, query: string, limit?: number): Promise<MemoryInjection> =>
+      ipcRenderer.invoke('projectMemory.preview', sessionId, query, limit),
+    seedFromAudit: (sessionId: string, entries: AuditEntry[]): Promise<{ added: number }> =>
+      ipcRenderer.invoke('projectMemory.seedFromAudit', sessionId, entries),
   },
 });
 
@@ -1300,6 +1348,9 @@ declare global {
           decision: ApprovalDecisionInput
         ) => Promise<ApprovalOutcome>;
         startExecution: (sessionId: string) => Promise<{ started: boolean; reasons: string[] }>;
+        startReadyTasks: (
+          sessionId: string
+        ) => Promise<{ started: TaskCheckpoint[]; skipped: string[]; reasons: string[] }>;
         startTask: (sessionId: string, taskId: string) => Promise<TaskCheckpoint>;
         completeTask: (
           sessionId: string,
@@ -1313,7 +1364,31 @@ declare global {
         verify: (sessionId: string) => Promise<VerifyResult>;
         planRoles: (sessionId: string, input: RolePlanInput) => Promise<RoleAssignment[]>;
         getAuditLog: (sessionId: string) => Promise<AuditEntry[]>;
-        exportAuditLog: (sessionId: string) => Promise<string>;
+        exportAuditLog: (
+          sessionId: string,
+          format?: 'json' | 'ndjson' | 'csv'
+        ) => Promise<string>;
+        planIsolation: (sessionId: string, taskIds?: string[]) => Promise<IsolationPlan[]>;
+        createIsolation: (
+          sessionId: string,
+          plan: IsolationPlan
+        ) => Promise<{ plan: IsolationPlan; branch: string; created: boolean; error?: string }>;
+        isolationStatus: (sessionId: string) => Promise<string[]>;
+        cleanupIsolation: (
+          sessionId: string,
+          taskId: string
+        ) => Promise<{ removed: boolean; reason?: string }>;
+        cleanupAllIsolation: (sessionId: string) => Promise<string[]>;
+      };
+      projectMemory: {
+        overview: (sessionId: string) => Promise<ProjectMemoryOverview>;
+        list: (sessionId: string, layer?: string) => Promise<ProjectMemoryItem[]>;
+        upsert: (sessionId: string, input: UpsertMemoryInput) => Promise<ProjectMemoryItem>;
+        remove: (sessionId: string, id: string) => Promise<{ removed: boolean }>;
+        clear: (sessionId: string, layer?: string) => Promise<{ removed: number }>;
+        purgeExpired: (sessionId: string) => Promise<{ removed: string[] }>;
+        preview: (sessionId: string, query: string, limit?: number) => Promise<MemoryInjection>;
+        seedFromAudit: (sessionId: string, entries: AuditEntry[]) => Promise<{ added: number }>;
       };
     };
   }

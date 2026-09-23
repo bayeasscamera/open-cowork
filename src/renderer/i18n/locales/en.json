@@ -1373,6 +1373,28 @@
     "readError": "Failed to read document",
     "writeError": "Failed to write document"
   },
+  "projectMemory": {
+    "title": "What Cowork knows about this project",
+    "subtitle": "Four layers, with provenance, editable and expirable",
+    "refresh": "Refresh",
+    "close": "Close",
+    "purge": "Purge expired",
+    "add": "Add",
+    "delete": "Delete",
+    "preview": "Preview injection",
+    "previewTitle": "Injection for this task",
+    "placeholder": "A rule, a decision, a current task state, a past regression…",
+    "empty": "Nothing recorded in this layer yet.",
+    "noExpiry": "no expiry",
+    "expires": "expires {{date}}",
+    "expired": "{{count}} expired entr(y/ies) awaiting purge",
+    "layer": {
+      "rules": "Rules",
+      "decisions": "Decisions",
+      "task-state": "Current task",
+      "errors": "Errors & regressions"
+    }
+  },
   "planPanel": {
     "title": "Plan & approval",
     "subtitle": "Review scope, commands, risk and cost before any write",
@@ -1445,6 +1467,7 @@
       "start": "Start execution",
       "verify": "Verify",
       "restorePlan": "Restore plan",
+      "startReady": "Start ready tasks",
       "exportAudit": "Export audit log"
     },
     "task": {
@@ -1460,6 +1483,23 @@
         "rejected": "rejected",
         "restored": "restored",
         "completed": "done"
+      }
+    },
+    "graph": {
+      "title": "Live plan graph",
+      "empty": "No task graph yet.",
+      "group": "Group {{index}}",
+      "parallel": "{{count}} node(s)",
+      "dependsOn": "depends on",
+      "tokens": "{{count}} tokens",
+      "files": "{{count}} file(s)",
+      "evidence": "{{count}} proof(s)",
+      "status": {
+        "done": "done",
+        "running": "running",
+        "ready": "ready",
+        "blocked": "waiting",
+        "rejected": "rejected"
       }
     },
     "audit": {

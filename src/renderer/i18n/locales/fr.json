@@ -1372,6 +1372,28 @@
     "readError": "Échec de lecture du document",
     "writeError": "Échec d'enregistrement du document"
   },
+  "projectMemory": {
+    "title": "Ce que Cowork sait de ce projet",
+    "subtitle": "Quatre couches, avec provenance, éditables et expirables",
+    "refresh": "Actualiser",
+    "close": "Fermer",
+    "purge": "Purger les expirées",
+    "add": "Ajouter",
+    "delete": "Supprimer",
+    "preview": "Aperçu de l’injection",
+    "previewTitle": "Injection pour cette tâche",
+    "placeholder": "Une règle, une décision, l’état courant, une régression passée…",
+    "empty": "Rien d’enregistré dans cette couche.",
+    "noExpiry": "sans expiration",
+    "expires": "expire le {{date}}",
+    "expired": "{{count}} entrée(s) expirée(s) à purger",
+    "layer": {
+      "rules": "Règles",
+      "decisions": "Décisions",
+      "task-state": "Tâche courante",
+      "errors": "Erreurs et régressions"
+    }
+  },
   "planPanel": {
     "title": "Plan et approbation",
     "subtitle": "Vérifiez périmètre, commandes, risque et coût avant toute écriture",
@@ -1444,6 +1466,7 @@
       "start": "Démarrer l’exécution",
       "verify": "Vérifier",
       "restorePlan": "Restaurer le plan",
+      "startReady": "Démarrer les tâches prêtes",
       "exportAudit": "Exporter le journal d’audit"
     },
     "task": {
@@ -1459,6 +1482,23 @@
         "rejected": "rejetée",
         "restored": "restaurée",
         "completed": "terminée"
+      }
+    },
+    "graph": {
+      "title": "Graphe de plan en direct",
+      "empty": "Aucun graphe de tâches pour le moment.",
+      "group": "Groupe {{index}}",
+      "parallel": "{{count}} nœud(s)",
+      "dependsOn": "dépend de",
+      "tokens": "{{count}} jetons",
+      "files": "{{count}} fichier(s)",
+      "evidence": "{{count}} preuve(s)",
+      "status": {
+        "done": "terminé",
+        "running": "en cours",
+        "ready": "prêt",
+        "blocked": "en attente",
+        "rejected": "rejeté"
       }
     },
     "audit": {

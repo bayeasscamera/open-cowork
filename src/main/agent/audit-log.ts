@@ -56,4 +56,34 @@ export class AuditLog {
       2
     );
   }
+
+  /** Newline-delimited JSON, for log shippers and SIEM ingestion. */
+  public exportNdjson(): string {
+    return this.entries.map((entry) => JSON.stringify(entry)).join('\n');
+  }
+
+  /** Flattened CSV (one row per entry), with RFC 4180 quoting. */
+  public exportCsv(): string {
+    const columns: Array<keyof AuditEntry> = [
+      'id',
+      'at',
+      'action',
+      'authorization',
+      'capability',
+      'matchedRuleId',
+      'taskId',
+      'justification',
+      'files',
+      'verification',
+    ];
+    const escape = (value: unknown): string => {
+      const text = Array.isArray(value) ? value.join(' ') : value === undefined || value === null ? '' : String(value);
+      return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const header = columns.join(',');
+    const rows = this.entries.map((entry) =>
+      columns.map((column) => escape(column === 'at' ? new Date(entry.at).toISOString() : entry[column])).join(',')
+    );
+    return [header, ...rows].join('\n');
+  }
 }
