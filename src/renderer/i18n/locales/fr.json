@@ -1710,6 +1710,7 @@
   },
   "workflowBanner": {
     "progress": "{{done}}/{{total}} tâches",
+    "tokens": "{{tokens}} tokens",
     "blockers": "{{count}} blocage(s)",
     "open": "Ouvrir le plan",
     "dismiss": "Masquer"

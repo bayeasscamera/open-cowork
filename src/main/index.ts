@@ -1983,6 +1983,14 @@ const workflowRegistry = new WorkflowRegistry({
   onStateChange: (sessionId, state) => {
     sendToRenderer({ type: 'workflow.state', payload: { sessionId, state } });
   },
+  // Live cost/token visibility: one event per finished task, plus throttled
+  // progress while a task is still running.
+  onTaskResult: (sessionId, result) => {
+    sendToRenderer({ type: 'workflow.taskResult', payload: { sessionId, result } });
+  },
+  onTaskProgress: (sessionId, progress) => {
+    sendToRenderer({ type: 'workflow.taskProgress', payload: { sessionId, progress } });
+  },
 });
 registerWorkflowIpcHandlers({
   registry: workflowRegistry,

@@ -316,6 +316,14 @@ export function useIPC() {
             store.setWorkflowState(event.payload.sessionId, event.payload.state);
             break;
 
+          case 'workflow.taskResult':
+            store.setWorkflowTaskResult(event.payload.sessionId, event.payload.result);
+            break;
+
+          case 'workflow.taskProgress':
+            store.setWorkflowTaskProgress(event.payload.sessionId, event.payload.progress);
+            break;
+
           case 'error':
             console.error('[useIPC] Server error:', event.payload.message);
             store.setLoading(false);

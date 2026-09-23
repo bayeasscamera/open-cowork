@@ -1,4 +1,4 @@
-import type { WorkflowState } from './workflow-types';
+import type { TaskRunProgress, TaskRunResult, WorkflowState } from './workflow-types';
 
 // Session types
 export interface Session {
@@ -799,6 +799,14 @@ export type ServerEvent =
   | {
       type: 'workflow.state';
       payload: { sessionId: string; state: WorkflowState };
+    }
+  | {
+      type: 'workflow.taskResult';
+      payload: { sessionId: string; result: TaskRunResult };
+    }
+  | {
+      type: 'workflow.taskProgress';
+      payload: { sessionId: string; progress: TaskRunProgress };
     }
   | {
       type: 'background.task';

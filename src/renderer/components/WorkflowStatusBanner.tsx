@@ -3,12 +3,12 @@
  *
  * Always-visible strip reflecting the Plan -> Act -> Verify phase of the
  * active session, so execution progress is readable without opening the plan
- * panel. State is pushed live from the main process through the
- * `workflow.state` server event; a one-shot fetch covers snapshots restored
- * before the renderer window existed.
+ * panel. State, per-task results and throttled live budget updates are pushed
+ * from the main process; a one-shot fetch covers snapshots restored before the
+ * renderer window existed.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, ChevronRight, Loader2, X } from 'lucide-react';
 import type { WorkflowPhase } from '../../shared/workflow-types';
@@ -35,9 +35,22 @@ const ACTIVE_PHASES: WorkflowPhase[] = [
   'verifying',
 ];
 
+/** Compact token counts: 950, 12.4k, 1.3M. */
+function formatTokens(count: number): string {
+  if (count >= 1_000_000) {
+    return (count / 1_000_000).toFixed(1) + 'M';
+  }
+  if (count >= 1_000) {
+    return (count / 1_000).toFixed(1) + 'k';
+  }
+  return String(count);
+}
+
 export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation();
   const state = useAppStore((s) => s.workflowStates[sessionId] ?? null);
+  const results = useAppStore((s) => s.workflowTaskResults[sessionId] ?? null);
+  const progress = useAppStore((s) => s.workflowTaskProgress[sessionId] ?? null);
   const setWorkflowState = useAppStore((s) => s.setWorkflowState);
   const setPlanPanelVisible = useAppStore((s) => s.setPlanPanelVisible);
   const planPanelVisible = useAppStore((s) => s.planPanelVisible);
@@ -66,6 +79,29 @@ export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
       cancelled = true;
     };
   }, [sessionId, setWorkflowState]);
+
+  // Finished results win over live progress: a task that already reported its
+  // final usage must not be counted twice.
+  const { totalTokens, totalCostUsd } = useMemo(() => {
+    let tokens = 0;
+    let cost = 0;
+    if (results) {
+      for (const result of Object.values(results)) {
+        tokens += result.tokens ?? 0;
+        cost += result.costUsd ?? 0;
+      }
+    }
+    if (progress) {
+      for (const entry of Object.values(progress)) {
+        if (results && results[entry.taskId]) {
+          continue;
+        }
+        tokens += entry.tokens;
+        cost += entry.costUsd;
+      }
+    }
+    return { totalTokens: tokens, totalCostUsd: cost };
+  }, [results, progress]);
 
   if (!state || !state.contractId) {
     return null;
@@ -107,6 +143,18 @@ export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
             <span className="tabular-nums">
               {t('workflowBanner.progress', { done, total })}
             </span>
+          </span>
+        )}
+
+        {totalTokens > 0 && (
+          <span className="tabular-nums text-text-secondary">
+            {t('workflowBanner.tokens', { tokens: formatTokens(totalTokens) })}
+          </span>
+        )}
+
+        {totalCostUsd > 0 && (
+          <span className="tabular-nums text-text-secondary">
+            {'$' + totalCostUsd.toFixed(4)}
           </span>
         )}
 

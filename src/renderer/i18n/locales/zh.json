@@ -1711,6 +1711,7 @@
   },
   "workflowBanner": {
     "progress": "{{done}}/{{total}} 个任务",
+    "tokens": "{{tokens}} tokens",
     "blockers": "{{count}} 个阻塞",
     "open": "打开计划",
     "dismiss": "隐藏"

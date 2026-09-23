@@ -220,6 +220,20 @@ export interface TaskRunResult {
   tokens?: number;
 }
 
+/**
+ * Live budget consumption of a task that is still running. Emitted while a
+ * task executes so the UI can show tokens and cost before the task ends.
+ */
+export interface TaskRunProgress {
+  taskId: string;
+  tokens: number;
+  toolCalls: number;
+  costUsd: number;
+  /** Token ceiling declared by the plan for this task, when any. */
+  maxTokens?: number;
+  updatedAt: number;
+}
+
 export interface WorkflowExecutionReport {
   contractId: string | null;
   /** False when the execution choke point refused to start. */

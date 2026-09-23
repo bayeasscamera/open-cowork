@@ -1711,6 +1711,7 @@
   },
   "workflowBanner": {
     "progress": "{{done}}/{{total}} tasks",
+    "tokens": "{{tokens}} tokens",
     "blockers": "{{count}} blocker(s)",
     "open": "Open plan",
     "dismiss": "Dismiss"

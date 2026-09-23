@@ -12,7 +12,11 @@ import type {
   SkillsStorageChangeEvent,
   Project,
 } from '../types';
-import type { WorkflowState } from '../../shared/workflow-types';
+import type {
+  TaskRunProgress,
+  TaskRunResult,
+  WorkflowState,
+} from '../../shared/workflow-types';
 import { applySessionUpdate } from '../utils/session-update';
 
 type GlobalNoticeType = 'info' | 'warning' | 'error' | 'success';
@@ -127,6 +131,11 @@ interface AppState {
   // Workflow (Plan -> Act -> Verify) state per session, pushed from the main
   // process on every transition so the status banner stays live.
   workflowStates: Record<string, WorkflowState>;
+  // Finished task results per session, keyed by task id so a retry replaces
+  // the previous run instead of being summed twice.
+  workflowTaskResults: Record<string, Record<string, TaskRunResult>>;
+  // Throttled live budget updates for tasks that are still running.
+  workflowTaskProgress: Record<string, Record<string, TaskRunProgress>>;
 
   // UI state
   isLoading: boolean;
@@ -231,6 +240,8 @@ interface AppState {
   setShowSettings: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
   setWorkflowState: (sessionId: string, state: WorkflowState) => void;
+  setWorkflowTaskResult: (sessionId: string, result: TaskRunResult) => void;
+  setWorkflowTaskProgress: (sessionId: string, progress: TaskRunProgress) => void;
 
   setPendingPermission: (permission: PermissionRequest | null) => void;
 
@@ -316,6 +327,8 @@ export const useAppStore = create<AppState>((set) => ({
   sessionStates: {},
   sessionScrollPositions: {},
   workflowStates: {},
+  workflowTaskResults: {},
+  workflowTaskProgress: {},
   isLoading: false,
   sidebarCollapsed: false,
   contextPanelCollapsed: false,
@@ -692,8 +705,40 @@ export const useAppStore = create<AppState>((set) => ({
   setShowSettings: (show) => set({ showSettings: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   setWorkflowState: (sessionId, state) =>
+    set((current) => {
+      const previous = current.workflowStates[sessionId];
+      // A different contract means a new plan: results and live progress from
+      // the previous run must not be summed into the new one.
+      const planChanged = previous !== undefined && previous.contractId !== state.contractId;
+      return {
+        workflowStates: { ...current.workflowStates, [sessionId]: state },
+        workflowTaskResults: planChanged
+          ? { ...current.workflowTaskResults, [sessionId]: {} }
+          : current.workflowTaskResults,
+        workflowTaskProgress: planChanged
+          ? { ...current.workflowTaskProgress, [sessionId]: {} }
+          : current.workflowTaskProgress,
+      };
+    }),
+  setWorkflowTaskResult: (sessionId, result) =>
     set((current) => ({
-      workflowStates: { ...current.workflowStates, [sessionId]: state },
+      workflowTaskResults: {
+        ...current.workflowTaskResults,
+        [sessionId]: {
+          ...(current.workflowTaskResults[sessionId] ?? {}),
+          [result.taskId]: result,
+        },
+      },
+    })),
+  setWorkflowTaskProgress: (sessionId, progress) =>
+    set((current) => ({
+      workflowTaskProgress: {
+        ...current.workflowTaskProgress,
+        [sessionId]: {
+          ...(current.workflowTaskProgress[sessionId] ?? {}),
+          [progress.taskId]: progress,
+        },
+      },
     })),
 
   // Permission actions

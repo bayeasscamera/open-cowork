@@ -16,6 +16,7 @@ import {
   type WorkflowExecutorOptions,
   type WorkflowTaskRunner,
 } from './workflow-executor';
+import type { TaskRunProgress, TaskRunResult } from '../../shared/workflow-types';
 import { ProjectMemoryStore, workspaceKeyFor } from '../memory/project-memory-store';
 import type { TaskQueue } from './task-queue';
 import { WorkflowOrchestrator, type WorkflowState } from './workflow-orchestrator';
@@ -44,6 +45,10 @@ export interface WorkflowRegistryOptions {
   fallbackWorkspaceRoot?: () => string | null;
   now?: () => number;
   onStateChange?: (sessionId: string, state: WorkflowState) => void;
+  /** Called once per finished task, for live cost/token reporting. */
+  onTaskResult?: (sessionId: string, result: TaskRunResult) => void;
+  /** Throttled live budget updates while a task is still running. */
+  onTaskProgress?: (sessionId: string, progress: TaskRunProgress) => void;
   /** Durable state (Phase 1.6). Omitted in unit tests. */
   persistence?: WorkflowPersistence;
   /** The detached-task queue, persisted alongside the workflow. */
@@ -185,8 +190,13 @@ export class WorkflowRegistry {
     if (!entry) {
       return null;
     }
+    const {
+      onTaskResult: overrideTaskResult,
+      onTaskProgress: overrideTaskProgress,
+      ...rest
+    } = overrides;
     return new WorkflowExecutor({
-      ...overrides,
+      ...rest,
       orchestrator: entry.orchestrator,
       runTask,
       policy: entry.policy,
@@ -194,6 +204,16 @@ export class WorkflowRegistry {
       isolation: entry.isolation,
       audit: entry.audit,
       now: this.options.now,
+      // Compose so a caller-provided hook (tests, alternate front-ends) still
+      // fires alongside the registry-level broadcast.
+      onTaskResult: (result) => {
+        overrideTaskResult?.(result);
+        this.options.onTaskResult?.(sessionId, result);
+      },
+      onTaskProgress: (progress) => {
+        overrideTaskProgress?.(progress);
+        this.options.onTaskProgress?.(sessionId, progress);
+      },
     });
   }
 

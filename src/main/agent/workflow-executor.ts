@@ -20,6 +20,7 @@
 import type { AtomicTask, Capability, EvidenceKind, TaskContract } from '../../shared/task-contract';
 import type {
   NewCheckpointEvidence,
+  TaskRunProgress,
   TaskRunResult,
   TaskRunStatus,
   TaskVerification,
@@ -47,6 +48,8 @@ import type { WorkflowOrchestrator } from './workflow-orchestrator';
 
 export const DEFAULT_MAX_TASKS_PER_RUN = 50;
 export const DEFAULT_TASK_ATTEMPTS = 1;
+/** Minimum delay between two live progress reports for one task. */
+export const TASK_PROGRESS_THROTTLE_MS = 400;
 
 export interface WorkflowTaskContext {
   task: AtomicTask;
@@ -100,6 +103,8 @@ export interface WorkflowExecutorOptions {
   runProof?: ProofRunner;
   proofTimeoutMs?: number;
   onTaskResult?: (result: TaskRunResult) => void;
+  /** Throttled live budget updates while a task is still running. */
+  onTaskProgress?: (progress: TaskRunProgress) => void;
 }
 
 /** Evidence kinds the agent's own text can satisfy. */
@@ -309,14 +314,37 @@ export class WorkflowExecutor {
     const prompt = buildTaskPrompt(task, contract);
     const budget = new BudgetGuard(task.budget, { now: this.now });
     const controller = new AbortController();
+    let progressReportedAt = 0;
+    // Live visibility: the UI must see tokens and cost accrue while a long
+    // task runs, not only once it ends. Throttled so a chatty runner cannot
+    // flood the renderer.
+    const reportProgress = (): void => {
+      const at = this.now();
+      if (at - progressReportedAt < TASK_PROGRESS_THROTTLE_MS) {
+        return;
+      }
+      progressReportedAt = at;
+      this.options.onTaskProgress?.({
+        taskId: task.id,
+        tokens: budget.tokens,
+        toolCalls: budget.toolCalls,
+        costUsd: budget.usage().costUsd,
+        ...(typeof task.budget.maxTokens === 'number'
+          ? { maxTokens: task.budget.maxTokens }
+          : {}),
+        updatedAt: at,
+      });
+    };
     const onToolCall = (count = 1): void => {
       budget.recordToolCall(count);
+      reportProgress();
       if (budget.exceeded && !controller.signal.aborted) {
         controller.abort();
       }
     };
     const onTokens = (count = 1): void => {
       budget.recordTokens(count);
+      reportProgress();
       if (budget.exceeded && !controller.signal.aborted) {
         controller.abort();
       }

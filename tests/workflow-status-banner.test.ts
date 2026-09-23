@@ -121,6 +121,7 @@ describe('workflow state push plumbing', () => {
         'dismiss',
         'open',
         'progress',
+        'tokens',
       ]);
     }
   });
