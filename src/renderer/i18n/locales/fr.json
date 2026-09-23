@@ -1455,6 +1455,39 @@
       "suggested": "Profil suggéré : {{profile}}"
     }
   },
+  "capabilityPanel": {
+    "hint": "Ce que cette application a installé et activé, et quels serveurs MCP sont réellement connectés.",
+    "unavailable": "La visibilité des skills et de MCP n'est pas disponible dans cette version.",
+    "skills": {
+      "title": "{{count}} skill(s) activé(s)",
+      "hint": "Les skills activés sont matérialisés dans le workspace de la session pour que l'agent puisse les lire. Les skills désactivés apparaissent en grisé.",
+      "empty": "Aucun skill n'est installé.",
+      "enabled": "activé",
+      "disabled": "désactivé"
+    },
+    "skillType": {
+      "builtin": "intégré",
+      "mcp": "mcp",
+      "custom": "personnalisé"
+    },
+    "proposals": {
+      "title": "{{count}} proposition(s) de skill en attente",
+      "hint": "Ces brouillons restent inertes jusqu'à approbation humaine dans Réglages → Skill doctor.",
+      "empty": "Aucune proposition de skill n'attend d'approbation."
+    },
+    "mcp": {
+      "title": "{{connected}}/{{total}} serveur(s) MCP connecté(s)",
+      "empty": "Aucun serveur MCP n'est configuré.",
+      "toolCount": "{{count}} outil(s)",
+      "tools": "Outils MCP exposés",
+      "status": {
+        "connecting": "connexion",
+        "connected": "connecté",
+        "failed": "échec",
+        "disabled": "désactivé"
+      }
+    }
+  },
   "evalPanel": {
     "title": "Scénarios d'évaluation",
     "hint": "Les scénarios de référence mesurent la réussite, les tours, le coût, les régressions et les interventions humaines. Lancer une suite pilote l'agent : elle n'est disponible que si cette version a branché un exécuteur de scénarios.",
@@ -1529,6 +1562,7 @@
       "queue": "File",
       "terminal": "Terminal",
       "evals": "Évaluations",
+      "capabilities": "Capacités",
       "settings": "Réglages"
     },
     "terminal": {

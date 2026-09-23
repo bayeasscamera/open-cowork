@@ -12,6 +12,7 @@ const workspace = read('src/renderer/components/WorkspacePane.tsx');
 const queue = read('src/renderer/components/TaskQueuePane.tsx');
 const terminal = read('src/renderer/components/TerminalPane.tsx');
 const evalPanel = read('src/renderer/components/EvalPanel.tsx');
+const capabilityPane = read('src/renderer/components/CapabilityPane.tsx');
 const app = read('src/renderer/App.tsx');
 const store = read('src/renderer/store/index.ts');
 const preload = read('src/preload/index.ts');
@@ -23,6 +24,7 @@ describe('control center panel wiring', () => {
     expect(panel).toContain('const TABS: ControlCenterTab[] = [');
     expect(panel).toContain("'activity',");
     expect(panel).toContain("'evals',");
+    expect(panel).toContain("'capabilities',");
     expect(panel).toContain("t('controlCenter.tab.' + candidate)");
     expect(panel).toContain('<ActivityView sessionId={sessionId} />');
     expect(panel).toContain('<WorkspacePane sessionId={sessionId} />');
@@ -30,6 +32,17 @@ describe('control center panel wiring', () => {
     expect(panel).toContain('<TerminalPane sessionId={sessionId} />');
     expect(panel).toContain('<SettingsLevelsPane sessionId={sessionId} />');
     expect(panel).toContain('<EvalPanel />');
+    expect(panel).toContain('<CapabilityPane />');
+  });
+
+  it('makes the enabled skills and connected MCP servers visible', () => {
+    expect(panel).toContain("import { CapabilityPane } from './CapabilityPane';");
+    expect(panel).toContain('capabilities: Boxes,');
+    expect(capabilityPane).toContain('window.electronAPI?.skills');
+    expect(capabilityPane).toContain('window.electronAPI?.mcp');
+    expect(capabilityPane).toContain('skillsApi.getAll()');
+    expect(capabilityPane).toContain('mcpApi.getServerStatus()');
+    expect(capabilityPane).toContain('mcpApi.getTools()');
   });
 
   it('exposes the reference-scenario harness as its own tab', () => {

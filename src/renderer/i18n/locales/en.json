@@ -1456,6 +1456,39 @@
       "suggested": "Suggested profile: {{profile}}"
     }
   },
+  "capabilityPanel": {
+    "hint": "What this app has installed and enabled, and which MCP servers are actually connected right now.",
+    "unavailable": "Skill and MCP visibility is not available in this build.",
+    "skills": {
+      "title": "{{count}} enabled skill(s)",
+      "hint": "Enabled skills are materialised into the session workspace so the agent can read them. Disabled skills are shown muted.",
+      "empty": "No skill is installed.",
+      "enabled": "enabled",
+      "disabled": "disabled"
+    },
+    "skillType": {
+      "builtin": "built-in",
+      "mcp": "mcp",
+      "custom": "custom"
+    },
+    "proposals": {
+      "title": "{{count}} pending skill proposal(s)",
+      "hint": "These drafts stay inert until a human approves them in Settings → Skill doctor.",
+      "empty": "No skill proposal is awaiting approval."
+    },
+    "mcp": {
+      "title": "{{connected}}/{{total}} MCP server(s) connected",
+      "empty": "No MCP server is configured.",
+      "toolCount": "{{count}} tool(s)",
+      "tools": "Exposed MCP tools",
+      "status": {
+        "connecting": "connecting",
+        "connected": "connected",
+        "failed": "failed",
+        "disabled": "disabled"
+      }
+    }
+  },
   "evalPanel": {
     "title": "Evaluation scenarios",
     "hint": "Reference scenarios measure success, turns, cost, regressions and human interventions. Running a suite drives the agent, so it is only available when this build wired a scenario runner.",
@@ -1530,6 +1563,7 @@
       "queue": "Queue",
       "terminal": "Terminal",
       "evals": "Evals",
+      "capabilities": "Capabilities",
       "settings": "Settings"
     },
     "terminal": {

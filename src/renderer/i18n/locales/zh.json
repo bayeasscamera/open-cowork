@@ -1456,6 +1456,39 @@
       "suggested": "建议配置：{{profile}}"
     }
   },
+  "capabilityPanel": {
+    "hint": "此应用已安装并启用的内容，以及当前真正连接的 MCP 服务器。",
+    "unavailable": "此版本不提供技能与 MCP 可见性。",
+    "skills": {
+      "title": "已启用 {{count}} 个技能",
+      "hint": "已启用的技能会复制到会话工作区，供智能体读取。已禁用的技能以灰色显示。",
+      "empty": "未安装任何技能。",
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "skillType": {
+      "builtin": "内置",
+      "mcp": "mcp",
+      "custom": "自定义"
+    },
+    "proposals": {
+      "title": "{{count}} 个待处理技能提案",
+      "hint": "在人工于「设置 → 技能诊断」中批准之前，这些草稿保持惰性。",
+      "empty": "没有待批准的技能提案。"
+    },
+    "mcp": {
+      "title": "已连接 {{connected}}/{{total}} 个 MCP 服务器",
+      "empty": "未配置任何 MCP 服务器。",
+      "toolCount": "{{count}} 个工具",
+      "tools": "已暴露的 MCP 工具",
+      "status": {
+        "connecting": "连接中",
+        "connected": "已连接",
+        "failed": "失败",
+        "disabled": "已禁用"
+      }
+    }
+  },
   "evalPanel": {
     "title": "评估场景",
     "hint": "参考场景衡量成功率、轮次、成本、回归与人工干预。运行套件会驱动智能体，因此仅当此版本已接入场景执行器时才可用。",
@@ -1530,6 +1563,7 @@
       "queue": "队列",
       "terminal": "终端",
       "evals": "评估",
+      "capabilities": "能力",
       "settings": "设置"
     },
     "terminal": {
