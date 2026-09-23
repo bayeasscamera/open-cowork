@@ -108,13 +108,16 @@ describe('project model pin — resolution wiring', () => {
   });
 
   it('the runner passes the pinned model to the projected ConfigSet config', () => {
-    // Single-model mode resolves the project's pin; two-stage mode substitutes
-    // the draft slot — both flow through the same projection call.
+    // Single-model mode resolves the global -> project -> session ladder;
+    // two-stage mode substitutes the draft slot — both then flow through the
+    // same projection call.
     expect(agentRunner).toContain(
       'getConfigSetProjectedConfig(\n              effectiveConfigSetId,\n              effectiveConfigModelId ?? undefined\n            )'
     );
+    expect(agentRunner).toContain('resolveSettingsLadder({');
+    expect(agentRunner).toContain('configSetId: session.configSetId, modelId: session.configModelId');
     expect(agentRunner).toContain(
-      'const effectiveConfigModelId = twoStageArmed\n        ? projectContext.draftModelId\n        : projectContext.configModelId;'
+      'const effectiveConfigModelId = twoStageArmed\n        ? projectContext.draftModelId\n        : settingsLadder.model || null;'
     );
   });
 });

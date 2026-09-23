@@ -1461,7 +1461,8 @@
       "activity": "Activity",
       "workspace": "Workspace",
       "queue": "Queue",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "settings": "Settings"
     },
     "terminal": {
       "open": "New terminal",
@@ -1712,6 +1713,36 @@
         "forbidden": "forbidden",
         "not-required": "not required"
       }
+    }
+  },
+  "settingsLevels": {
+    "title": "Settings levels",
+    "subtitle": "Global, project and session precedence for the provider and model",
+    "effective": "In effect",
+    "none": "not configured",
+    "ignored": "ignored",
+    "inherits": "Inherits the level above",
+    "pinsSet": "ConfigSet {{id}}",
+    "pinsModel": "model {{id}}",
+    "decidesSet": "Decides the ConfigSet",
+    "decidesModel": "Decides the model",
+    "level": {
+      "global": "Global",
+      "project": "Project",
+      "session": "Session"
+    },
+    "override": "Session override",
+    "overrideHint": "Pin a provider or model for this session only. Higher levels win; clearing falls back to the project, then to the globally active set.",
+    "configSet": "ConfigSet",
+    "model": "Model",
+    "modelPlaceholder": "The set's own model",
+    "inheritOption": "Inherit (project, then global)",
+    "apply": "Apply",
+    "clear": "Clear override",
+    "saveFailed": "Could not save the override.",
+    "warning": {
+      "unknown-config-set": "{{level}} pins an unknown ConfigSet ({{value}}) — the whole binding is ignored.",
+      "no-config-set": "No ConfigSet is configured at the {{level}} level."
     }
   },
   "workflowBanner": {

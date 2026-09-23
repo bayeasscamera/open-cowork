@@ -53,7 +53,12 @@ describe('control center wired into the agent loop', () => {
 describe('model routing wired into live model selection', () => {
   it('consults the router only when the human opted in', () => {
     expect(runner).toContain('public setModelResolver(');
-    expect(runner).toContain('allowAdaptive: !effectiveConfigSetId && !effectiveConfigModelId,');
+    // Adaptive routing only fills the default slot: any explicit project or
+    // session choice in the settings ladder disables it.
+    expect(runner).toContain('allowAdaptive: twoStageArmed');
+    expect(runner).toContain(
+      '!settingsLadder.hasExplicitConfigSet && !settingsLadder.hasExplicitModel,'
+    );
     expect(runner).toContain("logCtx('[CoworkAgentRunner] Model source:', 'modelRouting');");
     expect(routingService).toContain('if (!this.enabled || !this.activeProfile) {');
     expect(routingService).toContain('return undefined;');

@@ -12,6 +12,7 @@ export function eventRequiresSessionManager(event: ClientEvent): boolean {
     case 'session.getTraceSteps':
     case 'session.compact':
     case 'session.getContextUsage':
+    case 'session.setConfigOverride':
     case 'permission.response':
       return true;
     default:

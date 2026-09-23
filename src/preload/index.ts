@@ -135,6 +135,7 @@ const ALLOWED_CLIENT_EVENT_MAP: Record<ClientEvent['type'], true> = {
   'session.getTraceSteps': true,
   'session.compact': true,
   'session.getContextUsage': true,
+  'session.setConfigOverride': true,
   'permission.response': true,
   'sudo.password.response': true,
   'settings.update': true,
@@ -245,6 +246,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invoke({
         type: 'session.getContextUsage',
         payload: { sessionId },
+      }),
+
+    /**
+     * Pin (or clear) the SESSION-level settings override. Both null = inherit
+     * the project, then the globally active ConfigSet.
+     */
+    setConfigOverride: (
+      sessionId: string,
+      configSetId: string | null,
+      modelId: string | null
+    ): Promise<{ success: boolean; error?: string }> =>
+      invoke({
+        type: 'session.setConfigOverride',
+        payload: { sessionId, configSetId, modelId },
       }),
   },
 
@@ -1051,6 +1066,11 @@ declare global {
           contextWindow: number;
           percent: number | null;
         } | null>;
+        setConfigOverride: (
+          sessionId: string,
+          configSetId: string | null,
+          modelId: string | null
+        ) => Promise<{ success: boolean; error?: string }>;
       };
       projects: {
         create: (payload: {

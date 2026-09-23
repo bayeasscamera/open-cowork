@@ -83,6 +83,10 @@ export interface SessionRow {
   model: string | null;
   is_pinned?: number | null;
   project_id?: string | null;
+  /** SESSION-level ConfigSet override (null = inherit project, then global). */
+  config_set_id?: string | null;
+  /** Model pinned inside that set (null = the set's own model). */
+  config_model_id?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -446,6 +450,11 @@ function initializeSchema(database: Database.Database): void {
 
     // Sessions can point at the project they belong to (null = no project).
     ensureColumn(database, 'sessions', 'project_id', 'project_id TEXT');
+
+    // Session-level settings override — the highest level of the
+    // global → project → session ladder. NULL means "inherit".
+    ensureColumn(database, 'sessions', 'config_set_id', 'config_set_id TEXT');
+    ensureColumn(database, 'sessions', 'config_model_id', 'config_model_id TEXT');
     database.exec(`
     CREATE INDEX IF NOT EXISTS idx_sessions_project_id
     ON sessions(project_id)
@@ -667,8 +676,8 @@ export function initDatabase(): DatabaseInstance {
   // Prepare statements for better performance
   const insertSession = rawDb.prepare(`
     INSERT OR REPLACE INTO sessions
-    (id, title, claude_session_id, openai_thread_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, model, project_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, title, claude_session_id, openai_thread_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, model, project_id, config_set_id, config_model_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Note: Dynamic update queries are built in sessions.update() for flexibility
@@ -799,6 +808,8 @@ export function initDatabase(): DatabaseInstance {
           session.memory_enabled,
           session.model,
           session.project_id ?? null,
+          session.config_set_id ?? null,
+          session.config_model_id ?? null,
           session.created_at,
           session.updated_at
         );

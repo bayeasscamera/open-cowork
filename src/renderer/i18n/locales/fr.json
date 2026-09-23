@@ -1460,7 +1460,8 @@
       "activity": "Activité",
       "workspace": "Espace",
       "queue": "File",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "settings": "Réglages"
     },
     "terminal": {
       "open": "Nouveau terminal",
@@ -1711,6 +1712,36 @@
         "forbidden": "interdit",
         "not-required": "non requis"
       }
+    }
+  },
+  "settingsLevels": {
+    "title": "Niveaux de réglages",
+    "subtitle": "Priorité global, projet puis session pour le fournisseur et le modèle",
+    "effective": "Effectif",
+    "none": "non configuré",
+    "ignored": "ignoré",
+    "inherits": "Hérite du niveau supérieur",
+    "pinsSet": "ConfigSet {{id}}",
+    "pinsModel": "modèle {{id}}",
+    "decidesSet": "Décide le ConfigSet",
+    "decidesModel": "Décide le modèle",
+    "level": {
+      "global": "Global",
+      "project": "Projet",
+      "session": "Session"
+    },
+    "override": "Dérogation de session",
+    "overrideHint": "Épinglez un fournisseur ou un modèle pour cette session uniquement. Les niveaux supérieurs l'emportent ; effacer revient au projet, puis à l'ensemble actif global.",
+    "configSet": "ConfigSet",
+    "model": "Modèle",
+    "modelPlaceholder": "Le modèle de l'ensemble",
+    "inheritOption": "Hériter (projet, puis global)",
+    "apply": "Appliquer",
+    "clear": "Effacer la dérogation",
+    "saveFailed": "Impossible d'enregistrer la dérogation.",
+    "warning": {
+      "unknown-config-set": "{{level}} épingle un ConfigSet inconnu ({{value}}) — toute la liaison est ignorée.",
+      "no-config-set": "Aucun ConfigSet n'est configuré au niveau {{level}}."
     }
   },
   "workflowBanner": {

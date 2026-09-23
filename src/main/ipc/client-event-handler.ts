@@ -170,6 +170,12 @@ export async function handleClientEvent(
     case 'session.compact':
       return sm.compactSession(event.payload.sessionId, event.payload.customInstructions);
 
+    case 'session.setConfigOverride': {
+      const { sessionId, configSetId, modelId } = event.payload;
+      const updated = sm.setConfigOverride(sessionId, configSetId ?? null, modelId ?? null);
+      return updated ? { success: true } : { success: false, error: 'Session not found' };
+    }
+
     case 'session.getContextUsage':
       return sm.getContextUsage(event.payload.sessionId);
 

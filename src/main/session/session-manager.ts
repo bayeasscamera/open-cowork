@@ -432,6 +432,8 @@ export class SessionManager {
       memory_enabled: session.memoryEnabled ? 1 : 0,
       model: session.model || null,
       project_id: session.projectId || null,
+      config_set_id: session.configSetId || null,
+      config_model_id: session.configModelId || null,
       created_at: session.createdAt,
       updated_at: session.updatedAt,
     });
@@ -471,6 +473,8 @@ export class SessionManager {
       model: row.model || undefined,
       isPinned: row.is_pinned === 1,
       projectId: row.project_id || undefined,
+      configSetId: row.config_set_id || null,
+      configModelId: row.config_model_id || null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -510,6 +514,8 @@ export class SessionManager {
         model: row.model || undefined,
         isPinned: row.is_pinned === 1,
         projectId: row.project_id || undefined,
+        configSetId: row.config_set_id || null,
+        configModelId: row.config_model_id || null,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -1254,6 +1260,45 @@ export class SessionManager {
       payload: { sessionId, updates: { isPinned } },
     });
     log(`[SessionManager] Session ${sessionId} pinned status set to: ${isPinned}`);
+    return true;
+  }
+
+  /**
+   * Pin (or clear) the SESSION-level settings override — the highest level of
+   * the global -> project -> session ladder. Passing null for both clears the
+   * override so the session falls back to its project, then to the global
+   * active ConfigSet.
+   *
+   * The cached SDK session is dropped so the next query actually re-resolves
+   * the provider/model instead of reusing the previous one.
+   */
+  setConfigOverride(
+    sessionId: string,
+    configSetId: string | null,
+    modelId: string | null
+  ): boolean {
+    const existing = this.db.sessions.get(sessionId);
+    if (!existing) {
+      logWarn('[SessionManager] Cannot set config override on unknown session:', sessionId);
+      return false;
+    }
+    const nextSetId = configSetId?.trim() || null;
+    const nextModelId = modelId?.trim() || null;
+    this.db.sessions.update(sessionId, {
+      config_set_id: nextSetId,
+      config_model_id: nextModelId,
+      updated_at: Date.now(),
+    });
+    // A different provider/model must not be served by a cached SDK session.
+    this.agentRunner?.clearSdkSession?.(sessionId);
+    this.sendToRenderer({
+      type: 'session.update',
+      payload: {
+        sessionId,
+        updates: { configSetId: nextSetId, configModelId: nextModelId },
+      },
+    });
+    log('[SessionManager] Session config override updated:', sessionId, nextSetId ?? 'inherit');
     return true;
   }
 

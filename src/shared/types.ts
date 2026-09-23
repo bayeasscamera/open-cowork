@@ -15,6 +15,13 @@ export interface Session {
   isPinned?: boolean;
   /** Project this session belongs to, when linked. */
   projectId?: string;
+  /**
+   * SESSION-level settings override (highest precedence): a ConfigSet pinned
+   * for this session only. null/undefined = inherit the project, then global.
+   */
+  configSetId?: string | null;
+  /** Model pinned inside that set (null/undefined = the set's own model). */
+  configModelId?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -628,6 +635,10 @@ export type ClientEvent =
       payload: { sessionId: string; customInstructions?: string };
     }
   | { type: 'session.getContextUsage'; payload: { sessionId: string } }
+  | {
+      type: 'session.setConfigOverride';
+      payload: { sessionId: string; configSetId: string | null; modelId: string | null };
+    }
   | { type: 'permission.response'; payload: { toolUseId: string; result: PermissionResult } }
   | { type: 'sudo.password.response'; payload: { toolUseId: string; password: string | null } }
   | { type: 'settings.update'; payload: Record<string, unknown> }

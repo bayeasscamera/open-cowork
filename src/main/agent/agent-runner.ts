@@ -54,6 +54,7 @@ import {
   type PiSessionEventState,
 } from './session-event-handler';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../shared/types';
+import { resolveSettingsLadder } from '../../shared/settings-levels';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
@@ -779,28 +780,59 @@ export class CoworkAgentRunner {
         );
       }
 
-      // Resolve model via pi-ai — project's ConfigSet wins when pinned, and a
-      // pinned project modelId overrides the set's active model. In two-stage
-      // mode the draft slot selects the model that produces the first pass.
+      // Settings ladder: global -> project -> session. Both the ConfigSet and
+      // the model can be overridden at a higher level; a level that pins an
+      // unknown set id is ignored as a whole (with a warning) instead of being
+      // half-applied. The same pure resolver backs the UI panel, so what the
+      // user sees is exactly what runs here.
+      const globalConfig = configStore.getAll();
+      const settingsLadder = resolveSettingsLadder({
+        global: {
+          activeConfigSetId: globalConfig.activeConfigSetId,
+          configSets: globalConfig.configSets,
+        },
+        project: projectContext.project
+          ? {
+              id: projectContext.project.id,
+              name: projectContext.project.name,
+              configSetId: projectContext.project.configSetId,
+              modelId: projectContext.project.modelId,
+            }
+          : null,
+        session: { configSetId: session.configSetId, modelId: session.configModelId },
+      });
+      for (const warning of settingsLadder.warnings) {
+        logCtxWarn(
+          '[CoworkAgentRunner] Settings ladder warning:',
+          warning.code,
+          warning.level,
+          warning.value ?? ''
+        );
+      }
+
+      // Resolve model via pi-ai — the ladder's winner. In two-stage mode the
+      // project's draft slot selects the model that produces the first pass.
       const effectiveConfigSetId = twoStageArmed
         ? projectContext.draftConfigSetId
-        : projectContext.configSetId;
+        : settingsLadder.configSetId || null;
       const effectiveConfigModelId = twoStageArmed
         ? projectContext.draftModelId
-        : projectContext.configModelId;
+        : settingsLadder.model || null;
       const runtimeConfig =
         (effectiveConfigSetId
           ? configStore.getConfigSetProjectedConfig(
               effectiveConfigSetId,
               effectiveConfigModelId ?? undefined
             )
-          : undefined) || configStore.getAll();
-      // A project-pinned config set (or pinned model id) is an explicit human
-      // choice and always wins; adaptive routing only fills the default slot.
+          : undefined) || globalConfig;
+      // An explicit project or session choice is a human decision and always
+      // wins; adaptive routing only fills the global-only default slot.
       const modelString = this.getCurrentModelString(runtimeConfig.model, {
         sessionId: session.id,
         prompt,
-        allowAdaptive: !effectiveConfigSetId && !effectiveConfigModelId,
+        allowAdaptive: twoStageArmed
+          ? false
+          : !settingsLadder.hasExplicitConfigSet && !settingsLadder.hasExplicitModel,
       });
       usedModelString = modelString;
       const configProtocol = resolvePiRouteProtocol(

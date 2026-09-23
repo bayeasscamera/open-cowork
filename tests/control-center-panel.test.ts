@@ -18,15 +18,16 @@ const handlers = read('src/main/ipc/control-center-handlers.ts');
 const types = read('src/shared/control-center-types.ts');
 
 describe('control center panel wiring', () => {
-  it('renders the four control-center panes as tabs', () => {
+  it('renders the control-center panes as tabs', () => {
     expect(panel).toContain(
-      "const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue', 'terminal'];"
+      "const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue', 'terminal', 'settings'];"
     );
     expect(panel).toContain("t('controlCenter.tab.' + candidate)");
     expect(panel).toContain('<ActivityView sessionId={sessionId} />');
     expect(panel).toContain('<WorkspacePane sessionId={sessionId} />');
     expect(panel).toContain('<TaskQueuePane sessionId={sessionId} />');
     expect(panel).toContain('<TerminalPane sessionId={sessionId} />');
+    expect(panel).toContain('<SettingsLevelsPane sessionId={sessionId} />');
   });
 
   it('drives the embedded terminal from its pane', () => {

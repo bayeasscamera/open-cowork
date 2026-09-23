@@ -1461,7 +1461,8 @@
       "activity": "活动",
       "workspace": "工作区",
       "queue": "队列",
-      "terminal": "终端"
+      "terminal": "终端",
+      "settings": "设置"
     },
     "terminal": {
       "open": "新建终端",
@@ -1712,6 +1713,36 @@
         "forbidden": "禁止",
         "not-required": "无需"
       }
+    }
+  },
+  "settingsLevels": {
+    "title": "设置层级",
+    "subtitle": "提供商与模型的全局、项目与会话优先级",
+    "effective": "生效中",
+    "none": "未配置",
+    "ignored": "已忽略",
+    "inherits": "继承上层",
+    "pinsSet": "ConfigSet {{id}}",
+    "pinsModel": "模型 {{id}}",
+    "decidesSet": "决定 ConfigSet",
+    "decidesModel": "决定模型",
+    "level": {
+      "global": "全局",
+      "project": "项目",
+      "session": "会话"
+    },
+    "override": "会话覆盖",
+    "overrideHint": "仅为该会话固定提供商或模型。更高层级优先；清除后回退到项目，再到全局活动集合。",
+    "configSet": "ConfigSet",
+    "model": "模型",
+    "modelPlaceholder": "集合自身的模型",
+    "inheritOption": "继承（项目，然后全局）",
+    "apply": "应用",
+    "clear": "清除覆盖",
+    "saveFailed": "无法保存覆盖设置。",
+    "warning": {
+      "unknown-config-set": "{{level}} 固定了未知的 ConfigSet（{{value}}）——整个绑定已被忽略。",
+      "no-config-set": "{{level}} 层级未配置任何 ConfigSet。"
     }
   },
   "workflowBanner": {

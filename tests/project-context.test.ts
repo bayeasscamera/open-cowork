@@ -206,12 +206,14 @@ describe('agent runner wiring — source contract', () => {
     // Single-model mode resolves exactly as before — the two-stage branch only
     // substitutes the ConfigSet/model pair (draft slot) when it is armed.
     expect(runnerFlat).toContain(
-      'const effectiveConfigSetId = twoStageArmed ? projectContext.draftConfigSetId : projectContext.configSetId;'
+      'const effectiveConfigSetId = twoStageArmed ? projectContext.draftConfigSetId : settingsLadder.configSetId || null;'
     );
+    expect(runnerFlat).toContain('settingsLadder.configSetId || null;');
     expect(runnerFlat).toContain(
       'configStore.getConfigSetProjectedConfig( effectiveConfigSetId, effectiveConfigModelId ?? undefined )'
     );
-    expect(runnerSource).toContain('|| configStore.getAll()');
+    expect(runnerSource).toContain('resolveSettingsLadder({');
+    expect(runnerSource).toContain('|| globalConfig;');
   });
 
   it('resolveProjectContextForRunner degrades to an empty context instead of throwing', () => {
