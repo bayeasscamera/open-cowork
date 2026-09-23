@@ -85,9 +85,16 @@ import { registerWorkflowIpcHandlers } from './ipc/workflow-handlers';
 import { registerProjectMemoryIpcHandlers } from './ipc/project-memory-handlers';
 import { registerControlCenterIpcHandlers } from './ipc/control-center-handlers';
 import { registerModelRoutingIpcHandlers } from './ipc/model-routing-handlers';
-import { WorkflowRegistry } from './agent/workflow-registry';
+import { registerMetricsIpcHandlers } from './ipc/metrics-handlers';
+import { WorkflowRegistry, DEFAULT_PERSIST_DEBOUNCE_MS } from './agent/workflow-registry';
 import { ControlCenterService } from './agent/control-center-service';
-import { ModelRoutingService } from './agent/model-routing-service';
+import { ModelRoutingService, type ModelRoutingSnapshot } from './agent/model-routing-service';
+import type { TaskQueue } from './agent/task-queue';
+import { WorkflowPersistence } from './agent/workflow-persistence';
+import { MetricsHistory } from './agent/metrics-harness';
+import { createScenarioAgentRunner } from './agent/scenario-runner';
+import { createAgentTaskRunner } from './agent/agent-task-runner';
+import { createShellProofRunner } from './agent/proof-runner';
 import type { ProjectMemoryStore } from './memory/project-memory-store';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods } from './mods/builtin-mods';
@@ -1735,6 +1742,34 @@ async function cleanupSandboxResources(): Promise<void> {
         logError('[App] Error closing embedded terminals:', error);
       }
     })(),
+
+    // Flush durable Cowork 4.0 state (plans, checkpoints, project memory,
+    // detached-task queue, benchmark history and routing evidence) so a restart
+    // resumes from the last known point instead of starting over.
+    (async () => {
+      try {
+        if (queuePersistTimer) {
+          clearTimeout(queuePersistTimer);
+          queuePersistTimer = null;
+        }
+        if (routingPersistTimer) {
+          clearTimeout(routingPersistTimer);
+          routingPersistTimer = null;
+        }
+        await withTimeout(
+          (async () => {
+            await workflowRegistry.persistAll();
+            await workflowPersistence.saveMetrics(metricsHistory.serialize());
+            await workflowPersistence.saveRouting(modelRoutingService.serialize());
+          })(),
+          5000,
+          'Workflow state persistence'
+        );
+        log('[App] Workflow state persisted');
+      } catch (error) {
+        logError('[App] Error persisting workflow state:', error);
+      }
+    })(),
   ];
 
   await Promise.all(cleanupTasks);
@@ -1922,13 +1957,33 @@ registerMemoryIpcHandlers({
   getSessionManager: () => sessionManager,
 });
 
+// Durable Cowork 4.0 state (Phases 1.6 / 5.5): workflow plans, checkpoints,
+// project memory, the detached-task queue, benchmark history and routing
+// evidence all live under the app userData directory, so a restart resumes
+// instead of silently starting over.
+const workflowPersistence = new WorkflowPersistence();
+const metricsHistory = new MetricsHistory();
+metricsHistory.restore(workflowPersistence.loadMetrics());
+
+// Filled in once the control-center service exists below. The registry only
+// reads it while persisting, so the declaration order is safe.
+let controlCenterQueue: TaskQueue | null = null;
+
 // Workflow (Plan -> Act -> Verify) IPC handlers. The registry owns one
-// orchestrator per session, rooted at the session working directory.
+// orchestrator per session, rooted at the session working directory. The LLM
+// runner and the proof runner are injected here so an approved plan is really
+// executed and its proof commands really re-run by the main process.
 const workflowRegistry = new WorkflowRegistry({
   resolveWorkspaceRoot: () => getWorkingDir(),
   fallbackWorkspaceRoot: () => currentWorkingDir,
+  persistence: workflowPersistence,
+  queueProvider: () => controlCenterQueue,
 });
-registerWorkflowIpcHandlers({ registry: workflowRegistry });
+registerWorkflowIpcHandlers({
+  registry: workflowRegistry,
+  runWorkflowTask: createAgentTaskRunner(),
+  runProof: createShellProofRunner(),
+});
 
 // Project memory (Phase 4): four-layer memory per workspace, with the same
 // per-session workspace resolution as the workflow registry.
@@ -1948,17 +2003,53 @@ registerProjectMemoryIpcHandlers({
 
 // Control center (Phase 6): activity feed, detached-task queue, notifications
 // and read-only workspace probes, all rooted at the session workspace.
+let queuePersistTimer: NodeJS.Timeout | null = null;
 const controlCenterService = new ControlCenterService({
   resolveWorkspaceRoot: (sessionId) =>
     workflowRegistry.getOrCreate(sessionId)?.workspaceRoot ?? getWorkingDir(),
+  // The queue is persisted on change rather than only at shutdown, so a crash
+  // cannot lose a detached task that was enqueued minutes earlier.
+  queueOnChange: () => {
+    if (queuePersistTimer) {
+      return;
+    }
+    queuePersistTimer = setTimeout(() => {
+      queuePersistTimer = null;
+      void workflowPersistence.saveQueue(controlCenterService.queue.serialize());
+    }, DEFAULT_PERSIST_DEBOUNCE_MS);
+    queuePersistTimer.unref?.();
+  },
 });
+controlCenterQueue = controlCenterService.queue;
+const restoredQueue = workflowPersistence.loadQueue();
+if (restoredQueue.length > 0) {
+  controlCenterService.queue.restore(restoredQueue);
+}
 registerControlCenterIpcHandlers({ service: controlCenterService });
 
 // Model routing (Phase 7): named profiles, local benchmark store, local provider
 // detection and validated registry entries. The service also backs adaptive
 // model selection in the agent runner, but only once a user picks a profile.
 const modelRoutingService = new ModelRoutingService();
-registerModelRoutingIpcHandlers({ service: modelRoutingService });
+const persistedRouting = workflowPersistence.loadRouting();
+if (persistedRouting) {
+  modelRoutingService.restore(persistedRouting as ModelRoutingSnapshot | null);
+}
+
+let routingPersistTimer: NodeJS.Timeout | null = null;
+/** Coalesce routing writes: benchmarks change on every finished agent run. */
+function persistRoutingSoon(): void {
+  if (routingPersistTimer) {
+    return;
+  }
+  routingPersistTimer = setTimeout(() => {
+    routingPersistTimer = null;
+    void workflowPersistence.saveRouting(modelRoutingService.serialize());
+  }, DEFAULT_PERSIST_DEBOUNCE_MS);
+  routingPersistTimer.unref?.();
+}
+
+registerModelRoutingIpcHandlers({ service: modelRoutingService, onChange: persistRoutingSoon });
 
 /**
  * Wire the Phase 6 control center and the Phase 7 router into a freshly
@@ -1971,8 +2062,28 @@ function attachAgentServices(manager: SessionManager): void {
   manager.setModelResolver((input) => modelRoutingService.resolveModel(input));
   manager.setBenchmarkRecorder((input) => {
     modelRoutingService.recordRun(input);
+    persistRoutingSoon();
   });
 }
+
+// Reference benchmarks and end-to-end routing validation (Phases 5.5 / 7.5).
+// The suite is only runnable when the agent runner is wired, and its history is
+// persisted so two releases can be compared.
+registerMetricsIpcHandlers({
+  history: metricsHistory,
+  // The workspace can change between runs, so the runner is built per suite.
+  runSuite: async (scenario) => {
+    const workspaceRoot = getWorkingDir() ?? currentWorkingDir;
+    if (!workspaceRoot) {
+      throw new Error('No workspace is available to run the reference scenarios.');
+    }
+    return createScenarioAgentRunner({ workspaceRoot })(scenario);
+  },
+  benchmarks: () => modelRoutingService.benchmarks.list(),
+  onRecord: (history) => {
+    void workflowPersistence.saveMetrics(history.serialize());
+  },
+});
 
 // Client event dispatch lives in its own module; wire the app-level state it
 // needs here so the dependency surface stays explicit.

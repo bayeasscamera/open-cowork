@@ -31,6 +31,8 @@ import { logError } from '../utils/logger';
 
 export interface ModelRoutingIpcContext {
   service?: ModelRoutingService;
+  /** Called after any mutation so the caller can persist the new state. */
+  onChange?: () => void;
 }
 
 function requireNonEmpty(value: unknown, label: string): string {
@@ -145,6 +147,7 @@ function coerceRegistryInput(value: unknown): RegistryEntryInput {
 
 export function registerModelRoutingIpcHandlers(context: ModelRoutingIpcContext = {}): void {
   const service = context.service ?? new ModelRoutingServiceImpl();
+  const changed = (): void => context.onChange?.();
 
   ipcMain.handle(
     'modelRouting.state',
@@ -153,13 +156,24 @@ export function registerModelRoutingIpcHandlers(context: ModelRoutingIpcContext 
 
   ipcMain.handle(
     'modelRouting.setEnabled',
-    (_event, enabled: unknown): ModelRoutingState => service.setEnabled(enabled === true)
+    (_event, enabled: unknown): ModelRoutingState => {
+      const state = service.setEnabled(enabled === true);
+      changed();
+      return state;
+    }
   );
 
   ipcMain.handle(
     'modelRouting.setActiveProfile',
-    (_event, profile: unknown): ModelRoutingState =>
-      service.setActiveProfile(profile === null || profile === undefined || profile === '' ? null : coerceProfileId(profile))
+    (_event, profile: unknown): ModelRoutingState => {
+      const state = service.setActiveProfile(
+        profile === null || profile === undefined || profile === ''
+          ? null
+          : coerceProfileId(profile)
+      );
+      changed();
+      return state;
+    }
   );
 
   ipcMain.handle(
@@ -184,12 +198,20 @@ export function registerModelRoutingIpcHandlers(context: ModelRoutingIpcContext 
 
   ipcMain.handle(
     'modelRouting.recordBenchmark',
-    (_event, input: unknown): ModelBenchmark => service.recordBenchmark(coerceBenchmarkInput(input))
+    (_event, input: unknown): ModelBenchmark => {
+      const benchmark = service.recordBenchmark(coerceBenchmarkInput(input));
+      changed();
+      return benchmark;
+    }
   );
 
   ipcMain.handle(
     'modelRouting.clearBenchmarks',
-    (): { cleared: number } => ({ cleared: service.benchmarks.clear() })
+    (): { cleared: number } => {
+      const cleared = service.benchmarks.clear();
+      changed();
+      return { cleared };
+    }
   );
 
   ipcMain.handle(

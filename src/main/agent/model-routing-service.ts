@@ -267,6 +267,31 @@ export class ModelRoutingService {
       return null;
     }
   }
+
+  /** Persist the opt-in state and the local benchmark evidence. */
+  public serialize(): ModelRoutingSnapshot {
+    return { state: this.state(), benchmarks: this.benchmarks.serialize() };
+  }
+
+  /** Restore a persisted snapshot; malformed entries are skipped. */
+  public restore(snapshot: ModelRoutingSnapshot | null): number {
+    if (!snapshot) {
+      return 0;
+    }
+    if (snapshot.state) {
+      this.enabled = snapshot.state.enabled === true;
+      const profile = snapshot.state.activeProfile;
+      this.activeProfile =
+        profile && this.profiles.some((candidate) => candidate.id === profile) ? profile : null;
+    }
+    return this.benchmarks.restore(Array.isArray(snapshot.benchmarks) ? snapshot.benchmarks : []);
+  }
+}
+
+/** Durable shape of the routing service (Phase 7.4). */
+export interface ModelRoutingSnapshot {
+  state: ModelRoutingState;
+  benchmarks: ModelBenchmark[];
 }
 
 /** "provider/model" so the pi registry can resolve the profile's provider. */

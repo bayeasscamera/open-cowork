@@ -18,6 +18,8 @@ export interface TaskQueueOptions {
   now?: () => number;
   idFactory?: () => string;
   limit?: number;
+  /** Called after every mutation, so the queue can be persisted. */
+  onChange?: () => void;
 }
 
 function defaultId(): string {
@@ -30,11 +32,21 @@ export class TaskQueue {
   private readonly now: () => number;
   private readonly idFactory: () => string;
   private readonly limit: number;
+  private readonly onChange: (() => void) | undefined;
 
   constructor(options: TaskQueueOptions = {}) {
     this.now = options.now ?? (() => Date.now());
     this.idFactory = options.idFactory ?? defaultId;
     this.limit = Math.max(1, options.limit ?? DEFAULT_QUEUE_LIMIT);
+    this.onChange = options.onChange;
+  }
+
+  private notify(): void {
+    try {
+      this.onChange?.();
+    } catch {
+      // Persistence must never break a queue transition.
+    }
   }
 
   public enqueue(input: DetachedTaskInput): DetachedTask {
@@ -52,6 +64,7 @@ export class TaskQueue {
     this.tasks.set(task.id, task);
     this.order.push(task.id);
     this.evict();
+    this.notify();
     return { ...task };
   }
 
@@ -94,6 +107,7 @@ export class TaskQueue {
       progress: Math.min(1, Math.max(0, progress)),
     };
     this.tasks.set(id, next);
+    this.notify();
     return { ...next };
   }
 
@@ -165,6 +179,9 @@ export class TaskQueue {
       restored += 1;
     }
     this.evict();
+    if (restored > 0) {
+      this.notify();
+    }
     return restored;
   }
 
@@ -173,6 +190,9 @@ export class TaskQueue {
       const removed = this.tasks.size;
       this.tasks.clear();
       this.order = [];
+      if (removed > 0) {
+        this.notify();
+      }
       return removed;
     }
     const kept: string[] = [];
@@ -186,6 +206,9 @@ export class TaskQueue {
       }
     }
     this.order = kept;
+    if (removed > 0) {
+      this.notify();
+    }
     return removed;
   }
 
@@ -208,6 +231,7 @@ export class TaskQueue {
     }
     mutate(next);
     this.tasks.set(id, next);
+    this.notify();
     return { ...next };
   }
 

@@ -85,7 +85,12 @@ describe('workflow-orchestrator', () => {
     expect(orchestrator.getState().phase).toBe('verifying');
 
     const verified = orchestrator.verify();
-    expect(verified).toEqual({ ok: true, missing: [] });
+    expect(verified.ok).toBe(true);
+    expect(verified.missing).toEqual([]);
+    expect(verified.report?.ok).toBe(true);
+    expect(verified.report?.tasks).toEqual([
+      expect.objectContaining({ taskId: 't1', ok: true, issues: [] }),
+    ]);
     expect(orchestrator.getState().phase).toBe('completed');
   });
 

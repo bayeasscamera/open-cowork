@@ -7,13 +7,14 @@
  */
 
 import type { EvidenceKind, TaskBudget } from '../../shared/task-contract';
+import type {
+  MetricsDelta,
+  MetricsSummary,
+  RunMetrics,
+  ScenarioKind,
+} from '../../shared/metrics-types';
 
-export type ScenarioKind =
-  | 'bugfix'
-  | 'multi-file-feature'
-  | 'security-audit'
-  | 'long-task'
-  | 'session-resume';
+export type { MetricsDelta, MetricsSummary, RunMetrics, ScenarioKind } from '../../shared/metrics-types';
 
 export interface ReferenceScenario {
   id: string;
@@ -101,32 +102,6 @@ export const REFERENCE_SCENARIOS: readonly ReferenceScenario[] = Object.freeze([
   },
 ]);
 
-export interface RunMetrics {
-  scenarioId: string;
-  /** Overall success as judged by the scenario success criteria. */
-  success: boolean;
-  /** Number of agent turns. */
-  turns: number;
-  costUsd: number;
-  durationMs: number;
-  /** Number of test regressions introduced. */
-  regressions: number;
-  /** Number of times a human had to intervene. */
-  humanInterventions: number;
-  evidenceCount: number;
-}
-
-export interface MetricsSummary {
-  runs: number;
-  successRate: number;
-  avgTurns: number;
-  avgCostUsd: number;
-  avgDurationMs: number;
-  regressionRate: number;
-  humanInterventionRate: number;
-  avgEvidence: number;
-}
-
 function safeRatio(numerator: number, denominator: number): number {
   if (denominator === 0) {
     return 0;
@@ -167,17 +142,6 @@ export function summarizeMetrics(runs: RunMetrics[]): MetricsSummary {
     ),
     avgEvidence: sum((run) => run.evidenceCount) / runs.length,
   };
-}
-
-export interface MetricsDelta {
-  successRate: number;
-  avgTurns: number;
-  avgCostUsd: number;
-  avgDurationMs: number;
-  regressionRate: number;
-  humanInterventionRate: number;
-  /** True when the candidate is not worse on any tracked axis. */
-  noRegression: boolean;
 }
 
 /** Compare a candidate run set against a baseline (positive delta = better). */

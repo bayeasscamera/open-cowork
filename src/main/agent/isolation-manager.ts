@@ -21,6 +21,8 @@ export interface CreatedWorktree {
 
 export interface IsolationManagerOptions {
   git: GitRunner;
+  /** Build a git runner rooted at an arbitrary directory (the worktree). */
+  gitFactory?: (cwd: string) => GitRunner;
   audit?: AuditLog;
 }
 
@@ -31,11 +33,13 @@ export function branchFor(taskId: string): string {
 
 export class IsolationManager {
   private readonly git: GitRunner;
+  private readonly gitFactory: ((cwd: string) => GitRunner) | undefined;
   private readonly audit: AuditLog | undefined;
   private readonly active = new Map<string, CreatedWorktree>();
 
   constructor(options: IsolationManagerOptions) {
     this.git = options.git;
+    this.gitFactory = options.gitFactory;
     this.audit = options.audit;
   }
 
@@ -92,14 +96,23 @@ export class IsolationManager {
     return record;
   }
 
-  /** Capture the diff produced inside a worktree (used as task evidence). */
+  /**
+   * Capture the diff produced inside a worktree (used as task evidence). When a
+   * git factory is configured the diff is read from the worktree itself, so an
+   * isolated task's proof reflects what it actually changed.
+   */
   public async diff(taskId: string): Promise<string> {
     const record = this.active.get(taskId);
     if (!record) {
       return '';
     }
-    const result = await this.git.run(['diff', '--stat', 'HEAD']);
-    return result.exitCode === 0 ? result.stdout : '';
+    const runner = this.gitFactory?.(record.plan.worktreePath) ?? this.git;
+    try {
+      const result = await runner.run(['diff', 'HEAD']);
+      return result.exitCode === 0 ? result.stdout : '';
+    } catch {
+      return '';
+    }
   }
 
   /** Remove a worktree and its branch. Best effort; never throws. */

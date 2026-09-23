@@ -84,9 +84,13 @@ describe('scoreProfile and rankProfiles', () => {
   it('rewards recommendation, preference and benchmarks, and penalizes cost', () => {
     expect(scoreProfile(profile('balanced'), { taskKind: 'implementation' })).toBe(1.5);
     expect(scoreProfile(profile('strong'), { taskKind: 'implementation' })).toBe(-1.5);
-    expect(
-      scoreProfile(profile('fast'), { taskKind: 'review', preferredProfile: 'fast' })
-    ).toBe(3);
+    const preferred = scoreProfile(profile('fast'), {
+      taskKind: 'review',
+      preferredProfile: 'fast',
+    });
+    // The explicit preference dominates the heuristic recommendation.
+    expect(preferred).toBeGreaterThan(scoreProfile(profile('strong'), { taskKind: 'review' }));
+    expect(preferred - scoreProfile(profile('fast'), { taskKind: 'review' })).toBe(100);
   });
 
   it('ranks eligible profiles deterministically', () => {

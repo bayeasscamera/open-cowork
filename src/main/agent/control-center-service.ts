@@ -39,6 +39,8 @@ export interface ControlCenterServiceOptions {
   activityLimit?: number;
   queueLimit?: number;
   notificationLimit?: number;
+  /** Called after every queue mutation, so the queue can be persisted. */
+  queueOnChange?: () => void;
 }
 
 export class ControlCenterService {
@@ -65,6 +67,7 @@ export class ControlCenterService {
       now: options.now,
       idFactory: options.idFactory,
       limit: options.queueLimit,
+      onChange: options.queueOnChange,
     });
     this.notifications = new NotificationCenter({
       now: options.now,

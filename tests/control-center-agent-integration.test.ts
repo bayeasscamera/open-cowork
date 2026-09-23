@@ -61,7 +61,7 @@ describe('model routing wired into live model selection', () => {
 
   it('shares the same service instance between IPC and the runner', () => {
     expect(index).toContain('const modelRoutingService = new ModelRoutingService();');
-    expect(index).toContain('registerModelRoutingIpcHandlers({ service: modelRoutingService });');
+    expect(index).toContain('registerModelRoutingIpcHandlers({ service: modelRoutingService');
     expect(index).toContain('manager.setModelResolver((input) => modelRoutingService.resolveModel(input));');
     expect(sessionManager).toContain('public setModelResolver(');
     expect(sessionManager).toContain('...(this.modelResolver ? { modelResolver: this.modelResolver } : {}),');

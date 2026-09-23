@@ -13,6 +13,8 @@ import type {
   ApprovalDecisionInput,
   ApprovalOutcome,
   ApprovalRequest,
+  TaskVerification,
+  VerificationReport,
   VerifyResult,
   WorkflowPhase,
   WorkflowState,
@@ -32,6 +34,19 @@ import type {
 import type { AuditLog } from './audit-log';
 import type { PermissionPolicy } from './permission-policy';
 import { assertExecutablePlan, computeExecutionGroups } from './task-planner';
+import { verifyPlan, verifyTask } from './verification';
+
+/** Everything the orchestrator needs to survive a restart (Phase 1.6). */
+export interface WorkflowOrchestratorSnapshot {
+  phase: WorkflowPhase;
+  mode: WorkflowMode;
+  contract: TaskContract | null;
+  tasks: AtomicTask[];
+  completedTaskIds: string[];
+  approval: ApprovalRequest | null;
+  approvalOutcome: ApprovalOutcome | null;
+  blockers: string[];
+}
 
 export interface WorkflowOrchestratorOptions {
   policy: PermissionPolicy;
@@ -255,6 +270,29 @@ export class WorkflowOrchestrator {
     return checkpoint;
   }
 
+  /** Recompute a task checkpoint diff after the task ran (Phase 2.2). */
+  public async refreshTaskCheckpoint(taskId: string): Promise<TaskCheckpoint | null> {
+    const checkpoint = this.checkpoints.forTask(taskId);
+    if (!checkpoint) {
+      return null;
+    }
+    return this.checkpoints.refreshDiff(checkpoint.id);
+  }
+
+  /**
+   * Attach one piece of proof to a task checkpoint. The executor uses this to
+   * record the real exit code of a re-run proof command, which must be visible
+   * even when the task ultimately fails.
+   */
+  public recordEvidence(taskId: string, evidence: NewCheckpointEvidence): void {
+    const checkpoint = this.checkpoints.forTask(taskId);
+    if (!checkpoint) {
+      return;
+    }
+    this.checkpoints.attachEvidence(checkpoint.id, evidence);
+    this.emit();
+  }
+
   /** Mark a task done and attach its evidence to the checkpoint (Phase 2.4). */
   public async completeTask(
     taskId: string,
@@ -327,46 +365,129 @@ export class WorkflowOrchestrator {
   }
 
   /**
-   * Phase 1/2 verification: every completed task must have produced all of its
-   * required evidence kinds. Missing proof fails verification.
+   * Phase 1.5/2.4 verification: every completed task must have *proven* its
+   * required exit criteria. Evidence that merely exists (a command that failed,
+   * an inspection with no body) does not pass.
    */
   public verify(): VerifyResult {
-    const missing: string[] = [];
-    for (const task of this.tasks) {
-      if (!this.completedTaskIds.has(task.id)) {
-        missing.push(task.id + ': not completed');
-        continue;
-      }
-      const checkpoint = this.checkpoints.forTask(task.id);
-      const evidence = checkpoint?.evidence ?? [];
-      for (const requirement of task.requiredEvidence) {
-        if (!requirement.required) {
-          continue;
-        }
-        if (!evidence.some((entry) => entry.kind === requirement.kind)) {
-          missing.push(task.id + ': missing ' + requirement.kind + ' evidence');
-        }
-      }
-    }
-
-    const ok = missing.length === 0;
+    const report = this.buildVerificationReport();
+    const { ok, missing } = report;
     this.phase = ok ? 'completed' : 'failed';
     if (!ok) {
-      this.blockers = missing;
+      this.blockers = [...missing];
     }
     this.audit?.append({
       action: 'workflow.verify',
-      justification: ok ? 'All tasks verified with evidence.' : missing.join(' | '),
+      justification: ok ? 'All tasks verified with proof.' : missing.join(' | '),
       authorization: ok ? 'approved' : 'rejected',
       capability: 'read',
     });
     this.emit();
-    return { ok, missing };
+    return { ok, missing, report };
+  }
+
+  /** Verify one task without changing the workflow phase. */
+  public verifyTask(taskId: string): TaskVerification {
+    const task = this.tasks.find((candidate) => candidate.id === taskId);
+    if (!task) {
+      throw new Error('Unknown task: ' + taskId);
+    }
+    return verifyTask({
+      task,
+      completed: this.completedTaskIds.has(taskId),
+      checkpoint: this.checkpoints.forTask(taskId),
+    });
+  }
+
+  /** Full verification report, used by the executor before it declares success. */
+  public buildVerificationReport(): VerificationReport {
+    return verifyPlan(
+      this.tasks.map((task) => ({
+        task,
+        completed: this.completedTaskIds.has(task.id),
+        checkpoint: this.checkpoints.forTask(task.id),
+      })),
+      this.now()
+    );
+  }
+
+  /** Record a task that ran but did not succeed; the checkpoint is kept. */
+  public failTask(taskId: string, reason: string): WorkflowState {
+    const task = this.tasks.find((candidate) => candidate.id === taskId);
+    if (!task) {
+      throw new Error('Unknown task: ' + taskId);
+    }
+    this.completedTaskIds.delete(taskId);
+    this.phase = 'failed';
+    this.blockers = ['Task "' + taskId + '" failed: ' + reason];
+    this.audit?.append({
+      action: 'task.failed',
+      justification: reason,
+      authorization: 'rejected',
+      capability: 'write',
+      taskId,
+    });
+    return this.emit();
   }
 
   /** The contract currently loaded, if any. */
   public getContract(): TaskContract | null {
     return this.contract;
+  }
+
+  /** A copy of the loaded plan. */
+  public getTasks(): AtomicTask[] {
+    return this.tasks.map((task) => ({ ...task }));
+  }
+
+  public getPhase(): WorkflowPhase {
+    return this.phase;
+  }
+
+  /** Snapshot the state machine for persistence. */
+  public serialize(): WorkflowOrchestratorSnapshot {
+    return {
+      phase: this.phase,
+      mode: this.mode,
+      contract: this.contract ? { ...this.contract } : null,
+      tasks: this.tasks.map((task) => ({ ...task })),
+      completedTaskIds: Array.from(this.completedTaskIds),
+      approval: this.approval ? { ...this.approval } : null,
+      approvalOutcome: this.approvalOutcome ? { ...this.approvalOutcome } : null,
+      blockers: [...this.blockers],
+    };
+  }
+
+  /**
+   * Restore a snapshot after a restart. A plan that was mid-execution comes back
+   * as 'planning' so the human re-confirms before any write resumes.
+   */
+  public restore(snapshot: WorkflowOrchestratorSnapshot | null): boolean {
+    if (!snapshot || !Array.isArray(snapshot.tasks)) {
+      return false;
+    }
+    this.contract = snapshot.contract ?? null;
+    this.tasks = snapshot.tasks.map((task) => ({ ...task }));
+    this.completedTaskIds = new Set(
+      Array.isArray(snapshot.completedTaskIds) ? snapshot.completedTaskIds : []
+    );
+    this.approval = snapshot.approval ?? null;
+    this.approvalOutcome = snapshot.approvalOutcome ?? null;
+    this.mode = snapshot.mode ?? this.mode;
+    const restoredPhase = snapshot.phase ?? 'idle';
+    this.phase = restoredPhase === 'executing' || restoredPhase === 'verifying' ? 'planning' : restoredPhase;
+    this.blockers = Array.isArray(snapshot.blockers) ? [...snapshot.blockers] : [];
+    if (restoredPhase === 'executing' || restoredPhase === 'verifying') {
+      this.blockers.push(
+        'Execution was interrupted by a restart; re-approve the plan to resume.'
+      );
+    }
+    this.emit();
+    return true;
+  }
+
+  public getMode(): WorkflowMode {
+    return this.mode;
   }
 
   public getState(): WorkflowState {

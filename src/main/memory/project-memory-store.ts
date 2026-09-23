@@ -157,6 +157,57 @@ export class ProjectMemoryStore {
     };
   }
 
+  /** Snapshot every item for persistence (Phase 4.4). */
+  public serialize(): ProjectMemoryItem[] {
+    return Array.from(this.items.values()).map((item) => ({
+      ...item,
+      tags: [...item.tags],
+      provenance: { ...item.provenance },
+    }));
+  }
+
+  /** Restore a previous snapshot; malformed entries are skipped. */
+  public restore(entries: readonly unknown[]): number {
+    let restored = 0;
+    for (const entry of entries) {
+      const item = entry as Partial<ProjectMemoryItem> | null;
+      if (
+        !item ||
+        typeof item.id !== 'string' ||
+        item.id.length === 0 ||
+        typeof item.workspaceKey !== 'string' ||
+        item.workspaceKey.length === 0 ||
+        typeof item.statement !== 'string' ||
+        typeof item.layer !== 'string' ||
+        !(MEMORY_LAYERS as readonly string[]).includes(item.layer) ||
+        typeof item.createdAt !== 'number' ||
+        !Number.isFinite(item.createdAt) ||
+        typeof item.updatedAt !== 'number' ||
+        !Number.isFinite(item.updatedAt)
+      ) {
+        continue;
+      }
+      const layer = item.layer as MemoryLayer;
+      this.items.set(item.id, {
+        id: item.id,
+        workspaceKey: item.workspaceKey,
+        layer,
+        statement: item.statement,
+        provenance:
+          item.provenance && typeof item.provenance.source === 'string'
+            ? { ...item.provenance }
+            : { source: 'session', reference: 'restored' },
+        tags: Array.isArray(item.tags) ? [...item.tags] : [],
+        confidence: typeof item.confidence === 'number' ? item.confidence : 0.8,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        expiresAt: typeof item.expiresAt === 'number' ? item.expiresAt : null,
+      });
+      restored += 1;
+    }
+    return restored;
+  }
+
   public overview(workspaceKey: string, options: RankOptions = {}): ProjectMemoryOverview {
     const now = options.now ?? this.now();
     const layers = MEMORY_LAYERS.reduce(

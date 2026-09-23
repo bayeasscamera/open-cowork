@@ -23,17 +23,39 @@ import type {
   RolePlanInput,
 } from '../../shared/workflow-types';
 import { planIsolation } from '../agent/isolation-planner';
+import type { ProofRunner } from '../agent/proof-runner';
 import { planRoles } from '../agent/role-planner';
 import type { WorkflowEntry } from '../agent/workflow-registry';
+import type {
+  WorkflowExecutor,
+  WorkflowExecutorOptions,
+  WorkflowTaskRunner,
+} from '../agent/workflow-executor';
 import { log, logError } from '../utils/logger';
 
 export interface WorkflowRegistryLike {
   get(sessionId: string): WorkflowEntry | null;
   getOrCreate(sessionId: string): WorkflowEntry | null;
+  /** Present on the real registry; omitted by lightweight test doubles. */
+  executorFor?(
+    sessionId: string,
+    runTask: WorkflowTaskRunner,
+    overrides?: Partial<WorkflowExecutorOptions>
+  ): WorkflowExecutor | null;
+  /** Durable snapshot write; omitted when no persistence is configured. */
+  persist?(sessionId: string): Promise<boolean>;
 }
 
 export interface WorkflowIpcContext {
   registry: WorkflowRegistryLike;
+  /**
+   * Runs one approved task through the real LLM loop. When absent, the
+   * execution channels report that execution is unavailable instead of
+   * silently pretending the task ran.
+   */
+  runWorkflowTask?: WorkflowTaskRunner;
+  /** Re-runs a task's declared proof commands in the workspace. */
+  runProof?: ProofRunner;
 }
 
 type TaskInput = Partial<AtomicTask> & Pick<AtomicTask, 'id' | 'title'>;
@@ -51,6 +73,15 @@ function safe<T>(channel: string, run: () => T): T {
   }
 }
 
+async function safeAsync<T>(channel: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error: unknown) {
+    logError('[workflow] handler failed on ' + channel, error);
+    throw error;
+  }
+}
+
 export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
   const { registry } = context;
 
@@ -60,6 +91,25 @@ export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
       throw new Error('No workspace is available for session "' + sessionId + '".');
     }
     return entry;
+  };
+
+  /**
+   * Build the executor that actually drives approved tasks. The LLM runner is
+   * injected at bootstrap so this module never imports the agent session stack.
+   */
+  const requireExecutor = (sessionId: string): WorkflowExecutor => {
+    const runTask = context.runWorkflowTask;
+    if (!runTask || typeof registry.executorFor !== 'function') {
+      throw new Error('Workflow execution is not available in this build.');
+    }
+    requireEntry(sessionId);
+    const executor = registry.executorFor(sessionId, runTask, {
+      runProof: context.runProof,
+    });
+    if (!executor) {
+      throw new Error('No workspace is available for session "' + sessionId + '".');
+    }
+    return executor;
   };
 
   ipcMain.handle('workflow.getState', (_event, sessionId: string) =>
@@ -246,5 +296,36 @@ export function registerWorkflowIpcHandlers(context: WorkflowIpcContext): void {
     safe('workflow.cleanupAllIsolation', () =>
       requireEntry(sessionId).isolation.cleanupAll()
     )
+  );
+
+  // --- Execution (Phase 8) -------------------------------------------------
+  // These channels run the approved plan for real: each ready task is driven
+  // through the LLM loop, its declared proof commands are re-run by the main
+  // process, and the outcome is recorded on the orchestrator.
+
+  ipcMain.handle('workflow.executePlan', (_event, sessionId: string) =>
+    safeAsync('workflow.executePlan', async () => requireExecutor(sessionId).executePlan())
+  );
+
+  ipcMain.handle('workflow.executeReadyTasks', (_event, sessionId: string) =>
+    safeAsync('workflow.executeReadyTasks', async () =>
+      requireExecutor(sessionId).executeReadyTasks()
+    )
+  );
+
+  ipcMain.handle('workflow.verifyTask', (_event, sessionId: string, taskId: string) =>
+    safeAsync('workflow.verifyTask', async () =>
+      requireEntry(sessionId).orchestrator.verifyTask(taskId)
+    )
+  );
+
+  ipcMain.handle('workflow.persist', (_event, sessionId: string) =>
+    safeAsync('workflow.persist', async () => {
+      requireEntry(sessionId);
+      if (typeof registry.persist !== 'function') {
+        return false;
+      }
+      return registry.persist(sessionId);
+    })
   );
 }

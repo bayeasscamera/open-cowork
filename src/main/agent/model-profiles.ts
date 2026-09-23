@@ -178,7 +178,10 @@ export function scoreProfile(
     score += 2;
   }
   if (profile.id === request.preferredProfile) {
-    score += 3;
+    // An explicit preference is a human decision taken before the plan runs:
+    // it must dominate the recommendation heuristic, while remaining subject to
+    // eligibility (a forbidden profile is filtered out before scoring).
+    score += 100;
   }
   if (profile.capabilities.local && request.confidential) {
     score += 1;

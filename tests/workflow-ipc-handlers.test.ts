@@ -41,12 +41,9 @@ class MemoryBackend implements FileSnapshotBackend {
 function buildEntry(sessionId: string): WorkflowEntry {
   const audit = new AuditLog();
   const checkpoints = new CheckpointManager({ backend: new MemoryBackend(), audit });
-  const orchestrator = new WorkflowOrchestrator({
-    policy: createDefaultPermissionPolicy('/ws'),
-    checkpoints,
-    audit,
-  });
-  return { sessionId, workspaceRoot: '/ws', audit, checkpoints, orchestrator };
+  const policy = createDefaultPermissionPolicy('/ws');
+  const orchestrator = new WorkflowOrchestrator({ policy, checkpoints, audit });
+  return { sessionId, workspaceRoot: '/ws', policy, audit, checkpoints, orchestrator };
 }
 
 const criterion = { id: 'c1', description: 'tests pass', verification: 'npm test', required: true };
@@ -100,7 +97,11 @@ describe('workflow-ipc-handlers', () => {
     expect(channels).toContain('workflow.startReadyTasks');
     expect(channels).toContain('workflow.planIsolation');
     expect(channels).toContain('workflow.cleanupAllIsolation');
-    expect(channels).toHaveLength(22);
+    expect(channels).toContain('workflow.executePlan');
+    expect(channels).toContain('workflow.executeReadyTasks');
+    expect(channels).toContain('workflow.verifyTask');
+    expect(channels).toContain('workflow.persist');
+    expect(channels).toHaveLength(26);
   });
 
   it('returns null state when no workspace is available', async () => {
@@ -131,7 +132,7 @@ describe('workflow-ipc-handlers', () => {
     expect(checkpoint.taskId).toBe('t1');
 
     await invoke('workflow.completeTask', 's1', 't1', [
-      { kind: 'test', description: 'npm test', exitCode: 0, output: 'ok' },
+      { kind: 'test', description: 'npm test', command: 'npm test', exitCode: 0, output: 'ok' },
     ]);
 
     const verified = (await invoke('workflow.verify', 's1')) as { ok: boolean };

@@ -44,6 +44,24 @@ export interface FileSnapshotBackend {
   read(path: string): Promise<string | null>;
 }
 
+/** A persisted checkpoint with the file contents needed to roll it back. */
+export interface CheckpointSnapshotEntry {
+  checkpoint: TaskCheckpoint;
+  files: { path: string; content: string | null }[];
+}
+
+export interface CheckpointManagerSnapshot {
+  sequence: number;
+  entries: CheckpointSnapshotEntry[];
+  /** Snapshot files dropped because they exceeded the size guard. */
+  dropped: number;
+}
+
+/** A single snapshot file larger than this is not persisted. */
+export const MAX_SNAPSHOT_FILE_BYTES = 512 * 1024;
+/** Total snapshot payload kept per workspace. */
+export const MAX_SNAPSHOT_TOTAL_BYTES = 8 * 1024 * 1024;
+
 export interface CheckpointManagerOptions {
   backend: FileSnapshotBackend;
   git?: GitRunner;
@@ -192,6 +210,76 @@ export class CheckpointManager {
       taskId: checkpoint.taskId,
     });
     return record;
+  }
+
+  /**
+   * Persist every checkpoint together with its pre-task file snapshot, so a
+   * rollback still works after a restart. Oversized files are dropped and
+   * counted rather than silently corrupting the snapshot.
+   */
+  public serialize(): CheckpointManagerSnapshot {
+    const entries: CheckpointSnapshotEntry[] = [];
+    let dropped = 0;
+    let totalBytes = 0;
+
+    for (const checkpoint of this.checkpoints.values()) {
+      const snapshot = this.snapshots.get(checkpoint.id) ?? new Map<string, string | null>();
+      const files: { path: string; content: string | null }[] = [];
+      for (const [filePath, content] of snapshot) {
+        const size = content === null ? 0 : Buffer.byteLength(content, 'utf8');
+        if (size > MAX_SNAPSHOT_FILE_BYTES || totalBytes + size > MAX_SNAPSHOT_TOTAL_BYTES) {
+          dropped += 1;
+          continue;
+        }
+        totalBytes += size;
+        files.push({ path: filePath, content });
+      }
+      entries.push({
+        checkpoint: { ...checkpoint, evidence: checkpoint.evidence.map((entry) => ({ ...entry })) },
+        files,
+      });
+    }
+
+    return { sequence: this.sequence, entries, dropped };
+  }
+
+  /** Restore a persisted snapshot. Malformed entries are skipped. */
+  public restore(snapshot: CheckpointManagerSnapshot | null): number {
+    if (!snapshot || !Array.isArray(snapshot.entries)) {
+      return 0;
+    }
+    let restored = 0;
+    for (const entry of snapshot.entries) {
+      const checkpoint = entry?.checkpoint;
+      if (
+        !checkpoint ||
+        typeof checkpoint.id !== 'string' ||
+        typeof checkpoint.taskId !== 'string' ||
+        typeof checkpoint.createdAt !== 'number'
+      ) {
+        continue;
+      }
+      this.checkpoints.set(checkpoint.id, {
+        ...checkpoint,
+        files: Array.isArray(checkpoint.files) ? [...checkpoint.files] : [],
+        evidence: Array.isArray(checkpoint.evidence)
+          ? checkpoint.evidence.map((item) => ({ ...item }))
+          : [],
+      });
+      const map = new Map<string, string | null>();
+      for (const file of Array.isArray(entry.files) ? entry.files : []) {
+        if (!file || typeof file.path !== 'string') {
+          continue;
+        }
+        map.set(file.path, typeof file.content === 'string' ? file.content : null);
+      }
+      this.snapshots.set(checkpoint.id, map);
+      restored += 1;
+    }
+    if (typeof snapshot.sequence === 'number' && snapshot.sequence > this.sequence) {
+      this.sequence = snapshot.sequence;
+    }
+    return restored;
   }
 
   public list(): TaskCheckpoint[] {

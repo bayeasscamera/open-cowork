@@ -101,9 +101,17 @@ import type {
   RoleAssignment,
   RolePlanInput,
   TaskCheckpoint,
+  TaskRunResult,
+  TaskVerification,
   VerifyResult,
+  WorkflowExecutionReport,
   WorkflowState,
 } from '../shared/workflow-types';
+import type {
+  MetricsDelta,
+  RoutingValidationReport,
+  ScenarioSuiteResult,
+} from '../shared/metrics-types';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -884,6 +892,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('workflow.cleanupIsolation', sessionId, taskId),
     cleanupAllIsolation: (sessionId: string): Promise<string[]> =>
       ipcRenderer.invoke('workflow.cleanupAllIsolation', sessionId),
+    executePlan: (sessionId: string): Promise<WorkflowExecutionReport> =>
+      ipcRenderer.invoke('workflow.executePlan', sessionId),
+    executeReadyTasks: (sessionId: string): Promise<TaskRunResult[]> =>
+      ipcRenderer.invoke('workflow.executeReadyTasks', sessionId),
+    verifyTask: (sessionId: string, taskId: string): Promise<TaskVerification> =>
+      ipcRenderer.invoke('workflow.verifyTask', sessionId, taskId),
+    persist: (sessionId: string): Promise<boolean> =>
+      ipcRenderer.invoke('workflow.persist', sessionId),
   },
 
   projectMemory: {
@@ -995,6 +1011,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('modelRouting.probeLocal', kind),
     validateRegistry: (input: RegistryEntryInput): Promise<RegistryValidation> =>
       ipcRenderer.invoke('modelRouting.validateRegistry', input),
+  },
+
+  metrics: {
+    history: (): Promise<ScenarioSuiteResult[]> => ipcRenderer.invoke('metrics.history'),
+    compare: (baseline?: string, candidate?: string): Promise<MetricsDelta | null> =>
+      ipcRenderer.invoke('metrics.compare', baseline, candidate),
+    runSuite: (version?: string): Promise<ScenarioSuiteResult> =>
+      ipcRenderer.invoke('metrics.runSuite', version),
+    validateRouting: (): Promise<RoutingValidationReport> =>
+      ipcRenderer.invoke('metrics.validateRouting'),
+    clearHistory: (): Promise<{ cleared: number }> => ipcRenderer.invoke('metrics.clearHistory'),
   },
 });
 
@@ -1504,6 +1531,10 @@ declare global {
           taskId: string
         ) => Promise<{ removed: boolean; reason?: string }>;
         cleanupAllIsolation: (sessionId: string) => Promise<string[]>;
+        executePlan: (sessionId: string) => Promise<WorkflowExecutionReport>;
+        executeReadyTasks: (sessionId: string) => Promise<TaskRunResult[]>;
+        verifyTask: (sessionId: string, taskId: string) => Promise<TaskVerification>;
+        persist: (sessionId: string) => Promise<boolean>;
       };
       projectMemory: {
         overview: (sessionId: string) => Promise<ProjectMemoryOverview>;
@@ -1575,6 +1606,13 @@ declare global {
         clearBenchmarks: () => Promise<{ cleared: number }>;
         probeLocal: (kind?: LocalProviderKind) => Promise<LocalProviderProbe[]>;
         validateRegistry: (input: RegistryEntryInput) => Promise<RegistryValidation>;
+      };
+      metrics: {
+        history: () => Promise<ScenarioSuiteResult[]>;
+        compare: (baseline?: string, candidate?: string) => Promise<MetricsDelta | null>;
+        runSuite: (version?: string) => Promise<ScenarioSuiteResult>;
+        validateRouting: () => Promise<RoutingValidationReport>;
+        clearHistory: () => Promise<{ cleared: number }>;
       };
     };
   }

@@ -84,6 +84,12 @@ export interface CheckpointEvidence {
   command?: string;
   exitCode?: number;
   output?: string;
+  /**
+   * Unified diff an isolated task produced. It is carried on the evidence
+   * because an ephemeral worktree is removed once the task finishes, which
+   * would otherwise leave the proof unverifiable.
+   */
+  diff?: string;
   recordedAt: number;
 }
 
@@ -142,6 +148,95 @@ export interface WorkflowState {
 export interface VerifyResult {
   ok: boolean;
   missing: string[];
+  /** Structured detail (Phase 1.5): which criterion was proven by what. */
+  report?: VerificationReport;
+}
+
+// ---------------------------------------------------------------------------
+// Verification (Phase 1.5 / 2.4) — evidence must be *proof*, not presence
+// ---------------------------------------------------------------------------
+
+export type CriterionOutcome = 'verified' | 'failed' | 'missing-evidence' | 'not-verifiable';
+
+export interface CriterionVerification {
+  taskId: string;
+  criterionId: string;
+  description: string;
+  /** Command or 'inspection: ...' declared on the criterion. */
+  verification: string;
+  required: boolean;
+  outcome: CriterionOutcome;
+  reason: string;
+  evidenceId?: string;
+}
+
+export interface TaskVerification {
+  taskId: string;
+  ok: boolean;
+  criteria: CriterionVerification[];
+  /** Blocking reasons, already formatted for the user. */
+  issues: string[];
+}
+
+export interface VerificationReport {
+  ok: boolean;
+  tasks: TaskVerification[];
+  missing: string[];
+  checkedAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Execution (Phase 1.4 / 3.3) — one entry per task the executor ran
+// ---------------------------------------------------------------------------
+
+export type TaskRunStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'skipped'
+  | 'budget-exceeded'
+  | 'forbidden';
+
+export interface TaskRunResult {
+  taskId: string;
+  role: AgentRole;
+  status: TaskRunStatus;
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
+  attempts: number;
+  toolCalls: number;
+  summary: string;
+  error?: string;
+  /** True when the task ran inside an ephemeral worktree. */
+  isolated: boolean;
+  worktreePath?: string;
+  evidenceKinds: EvidenceKind[];
+  /** Outcome of verifying this task's own exit criteria against its proof. */
+  verification?: TaskVerification;
+  costUsd?: number;
+}
+
+export interface WorkflowExecutionReport {
+  contractId: string | null;
+  /** False when the execution choke point refused to start. */
+  started: boolean;
+  startReasons: string[];
+  results: TaskRunResult[];
+  completedTaskIds: string[];
+  failedTaskIds: string[];
+  skippedTaskIds: string[];
+  phase: WorkflowPhase;
+  verification: VerificationReport | null;
+}
+
+/** Budget ceilings enforced around one task run (Phase 3.2). */
+export interface TaskBudgetStatus {
+  exceeded: boolean;
+  reason: string | null;
+  toolCalls: number;
+  elapsedMs: number;
 }
 
 // ---------------------------------------------------------------------------
