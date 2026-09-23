@@ -1456,6 +1456,67 @@
       "suggested": "Suggested profile: {{profile}}"
     }
   },
+  "evalPanel": {
+    "title": "Evaluation scenarios",
+    "hint": "Reference scenarios measure success, turns, cost, regressions and human interventions. Running a suite drives the agent, so it is only available when this build wired a scenario runner.",
+    "run": "Run reference suite",
+    "running": "Running…",
+    "compare": "Compare last two suites",
+    "validateRouting": "Validate routing",
+    "clear": "Clear history",
+    "empty": "No benchmark history yet.",
+    "unavailable": "Benchmark execution is not available in this build.",
+    "version": "Version label",
+    "versionPlaceholder": "e.g. v3.6.0",
+    "cleared": "Cleared {{count}} suite(s).",
+    "summary": {
+      "title": "Latest suite: {{version}}",
+      "runs": "{{count}} run(s)",
+      "successRate": "Success {{percent}}",
+      "avgTurns": "{{value}} turns avg",
+      "avgCost": "{{value}} avg cost",
+      "avgDuration": "{{value}} avg duration",
+      "regressionRate": "Regressions {{percent}}",
+      "humanInterventionRate": "Interventions {{percent}}",
+      "avgEvidence": "{{value}} evidence avg"
+    },
+    "records": {
+      "title": "Scenarios",
+      "success": "success",
+      "failed": "failed",
+      "turns": "{{value}} turns",
+      "cost": "{{value}}",
+      "regressions": "{{value}} regressions",
+      "interventions": "{{value}} interventions",
+      "evidence": "{{value}} evidence"
+    },
+    "kind": {
+      "bugfix": "Bug fix",
+      "multi-file-feature": "Multi-file feature",
+      "security-audit": "Security audit",
+      "long-task": "Long task",
+      "session-resume": "Session resume"
+    },
+    "delta": {
+      "title": "Delta between the last two suites",
+      "noRegression": "No regression on any tracked axis.",
+      "regression": "Regression detected on at least one axis.",
+      "successRate": "Success {{value}}",
+      "avgTurns": "Turns {{value}}",
+      "avgCost": "Cost {{value}}",
+      "avgDuration": "Duration {{value}} ms",
+      "regressionRate": "Regressions {{value}}",
+      "humanInterventionRate": "Interventions {{value}}"
+    },
+    "routing": {
+      "title": "Routing validation",
+      "ok": "All routing cases pass.",
+      "failed": "{{count}} routing case(s) failed.",
+      "caseOk": "ok",
+      "caseFailed": "failed",
+      "violations": "{{count}} violation(s)"
+    }
+  },
   "controlCenter": {
     "title": "Agent control center",
     "subtitle": "Activity, workspace, queue and approvals in one place",
@@ -1468,6 +1529,7 @@
       "workspace": "Workspace",
       "queue": "Queue",
       "terminal": "Terminal",
+      "evals": "Evals",
       "settings": "Settings"
     },
     "terminal": {

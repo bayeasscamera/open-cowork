@@ -1456,6 +1456,67 @@
       "suggested": "建议配置：{{profile}}"
     }
   },
+  "evalPanel": {
+    "title": "评估场景",
+    "hint": "参考场景衡量成功率、轮次、成本、回归与人工干预。运行套件会驱动智能体，因此仅当此版本已接入场景执行器时才可用。",
+    "run": "运行参考套件",
+    "running": "运行中…",
+    "compare": "比较最近两次套件",
+    "validateRouting": "验证路由",
+    "clear": "清空历史",
+    "empty": "暂无基准历史。",
+    "unavailable": "此版本不支持基准执行。",
+    "version": "版本标签",
+    "versionPlaceholder": "例如 v3.6.0",
+    "cleared": "已清空 {{count}} 个套件。",
+    "summary": {
+      "title": "最近套件：{{version}}",
+      "runs": "{{count}} 次运行",
+      "successRate": "成功率 {{percent}}",
+      "avgTurns": "平均 {{value}} 轮",
+      "avgCost": "平均成本 {{value}}",
+      "avgDuration": "平均耗时 {{value}}",
+      "regressionRate": "回归率 {{percent}}",
+      "humanInterventionRate": "干预率 {{percent}}",
+      "avgEvidence": "平均 {{value}} 条证据"
+    },
+    "records": {
+      "title": "场景",
+      "success": "成功",
+      "failed": "失败",
+      "turns": "{{value}} 轮",
+      "cost": "{{value}}",
+      "regressions": "{{value}} 次回归",
+      "interventions": "{{value}} 次干预",
+      "evidence": "{{value}} 条证据"
+    },
+    "kind": {
+      "bugfix": "缺陷修复",
+      "multi-file-feature": "多文件功能",
+      "security-audit": "安全审计",
+      "long-task": "长任务",
+      "session-resume": "会话恢复"
+    },
+    "delta": {
+      "title": "最近两次套件的差异",
+      "noRegression": "所有跟踪指标均无回归。",
+      "regression": "至少一个指标出现回归。",
+      "successRate": "成功率 {{value}}",
+      "avgTurns": "轮次 {{value}}",
+      "avgCost": "成本 {{value}}",
+      "avgDuration": "耗时 {{value}} 毫秒",
+      "regressionRate": "回归率 {{value}}",
+      "humanInterventionRate": "干预率 {{value}}"
+    },
+    "routing": {
+      "title": "路由验证",
+      "ok": "所有路由用例均通过。",
+      "failed": "{{count}} 个路由用例失败。",
+      "caseOk": "通过",
+      "caseFailed": "失败",
+      "violations": "{{count}} 项违规"
+    }
+  },
   "controlCenter": {
     "title": "智能体控制中心",
     "subtitle": "活动、工作区、队列与审批集中呈现",
@@ -1468,6 +1529,7 @@
       "workspace": "工作区",
       "queue": "队列",
       "terminal": "终端",
+      "evals": "评估",
       "settings": "设置"
     },
     "terminal": {

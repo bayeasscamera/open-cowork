@@ -1455,6 +1455,67 @@
       "suggested": "Profil suggéré : {{profile}}"
     }
   },
+  "evalPanel": {
+    "title": "Scénarios d'évaluation",
+    "hint": "Les scénarios de référence mesurent la réussite, les tours, le coût, les régressions et les interventions humaines. Lancer une suite pilote l'agent : elle n'est disponible que si cette version a branché un exécuteur de scénarios.",
+    "run": "Lancer la suite de référence",
+    "running": "En cours…",
+    "compare": "Comparer les deux dernières suites",
+    "validateRouting": "Valider le routage",
+    "clear": "Effacer l'historique",
+    "empty": "Aucun historique de benchmark pour l'instant.",
+    "unavailable": "L'exécution des benchmarks n'est pas disponible dans cette version.",
+    "version": "Étiquette de version",
+    "versionPlaceholder": "ex. v3.6.0",
+    "cleared": "{{count}} suite(s) effacée(s).",
+    "summary": {
+      "title": "Dernière suite : {{version}}",
+      "runs": "{{count}} exécution(s)",
+      "successRate": "Réussite {{percent}}",
+      "avgTurns": "{{value}} tours en moyenne",
+      "avgCost": "{{value}} de coût moyen",
+      "avgDuration": "{{value}} de durée moyenne",
+      "regressionRate": "Régressions {{percent}}",
+      "humanInterventionRate": "Interventions {{percent}}",
+      "avgEvidence": "{{value}} de preuves en moyenne"
+    },
+    "records": {
+      "title": "Scénarios",
+      "success": "réussi",
+      "failed": "échoué",
+      "turns": "{{value}} tours",
+      "cost": "{{value}}",
+      "regressions": "{{value}} régressions",
+      "interventions": "{{value}} interventions",
+      "evidence": "{{value}} preuves"
+    },
+    "kind": {
+      "bugfix": "Correction de bug",
+      "multi-file-feature": "Fonctionnalité multi-fichiers",
+      "security-audit": "Audit de sécurité",
+      "long-task": "Tâche longue",
+      "session-resume": "Reprise de session"
+    },
+    "delta": {
+      "title": "Écart entre les deux dernières suites",
+      "noRegression": "Aucune régression sur les axes suivis.",
+      "regression": "Régression détectée sur au moins un axe.",
+      "successRate": "Réussite {{value}}",
+      "avgTurns": "Tours {{value}}",
+      "avgCost": "Coût {{value}}",
+      "avgDuration": "Durée {{value}} ms",
+      "regressionRate": "Régressions {{value}}",
+      "humanInterventionRate": "Interventions {{value}}"
+    },
+    "routing": {
+      "title": "Validation du routage",
+      "ok": "Tous les cas de routage passent.",
+      "failed": "{{count}} cas de routage en échec.",
+      "caseOk": "ok",
+      "caseFailed": "échec",
+      "violations": "{{count}} violation(s)"
+    }
+  },
   "controlCenter": {
     "title": "Centre de contrôle de l'agent",
     "subtitle": "Activité, espace de travail, file d'attente et approbations au même endroit",
@@ -1467,6 +1528,7 @@
       "workspace": "Espace",
       "queue": "File",
       "terminal": "Terminal",
+      "evals": "Évaluations",
       "settings": "Réglages"
     },
     "terminal": {

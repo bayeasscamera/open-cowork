@@ -11,6 +11,7 @@ const chatView = read('src/renderer/components/ChatView.tsx');
 const workspace = read('src/renderer/components/WorkspacePane.tsx');
 const queue = read('src/renderer/components/TaskQueuePane.tsx');
 const terminal = read('src/renderer/components/TerminalPane.tsx');
+const evalPanel = read('src/renderer/components/EvalPanel.tsx');
 const app = read('src/renderer/App.tsx');
 const store = read('src/renderer/store/index.ts');
 const preload = read('src/preload/index.ts');
@@ -19,15 +20,27 @@ const types = read('src/shared/control-center-types.ts');
 
 describe('control center panel wiring', () => {
   it('renders the control-center panes as tabs', () => {
-    expect(panel).toContain(
-      "const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue', 'terminal', 'settings'];"
-    );
+    expect(panel).toContain('const TABS: ControlCenterTab[] = [');
+    expect(panel).toContain("'activity',");
+    expect(panel).toContain("'evals',");
     expect(panel).toContain("t('controlCenter.tab.' + candidate)");
     expect(panel).toContain('<ActivityView sessionId={sessionId} />');
     expect(panel).toContain('<WorkspacePane sessionId={sessionId} />');
     expect(panel).toContain('<TaskQueuePane sessionId={sessionId} />');
     expect(panel).toContain('<TerminalPane sessionId={sessionId} />');
     expect(panel).toContain('<SettingsLevelsPane sessionId={sessionId} />');
+    expect(panel).toContain('<EvalPanel />');
+  });
+
+  it('exposes the reference-scenario harness as its own tab', () => {
+    expect(panel).toContain("import { EvalPanel } from './EvalPanel';");
+    expect(panel).toContain('evals: BarChart3,');
+    expect(evalPanel).toContain('window.electronAPI?.metrics');
+    expect(evalPanel).toContain('api.history()');
+    expect(evalPanel).toContain('api.runSuite(');
+    expect(evalPanel).toContain('api.compare()');
+    expect(evalPanel).toContain('api.validateRouting()');
+    expect(evalPanel).toContain('api.clearHistory()');
   });
 
   it('re-runs only the failed test files from the workspace pane', () => {

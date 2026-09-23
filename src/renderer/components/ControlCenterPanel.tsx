@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Activity,
+  BarChart3,
   FolderTree,
   Layers,
   ListChecks,
@@ -11,20 +12,29 @@ import {
 } from 'lucide-react';
 import type { ControlCenterSnapshot } from '../../shared/control-center-types';
 import { ActivityView } from './ActivityView';
+import { EvalPanel } from './EvalPanel';
 import { SettingsLevelsPane } from './SettingsLevelsPane';
 import { TaskQueuePane } from './TaskQueuePane';
 import { TerminalPane } from './TerminalPane';
 import { WorkspacePane } from './WorkspacePane';
 
-type ControlCenterTab = 'activity' | 'workspace' | 'queue' | 'terminal' | 'settings';
+type ControlCenterTab = 'activity' | 'workspace' | 'queue' | 'terminal' | 'evals' | 'settings';
 
-const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue', 'terminal', 'settings'];
+const TABS: ControlCenterTab[] = [
+  'activity',
+  'workspace',
+  'queue',
+  'terminal',
+  'evals',
+  'settings',
+];
 
 const TAB_ICON: Record<ControlCenterTab, typeof Activity> = {
   activity: Activity,
   workspace: FolderTree,
   queue: ListChecks,
   terminal: SquareTerminal,
+  evals: BarChart3,
   settings: Layers,
 };
 
@@ -137,6 +147,7 @@ export function ControlCenterPanel({ sessionId, onClose }: ControlCenterPanelPro
         {tab === 'workspace' && <WorkspacePane sessionId={sessionId} />}
         {tab === 'queue' && <TaskQueuePane sessionId={sessionId} />}
         {tab === 'terminal' && <TerminalPane sessionId={sessionId} />}
+        {tab === 'evals' && <EvalPanel />}
         {tab === 'settings' && <SettingsLevelsPane sessionId={sessionId} />}
       </div>
     </div>
