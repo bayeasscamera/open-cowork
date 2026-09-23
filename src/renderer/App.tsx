@@ -37,6 +37,11 @@ const ContextPanel = lazy(() =>
 const DiffPanel = lazy(() =>
   import('./components/DiffPanel').then((module) => ({ default: module.DiffPanel }))
 );
+const PlanApprovalPanel = lazy(() =>
+  import('./components/PlanApprovalPanel').then((module) => ({
+    default: module.PlanApprovalPanel,
+  }))
+);
 const ConfigModal = lazy(() =>
   import('./components/ConfigModal').then((module) => ({ default: module.ConfigModal }))
 );
@@ -103,6 +108,8 @@ function App() {
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
   const diffPanelVisible = useAppStore((s) => s.diffPanelVisible);
   const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
+  const planPanelVisible = useAppStore((s) => s.planPanelVisible);
+  const setPlanPanelVisible = useAppStore((s) => s.setPlanPanelVisible);
   const projectsPage = useAppStore((s) => s.projectsPage);
   const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
   const documentPanelVisible = useAppStore((s) => s.documentPanelVisible);
@@ -247,6 +254,19 @@ function App() {
                 <ProjectsPages />
               </Suspense>
             </PanelErrorBoundary>
+          ) : planPanelVisible && activeSessionId ? (
+            <PanelErrorBoundary
+              name="PlanApprovalPanel"
+              resetKey={activeSessionId}
+              fallback={<MainPanelFallback />}
+            >
+              <Suspense fallback={<MainPanelFallback />}>
+                <PlanApprovalPanel
+                  sessionId={activeSessionId}
+                  onClose={() => setPlanPanelVisible(false)}
+                />
+              </Suspense>
+            </PanelErrorBoundary>
           ) : activeSessionId ? (
             <PanelErrorBoundary
               name="ChatView"
@@ -263,7 +283,7 @@ function App() {
         </main>
 
         {/* Context Panel - only show when in session and not in settings/projects pages */}
-        {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
+        {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && !planPanelVisible && (
           <PanelErrorBoundary
             name="ContextPanel"
             resetKey={activeSessionId}
@@ -277,6 +297,18 @@ function App() {
       {/* Diff Panel toggle + live session diff (local mods only) */}
       {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
         <>
+          <button
+            type="button"
+            aria-pressed={planPanelVisible}
+            onClick={() => setPlanPanelVisible(!planPanelVisible)}
+            className={`fixed bottom-4 right-20 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
+              planPanelVisible
+                ? 'border-accent bg-accent/10 text-text-primary'
+                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
+            }`}
+          >
+            Plan
+          </button>
           <button
             type="button"
             aria-pressed={diffPanelVisible}

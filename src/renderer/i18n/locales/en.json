@@ -1372,5 +1372,106 @@
     "openHint": "Type a workspace file path above to open it here. The view follows the agent's edits, and your saves are visible to it on the next turn.",
     "readError": "Failed to read document",
     "writeError": "Failed to write document"
+  },
+  "planPanel": {
+    "title": "Plan & approval",
+    "subtitle": "Review scope, commands, risk and cost before any write",
+    "close": "Close",
+    "working": "Working…",
+    "mode": {
+      "label": "Workflow mode",
+      "explore": "Explore",
+      "exploreHint": "read only",
+      "plan": "Plan",
+      "planHint": "propose, no writes",
+      "execute": "Execute",
+      "executeHint": "approved writes"
+    },
+    "phaseLabel": "Phase",
+    "phase": {
+      "idle": "Idle",
+      "exploring": "Exploring",
+      "planning": "Planning",
+      "awaiting-approval": "Awaiting approval",
+      "executing": "Executing",
+      "verifying": "Verifying",
+      "completed": "Completed",
+      "failed": "Blocked",
+      "cancelled": "Cancelled"
+    },
+    "empty": {
+      "title": "No active plan for this session",
+      "body": "Cowork publishes a contract and an atomic task plan here before it writes anything."
+    },
+    "metrics": {
+      "tasks": "Tasks",
+      "files": "Files",
+      "risk": "Risk",
+      "cost": "Estimated cost"
+    },
+    "risk": {
+      "low": "low",
+      "medium": "medium",
+      "high": "high"
+    },
+    "role": {
+      "scout": "scout",
+      "web-researcher": "web researcher",
+      "architect": "architect",
+      "implementer": "implementer",
+      "tester": "tester",
+      "reviewer": "reviewer",
+      "security": "security"
+    },
+    "none": "n/a",
+    "scope": "File scope",
+    "commands": "Planned commands",
+    "blockers": {
+      "title": "Execution blocked"
+    },
+    "approval": {
+      "title": "Approval",
+      "approve": "Approve plan",
+      "reject": "Reject",
+      "refresh": "Rebuild request",
+      "approved": "Plan approved",
+      "pending": "Awaiting your decision"
+    },
+    "tasks": {
+      "title": "Atomic tasks & checkpoints"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "start": "Start execution",
+      "verify": "Verify",
+      "restorePlan": "Restore plan",
+      "exportAudit": "Export audit log"
+    },
+    "task": {
+      "start": "Checkpoint",
+      "accept": "Accept",
+      "reject": "Reject",
+      "restore": "Restore",
+      "diffSummary": "+{{additions}} / -{{deletions}}",
+      "evidence": "{{count}} proof(s)",
+      "status": {
+        "pending": "pending",
+        "accepted": "accepted",
+        "rejected": "rejected",
+        "restored": "restored",
+        "completed": "done"
+      }
+    },
+    "audit": {
+      "title": "Audit log",
+      "empty": "No action recorded yet.",
+      "authorization": {
+        "auto": "auto",
+        "approved": "approved",
+        "rejected": "rejected",
+        "forbidden": "forbidden",
+        "not-required": "not required"
+      }
+    }
   }
 }

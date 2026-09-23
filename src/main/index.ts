@@ -81,6 +81,8 @@ import { registerSandboxIpcHandlers } from './ipc/sandbox-handlers';
 import { registerSkillsIpcHandlers } from './ipc/skills-handlers';
 import { registerWindowIpcHandlers } from './ipc/window-handlers';
 import { registerModsIpcHandlers } from './ipc/mods-handlers';
+import { registerWorkflowIpcHandlers } from './ipc/workflow-handlers';
+import { WorkflowRegistry } from './agent/workflow-registry';
 import { getModsRegistry } from './mods/mods-runtime';
 import { createBuiltinMods } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore } from './projects/project-store';
@@ -1895,6 +1897,14 @@ registerMemoryIpcHandlers({
   getMainWindow: () => mainWindow,
   getSessionManager: () => sessionManager,
 });
+
+// Workflow (Plan -> Act -> Verify) IPC handlers. The registry owns one
+// orchestrator per session, rooted at the session working directory.
+const workflowRegistry = new WorkflowRegistry({
+  resolveWorkspaceRoot: () => getWorkingDir(),
+  fallbackWorkspaceRoot: () => currentWorkingDir,
+});
+registerWorkflowIpcHandlers({ registry: workflowRegistry });
 
 // Client event dispatch lives in its own module; wire the app-level state it
 // needs here so the dependency surface stays explicit.

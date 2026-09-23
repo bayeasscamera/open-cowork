@@ -1372,5 +1372,106 @@
     "openHint": "在上方输入工作区文件路径即可在此打开。视图会跟随 agent 的修改，您的保存对下一次对话生效。",
     "readError": "读取文档失败",
     "writeError": "写入文档失败"
+  },
+  "planPanel": {
+    "title": "计划与审批",
+    "subtitle": "在任何写入前审查范围、命令、风险与成本",
+    "close": "关闭",
+    "working": "处理中…",
+    "mode": {
+      "label": "工作模式",
+      "explore": "探索",
+      "exploreHint": "只读",
+      "plan": "规划",
+      "planHint": "仅提议，不写入",
+      "execute": "执行",
+      "executeHint": "已批准的写入"
+    },
+    "phaseLabel": "阶段",
+    "phase": {
+      "idle": "空闲",
+      "exploring": "探索中",
+      "planning": "规划中",
+      "awaiting-approval": "等待审批",
+      "executing": "执行中",
+      "verifying": "验证中",
+      "completed": "已完成",
+      "failed": "已阻塞",
+      "cancelled": "已取消"
+    },
+    "empty": {
+      "title": "此会话没有活动计划",
+      "body": "Cowork 会在任何写入之前在此发布契约和原子任务计划。"
+    },
+    "metrics": {
+      "tasks": "任务",
+      "files": "文件",
+      "risk": "风险",
+      "cost": "预估成本"
+    },
+    "risk": {
+      "low": "低",
+      "medium": "中",
+      "high": "高"
+    },
+    "role": {
+      "scout": "侦察",
+      "web-researcher": "网络研究",
+      "architect": "架构",
+      "implementer": "实现",
+      "tester": "测试",
+      "reviewer": "审查",
+      "security": "安全"
+    },
+    "none": "无",
+    "scope": "文件范围",
+    "commands": "计划命令",
+    "blockers": {
+      "title": "执行被阻塞"
+    },
+    "approval": {
+      "title": "审批",
+      "approve": "批准计划",
+      "reject": "拒绝",
+      "refresh": "重新生成请求",
+      "approved": "计划已批准",
+      "pending": "等待您的决定"
+    },
+    "tasks": {
+      "title": "原子任务与检查点"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "start": "开始执行",
+      "verify": "验证",
+      "restorePlan": "恢复计划",
+      "exportAudit": "导出审计日志"
+    },
+    "task": {
+      "start": "检查点",
+      "accept": "接受",
+      "reject": "拒绝",
+      "restore": "恢复",
+      "diffSummary": "+{{additions}} / -{{deletions}}",
+      "evidence": "{{count}} 项证据",
+      "status": {
+        "pending": "待处理",
+        "accepted": "已接受",
+        "rejected": "已拒绝",
+        "restored": "已恢复",
+        "completed": "已完成"
+      }
+    },
+    "audit": {
+      "title": "审计日志",
+      "empty": "尚未记录任何操作。",
+      "authorization": {
+        "auto": "自动",
+        "approved": "已批准",
+        "rejected": "已拒绝",
+        "forbidden": "禁止",
+        "not-required": "无需"
+      }
+    }
   }
 }

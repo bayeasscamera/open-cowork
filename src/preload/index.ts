@@ -47,6 +47,23 @@ import type {
   PairingRequest,
   RemoteSessionMapping,
 } from '../shared/ipc-types';
+import type {
+  AtomicTask,
+  CreateTaskContractInput,
+  WorkflowMode,
+} from '../shared/task-contract';
+import type {
+  ApprovalDecisionInput,
+  ApprovalOutcome,
+  ApprovalRequest,
+  AuditEntry,
+  NewCheckpointEvidence,
+  RoleAssignment,
+  RolePlanInput,
+  TaskCheckpoint,
+  VerifyResult,
+  WorkflowState,
+} from '../shared/workflow-types';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -763,6 +780,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setEnabled: (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> =>
       ipcRenderer.invoke('memory.setEnabled', enabled),
   },
+
+  workflow: {
+    getState: (sessionId: string): Promise<WorkflowState | null> =>
+      ipcRenderer.invoke('workflow.getState', sessionId),
+    setMode: (sessionId: string, mode: WorkflowMode): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.setMode', sessionId, mode),
+    loadContract: (
+      sessionId: string,
+      contract: CreateTaskContractInput,
+      tasks: Array<Partial<AtomicTask> & Pick<AtomicTask, 'id' | 'title'>>
+    ): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.loadContract', sessionId, contract, tasks),
+    requestApproval: (sessionId: string): Promise<ApprovalRequest> =>
+      ipcRenderer.invoke('workflow.requestApproval', sessionId),
+    approve: (sessionId: string, decision: ApprovalDecisionInput): Promise<ApprovalOutcome> =>
+      ipcRenderer.invoke('workflow.approve', sessionId, decision),
+    startExecution: (sessionId: string): Promise<{ started: boolean; reasons: string[] }> =>
+      ipcRenderer.invoke('workflow.startExecution', sessionId),
+    startTask: (sessionId: string, taskId: string): Promise<TaskCheckpoint> =>
+      ipcRenderer.invoke('workflow.startTask', sessionId, taskId),
+    completeTask: (
+      sessionId: string,
+      taskId: string,
+      evidence: NewCheckpointEvidence[]
+    ): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.completeTask', sessionId, taskId, evidence),
+    acceptTask: (sessionId: string, taskId: string): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.acceptTask', sessionId, taskId),
+    restoreTask: (sessionId: string, taskId: string): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.restoreTask', sessionId, taskId),
+    rejectTask: (sessionId: string, taskId: string, reason?: string): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.rejectTask', sessionId, taskId, reason),
+    restorePlan: (sessionId: string): Promise<WorkflowState> =>
+      ipcRenderer.invoke('workflow.restorePlan', sessionId),
+    verify: (sessionId: string): Promise<VerifyResult> =>
+      ipcRenderer.invoke('workflow.verify', sessionId),
+    planRoles: (sessionId: string, input: RolePlanInput): Promise<RoleAssignment[]> =>
+      ipcRenderer.invoke('workflow.planRoles', sessionId, input),
+    getAuditLog: (sessionId: string): Promise<AuditEntry[]> =>
+      ipcRenderer.invoke('workflow.getAuditLog', sessionId),
+    exportAuditLog: (sessionId: string): Promise<string> =>
+      ipcRenderer.invoke('workflow.exportAuditLog', sessionId),
+  },
 });
 
 // Type declaration for the renderer process
@@ -1225,6 +1285,35 @@ declare global {
           workspaceKey?: string
         ) => Promise<MemoryInspectSessionResult | null>;
         setEnabled: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>;
+      };
+      workflow: {
+        getState: (sessionId: string) => Promise<WorkflowState | null>;
+        setMode: (sessionId: string, mode: WorkflowMode) => Promise<WorkflowState>;
+        loadContract: (
+          sessionId: string,
+          contract: CreateTaskContractInput,
+          tasks: Array<Partial<AtomicTask> & Pick<AtomicTask, 'id' | 'title'>>
+        ) => Promise<WorkflowState>;
+        requestApproval: (sessionId: string) => Promise<ApprovalRequest>;
+        approve: (
+          sessionId: string,
+          decision: ApprovalDecisionInput
+        ) => Promise<ApprovalOutcome>;
+        startExecution: (sessionId: string) => Promise<{ started: boolean; reasons: string[] }>;
+        startTask: (sessionId: string, taskId: string) => Promise<TaskCheckpoint>;
+        completeTask: (
+          sessionId: string,
+          taskId: string,
+          evidence: NewCheckpointEvidence[]
+        ) => Promise<WorkflowState>;
+        acceptTask: (sessionId: string, taskId: string) => Promise<WorkflowState>;
+        restoreTask: (sessionId: string, taskId: string) => Promise<WorkflowState>;
+        rejectTask: (sessionId: string, taskId: string, reason?: string) => Promise<WorkflowState>;
+        restorePlan: (sessionId: string) => Promise<WorkflowState>;
+        verify: (sessionId: string) => Promise<VerifyResult>;
+        planRoles: (sessionId: string, input: RolePlanInput) => Promise<RoleAssignment[]>;
+        getAuditLog: (sessionId: string) => Promise<AuditEntry[]>;
+        exportAuditLog: (sessionId: string) => Promise<string>;
       };
     };
   }

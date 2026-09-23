@@ -1371,5 +1371,106 @@
     "openHint": "Saisissez ci-dessus le chemin d'un fichier du workspace. La vue suit les modifications de l'agent, et vos enregistrements lui sont visibles au tour suivant.",
     "readError": "Échec de lecture du document",
     "writeError": "Échec d'enregistrement du document"
+  },
+  "planPanel": {
+    "title": "Plan et approbation",
+    "subtitle": "Vérifiez périmètre, commandes, risque et coût avant toute écriture",
+    "close": "Fermer",
+    "working": "En cours…",
+    "mode": {
+      "label": "Mode de travail",
+      "explore": "Explorer",
+      "exploreHint": "lecture seule",
+      "plan": "Planifier",
+      "planHint": "proposer, sans écrire",
+      "execute": "Exécuter",
+      "executeHint": "écritures approuvées"
+    },
+    "phaseLabel": "Phase",
+    "phase": {
+      "idle": "Inactif",
+      "exploring": "Exploration",
+      "planning": "Planification",
+      "awaiting-approval": "En attente d’approbation",
+      "executing": "Exécution",
+      "verifying": "Vérification",
+      "completed": "Terminé",
+      "failed": "Bloqué",
+      "cancelled": "Annulé"
+    },
+    "empty": {
+      "title": "Aucun plan actif pour cette session",
+      "body": "Cowork publie ici un contrat et un plan de tâches atomiques avant toute écriture."
+    },
+    "metrics": {
+      "tasks": "Tâches",
+      "files": "Fichiers",
+      "risk": "Risque",
+      "cost": "Coût estimé"
+    },
+    "risk": {
+      "low": "faible",
+      "medium": "moyen",
+      "high": "élevé"
+    },
+    "role": {
+      "scout": "éclaireur",
+      "web-researcher": "chercheur web",
+      "architect": "architecte",
+      "implementer": "implémenteur",
+      "tester": "testeur",
+      "reviewer": "relecteur",
+      "security": "sécurité"
+    },
+    "none": "n/d",
+    "scope": "Périmètre de fichiers",
+    "commands": "Commandes prévues",
+    "blockers": {
+      "title": "Exécution bloquée"
+    },
+    "approval": {
+      "title": "Approbation",
+      "approve": "Approuver le plan",
+      "reject": "Rejeter",
+      "refresh": "Recalculer la demande",
+      "approved": "Plan approuvé",
+      "pending": "En attente de votre décision"
+    },
+    "tasks": {
+      "title": "Tâches atomiques et checkpoints"
+    },
+    "actions": {
+      "refresh": "Actualiser",
+      "start": "Démarrer l’exécution",
+      "verify": "Vérifier",
+      "restorePlan": "Restaurer le plan",
+      "exportAudit": "Exporter le journal d’audit"
+    },
+    "task": {
+      "start": "Checkpoint",
+      "accept": "Accepter",
+      "reject": "Rejeter",
+      "restore": "Restaurer",
+      "diffSummary": "+{{additions}} / -{{deletions}}",
+      "evidence": "{{count}} preuve(s)",
+      "status": {
+        "pending": "en attente",
+        "accepted": "acceptée",
+        "rejected": "rejetée",
+        "restored": "restaurée",
+        "completed": "terminée"
+      }
+    },
+    "audit": {
+      "title": "Journal d’audit",
+      "empty": "Aucune action enregistrée.",
+      "authorization": {
+        "auto": "auto",
+        "approved": "approuvé",
+        "rejected": "rejeté",
+        "forbidden": "interdit",
+        "not-required": "non requis"
+      }
+    }
   }
 }
