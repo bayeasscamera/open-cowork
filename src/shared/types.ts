@@ -1,3 +1,5 @@
+import type { WorkflowState } from './workflow-types';
+
 // Session types
 export interface Session {
   id: string;
@@ -794,6 +796,10 @@ export type ServerEvent =
     }
   | { type: 'workdir.changed'; payload: { path: string } }
   | { type: 'session.contextInfo'; payload: { sessionId: string; contextWindow: number } }
+  | {
+      type: 'workflow.state';
+      payload: { sessionId: string; state: WorkflowState };
+    }
   | {
       type: 'background.task';
       payload: {

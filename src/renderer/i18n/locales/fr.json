@@ -1707,5 +1707,11 @@
         "not-required": "non requis"
       }
     }
+  },
+  "workflowBanner": {
+    "progress": "{{done}}/{{total}} tâches",
+    "blockers": "{{count}} blocage(s)",
+    "open": "Ouvrir le plan",
+    "dismiss": "Masquer"
   }
 }

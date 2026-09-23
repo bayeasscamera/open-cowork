@@ -1708,5 +1708,11 @@
         "not-required": "not required"
       }
     }
+  },
+  "workflowBanner": {
+    "progress": "{{done}}/{{total}} tasks",
+    "blockers": "{{count}} blocker(s)",
+    "open": "Open plan",
+    "dismiss": "Dismiss"
   }
 }

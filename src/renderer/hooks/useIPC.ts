@@ -312,6 +312,10 @@ export function useIPC() {
             store.setSessionContextWindow(event.payload.sessionId, event.payload.contextWindow);
             break;
 
+          case 'workflow.state':
+            store.setWorkflowState(event.payload.sessionId, event.payload.state);
+            break;
+
           case 'error':
             console.error('[useIPC] Server error:', event.payload.message);
             store.setLoading(false);

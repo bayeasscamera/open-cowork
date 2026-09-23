@@ -12,6 +12,7 @@ import type {
   SkillsStorageChangeEvent,
   Project,
 } from '../types';
+import type { WorkflowState } from '../../shared/workflow-types';
 import { applySessionUpdate } from '../utils/session-update';
 
 type GlobalNoticeType = 'info' | 'warning' | 'error' | 'success';
@@ -123,6 +124,10 @@ interface AppState {
   // Ephemeral viewport state, kept separate so scrolling does not rerender message consumers.
   sessionScrollPositions: Record<string, number>;
 
+  // Workflow (Plan -> Act -> Verify) state per session, pushed from the main
+  // process on every transition so the status banner stays live.
+  workflowStates: Record<string, WorkflowState>;
+
   // UI state
   isLoading: boolean;
   sidebarCollapsed: boolean;
@@ -225,6 +230,7 @@ interface AppState {
   setDocumentPanelVisible: (visible: boolean) => void;
   setShowSettings: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
+  setWorkflowState: (sessionId: string, state: WorkflowState) => void;
 
   setPendingPermission: (permission: PermissionRequest | null) => void;
 
@@ -309,6 +315,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingProposalCount: 0,
   sessionStates: {},
   sessionScrollPositions: {},
+  workflowStates: {},
   isLoading: false,
   sidebarCollapsed: false,
   contextPanelCollapsed: false,
@@ -684,6 +691,10 @@ export const useAppStore = create<AppState>((set) => ({
   setDocumentPanelVisible: (visible) => set({ documentPanelVisible: visible }),
   setShowSettings: (show) => set({ showSettings: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
+  setWorkflowState: (sessionId, state) =>
+    set((current) => ({
+      workflowStates: { ...current.workflowStates, [sessionId]: state },
+    })),
 
   // Permission actions
   setPendingPermission: (permission) => set({ pendingPermission: permission }),

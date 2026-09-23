@@ -1978,6 +1978,11 @@ const workflowRegistry = new WorkflowRegistry({
   fallbackWorkspaceRoot: () => currentWorkingDir,
   persistence: workflowPersistence,
   queueProvider: () => controlCenterQueue,
+  // Push every phase/task transition to the renderer so the workflow status
+  // banner reflects execution without the UI having to poll.
+  onStateChange: (sessionId, state) => {
+    sendToRenderer({ type: 'workflow.state', payload: { sessionId, state } });
+  },
 });
 registerWorkflowIpcHandlers({
   registry: workflowRegistry,
