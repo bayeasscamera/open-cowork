@@ -1637,7 +1637,33 @@
       "verify": "Verify",
       "restorePlan": "Restore plan",
       "startReady": "Start ready tasks",
-      "exportAudit": "Export audit log"
+      "exportAudit": "Export audit log",
+      "report": "Execution report"
+    },
+    "report": {
+      "title": "Execution Report",
+      "empty": "No execution report yet. Start the plan to see results here.",
+      "phase": "Phase",
+      "summary": "Summary",
+      "succeeded": "{{count}} succeeded",
+      "failed": "{{count}} failed",
+      "skipped": "{{count}} skipped",
+      "totalCost": "Total cost",
+      "totalTokens": "Total tokens",
+      "totalDuration": "Total duration",
+      "verification": "Verification",
+      "verified": "All criteria verified",
+      "unverified": "{{count}} issue(s) found",
+      "taskStatus": {
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "budget-exceeded": "Budget exceeded",
+        "forbidden": "Forbidden",
+        "skipped": "Skipped",
+        "pending": "Pending"
+      },
+      "remaining": "Remaining tasks",
+      "noRemaining": "All tasks completed or accounted for."
     },
     "task": {
       "start": "Checkpoint",

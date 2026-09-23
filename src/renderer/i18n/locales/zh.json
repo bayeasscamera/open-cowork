@@ -1637,7 +1637,33 @@
       "verify": "验证",
       "restorePlan": "恢复计划",
       "startReady": "启动就绪任务",
-      "exportAudit": "导出审计日志"
+      "exportAudit": "导出审计日志",
+      "report": "执行报告"
+    },
+    "report": {
+      "title": "执行报告",
+      "empty": "尚无执行报告。启动计划后在此查看结果。",
+      "phase": "阶段",
+      "summary": "摘要",
+      "succeeded": "{{count}} 个成功",
+      "failed": "{{count}} 个失败",
+      "skipped": "{{count}} 个已跳过",
+      "totalCost": "总成本",
+      "totalTokens": "总 Token 数",
+      "totalDuration": "总耗时",
+      "verification": "验证",
+      "verified": "所有标准已验证",
+      "unverified": "发现 {{count}} 个问题",
+      "taskStatus": {
+        "succeeded": "成功",
+        "failed": "失败",
+        "budget-exceeded": "超出预算",
+        "forbidden": "禁止",
+        "skipped": "已跳过",
+        "pending": "等待中"
+      },
+      "remaining": "剩余任务",
+      "noRemaining": "所有任务已完成或已计入。"
     },
     "task": {
       "start": "检查点",

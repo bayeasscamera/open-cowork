@@ -22,9 +22,11 @@ import {
 import type {
   AuditEntry,
   TaskCheckpoint,
+  WorkflowExecutionReport,
   WorkflowMode,
   WorkflowState,
 } from '../../shared/workflow-types';
+import { ExecutionReportPanel } from './ExecutionReportPanel';
 import { PlanGraph } from './PlanGraph';
 
 const MODES: WorkflowMode[] = ['explore', 'plan', 'execute'];
@@ -53,6 +55,7 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [execReport, setExecReport] = useState<WorkflowExecutionReport | null>(null);
 
   const api = typeof window !== 'undefined' ? window.electronAPI?.workflow : undefined;
 
@@ -81,7 +84,16 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
     async (action: () => Promise<unknown>) => {
       setBusy(true);
       try {
-        await action();
+        const result = await action();
+        // Capture execution reports so the panel can display them.
+        if (
+          result &&
+          typeof result === 'object' &&
+          'results' in result &&
+          Array.isArray((result as WorkflowExecutionReport).results)
+        ) {
+          setExecReport(result as WorkflowExecutionReport);
+        }
         await refresh();
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : String(err));
@@ -301,6 +313,8 @@ export function PlanApprovalPanel({ sessionId, onClose }: PlanApprovalPanelProps
               </span>
               <PlanGraph state={state} />
             </section>
+
+            <ExecutionReportPanel report={execReport} totalTasks={state.tasks.length} />
 
             <section className="space-y-2">
               <div className="flex items-center justify-between">

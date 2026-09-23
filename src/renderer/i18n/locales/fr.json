@@ -1636,7 +1636,33 @@
       "verify": "Vérifier",
       "restorePlan": "Restaurer le plan",
       "startReady": "Démarrer les tâches prêtes",
-      "exportAudit": "Exporter le journal d’audit"
+      "exportAudit": "Exporter le journal d’audit",
+      "report": "Rapport d’exécution"
+    },
+    "report": {
+      "title": "Rapport d’exécution",
+      "empty": "Aucun rapport d’exécution. Démarrez le plan pour voir les résultats ici.",
+      "phase": "Phase",
+      "summary": "Résumé",
+      "succeeded": "{{count}} réussie(s)",
+      "failed": "{{count}} échouée(s)",
+      "skipped": "{{count}} ignorée(s)",
+      "totalCost": "Coût total",
+      "totalTokens": "Tokens totaux",
+      "totalDuration": "Durée totale",
+      "verification": "Vérification",
+      "verified": "Tous les critères vérifiés",
+      "unverified": "{{count}} problème(s) trouvé(s)",
+      "taskStatus": {
+        "succeeded": "Réussie",
+        "failed": "Échouée",
+        "budget-exceeded": "Budget dépassé",
+        "forbidden": "Interdite",
+        "skipped": "Ignorée",
+        "pending": "En attente"
+      },
+      "remaining": "Tâches restantes",
+      "noRemaining": "Toutes les tâches sont terminées ou comptabilisées."
     },
     "task": {
       "start": "Checkpoint",

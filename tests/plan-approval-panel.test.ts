@@ -24,6 +24,16 @@ describe('plan approval panel wiring', () => {
     expect(panel).toContain("t('planPanel.blockers.title')");
   });
 
+  it('imports and renders the execution report panel', () => {
+    expect(panel).toContain("import { ExecutionReportPanel } from './ExecutionReportPanel'");
+    expect(panel).toContain('<ExecutionReportPanel report={execReport} totalTasks={state.tasks.length} />');
+  });
+
+  it('captures executePlan results into execReport state', () => {
+    expect(panel).toContain('setExecReport(result as WorkflowExecutionReport)');
+    expect(panel).toContain('WorkflowExecutionReport');
+  });
+
   it('exposes per-task checkpoint actions', () => {
     expect(panel).toContain('api.acceptTask(sessionId, task.id)');
     expect(panel).toContain('api.rejectTask(sessionId, task.id)');
