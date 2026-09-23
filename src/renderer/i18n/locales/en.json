@@ -1327,7 +1327,11 @@
     "files": "Modified files",
     "empty": "No file changes recorded yet.",
     "error": "Failed to load file changes.",
-    "unchanged": "No textual changes detected."
+    "unchanged": "No textual changes detected.",
+    "openFile": "Open in editor",
+    "openAtLine": "Open at line {{line}}",
+    "openFailed": "Could not open the file in an editor.",
+    "truncated": "File too large for a detailed diff — showing the changed block only."
   },
   "skillDoctor": {
     "title": "Skill doctor",

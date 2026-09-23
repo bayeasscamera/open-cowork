@@ -980,6 +980,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('controlCenter.gitStatus', sessionId),
     runTests: (sessionId: string, commandId: TestCommandId): Promise<TestRunResult> =>
       ipcRenderer.invoke('controlCenter.runTests', sessionId, commandId),
+    openInEditor: (
+      sessionId: string,
+      filePath: string,
+      line?: number
+    ): Promise<{ success: boolean; method?: string; error?: string }> =>
+      ipcRenderer.invoke('controlCenter.openInEditor', sessionId, filePath, line),
     queue: (sessionId?: string): Promise<DetachedTask[]> =>
       ipcRenderer.invoke('controlCenter.queue', sessionId),
     enqueueTask: (sessionId: string, input: DetachedTaskInput): Promise<DetachedTask> =>
@@ -1604,6 +1610,11 @@ declare global {
         ) => Promise<WorkspaceFileContent>;
         gitStatus: (sessionId: string) => Promise<GitStatusSummary | null>;
         runTests: (sessionId: string, commandId: TestCommandId) => Promise<TestRunResult>;
+        openInEditor: (
+          sessionId: string,
+          filePath: string,
+          line?: number
+        ) => Promise<{ success: boolean; method?: string; error?: string }>;
         queue: (sessionId?: string) => Promise<DetachedTask[]>;
         enqueueTask: (sessionId: string, input: DetachedTaskInput) => Promise<DetachedTask>;
         updateTask: (

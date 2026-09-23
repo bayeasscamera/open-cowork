@@ -204,6 +204,18 @@ export function registerControlCenterIpcHandlers(context: ControlCenterIpcContex
     service.runTests(requireSessionId(sessionId), coerceTestCommandId(commandId))
   );
 
+  // The workspace root is resolved from the session inside the service; the
+  // renderer only names a file, never a root or an editor.
+  ipcMain.handle(
+    'controlCenter.openInEditor',
+    (_event, sessionId: unknown, filePath: unknown, line?: unknown) =>
+      service.openInEditor(
+        requireSessionId(sessionId),
+        requireNonEmpty(filePath, 'File path'),
+        typeof line === 'number' ? line : undefined
+      )
+  );
+
   ipcMain.handle('controlCenter.queue', (_event, sessionId?: unknown) =>
     service.queue.list(optionalSessionId(sessionId))
   );

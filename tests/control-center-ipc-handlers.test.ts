@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -10,7 +13,7 @@ vi.mock('electron', () => ({
       mocks.handlers.set(channel, fn),
   },
 }));
-vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logError: vi.fn() }));
+vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logWarn: vi.fn(), logError: vi.fn() }));
 
 import { registerControlCenterIpcHandlers } from '../src/main/ipc/control-center-handlers';
 import { ControlCenterService } from '../src/main/agent/control-center-service';
@@ -128,6 +131,7 @@ describe('control-center-ipc-handlers', () => {
       'controlCenter.gitStatus',
       'controlCenter.notifications',
       'controlCenter.notify',
+      'controlCenter.openInEditor',
       'controlCenter.queue',
       'controlCenter.readFile',
       'controlCenter.recordActivity',
@@ -200,6 +204,52 @@ describe('control-center-ipc-handlers', () => {
     await expect(invoke('controlCenter.readFile', 's2', 'a.ts')).rejects.toThrow(
       'No workspace is available'
     );
+  });
+
+  it('refuses to open an editor outside the session workspace', async () => {
+    const openExternal = vi.fn(async () => undefined);
+    const openPath = vi.fn(async () => '');
+    const root = mkdtempSync(join(tmpdir(), 'cc-open-editor-'));
+    writeFileSync(join(root, 'a.ts'), 'export const a = 1;\n');
+    try {
+      const local = new ControlCenterService({
+        resolveWorkspaceRoot: (sessionId) => (sessionId === 's1' ? root : null),
+        gitFactory: () => git,
+        runner,
+        editorOpener: { openExternal, openPath },
+      });
+      mocks.handlers.clear();
+      registerControlCenterIpcHandlers({ service: local });
+
+      const opened = (await invoke('controlCenter.openInEditor', 's1', 'a.ts', 3)) as {
+        success: boolean;
+      };
+      expect(opened.success).toBe(true);
+      expect(openExternal.mock.calls.length + openPath.mock.calls.length).toBeGreaterThan(0);
+
+      openExternal.mockClear();
+      openPath.mockClear();
+      expect(await invoke('controlCenter.openInEditor', 's1', '../escape.ts', 1)).toEqual({
+        success: false,
+        error: 'invalid_target',
+      });
+      expect(await invoke('controlCenter.openInEditor', 's1', join(root, 'missing.ts'))).toEqual({
+        success: false,
+        error: 'invalid_target',
+      });
+      expect(openExternal).not.toHaveBeenCalled();
+      expect(openPath).not.toHaveBeenCalled();
+
+      await expect(invoke('controlCenter.openInEditor', 's1', '   ')).rejects.toThrow(
+        'File path must be a non-empty string.'
+      );
+      expect(await invoke('controlCenter.openInEditor', 's2', 'a.ts')).toEqual({
+        success: false,
+        error: 'no_workspace',
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('drives the detached-task queue through its transitions', async () => {

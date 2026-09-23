@@ -1326,7 +1326,11 @@
     "files": "Fichiers modifiés",
     "empty": "Aucun changement de fichier enregistré pour l'instant.",
     "error": "Échec du chargement des changements.",
-    "unchanged": "Aucun changement textuel détecté."
+    "unchanged": "Aucun changement textuel détecté.",
+    "openFile": "Ouvrir dans l'éditeur",
+    "openAtLine": "Ouvrir à la ligne {{line}}",
+    "openFailed": "Impossible d'ouvrir le fichier dans un éditeur.",
+    "truncated": "Fichier trop volumineux pour un diff détaillé — seul le bloc modifié est affiché."
   },
   "skillDoctor": {
     "title": "Skill doctor",

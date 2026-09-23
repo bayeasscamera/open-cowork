@@ -26,6 +26,12 @@ import { readGitStatus } from '../workspace/git-status';
 import { listWorkspaceTree, readWorkspaceFile } from '../workspace/workspace-explorer';
 import { createExecFileRunner, runTestCommand, type CommandRunner } from '../workspace/test-runner';
 import { TerminalManager, type TerminalManagerOptions } from '../workspace/terminal-manager';
+import {
+  createShellEditorOpener,
+  openFileInEditor,
+  type EditorOpener,
+  type OpenInEditorResult,
+} from '../utils/open-in-editor';
 
 export interface ControlCenterServiceOptions {
   /** Resolve the workspace root for a session; null when unknown. */
@@ -36,6 +42,8 @@ export interface ControlCenterServiceOptions {
   runner?: CommandRunner;
   /** Embedded terminal options (shell, spawn, limits). */
   terminal?: Pick<TerminalManagerOptions, 'shell' | 'spawn' | 'maxTerminals' | 'maxChunks' | 'isDirectory'>;
+  /** Opens a workspace file in the user's editor; injected in tests. */
+  editorOpener?: EditorOpener;
   activityLimit?: number;
   queueLimit?: number;
   notificationLimit?: number;
@@ -52,12 +60,14 @@ export class ControlCenterService {
   private readonly options: ControlCenterServiceOptions;
   private readonly gitFactory: (workspaceRoot: string) => GitRunner;
   private readonly runner: CommandRunner;
+  private readonly editorOpener: EditorOpener;
   private readonly lastTests = new Map<string, TestRunResult>();
 
   constructor(options: ControlCenterServiceOptions) {
     this.options = options;
     this.gitFactory = options.gitFactory ?? createGitRunner;
     this.runner = options.runner ?? createExecFileRunner();
+    this.editorOpener = options.editorOpener ?? createShellEditorOpener();
     this.activity = new ActivityTracker({
       now: options.now,
       idFactory: options.idFactory,
@@ -176,6 +186,23 @@ export class ControlCenterService {
 
   public lastTestResult(sessionId: string): TestRunResult | null {
     return this.lastTests.get(sessionId) ?? null;
+  }
+
+  /**
+   * Open a file the session touched in the user's editor, optionally at a
+   * line. The workspace root comes from the session, so the renderer cannot
+   * point the editor at an arbitrary path.
+   */
+  public async openInEditor(
+    sessionId: string,
+    filePath: string,
+    line?: number
+  ): Promise<OpenInEditorResult> {
+    const root = this.workspaceRoot(sessionId);
+    if (!root) {
+      return { success: false, error: 'no_workspace' };
+    }
+    return openFileInEditor({ root, path: filePath, line: line ?? null }, this.editorOpener);
   }
 
   public async snapshot(sessionId: string): Promise<ControlCenterSnapshot> {

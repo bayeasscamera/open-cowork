@@ -1327,7 +1327,11 @@
     "files": "已修改文件",
     "empty": "尚无文件变更记录。",
     "error": "加载文件变更失败。",
-    "unchanged": "未检测到文本变更。"
+    "unchanged": "未检测到文本变更。",
+    "openFile": "在编辑器中打开",
+    "openAtLine": "打开第 {{line}} 行",
+    "openFailed": "无法在编辑器中打开该文件。",
+    "truncated": "文件过大，无法显示详细差异——仅显示变更块。"
   },
   "skillDoctor": {
     "title": "Skill 体检",

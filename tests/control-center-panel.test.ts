@@ -101,7 +101,7 @@ describe('control center panel wiring', () => {
     for (const match of handlers.matchAll(channelPattern)) {
       handlerChannels.add(match[1]);
     }
-    expect(handlerChannels.size).toBe(23);
+    expect(handlerChannels.size).toBe(24);
 
     for (const channel of handlerChannels) {
       expect(preload, 'preload is missing controlCenter.' + channel).toContain(
