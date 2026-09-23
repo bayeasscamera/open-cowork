@@ -1483,6 +1483,9 @@
     "activity": {
       "count": "{{count}} appels d'outil",
       "clear": "Effacer",
+      "subagents": "{{count}} sous-agent(s)",
+      "running": "{{count}} en cours",
+      "tools": "Activité des outils",
       "empty": "Aucune activité d'outil pour l'instant.",
       "duration": "{{ms}} ms",
       "status": {
@@ -1711,6 +1714,8 @@
   "workflowBanner": {
     "progress": "{{done}}/{{total}} tâches",
     "tokens": "{{tokens}} tokens",
+    "subagents": "{{count}} sous-agent(s)",
+    "openCenter": "Ouvrir le centre",
     "blockers": "{{count}} blocage(s)",
     "open": "Ouvrir le plan",
     "dismiss": "Masquer"

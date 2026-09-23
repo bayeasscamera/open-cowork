@@ -10,8 +10,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, ChevronRight, Loader2, X } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronRight, Loader2, X } from 'lucide-react';
 import type { WorkflowPhase } from '../../shared/workflow-types';
+import { useSubagentStates } from '../hooks/useSubagentProgress';
 import { useAppStore } from '../store';
 
 const PHASE_STYLES: Record<WorkflowPhase, string> = {
@@ -53,7 +54,9 @@ export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
   const progress = useAppStore((s) => s.workflowTaskProgress[sessionId] ?? null);
   const setWorkflowState = useAppStore((s) => s.setWorkflowState);
   const setPlanPanelVisible = useAppStore((s) => s.setPlanPanelVisible);
+  const setControlCenterVisible = useAppStore((s) => s.setControlCenterVisible);
   const planPanelVisible = useAppStore((s) => s.planPanelVisible);
+  const subagents = useSubagentStates(sessionId);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
 
   // Re-fetch on session switch so a restored workflow is not invisible, and
@@ -103,8 +106,37 @@ export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
     return { totalTokens: tokens, totalCostUsd: cost };
   }, [results, progress]);
 
+  const runningSubagents = subagents.filter((entry) => entry.status === 'running').length;
+
   if (!state || !state.contractId) {
-    return null;
+    // Without a plan the only live signal left is delegated sub-agent work.
+    // Keep a minimal strip so a chat run is never invisible; the detail lives
+    // in the consolidated activity view.
+    if (runningSubagents === 0) {
+      return null;
+    }
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex items-center gap-3 border-b px-4 py-2 text-xs border-sky-500/40 bg-sky-500/10 text-sky-400"
+      >
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+        <span className="shrink-0 font-medium">
+          {t('workflowBanner.subagents', { count: runningSubagents })}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setControlCenterVisible(true)}
+            className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 font-medium hover:bg-surface-hover"
+          >
+            {t('workflowBanner.openCenter')}
+            <ChevronRight className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+    );
   }
   if (dismissedAt !== null && state.updatedAt <= dismissedAt) {
     return null;
@@ -155,6 +187,13 @@ export function WorkflowStatusBanner({ sessionId }: { sessionId: string }) {
         {totalCostUsd > 0 && (
           <span className="tabular-nums text-text-secondary">
             {'$' + totalCostUsd.toFixed(4)}
+          </span>
+        )}
+
+        {runningSubagents > 0 && (
+          <span className="flex items-center gap-1 text-sky-400">
+            <Bot className="h-3 w-3" />
+            {t('workflowBanner.subagents', { count: runningSubagents })}
           </span>
         )}
 

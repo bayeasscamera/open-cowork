@@ -6,6 +6,8 @@ const read = (rel: string) => readFileSync(path.resolve(process.cwd(), rel), 'ut
 
 const panel = read('src/renderer/components/ControlCenterPanel.tsx');
 const activity = read('src/renderer/components/ActivityFeed.tsx');
+const activityView = read('src/renderer/components/ActivityView.tsx');
+const chatView = read('src/renderer/components/ChatView.tsx');
 const workspace = read('src/renderer/components/WorkspacePane.tsx');
 const queue = read('src/renderer/components/TaskQueuePane.tsx');
 const terminal = read('src/renderer/components/TerminalPane.tsx');
@@ -21,7 +23,7 @@ describe('control center panel wiring', () => {
       "const TABS: ControlCenterTab[] = ['activity', 'workspace', 'queue', 'terminal'];"
     );
     expect(panel).toContain("t('controlCenter.tab.' + candidate)");
-    expect(panel).toContain('<ActivityFeed sessionId={sessionId} />');
+    expect(panel).toContain('<ActivityView sessionId={sessionId} />');
     expect(panel).toContain('<WorkspacePane sessionId={sessionId} />');
     expect(panel).toContain('<TaskQueuePane sessionId={sessionId} />');
     expect(panel).toContain('<TerminalPane sessionId={sessionId} />');
@@ -44,6 +46,18 @@ describe('control center panel wiring', () => {
     expect(panel).toContain("t('controlCenter.summary.branch'");
     expect(panel).toContain("t('controlCenter.summary.running'");
     expect(panel).toContain("t('controlCenter.summary.unread'");
+  });
+
+  it('consolidates tool activity and sub-agents into a single activity view', () => {
+    expect(activityView).toContain('useSubagentStates(sessionId)');
+    expect(activityView).toContain('<SubagentProgress key={state.subagentId} state={state} />');
+    expect(activityView).toContain('<ActivityFeed sessionId={sessionId} />');
+    expect(activityView).toContain("t('controlCenter.activity.subagents', { count: subagents.length })");
+    expect(activityView).toContain("t('controlCenter.activity.tools')");
+  });
+
+  it('no longer splits sub-agent progress into a second chat-inline view', () => {
+    expect(chatView).not.toContain('SubagentTracker');
   });
 
   it('shows live tool activity with status, duration and errors', () => {

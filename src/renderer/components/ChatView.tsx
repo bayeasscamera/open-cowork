@@ -14,7 +14,6 @@ import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 import { MessageCard } from './MessageCard';
-import { SubagentTracker } from './SubagentTracker';
 import { ContextUsageBar } from './ContextUsageBar';
 import type { Message, ContentBlock, AppConfig, ProviderProfile, ProviderProfileKey } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock, ChevronDown, Mic, MicOff, Paperclip, ShieldCheck, ShieldAlert } from 'lucide-react';
@@ -967,8 +966,8 @@ export function ChatView() {
             })
           )}
 
-          {/* Subagent progress indicators */}
-          <SubagentTracker sessionId={activeSessionId} />
+          {/* Sub-agent progress now lives in the Control Center activity view,
+              reachable from the status banner. */}
 
           {/* Processing indicator - show when we have an active turn but no streaming content yet */}
           {hasActiveTurn &&

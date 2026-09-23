@@ -1484,6 +1484,9 @@
     "activity": {
       "count": "{{count}} 次工具调用",
       "clear": "清空",
+      "subagents": "{{count}} 个子代理",
+      "running": "{{count}} 个运行中",
+      "tools": "工具活动",
       "empty": "暂无工具活动。",
       "duration": "{{ms}} 毫秒",
       "status": {
@@ -1712,6 +1715,8 @@
   "workflowBanner": {
     "progress": "{{done}}/{{total}} 个任务",
     "tokens": "{{tokens}} tokens",
+    "subagents": "{{count}} 个子代理",
+    "openCenter": "打开控制中心",
     "blockers": "{{count}} 个阻塞",
     "open": "打开计划",
     "dismiss": "隐藏"

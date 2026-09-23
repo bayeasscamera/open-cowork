@@ -78,6 +78,13 @@ describe('workflow status banner', () => {
     expect(banner).toContain('setPlanPanelVisible(true)');
   });
 
+  it('surfaces running sub-agents and links to the consolidated activity view', () => {
+    expect(banner).toContain('useSubagentStates(sessionId)');
+    expect(banner).toContain("t('workflowBanner.subagents', { count: runningSubagents })");
+    expect(banner).toContain("t('workflowBanner.openCenter')");
+    expect(banner).toContain('setControlCenterVisible(true)');
+  });
+
   it('is mounted from the app shell for the active session', () => {
     expect(app).toContain(
       "import { WorkflowStatusBanner } from './components/WorkflowStatusBanner'"
@@ -120,7 +127,9 @@ describe('workflow state push plumbing', () => {
         'blockers',
         'dismiss',
         'open',
+        'openCenter',
         'progress',
+        'subagents',
         'tokens',
       ]);
     }
