@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Boxes, Plug, Sparkles } from 'lucide-react';
 import type { McpServerStatus, McpTool } from '../../shared/ipc-types';
-import type { Skill } from '../../shared/types';
+import type { RuntimeSkillView } from '../../shared/skill-runtime-types';
 
 const POLL_MS = 5000;
 
@@ -28,21 +28,22 @@ const statusClass = (status: McpServerStatus['status']): string => {
 };
 
 /**
- * Cowork 4.0 — Phase 7: skills and MCP visibility. Until now the enabled
- * skills, the pending proposals and the MCP servers were only reachable deep
- * inside the settings screens, so there was no single place to answer "what can
- * this agent actually use right now?". This pane is read-only on purpose:
- * approval stays in the Skill doctor, which is the only activation path.
+ * Cowork 4.0 — Phase 7: skills and MCP visibility.
+ *
+ * The skills section reports what the resource loader is actually given, not
+ * what the app has listed: the runtime view walks the same roots with the same
+ * discovery rules, so "loaded" here means "the agent can use it". The pane stays
+ * read-only on purpose — approving a proposal belongs to the Skill doctor, which
+ * is the only activation path.
  */
 export function CapabilityPane() {
   const { t } = useTranslation();
   const skillsApi = typeof window !== 'undefined' ? window.electronAPI?.skills : undefined;
   const mcpApi = typeof window !== 'undefined' ? window.electronAPI?.mcp : undefined;
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [runtime, setRuntime] = useState<RuntimeSkillView | null>(null);
   const [proposals, setProposals] = useState<SkillProposalSummary[]>([]);
   const [servers, setServers] = useState<McpServerStatus[]>([]);
   const [tools, setTools] = useState<McpTool[]>([]);
-  const [storagePath, setStoragePath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -50,18 +51,16 @@ export function CapabilityPane() {
       return;
     }
     try {
-      const [nextSkills, proposalResult, nextServers, nextTools, nextPath] = await Promise.all([
-        skillsApi ? skillsApi.getAll() : Promise.resolve([] as Skill[]),
+      const [runtimeReport, proposalResult, nextServers, nextTools] = await Promise.all([
+        skillsApi ? skillsApi.getRuntimeView() : Promise.resolve(null),
         skillsApi ? skillsApi.listProposals() : Promise.resolve({ success: false, proposals: [] }),
         mcpApi ? mcpApi.getServerStatus() : Promise.resolve([] as McpServerStatus[]),
         mcpApi ? mcpApi.getTools() : Promise.resolve([] as McpTool[]),
-        skillsApi ? skillsApi.getStoragePath() : Promise.resolve(''),
       ]);
-      setSkills(nextSkills);
+      setRuntime(runtimeReport?.success ? runtimeReport.view ?? null : null);
       setProposals(proposalResult.success ? proposalResult.proposals : []);
       setServers(nextServers);
       setTools(nextTools);
-      setStoragePath(nextPath.length > 0 ? nextPath : null);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -76,8 +75,7 @@ export function CapabilityPane() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const enabledSkills = skills.filter((skill) => skill.enabled);
-  const disabledSkills = skills.filter((skill) => !skill.enabled);
+  const skillSources = runtime?.sources.filter((source) => source.skills.length > 0) ?? [];
   const connectedServers = servers.filter((server) => server.connected).length;
 
   const toolGroups = new Map<string, McpTool[]>();
@@ -111,55 +109,63 @@ export function CapabilityPane() {
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-1.5 text-xs font-medium text-text-secondary">
             <Boxes className="h-3 w-3" />
-            {t('capabilityPanel.skills.title', { count: enabledSkills.length })}
+            {t('capabilityPanel.skills.title', { count: runtime?.loaded ?? 0 })}
           </h3>
-          {storagePath && (
-            <span className="truncate font-mono text-[10px] text-text-muted" title={storagePath}>
-              {storagePath}
-            </span>
-          )}
+          <span className="text-[10px] text-text-muted">
+            {t('capabilityPanel.skills.summary', {
+              loaded: runtime?.loaded ?? 0,
+              disabled: runtime?.disabled ?? 0,
+            })}
+          </span>
         </div>
         <p className="text-[11px] text-text-muted">{t('capabilityPanel.skills.hint')}</p>
-        {skills.length === 0 ? (
+        {skillSources.length === 0 ? (
           <p className="text-xs text-text-muted">{t('capabilityPanel.skills.empty')}</p>
         ) : (
-          <ul className="space-y-1.5">
-            {enabledSkills.map((skill) => (
-              <li
-                key={skill.id}
-                className="rounded-lg border border-border-subtle bg-background/60 px-3 py-2"
-              >
+          <div className="space-y-3">
+            {skillSources.map((source) => (
+              <div key={source.root} className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="flex-1 truncate text-xs text-text-primary">{skill.name}</span>
                   <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
-                    {t('capabilityPanel.skillType.' + skill.type)}
+                    {t('capabilityPanel.skills.source.' + source.kind)}
                   </span>
-                  <span className="text-[10px] text-emerald-400">
-                    {t('capabilityPanel.skills.enabled')}
+                  <span className="truncate font-mono text-[10px] text-text-muted" title={source.root}>
+                    {source.root}
                   </span>
                 </div>
-                {skill.description && (
-                  <p className="mt-1 text-[10px] text-text-muted">{skill.description}</p>
-                )}
-              </li>
+                <ul className="space-y-1.5">
+                  {source.skills.map((skill) => (
+                    <li
+                      key={skill.path}
+                      className={
+                        'rounded-lg border border-border-subtle bg-background/60 px-3 py-2 ' +
+                        (skill.enabled ? '' : 'opacity-60')
+                      }
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="flex-1 truncate text-xs text-text-primary">
+                          {skill.name}
+                        </span>
+                        <span
+                          className={
+                            'text-[10px] ' +
+                            (skill.enabled ? 'text-emerald-400' : 'text-text-muted')
+                          }
+                        >
+                          {skill.enabled
+                            ? t('capabilityPanel.skills.enabled')
+                            : t('capabilityPanel.skills.disabled')}
+                        </span>
+                      </div>
+                      {skill.description && (
+                        <p className="mt-1 text-[10px] text-text-muted">{skill.description}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-            {disabledSkills.map((skill) => (
-              <li
-                key={skill.id}
-                className="rounded-lg border border-border-subtle bg-background/40 px-3 py-2 opacity-60"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="flex-1 truncate text-xs text-text-primary">{skill.name}</span>
-                  <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
-                    {t('capabilityPanel.skillType.' + skill.type)}
-                  </span>
-                  <span className="text-[10px] text-text-muted">
-                    {t('capabilityPanel.skills.disabled')}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
+          </div>
         )}
       </section>
 

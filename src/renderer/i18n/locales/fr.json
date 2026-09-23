@@ -1456,19 +1456,20 @@
     }
   },
   "capabilityPanel": {
-    "hint": "Ce que cette application a installé et activé, et quels serveurs MCP sont réellement connectés.",
+    "hint": "Ce que l'agent peut réellement utiliser maintenant : les skills qui lui sont fournis et les serveurs MCP connectés.",
     "unavailable": "La visibilité des skills et de MCP n'est pas disponible dans cette version.",
     "skills": {
-      "title": "{{count}} skill(s) activé(s)",
-      "hint": "Les skills activés sont matérialisés dans le workspace de la session pour que l'agent puisse les lire. Les skills désactivés apparaissent en grisé.",
-      "empty": "Aucun skill n'est installé.",
-      "enabled": "activé",
-      "disabled": "désactivé"
-    },
-    "skillType": {
-      "builtin": "intégré",
-      "mcp": "mcp",
-      "custom": "personnalisé"
+      "title": "{{count}} skill(s) chargé(s) par l'agent",
+      "hint": "Voici les répertoires transmis au chargeur de ressources. Un skill désactivé dans les réglages ne lui est pas fourni.",
+      "empty": "Aucun répertoire de skills trouvé.",
+      "enabled": "chargé",
+      "disabled": "désactivé",
+      "summary": "{{loaded}} chargés · {{disabled}} désactivés",
+      "source": {
+        "builtin": "intégré",
+        "global": "global",
+        "plugin": "plugin"
+      }
     },
     "proposals": {
       "title": "{{count}} proposition(s) de skill en attente",

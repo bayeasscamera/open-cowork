@@ -40,7 +40,7 @@ describe('control center panel wiring', () => {
     expect(panel).toContain('capabilities: Boxes,');
     expect(capabilityPane).toContain('window.electronAPI?.skills');
     expect(capabilityPane).toContain('window.electronAPI?.mcp');
-    expect(capabilityPane).toContain('skillsApi.getAll()');
+    expect(capabilityPane).toContain('skillsApi.getRuntimeView()');
     expect(capabilityPane).toContain('mcpApi.getServerStatus()');
     expect(capabilityPane).toContain('mcpApi.getTools()');
   });

@@ -114,6 +114,7 @@ import type {
   RoutingValidationReport,
   ScenarioSuiteResult,
 } from '../shared/metrics-types';
+import type { SkillRuntimeReport } from '../shared/skill-runtime-types';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -557,6 +558,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     validate: (skillPath: string): Promise<{ valid: boolean; errors: string[] }> =>
       ipcRenderer.invoke('skills.validate', skillPath),
     getStoragePath: (): Promise<string> => ipcRenderer.invoke('skills.getStoragePath'),
+    getRuntimeView: (): Promise<SkillRuntimeReport> =>
+      ipcRenderer.invoke('skills.getRuntimeView'),
     setStoragePath: (
       targetPath: string,
       migrate = true
@@ -1308,6 +1311,7 @@ declare global {
         setEnabled: (skillId: string, enabled: boolean) => Promise<{ success: boolean }>;
         validate: (skillPath: string) => Promise<{ valid: boolean; errors: string[] }>;
         getStoragePath: () => Promise<string>;
+        getRuntimeView: () => Promise<SkillRuntimeReport>;
         setStoragePath: (
           targetPath: string,
           migrate?: boolean

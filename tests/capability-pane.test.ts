@@ -10,19 +10,23 @@ const fr = JSON.parse(read('src/renderer/i18n/locales/fr.json'));
 const zh = JSON.parse(read('src/renderer/i18n/locales/zh.json'));
 
 describe('capabilities pane', () => {
-  it('separates enabled skills from disabled ones', () => {
-    expect(pane).toContain('const enabledSkills = skills.filter((skill) => skill.enabled);');
-    expect(pane).toContain('const disabledSkills = skills.filter((skill) => !skill.enabled);');
-    expect(pane).toContain("t('capabilityPanel.skills.title', { count: enabledSkills.length })");
-    expect(pane).toContain("t('capabilityPanel.skills.enabled')");
-    expect(pane).toContain("t('capabilityPanel.skills.disabled')");
-    expect(pane).toContain("t('capabilityPanel.skillType.' + skill.type)");
+  it('reports the skills the loader is given, not the manager listing', () => {
+    expect(pane).toContain('skillsApi.getRuntimeView()');
+    expect(pane).toContain('runtimeReport?.success ? runtimeReport.view ?? null : null');
+    expect(pane).not.toContain('skillsApi.getAll()');
+    expect(pane).toContain("t('capabilityPanel.skills.title', { count: runtime?.loaded ?? 0 })");
+    expect(pane).toContain("t('capabilityPanel.skills.summary', {");
+    expect(pane).toContain('loaded: runtime?.loaded ?? 0,');
+    expect(pane).toContain('disabled: runtime?.disabled ?? 0,');
   });
 
-  it('shows where the active skills are stored', () => {
-    expect(pane).toContain('skillsApi.getStoragePath()');
-    expect(pane).toContain('setStoragePath(');
-    expect(pane).toContain('title={storagePath}');
+  it('groups skills by the root they came from and marks disabled ones', () => {
+    expect(pane).toContain('runtime?.sources.filter((source) => source.skills.length > 0) ?? []');
+    expect(pane).toContain("t('capabilityPanel.skills.source.' + source.kind)");
+    expect(pane).toContain('title={source.root}');
+    expect(pane).toContain("skill.enabled ? '' : 'opacity-60'");
+    expect(pane).toContain("t('capabilityPanel.skills.enabled')");
+    expect(pane).toContain("t('capabilityPanel.skills.disabled')");
   });
 
   it('surfaces pending skill proposals without opening a second approval path', () => {
@@ -57,20 +61,25 @@ describe('capabilities pane', () => {
       expect(fr.capabilityPanel[key], 'fr.capabilityPanel.' + key).toBeTruthy();
       expect(zh.capabilityPanel[key], 'zh.capabilityPanel.' + key).toBeTruthy();
     }
-    for (const section of ['skills', 'skillType', 'proposals', 'mcp']) {
+    for (const section of ['skills', 'proposals', 'mcp']) {
       expect(en.capabilityPanel[section], 'en.capabilityPanel.' + section).toBeTruthy();
       expect(fr.capabilityPanel[section], 'fr.capabilityPanel.' + section).toBeTruthy();
       expect(zh.capabilityPanel[section], 'zh.capabilityPanel.' + section).toBeTruthy();
+    }
+    for (const key of ['title', 'hint', 'empty', 'enabled', 'disabled', 'summary']) {
+      expect(en.capabilityPanel.skills[key], 'en skills ' + key).toBeTruthy();
+      expect(fr.capabilityPanel.skills[key], 'fr skills ' + key).toBeTruthy();
+      expect(zh.capabilityPanel.skills[key], 'zh skills ' + key).toBeTruthy();
+    }
+    for (const kind of ['builtin', 'global', 'plugin']) {
+      expect(en.capabilityPanel.skills.source[kind], 'en source ' + kind).toBeTruthy();
+      expect(fr.capabilityPanel.skills.source[kind], 'fr source ' + kind).toBeTruthy();
+      expect(zh.capabilityPanel.skills.source[kind], 'zh source ' + kind).toBeTruthy();
     }
     for (const status of ['connecting', 'connected', 'failed', 'disabled']) {
       expect(en.capabilityPanel.mcp.status[status], 'en mcp status ' + status).toBeTruthy();
       expect(fr.capabilityPanel.mcp.status[status], 'fr mcp status ' + status).toBeTruthy();
       expect(zh.capabilityPanel.mcp.status[status], 'zh mcp status ' + status).toBeTruthy();
-    }
-    for (const type of ['builtin', 'mcp', 'custom']) {
-      expect(en.capabilityPanel.skillType[type], 'en skill type ' + type).toBeTruthy();
-      expect(fr.capabilityPanel.skillType[type], 'fr skill type ' + type).toBeTruthy();
-      expect(zh.capabilityPanel.skillType[type], 'zh skill type ' + type).toBeTruthy();
     }
     expect(en.controlCenter.tab.capabilities).toBe('Capabilities');
   });

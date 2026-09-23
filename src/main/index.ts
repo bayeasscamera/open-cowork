@@ -34,6 +34,9 @@ import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
+import { createSkillsRuntimeAdapter } from './skills/skills-runtime-adapter';
+import { baseSkillSources } from './skills/skill-runtime-sources';
+import { legacySkillPaths } from './agent/skills-paths';
 import { MemoryService } from './memory/memory-service';
 import { MemoryExtension } from './memory/memory-extension';
 import { ConfigExtension } from './config/config-extension';
@@ -990,6 +993,13 @@ app
         },
         watchStorage: false, // No renderer to notify in headless mode
       });
+      sessionManager.setSkillsAdapter(
+        createSkillsRuntimeAdapter({
+          resolveSources: baseSkillSources,
+          lookup: skillsManager,
+          fallback: legacySkillPaths,
+        })
+      );
 
       // Set working directory from --cwd flag
       currentWorkingDir = headlessArgs.cwd;
@@ -1387,6 +1397,13 @@ app
       },
       watchStorage: true,
     });
+    sessionManager.setSkillsAdapter(
+      createSkillsRuntimeAdapter({
+        resolveSources: baseSkillSources,
+        lookup: skillsManager,
+        fallback: legacySkillPaths,
+      })
+    );
     skillsManager.onStorageChanged((event) => {
       sendToRenderer({
         type: 'skills.storageChanged',

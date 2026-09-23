@@ -15,6 +15,9 @@ import {
   type SkillDoctorSkillSource,
 } from '../mods/skill-doctor';
 import { approveProposal, listProposals, rejectProposal } from '../skills/skill-proposals';
+import { describeSkillRuntime } from '../skills/skill-runtime-view';
+import { resolveRuntimeSkillSources } from '../skills/skill-runtime-sources';
+import type { SkillRuntimeReport } from '../../shared/skill-runtime-types';
 import type { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { sendToRenderer } from '../events/renderer-sender';
 import type { SessionManager } from '../session/session-manager';
@@ -41,6 +44,26 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
     } catch (error) {
       logError('[Skills] Error getting skills:', error);
       throw error;
+    }
+  });
+
+  ipcMain.handle('skills.getRuntimeView', async (): Promise<SkillRuntimeReport> => {
+    try {
+      const sources = await resolveRuntimeSkillSources(pluginRuntimeService);
+      const enabledByName = new Map<string, boolean>();
+      if (skillsManager) {
+        for (const skill of skillsManager.getAllSkills()) {
+          enabledByName.set(skill.name, skill.enabled);
+        }
+      }
+      const view = describeSkillRuntime(sources, (name) => enabledByName.get(name) ?? true);
+      return { success: true, view };
+    } catch (error) {
+      logError('[Skills] Error building the runtime skill view:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   });
 

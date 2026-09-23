@@ -377,6 +377,16 @@ export class CoworkAgentRunner {
     this._skillsSetupDone = false;
   }
 
+  /**
+   * Install the adapter that decides which skill directories the resource loader
+   * receives. Wired after construction because SkillsManager is created later
+   * than SessionManager, which owns the runner.
+   */
+  setSkillsAdapter(adapter: SkillsAdapter | undefined): void {
+    this._skillsAdapter = adapter;
+    this._skillsSetupDone = false;
+  }
+
   /** Call after the user changes MCP server config so the next query rebuilds mcpServers. */
   invalidateMcpServersCache(): void {
     this._mcpServersCache = null;

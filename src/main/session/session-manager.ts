@@ -36,6 +36,7 @@ import {
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { CoworkAgentRunner } from '../agent/agent-runner';
 import type { ActivityTracker } from '../agent/activity-tracker';
+import type { SkillsAdapter } from '../skills/skills-adapter';
 import type { NotificationCenter } from '../agent/notification-center';
 import { summarizeToolActivityDetail } from '../agent/tool-activity-recorder';
 import { configStore } from '../config/config-store';
@@ -122,6 +123,8 @@ export class SessionManager {
   private extensionManager?: AgentRuntimeExtensionManager;
   /** Phase 6 control center: tool activity sink, injected after construction. */
   private activityTracker?: ActivityTracker;
+  /** Resolves which skills the runner hands to the resource loader. */
+  private skillsAdapter?: SkillsAdapter;
   /** Phase 6 control center: approval/blocker notifications, injected later. */
   private notificationCenter?: NotificationCenter;
   /** Phase 7 model routing: adaptive model selection, injected later. */
@@ -248,7 +251,7 @@ export class SessionManager {
       this.pathResolver,
       this.mcpManager,
       this.pluginRuntimeService,
-      undefined,
+      this.skillsAdapter,
       this.extensionManager,
       new MemoryManager(this.db.raw)
     );
@@ -288,6 +291,18 @@ export class SessionManager {
   invalidateSkillsSetup(): void {
     if (this.agentRunner && 'invalidateSkillsSetup' in this.agentRunner) {
       (this.agentRunner as CoworkAgentRunner).invalidateSkillsSetup();
+    }
+  }
+
+  /**
+   * Install the skills runtime adapter. SessionManager is constructed before
+   * SkillsManager, so this is a setter rather than a constructor argument; the
+   * adapter is remembered so a rebuilt runner keeps it.
+   */
+  setSkillsAdapter(adapter: SkillsAdapter): void {
+    this.skillsAdapter = adapter;
+    if (this.agentRunner && 'setSkillsAdapter' in this.agentRunner) {
+      (this.agentRunner as CoworkAgentRunner).setSkillsAdapter(adapter);
     }
   }
 

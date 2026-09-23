@@ -1457,19 +1457,20 @@
     }
   },
   "capabilityPanel": {
-    "hint": "What this app has installed and enabled, and which MCP servers are actually connected right now.",
+    "hint": "What the agent can actually use right now: the skills handed to it and the MCP servers that are connected.",
     "unavailable": "Skill and MCP visibility is not available in this build.",
     "skills": {
-      "title": "{{count}} enabled skill(s)",
-      "hint": "Enabled skills are materialised into the session workspace so the agent can read them. Disabled skills are shown muted.",
-      "empty": "No skill is installed.",
+      "title": "{{count}} skill(s) loaded by the agent",
+      "hint": "These are the directories the resource loader is given. A skill switched off in settings is withheld from it.",
+      "empty": "No skill directory was found.",
       "enabled": "enabled",
-      "disabled": "disabled"
-    },
-    "skillType": {
-      "builtin": "built-in",
-      "mcp": "mcp",
-      "custom": "custom"
+      "disabled": "disabled",
+      "summary": "{{loaded}} loaded · {{disabled}} disabled",
+      "source": {
+        "builtin": "built-in",
+        "global": "global",
+        "plugin": "plugin"
+      }
     },
     "proposals": {
       "title": "{{count}} pending skill proposal(s)",

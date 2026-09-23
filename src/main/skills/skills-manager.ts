@@ -108,6 +108,12 @@ export class SkillsManager {
   private loadedGlobalSkillsSignature = '';
   private globalSkillsLoaded = false;
   private storageCallbacks = new Set<(event: SkillsStorageChangeEvent) => void>();
+  /**
+   * Per-skill enable flags persisted in SQLite. Loaded lazily because the
+   * constructor runs before any read is useful, and cached so the per-query
+   * skill listing stays synchronous.
+   */
+  private persistedEnabled: Map<string, boolean> | null = null;
 
   constructor(db: DatabaseInstance, options: SkillsManagerOptions = {}) {
     this.db = db;
@@ -118,6 +124,35 @@ export class SkillsManager {
     if (this.watchStorageEnabled) {
       this.startStorageWatcher();
     }
+  }
+
+  /**
+   * Read the persisted enable flags once. A missing or unreadable table must not
+   * break skill loading, so failures fall back to "everything enabled".
+   */
+  private persistedEnabledState(): Map<string, boolean> {
+    if (this.persistedEnabled) {
+      return this.persistedEnabled;
+    }
+    const state = new Map<string, boolean>();
+    try {
+      const rows = this.db.prepare('SELECT id, enabled FROM skills').all() as Array<{
+        id: string;
+        enabled: number;
+      }>;
+      for (const row of rows) {
+        state.set(row.id, row.enabled !== 0);
+      }
+    } catch (error) {
+      logWarn('[Skills] Could not read persisted skill enable flags:', error);
+    }
+    this.persistedEnabled = state;
+    return state;
+  }
+
+  /** Persisted enable flag for a skill id, defaulting to the loader's value. */
+  private enabledForSkill(skillId: string, fallback: boolean): boolean {
+    return this.persistedEnabledState().get(skillId) ?? fallback;
   }
 
   /**
@@ -155,12 +190,13 @@ export class SkillsManager {
           const metadata = this.getSkillMetadata(skillPath);
           if (!metadata) continue;
 
+          const skillId = `builtin-${dir}`;
           const skill: Skill = {
-            id: `builtin-${dir}`,
+            id: skillId,
             name: metadata.name,
             description: metadata.description,
             type: 'builtin',
-            enabled: true,
+            enabled: this.enabledForSkill(skillId, true),
             createdAt: Date.now(),
           };
 
@@ -624,12 +660,13 @@ export class SkillsManager {
             const metadata = this.getSkillMetadata(entryPath);
             if (!metadata) continue;
 
+            const skillId = `${source}-${entry}`;
             const skill: Skill = {
-              id: `${source}-${entry}`,
+              id: skillId,
               name: metadata.name,
               description: metadata.description,
               type: 'custom',
-              enabled: true,
+              enabled: this.enabledForSkill(skillId, true),
               createdAt: Date.now(),
             };
 
@@ -643,12 +680,13 @@ export class SkillsManager {
             const content = fs.readFileSync(entryPath, 'utf-8');
             const config: SkillConfig = JSON.parse(content);
 
+            const skillId = `${source}-${path.basename(entry, '.json')}`;
             const skill: Skill = {
-              id: `${source}-${path.basename(entry, '.json')}`,
+              id: skillId,
               name: config.name,
               description: config.description,
               type: config.type === 'mcp' ? 'mcp' : 'custom',
-              enabled: config.enabled !== false,
+              enabled: this.enabledForSkill(skillId, config.enabled !== false),
               config: config.mcp ? { mcp: config.mcp } : undefined,
               createdAt: Date.now(),
             };
@@ -662,43 +700,6 @@ export class SkillsManager {
       }
     } catch (error) {
       logError(`Failed to read skills directory ${dir}:`, error);
-    }
-
-    return skills;
-  }
-
-  /**
-   * Get all active skills for a session
-   */
-  async getActiveSkills(_sessionId: string, projectPath?: string): Promise<Skill[]> {
-    const skills: Skill[] = [];
-
-    // 1. Add built-in skills
-    for (const skill of this.loadedSkills.values()) {
-      if (skill.type === 'builtin' && skill.enabled) {
-        skills.push(skill);
-      }
-    }
-
-    // 2. Add global skills
-    const globalSkills = await this.loadGlobalSkills();
-    skills.push(...globalSkills.filter((s) => s.enabled));
-
-    // 3. Add project skills (highest priority, can override)
-    if (projectPath) {
-      const projectSkills = await this.loadProjectSkills(projectPath);
-
-      // Project skills can override global/builtin by name
-      for (const projectSkill of projectSkills) {
-        if (!projectSkill.enabled) continue;
-
-        const existingIndex = skills.findIndex((s) => s.name === projectSkill.name);
-        if (existingIndex >= 0) {
-          skills[existingIndex] = projectSkill;
-        } else {
-          skills.push(projectSkill);
-        }
-      }
     }
 
     return skills;
@@ -767,17 +768,30 @@ export class SkillsManager {
   }
 
   /**
-   * Enable or disable a skill
+   * Enable or disable a skill.
+   *
+   * The flag is persisted and re-applied when skills are (re)loaded, and the
+   * agent runtime reads it through the skills runtime adapter — a disabled skill
+   * is no longer handed to the resource loader. Without both halves the toggle
+   * was cosmetic: it was forgotten on restart and the agent kept loading the
+   * skill anyway.
    */
   setSkillEnabled(skillId: string, enabled: boolean): void {
     const skill = this.loadedSkills.get(skillId);
-    if (skill) {
-      skill.enabled = enabled;
+    if (!skill) {
+      return;
+    }
+    skill.enabled = enabled;
+    this.persistedEnabledState().set(skillId, enabled);
+    try {
+      this.saveSkill(skill);
+    } catch (error) {
+      logWarn('[Skills] Could not persist the enable flag for', skillId, error);
+    }
 
-      // Stop server if disabling an MCP skill
-      if (!enabled && skill.type === 'mcp') {
-        this.stopMcpServer(skillId);
-      }
+    // Stop server if disabling an MCP skill
+    if (!enabled && skill.type === 'mcp') {
+      this.stopMcpServer(skillId);
     }
   }
 

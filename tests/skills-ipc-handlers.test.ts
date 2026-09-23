@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   skills: {
     listSkills: vi.fn(),
+    getAllSkills: vi.fn(),
     installSkill: vi.fn(),
     uninstallSkill: vi.fn(),
     setSkillEnabled: vi.fn(),
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   store: { isConfigured: vi.fn(), getAll: vi.fn(), get: vi.fn() },
   proposals: { listProposals: vi.fn(), approveProposal: vi.fn(), rejectProposal: vi.fn() },
   doctor: { buildSkillDoctorReport: vi.fn(), loadSkillSourcesFromDir: vi.fn() },
+  runtime: { resolveSources: vi.fn(), describe: vi.fn() },
   openPath: vi.fn(),
   sendToRenderer: vi.fn(),
 }));
@@ -46,6 +48,12 @@ vi.mock('../src/main/mods/skill-doctor', () => ({
   loadSkillSourcesFromDir: mocks.doctor.loadSkillSourcesFromDir,
 }));
 vi.mock('../src/main/skills/skill-proposals', () => mocks.proposals);
+vi.mock('../src/main/skills/skill-runtime-sources', () => ({
+  resolveRuntimeSkillSources: mocks.runtime.resolveSources,
+}));
+vi.mock('../src/main/skills/skill-runtime-view', () => ({
+  describeSkillRuntime: mocks.runtime.describe,
+}));
 vi.mock('../src/main/events/renderer-sender', () => ({
   sendToRenderer: mocks.sendToRenderer,
 }));
@@ -94,6 +102,7 @@ describe('skills and plugin IPC handlers', () => {
       'skills.delete',
       'skills.doctor',
       'skills.getAll',
+      'skills.getRuntimeView',
       'skills.getStoragePath',
       'skills.install',
       'skills.listProposals',
@@ -108,6 +117,31 @@ describe('skills and plugin IPC handlers', () => {
   it('skills.getAll throws while the manager is still starting', async () => {
     register({ withManagers: false });
     await expect(invoke('skills.getAll')).rejects.toThrow('Skills manager is still starting');
+  });
+
+  it('skills.getRuntimeView reports the skills the loader will be given', async () => {
+    register();
+    mocks.runtime.resolveSources.mockResolvedValue([{ root: '/skills', kind: 'global' }]);
+    mocks.skills.getAllSkills.mockReturnValue([{ name: 'pdf', enabled: false }]);
+    mocks.runtime.describe.mockReturnValue({ sources: [], loaded: 0, disabled: 1 });
+
+    expect(await invoke('skills.getRuntimeView')).toEqual({
+      success: true,
+      view: { sources: [], loaded: 0, disabled: 1 },
+    });
+    expect(mocks.runtime.resolveSources).toHaveBeenCalledWith(mocks.plugins);
+    const isEnabled = mocks.runtime.describe.mock.calls[0][1] as (name: string) => boolean;
+    expect(isEnabled('pdf')).toBe(false);
+    expect(isEnabled('never-listed')).toBe(true);
+  });
+
+  it('skills.getRuntimeView reports a failure instead of throwing', async () => {
+    register();
+    mocks.runtime.resolveSources.mockRejectedValue(new Error('roots unavailable'));
+    expect(await invoke('skills.getRuntimeView')).toEqual({
+      success: false,
+      error: 'roots unavailable',
+    });
   });
 
   it('skills.install invalidates the cached agent skills setup', async () => {
