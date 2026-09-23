@@ -35,7 +35,7 @@ import type { AuditLog } from './audit-log';
 import type { PermissionPolicy } from './permission-policy';
 import { assertExecutablePlan, planConflictFreeGroups } from './task-planner';
 import { overlappingScopePaths, writeScopesOverlap } from '../../shared/write-scope-conflicts';
-import { verifyPlan, verifyTask } from './verification';
+import { verifyContractCriteria, verifyPlan, verifyTask } from './verification';
 
 /** Everything the orchestrator needs to survive a restart (Phase 1.6). */
 export interface WorkflowOrchestratorSnapshot {
@@ -473,14 +473,22 @@ export class WorkflowOrchestrator {
 
   /** Full verification report, used by the executor before it declares success. */
   public buildVerificationReport(): VerificationReport {
-    return verifyPlan(
-      this.tasks.map((task) => ({
-        task,
-        completed: this.completedTaskIds.has(task.id),
-        checkpoint: this.checkpoints.forTask(task.id),
-      })),
-      this.now()
-    );
+    const inputs = this.tasks.map((task) => ({
+      task,
+      completed: this.completedTaskIds.has(task.id),
+      checkpoint: this.checkpoints.forTask(task.id),
+    }));
+    const report = verifyPlan(inputs, this.now());
+    // Independent, plan-level verification: the contract's own acceptance
+    // criteria must be proven by some task, not only each task's private ones.
+    const contract = verifyContractCriteria(this.contract, inputs);
+    const missing = Array.from(new Set([...report.missing, ...contract.missing]));
+    return {
+      ...report,
+      ok: missing.length === 0,
+      missing,
+      contractCriteria: contract.criteria,
+    };
   }
 
   /** Record a task that ran but did not succeed; the checkpoint is kept. */

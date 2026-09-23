@@ -101,6 +101,10 @@ describe('workflow-orchestrator', () => {
     expect(verified.report?.tasks).toEqual([
       expect.objectContaining({ taskId: 't1', ok: true, issues: [] }),
     ]);
+    // The contract's own criterion is proven by the task's evidence.
+    expect(verified.report?.contractCriteria).toEqual([
+      expect.objectContaining({ taskId: 'contract', criterionId: 'c1', outcome: 'verified' }),
+    ]);
     expect(orchestrator.getState().phase).toBe('completed');
   });
 
@@ -247,6 +251,36 @@ describe('workflow-orchestrator', () => {
     const run = await orchestrator.startReadyTasks();
     expect(run.started.map((checkpoint) => checkpoint.taskId)).toEqual(['t1', 't2']);
     expect(run.skipped).toEqual([]);
+  });
+
+  it('fails plan verification when a contract criterion was never proven', async () => {
+    const { orchestrator } = makeOrchestrator();
+    const contract = createTaskContract({
+      objective: 'Ship it',
+      allowedFiles: ['src/a.ts'],
+      acceptanceCriteria: [
+        { id: 'lint', description: 'lint clean', verification: 'npm run lint', required: true },
+      ],
+      expectedEvidence: [evidence],
+      budget: { maxTokens: 100 },
+    });
+    orchestrator.loadContract(contract, [executeTask()]);
+    orchestrator.requestApproval();
+    orchestrator.approve({ approved: true });
+    orchestrator.startExecution();
+    await orchestrator.startTask('t1');
+    await orchestrator.completeTask('t1', [
+      { kind: 'test', description: 'npm test', command: 'npm test', exitCode: 0, output: 'ok' },
+    ]);
+
+    const verified = orchestrator.verify();
+
+    // The task's own criteria pass, but the plan is not done: the objective the
+    // user approved was never demonstrated.
+    expect(verified.report?.tasks[0].ok).toBe(true);
+    expect(verified.ok).toBe(false);
+    expect(verified.missing.some((item) => item.startsWith('contract: lint'))).toBe(true);
+    expect(orchestrator.getState().phase).toBe('failed');
   });
 
   it('reports write conflicts and conflict-free groups in the state', () => {

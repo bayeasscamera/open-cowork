@@ -1684,6 +1684,7 @@
       "verified": "All criteria verified",
       "unverified": "{{count}} issue(s) found",
       "recovered": "recovered after {{count}} attempts",
+      "contract": "Contract criteria: {{verified}}/{{total}} verified",
       "taskStatus": {
         "succeeded": "Succeeded",
         "failed": "Failed",

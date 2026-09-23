@@ -1683,6 +1683,7 @@
       "verified": "Tous les critères vérifiés",
       "unverified": "{{count}} problème(s) trouvé(s)",
       "recovered": "récupérée après {{count}} tentative(s)",
+      "contract": "Critères du contrat : {{verified}}/{{total}} vérifiés",
       "taskStatus": {
         "succeeded": "Réussie",
         "failed": "Échouée",

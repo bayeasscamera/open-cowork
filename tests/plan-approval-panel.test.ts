@@ -77,6 +77,12 @@ describe('plan approval panel wiring', () => {
     expect(workflowTypes).toContain('recovered?: boolean;');
   });
 
+  it('shows the plan-level contract criteria outcome', () => {
+    expect(reportPanel).toContain('verification.contractCriteria');
+    expect(reportPanel).toContain("t('planPanel.report.contract'");
+    expect(workflowTypes).toContain('contractCriteria?: CriterionVerification[];');
+  });
+
   it('keeps the IPC contract in shared so preload never imports main', () => {
     expect(preload).toContain("from '../shared/workflow-types'");
     expect(preload).not.toContain("from '../main/");

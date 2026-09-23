@@ -6,6 +6,7 @@ import {
   inspectionFromVerification,
   isCommandVerification,
   normalizeCommand,
+  verifyContractCriteria,
   verifyPlan,
   verifyTask,
   worstOutcome,
@@ -319,6 +320,63 @@ describe('verifyPlan', () => {
 
   it('is ok when there is nothing to verify', () => {
     expect(verifyPlan([], 1).ok).toBe(true);
+  });
+});
+
+describe('verifyContractCriteria', () => {
+  const passing = {
+    kind: 'test' as EvidenceKind,
+    description: 'npm test',
+    command: 'npm test',
+    exitCode: 0,
+    output: 'ok',
+  };
+
+  it('is empty without a contract or without criteria', () => {
+    expect(verifyContractCriteria(null, [])).toEqual({ criteria: [], missing: [] });
+    expect(verifyContractCriteria(createTaskContract({ objective: 'x' }), []).criteria).toEqual(
+      []
+    );
+  });
+
+  it('verifies a contract criterion proven by any task', () => {
+    const result = verifyContractCriteria(makeContract(), [
+      { task: makeTask(), completed: true, checkpoint: checkpoint([passing]) },
+    ]);
+    expect(result.missing).toEqual([]);
+    expect(result.criteria).toEqual([
+      expect.objectContaining({ taskId: 'contract', criterionId: 'c1', outcome: 'verified' }),
+    ]);
+  });
+
+  it('reports a contract criterion no task ever proved', () => {
+    const contract = createTaskContract({
+      objective: 'Ship it',
+      allowedFiles: ['src/a.ts'],
+      acceptanceCriteria: [criterion('lint', 'npm run lint')],
+      budget: { maxTokens: 100 },
+    });
+
+    const result = verifyContractCriteria(contract, [
+      { task: makeTask(), completed: true, checkpoint: checkpoint([passing]) },
+    ]);
+
+    expect(result.missing).toEqual([
+      'contract: lint — No evidence shows that "npm run lint" was run.',
+    ]);
+  });
+
+  it('does not block on an optional contract criterion', () => {
+    const contract = createTaskContract({
+      objective: 'Ship it',
+      allowedFiles: ['src/a.ts'],
+      acceptanceCriteria: [criterion('lint', 'npm run lint', false)],
+      budget: { maxTokens: 100 },
+    });
+
+    const result = verifyContractCriteria(contract, []);
+    expect(result.missing).toEqual([]);
+    expect(result.criteria[0].outcome).toBe('verified');
   });
 });
 

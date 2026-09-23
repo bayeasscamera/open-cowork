@@ -239,6 +239,16 @@ function VerificationBadge({ verification }: { verification: VerificationReport 
             ? t('planPanel.report.verified')
             : t('planPanel.report.unverified', { count: missing.length })}
         </span>
+        {verification.contractCriteria && verification.contractCriteria.length > 0 && (
+          <p className="mt-0.5 text-[11px] opacity-80">
+            {t('planPanel.report.contract', {
+              verified: verification.contractCriteria.filter(
+                (entry) => entry.outcome === 'verified'
+              ).length,
+              total: verification.contractCriteria.length,
+            })}
+          </p>
+        )}
         {!ok && missing.length > 0 && (
           <ul className="mt-1 space-y-0.5 text-[11px] opacity-80">
             {missing.map((item: string) => (

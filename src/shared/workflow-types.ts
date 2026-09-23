@@ -189,6 +189,12 @@ export interface VerificationReport {
   tasks: TaskVerification[];
   missing: string[];
   checkedAt: number;
+  /**
+   * The contract's own acceptance criteria, verified against the union of every
+   * task's evidence (Lot D). Present only when the plan was built from a
+   * contract that declares criteria.
+   */
+  contractCriteria?: CriterionVerification[];
 }
 
 // ---------------------------------------------------------------------------

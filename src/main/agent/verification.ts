@@ -13,7 +13,12 @@
  * Everything here is pure: it reads tasks and checkpoints and returns a report.
  */
 
-import type { AcceptanceCriterion, AtomicTask, EvidenceKind } from '../../shared/task-contract';
+import type {
+  AcceptanceCriterion,
+  AtomicTask,
+  EvidenceKind,
+  TaskContract,
+} from '../../shared/task-contract';
 import type {
   CheckpointEvidence,
   CriterionOutcome,
@@ -296,6 +301,63 @@ export function verifyPlan(inputs: VerifyTaskInput[], now = Date.now()): Verific
   const tasks = inputs.map((input) => verifyTask(input));
   const missing = Array.from(new Set(tasks.flatMap((task) => task.issues)));
   return { ok: missing.length === 0, tasks, missing, checkedAt: now };
+}
+
+export interface ContractVerification {
+  criteria: CriterionVerification[];
+  missing: string[];
+}
+
+/**
+ * Plan-level, independent verification (Lot D).
+ *
+ * `verifyTask` only proves each task's *own* criteria. The contract's
+ * acceptance criteria are the definition of done the user approved, so a plan
+ * must not be declared complete until they are proven by the union of every
+ * task's evidence. Without this a swarm of tasks can each pass their private
+ * criteria while the objective that was actually approved was never
+ * demonstrated.
+ */
+export function verifyContractCriteria(
+  contract: TaskContract | null | undefined,
+  inputs: VerifyTaskInput[]
+): ContractVerification {
+  if (!contract || contract.acceptanceCriteria.length === 0) {
+    return { criteria: [], missing: [] };
+  }
+
+  // The proof source is the whole plan, not one task: any task's evidence may
+  // demonstrate a contract-level criterion.
+  const evidence = inputs.flatMap((input) => input.checkpoint?.evidence ?? []);
+  const lookup: EvidenceLookup = { evidence, checkpoint: null };
+  const criteria: CriterionVerification[] = [];
+  const missing: string[] = [];
+
+  for (const criterion of contract.acceptanceCriteria) {
+    if (!criterion.required) {
+      criteria.push({
+        taskId: 'contract',
+        criterionId: criterion.id,
+        description: criterion.description,
+        verification: criterion.verification,
+        required: false,
+        outcome: 'verified',
+        reason: 'Optional contract criterion; not blocking verification.',
+      });
+      continue;
+    }
+
+    const command = commandFromVerification(criterion.verification);
+    const result = command
+      ? verifyCommandCriterion('contract', criterion, command, lookup)
+      : verifyInspectionCriterion('contract', criterion, lookup);
+    criteria.push(result);
+    if (result.outcome !== 'verified') {
+      missing.push('contract: ' + criterion.id + ' — ' + result.reason);
+    }
+  }
+
+  return { criteria, missing };
 }
 
 /** Smallest blocking outcome for one criterion, used by the UI. */
