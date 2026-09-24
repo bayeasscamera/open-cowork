@@ -36,13 +36,17 @@ const invoke = async (channel: string, ...args: unknown[]): Promise<unknown> => 
 
 const register = (
   options: { unsupportedReason?: string | null; title?: string; manager?: boolean } = {}
-) => {
+): ((ready: boolean) => void) => {
+  let ready = options.manager !== false;
   registerScheduleIpcHandlers({
-    getScheduledTaskManager: () => (options.manager === false ? null : mocks.manager),
+    getScheduledTaskManager: () => (ready ? mocks.manager : null),
     getWorkspacePathUnsupportedReason: () => options.unsupportedReason ?? null,
     resolveScheduledTaskTitle: vi.fn().mockResolvedValue(options.title ?? 'Generated title'),
     getProject: vi.fn((id: string) => (id === 'p1' ? { id, workdir: '/project' } : undefined)),
   });
+  return (nextReady) => {
+    ready = nextReady;
+  };
 };
 
 describe('schedule IPC handlers', () => {
@@ -72,6 +76,14 @@ describe('schedule IPC handlers', () => {
       throw new Error('boom');
     });
     expect(await invoke('schedule.list')).toEqual([]);
+  });
+
+  it('resolves the scheduled task manager after IPC registration', async () => {
+    const setReady = register({ manager: false });
+    expect(await invoke('schedule.list')).toEqual([]);
+    setReady(true);
+    mocks.manager.list.mockReturnValue([{ id: 't1' }]);
+    expect(await invoke('schedule.list')).toEqual([{ id: 't1' }]);
   });
 
   it('schedule.create trims the prompt, resolves a title and rejects unsupported workspaces', async () => {

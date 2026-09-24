@@ -25,10 +25,9 @@ interface ScheduleIpcContext {
 
 export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
   const { getWorkspacePathUnsupportedReason, resolveScheduledTaskTitle, getProject } = context;
-  // Snapshot the mutable manager handle for the duration of one registration.
-  const manager = context.getScheduledTaskManager();
   ipcMain.handle('schedule.list', () => {
     try {
+      const manager = context.getScheduledTaskManager();
       if (!manager) return [];
       return manager.list();
     } catch (error) {
@@ -38,6 +37,7 @@ export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
   });
 
   ipcMain.handle('schedule.create', async (_event, payload: ScheduledTaskCreateInput) => {
+    const manager = context.getScheduledTaskManager();
     if (!manager) {
       throw new Error('Scheduled task manager not initialized');
     }
@@ -64,6 +64,7 @@ export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
   ipcMain.handle(
     'schedule.update',
     async (_event, id: string, updates: ScheduledTaskUpdateInput) => {
+      const manager = context.getScheduledTaskManager();
       if (!manager) {
         throw new Error('Scheduled task manager not initialized');
       }
@@ -104,6 +105,7 @@ export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
   );
 
   ipcMain.handle('schedule.delete', (_event, id: string) => {
+    const manager = context.getScheduledTaskManager();
     if (!manager) {
       throw new Error('Scheduled task manager not initialized');
     }
@@ -111,6 +113,7 @@ export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
   });
 
   ipcMain.handle('schedule.toggle', (_event, id: string, enabled: boolean) => {
+    const manager = context.getScheduledTaskManager();
     if (!manager) {
       throw new Error('Scheduled task manager not initialized');
     }
@@ -118,6 +121,7 @@ export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
   });
 
   ipcMain.handle('schedule.runNow', async (_event, id: string) => {
+    const manager = context.getScheduledTaskManager();
     if (!manager) {
       throw new Error('Scheduled task manager not initialized');
     }
