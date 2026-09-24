@@ -40,6 +40,7 @@ export interface ScheduledTask {
   title: string;
   prompt: string;
   cwd: string;
+  projectId?: string | null;
   runAt: number;
   nextRunAt: number | null;
   scheduleConfig: ScheduledTaskScheduleConfig | null;
@@ -57,6 +58,7 @@ export interface ScheduledTaskCreateInput {
   title?: string;
   prompt: string;
   cwd: string;
+  projectId?: string | null;
   runAt: number;
   nextRunAt?: number | null;
   scheduleConfig?: ScheduledTaskScheduleConfig | null;
@@ -69,6 +71,7 @@ export interface ScheduledTaskUpdateInput {
   title?: string;
   prompt?: string;
   cwd?: string;
+  projectId?: string | null;
   runAt?: number;
   nextRunAt?: number | null;
   scheduleConfig?: ScheduledTaskScheduleConfig | null;

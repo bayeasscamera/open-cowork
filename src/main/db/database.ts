@@ -121,6 +121,7 @@ export interface ScheduledTaskRow {
   title: string;
   prompt: string;
   cwd: string;
+  project_id: string | null;
   run_at: number;
   next_run_at: number | null;
   schedule_config: string | null;
@@ -397,6 +398,7 @@ function initializeSchema(database: Database.Database): void {
       title TEXT NOT NULL,
       prompt TEXT NOT NULL,
       cwd TEXT NOT NULL,
+      project_id TEXT,
       run_at INTEGER NOT NULL,
       next_run_at INTEGER,
       schedule_config TEXT,
@@ -411,6 +413,7 @@ function initializeSchema(database: Database.Database): void {
     )
   `);
     ensureColumn(database, 'scheduled_tasks', 'schedule_config', 'schedule_config TEXT');
+    ensureColumn(database, 'scheduled_tasks', 'project_id', 'project_id TEXT');
 
     database.exec(`
     CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run
@@ -735,9 +738,9 @@ export function initDatabase(): DatabaseInstance {
 
   const insertScheduledTask = rawDb.prepare(`
     INSERT OR REPLACE INTO scheduled_tasks (
-      id, title, prompt, cwd, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, created_at, updated_at
+      id, title, prompt, cwd, project_id, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getScheduledTaskStmt = rawDb.prepare(`
@@ -942,6 +945,7 @@ export function initDatabase(): DatabaseInstance {
           task.title,
           task.prompt,
           task.cwd,
+          task.project_id,
           task.run_at,
           task.next_run_at,
           task.schedule_config,

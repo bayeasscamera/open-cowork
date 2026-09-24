@@ -20,10 +20,11 @@ interface ScheduleIpcContext {
   getScheduledTaskManager(): ScheduledTaskManager | null;
   getWorkspacePathUnsupportedReason(workspacePath?: string): string | null;
   resolveScheduledTaskTitle(prompt: string, cwd?: string, fallbackTitle?: string): Promise<string>;
+  getProject(projectId: string): { id: string; workdir: string; archived?: boolean } | undefined;
 }
 
 export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
-  const { getWorkspacePathUnsupportedReason, resolveScheduledTaskTitle } = context;
+  const { getWorkspacePathUnsupportedReason, resolveScheduledTaskTitle, getProject } = context;
   // Snapshot the mutable manager handle for the duration of one registration.
   const manager = context.getScheduledTaskManager();
   ipcMain.handle('schedule.list', () => {
@@ -40,14 +41,21 @@ export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
     if (!manager) {
       throw new Error('Scheduled task manager not initialized');
     }
-    const unsupportedReason = getWorkspacePathUnsupportedReason(payload.cwd);
+    let cwd = payload.cwd;
+    if (payload.projectId) {
+      const project = getProject(payload.projectId);
+      if (!project || project.archived) throw new Error('Scheduled task project is unavailable');
+      cwd = project.workdir;
+    }
+    const unsupportedReason = getWorkspacePathUnsupportedReason(cwd);
     if (unsupportedReason) {
       throw new Error(unsupportedReason);
     }
     const normalizedPrompt = payload.prompt.trim();
-    const title = await resolveScheduledTaskTitle(normalizedPrompt, payload.cwd, payload.title);
+    const title = await resolveScheduledTaskTitle(normalizedPrompt, cwd, payload.title);
     return manager.create({
       ...payload,
+      cwd,
       prompt: normalizedPrompt,
       title,
     });
@@ -62,7 +70,14 @@ export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
       const existing = manager.get(id);
       if (!existing) return null;
       const nextCwd = updates.cwd ?? existing.cwd;
-      const unsupportedReason = getWorkspacePathUnsupportedReason(nextCwd);
+      const projectId = updates.projectId === undefined ? existing.projectId : updates.projectId;
+      let resolvedCwd = nextCwd;
+      if (projectId) {
+        const project = getProject(projectId);
+        if (!project || project.archived) throw new Error('Scheduled task project is unavailable');
+        resolvedCwd = project.workdir;
+      }
+      const unsupportedReason = getWorkspacePathUnsupportedReason(resolvedCwd);
       if (unsupportedReason) {
         throw new Error(unsupportedReason);
       }
@@ -70,13 +85,14 @@ export function registerScheduleIpcHandlers(context: ScheduleIpcContext): void {
         updates.prompt === undefined ? existing.prompt : updates.prompt.trim();
       const normalizedUpdates: ScheduledTaskUpdateInput = {
         ...updates,
+        ...(updates.projectId !== undefined ? { projectId, cwd: resolvedCwd } : {}),
         prompt: normalizedPrompt,
       };
 
       if (updates.prompt !== undefined) {
         normalizedUpdates.title = await resolveScheduledTaskTitle(
           normalizedPrompt,
-          updates.cwd ?? existing.cwd,
+          resolvedCwd,
           updates.title ?? existing.title
         );
       } else if (updates.title !== undefined) {

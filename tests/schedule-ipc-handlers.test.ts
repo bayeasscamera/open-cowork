@@ -41,6 +41,7 @@ const register = (
     getScheduledTaskManager: () => (options.manager === false ? null : mocks.manager),
     getWorkspacePathUnsupportedReason: () => options.unsupportedReason ?? null,
     resolveScheduledTaskTitle: vi.fn().mockResolvedValue(options.title ?? 'Generated title'),
+    getProject: vi.fn((id: string) => (id === 'p1' ? { id, workdir: '/project' } : undefined)),
   });
 };
 
@@ -93,6 +94,19 @@ describe('schedule IPC handlers', () => {
     );
     // only the successful call above reached the manager
     expect(mocks.manager.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('schedule.create resolves the workspace from a linked project', async () => {
+    register();
+    mocks.manager.create.mockReturnValue({ id: 't1' });
+    await invoke('schedule.create', { prompt: ' weekly search ', cwd: '/stale', projectId: 'p1' });
+    expect(mocks.manager.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'weekly search',
+        cwd: '/project',
+        projectId: 'p1',
+      })
+    );
   });
 
   it('schedule.update regenerates the title only when the prompt changes', async () => {

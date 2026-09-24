@@ -21,6 +21,7 @@ export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskSto
         title: input.title ?? '',
         prompt: input.prompt,
         cwd: input.cwd,
+        project_id: input.projectId ?? null,
         run_at: input.runAt,
         next_run_at: input.nextRunAt ?? input.runAt,
         schedule_config: input.scheduleConfig ? JSON.stringify(input.scheduleConfig) : null,
@@ -57,6 +58,7 @@ function mapRowToTask(row: ScheduledTaskRow): ScheduledTask {
     title: row.title,
     prompt: row.prompt,
     cwd: row.cwd,
+    projectId: row.project_id ?? null,
     runAt: row.run_at,
     nextRunAt: row.next_run_at,
     scheduleConfig: parseScheduleConfig(row.schedule_config),
@@ -76,6 +78,7 @@ function mapTaskUpdatesToRow(updates: ScheduledTaskUpdateInput): Partial<Schedul
   if (updates.title !== undefined) mapped.title = updates.title;
   if (updates.prompt !== undefined) mapped.prompt = updates.prompt;
   if (updates.cwd !== undefined) mapped.cwd = updates.cwd;
+  if (updates.projectId !== undefined) mapped.project_id = updates.projectId;
   if (updates.runAt !== undefined) mapped.run_at = updates.runAt;
   if (updates.nextRunAt !== undefined) mapped.next_run_at = updates.nextRunAt;
   if (updates.scheduleConfig !== undefined) {

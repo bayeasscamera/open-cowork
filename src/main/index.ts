@@ -1485,19 +1485,32 @@ app
         if (!sessionManager) {
           throw new Error('Session manager not initialized');
         }
-        const unsupportedReason = getWorkspacePathUnsupportedReason(task.cwd);
+        const project = task.projectId ? getProjectStore().get(task.projectId) : undefined;
+        if (task.projectId && (!project || project.archived)) {
+          throw new Error('Scheduled task project is unavailable');
+        }
+        const cwd = project?.workdir ?? task.cwd;
+        const unsupportedReason = getWorkspacePathUnsupportedReason(cwd);
         if (unsupportedReason) {
           throw new Error(unsupportedReason);
         }
         const fallbackTitle = buildScheduledTaskFallbackTitle(task.prompt);
         const needsRegeneratedTitle = !task.title?.trim() || task.title === fallbackTitle;
         const title = needsRegeneratedTitle
-          ? await resolveScheduledTaskTitle(task.prompt, task.cwd, task.title)
+          ? await resolveScheduledTaskTitle(task.prompt, cwd, task.title)
           : buildScheduledTaskTitle(task.title);
         if (title !== task.title) {
           scheduledTaskStore.update(task.id, { title });
         }
-        const started = await sessionManager.startSession(title, task.prompt, task.cwd);
+        const started = await sessionManager.startSession(
+          title,
+          task.prompt,
+          cwd,
+          undefined,
+          undefined,
+          undefined,
+          task.projectId ?? undefined
+        );
         // 定时任务创建的新会话需要主动同步到前端会话列表
         sendToRenderer({
           type: 'session.update',
@@ -1969,6 +1982,7 @@ registerScheduleIpcHandlers({
   getScheduledTaskManager: () => scheduledTaskManager,
   getWorkspacePathUnsupportedReason,
   resolveScheduledTaskTitle,
+  getProject: (projectId) => getProjectStore().get(projectId),
 });
 
 // Memory and personal-files IPC handlers (see main/ipc/memory-handlers.ts)

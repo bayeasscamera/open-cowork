@@ -292,6 +292,7 @@ export interface ScheduleTask {
   title: string;
   prompt: string;
   cwd: string;
+  projectId?: string | null;
   runAt: number;
   nextRunAt: number | null;
   scheduleConfig: ScheduleConfig | null;
@@ -309,6 +310,7 @@ export interface ScheduleCreateInput {
   title?: string;
   prompt: string;
   cwd: string;
+  projectId?: string | null;
   runAt: number;
   nextRunAt?: number | null;
   scheduleConfig?: ScheduleConfig | null;
@@ -321,6 +323,7 @@ export interface ScheduleUpdateInput {
   title?: string;
   prompt?: string;
   cwd?: string;
+  projectId?: string | null;
   runAt?: number;
   nextRunAt?: number | null;
   scheduleConfig?: ScheduleConfig | null;
