@@ -45,7 +45,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   return (
     <div
       {...AUTO_TEXT_DIRECTION_PROPS}
-      className="prose-chat max-w-none text-text-primary text-start"
+      className="prose-chat max-w-none text-text-primary text-start break-words"
     >
       <ReactMarkdown
         remarkPlugins={

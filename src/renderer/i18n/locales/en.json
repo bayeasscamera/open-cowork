@@ -1035,7 +1035,10 @@
     "noQuestions": "No questions",
     "question": "Question",
     "thinking": "Thinking",
-    "executionTime": "Execution time: {{time}}"
+    "executionTime": "Execution time: {{time}}",
+    "rawProtocolTitle": "Raw agent-protocol markup detected",
+    "rawProtocolCount": "{{count}} quarantined fragment(s)",
+    "rawProtocolHint": "The model emitted function-calling tags as plain text instead of structured tool calls. They were moved here to keep the conversation readable."
   },
   "schedule": {
     "createTitle": "Create Schedule",

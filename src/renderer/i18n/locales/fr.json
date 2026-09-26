@@ -210,7 +210,10 @@
     "noQuestions": "Aucune question",
     "question": "Question",
     "thinking": "Réflexion",
-    "executionTime": "Temps d’exécution : {{time}}"
+    "executionTime": "Temps d’exécution : {{time}}",
+    "rawProtocolTitle": "Balisage de protocole brut détecté",
+    "rawProtocolCount": "{{count}} fragment(s) mis en quarantaine",
+    "rawProtocolHint": "Le modèle a émis des balises d'appel d'outils en texte brut au lieu d'appels structurés. Elles ont été déplacées ici pour préserver la lisibilité de la conversation."
   },
   "time": {
     "now": "maintenant"

@@ -15,12 +15,14 @@ import {
 } from '../../utils/markdown-local-link';
 import { normalizeLatexDelimiters } from '../../utils/latex-delimiters';
 import { AUTO_TEXT_DIRECTION_PROPS } from '../../utils/text-direction';
+import { quarantineRawProtocolMarkup } from '../../utils/raw-protocol-markup';
 import type { ToolUseContent, ToolResultContent, FileAttachmentContent } from '../../types';
 import { FileText } from 'lucide-react';
 import { CodeBlock } from './CodeBlock';
 import { ThinkingBlock, escapeThinkTags } from './ThinkingBlock';
 import { ToolUseBlock } from './ToolUseBlock';
 import { ToolResultBlock } from './ToolResultBlock';
+import { RawProtocolNotice } from './RawProtocolNotice';
 import type { ContentBlockViewProps } from './types';
 
 const MessageMarkdown = lazy(() =>
@@ -285,7 +287,7 @@ export const ContentBlockView = memo(function ContentBlockView({
         );
       }
 
-      return (
+      const renderMarkdown = (mdText: string) => (
         <PanelErrorBoundary
           name="MessageMarkdown"
           fallback={
@@ -293,7 +295,7 @@ export const ContentBlockView = memo(function ContentBlockView({
               {...AUTO_TEXT_DIRECTION_PROPS}
               className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words text-start"
             >
-              {normalizedText}
+              {mdText}
             </div>
           }
         >
@@ -303,18 +305,34 @@ export const ContentBlockView = memo(function ContentBlockView({
                 {...AUTO_TEXT_DIRECTION_PROPS}
                 className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words text-start"
               >
-                {normalizedText}
+                {mdText}
               </div>
             }
           >
             <MessageMarkdown
-              normalizedText={escapeThinkTags(normalizedText)}
+              normalizedText={escapeThinkTags(mdText)}
               isStreaming={isStreaming}
               components={markdownComponents}
             />
           </Suspense>
         </PanelErrorBoundary>
       );
+
+      // Raw agent-protocol markup (tool_use / tool_result / turn tags emitted
+      // as plain text by a degraded model) must never render as chat prose:
+      // quarantine it into the collapsed notice instead. User content is never
+      // rewritten — the branch above handles it.
+      const { cleanText, fragments } = quarantineRawProtocolMarkup(normalizedText);
+      if (fragments.length > 0) {
+        return (
+          <>
+            {cleanText && renderMarkdown(cleanText)}
+            <RawProtocolNotice fragments={fragments} />
+          </>
+        );
+      }
+
+      return renderMarkdown(normalizedText);
     }
 
     case 'image': {
