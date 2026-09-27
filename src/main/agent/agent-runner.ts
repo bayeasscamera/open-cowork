@@ -107,6 +107,7 @@ import {
   buildTerminalErrorEmissionDetails,
   buildTerminalErrorMessage,
   classifyTerminalError,
+  TIMEOUT_ERROR_MESSAGE_TEXT,
   resolveAbortDisposition,
   shouldPreserveExistingTrace,
   toUserFacingErrorText,
@@ -1468,7 +1469,7 @@ export class CoworkAgentRunner {
           content: [
             {
               type: 'text',
-              text: '**Error**: The request timed out — no response was received from upstream for an extended period.',
+              text: TIMEOUT_ERROR_MESSAGE_TEXT,
             },
           ],
           timestamp: Date.now(),
@@ -1694,7 +1695,7 @@ export class CoworkAgentRunner {
             content: [
               {
                 type: 'text',
-                text: '**Error**: The request timed out — no response was received from upstream for an extended period.',
+                text: TIMEOUT_ERROR_MESSAGE_TEXT,
               },
             ],
             timestamp: Date.now(),

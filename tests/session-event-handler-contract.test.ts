@@ -29,12 +29,40 @@ function interfaceKeys(source: string, name: string): string[] {
   const bodyStart = source.indexOf('{', at) + 1;
   const bodyEnd = source.indexOf(NL + '}', bodyStart);
   if (bodyEnd < 0) throw new Error('interface end not found: ' + name);
-  return source
-    .slice(bodyStart, bodyEnd)
-    .split(NL)
-    .map((line) => line.trim().split(/[(:?]/)[0].trim())
-    .filter((token) => IDENTIFIER.test(token));
+  // Only top-level members count as keys. A member whose signature opens an
+  // inline object type (e.g. `foo?(detail: {`) spans several lines and its
+  // members must NOT leak in as phantom interface keys (this bit us once).
+  const keys: string[] = [];
+  let depth = 0;
+  for (const raw of source.slice(bodyStart, bodyEnd).split(NL)) {
+    const line = raw.trim();
+    if (depth === 0) {
+      const key = line.split(/[(:?]/)[0].trim();
+      if (IDENTIFIER.test(key)) keys.push(key);
+    }
+    for (const ch of line) {
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+    }
+  }
+  return keys;
 }
+
+describe('interfaceKeys extraction', () => {
+  it('does not leak inline object-type members as phantom keys', () => {
+    const source = [
+      'export interface Demo {',
+      '  plain: string;',
+      '  nested?(detail: {',
+      '    fragmentCount: number;',
+      '    sample: string;',
+      '  }): void;',
+      '  after: number;',
+      '}',
+    ].join('\n');
+    expect(interfaceKeys(source, 'Demo')).toEqual(['plain', 'nested', 'after']);
+  });
+});
 
 /** Top-level object-literal keys of a declaration, ignoring nested values. */
 function literalKeys(source: string, declaration: string): string[] {

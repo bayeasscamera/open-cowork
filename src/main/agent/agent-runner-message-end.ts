@@ -22,7 +22,13 @@ interface ResolvedMessageEndPayload {
   shouldEmitMessage: boolean;
 }
 
-const FOUR_XX_ERROR_RE = /\b4\d{2}\b/;
+/**
+ * Shared user-facing text for the timeout abort paths (agent-runner emits it
+ * in two places). Locale-neutral English — the renderer localizes the banner
+ * from the message errorCode.
+ */
+export const TIMEOUT_ERROR_MESSAGE_TEXT =
+  '**Error**: The request timed out — no response was received from upstream for an extended period.';
 
 interface TerminalErrorEmissionDetails {
   partialText: string;
@@ -104,58 +110,27 @@ export function classifyTerminalError(errorText: string): TerminalErrorCode {
  * English so no UI locale is hardwired into persisted messages.
  */
 export function toUserFacingErrorText(errorText: string): string {
-  const lower = errorText.toLowerCase();
-  if (lower.includes('first_response_timeout')) {
-    return 'Model response timed out: no upstream output was received for an extended period. Retry later or check the current model/gateway load.';
+  // Single source of truth: the machine kind from classifyTerminalError drives
+  // the user-facing layer, so the two can never diverge on a new error shape.
+  switch (classifyTerminalError(errorText)) {
+    case 'timeout':
+      return 'Model response timed out: no upstream output was received for an extended period. Retry later or check the current model/gateway load.';
+    case 'empty_result':
+      return 'The model returned an empty success result. The current model or gateway may have a compatibility problem. Retry or switch protocol.';
+    case 'upstream_400':
+      return `Upstream rejected the request (400). The model/protocol configuration may be incompatible. Check the model name, protocol settings and API endpoint.\nRaw error: ${errorText}`;
+    case 'auth_failed':
+      return `Authentication failed. Check that the API key is correct, not expired, and allowed to access this model.\nRaw error: ${errorText}`;
+    case 'rate_limited':
+      return `Rate limited (429). The call rate for this model or API endpoint has reached its limit. Retry later.\nRaw error: ${errorText}`;
+    case 'server_error':
+      return `Upstream service error. The model service may be overloaded or temporarily down. The SDK will retry automatically.\nRaw error: ${errorText}`;
+    case 'network_error':
+      return `Network connection interrupted (${errorText}). The proxy/gateway may be unstable. The SDK will retry automatically.`;
+    case 'stream_error':
+    default:
+      return errorText;
   }
-  if (lower.includes('empty_success_result')) {
-    return 'The model returned an empty success result. The current model or gateway may have a compatibility problem. Retry or switch protocol.';
-  }
-  if (
-    /\b400\b/.test(errorText) ||
-    lower.includes('bad request') ||
-    lower.includes('invalid request')
-  ) {
-    return `Upstream rejected the request (400). The model/protocol configuration may be incompatible. Check the model name, protocol settings and API endpoint.\nRaw error: ${errorText}`;
-  }
-  if (
-    /\b(401|403)\b/.test(errorText) ||
-    lower.includes('unauthorized') ||
-    lower.includes('forbidden')
-  ) {
-    return `Authentication failed. Check that the API key is correct, not expired, and allowed to access this model.\nRaw error: ${errorText}`;
-  }
-  if (
-    /\b429\b/.test(errorText) ||
-    lower.includes('rate limit') ||
-    lower.includes('too many requests')
-  ) {
-    return `Rate limited (429). The call rate for this model or API endpoint has reached its limit. Retry later.\nRaw error: ${errorText}`;
-  }
-  if (
-    /\b(5\d{2})\b/.test(errorText) ||
-    lower.includes('server error') ||
-    lower.includes('internal error') ||
-    lower.includes('service unavailable') ||
-    lower.includes('overloaded')
-  ) {
-    return `Upstream service error. The model service may be overloaded or temporarily down. The SDK will retry automatically.\nRaw error: ${errorText}`;
-  }
-  if (
-    lower.includes('terminated') ||
-    lower.includes('connection reset') ||
-    lower.includes('connection closed') ||
-    lower.includes('connection refused') ||
-    lower.includes('connection error') ||
-    lower.includes('fetch failed') ||
-    lower.includes('other side closed') ||
-    lower.includes('reset before headers') ||
-    lower.includes('upstream connect') ||
-    lower.includes('retry delay')
-  ) {
-    return `Network connection interrupted (${errorText}). The proxy/gateway may be unstable. The SDK will retry automatically.`;
-  }
-  return errorText;
 }
 
 export function resolveAssistantStreamErrorText(
@@ -167,9 +142,11 @@ export function resolveAssistantStreamErrorText(
 
 export function buildTerminalErrorMessage(errorText: string, partialText = ''): string {
   const normalizedPartial = partialText.trimEnd();
-  const hint = FOUR_XX_ERROR_RE.test(errorText)
-    ? '_Check the configuration and retry._'
-    : '_The agent is retrying automatically, please wait..._';
+  const code = classifyTerminalError(errorText);
+  const hint =
+    code === 'upstream_400' || code === 'auth_failed' || code === 'rate_limited'
+      ? '_Check the configuration and retry._'
+      : '_The agent is retrying automatically, please wait..._';
   const errorBlock = `**Error**: ${errorText}\n\n${hint}`;
   return normalizedPartial ? `${normalizedPartial}\n\n${errorBlock}` : errorBlock;
 }

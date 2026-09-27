@@ -223,7 +223,9 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
             // Unknown block type — pass through as text so content isn't silently lost
             const unknownBlock = block as { type?: string; text?: string };
             log(`[CoworkAgentRunner] Unknown content block type: ${unknownBlock.type}`);
-            const text = unknownBlock.text || JSON.stringify(block);
+            // safeStringify: an unexpected block must never throw on odd
+            // shapes (e.g. circular refs from third-party payloads).
+            const text = unknownBlock.text || safeStringify(block);
             if (text) contentBlocks.push({ type: 'text', text });
           }
         }

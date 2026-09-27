@@ -432,6 +432,21 @@ describe('handlePiSessionEvent — message_end', () => {
     expect(h.getPipelineDraft().text).toBe('Draft answer.');
   });
 
+  it('never throws on an unknown block with a circular reference', () => {
+    const h = makeHarness();
+    const circular: Record<string, unknown> = { type: 'mystery-block' };
+    circular.self = circular; // third-party payloads must not crash message_end
+    vi.mocked(resolveMessageEndPayload).mockReturnValue(
+      makePayload({ effectiveContent: [circular] })
+    );
+    expect(() => h.run({ type: 'message_end', message })).not.toThrow();
+    expect(h.effects.sendMessage).toHaveBeenCalled();
+    const sent = h.effects.sendMessage.mock.calls[0][0] as Message;
+    const block = sent.content[0] as { type: string; text: string };
+    expect(block.type).toBe('text');
+    expect(block.text.length).toBeGreaterThan(0); // safeStringify placeholder
+  });
+
   it('drops a text block whose extracted text is empty', () => {
     const h = makeHarness();
     h.armTwoStage();

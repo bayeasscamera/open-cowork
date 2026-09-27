@@ -147,6 +147,29 @@ describe('classifyTerminalError', () => {
   });
 });
 
+describe('classification and user-facing text stay coherent', () => {
+  it('the text layer is derived from the machine kind for every error shape', () => {
+    const shapes: Array<[string, string]> = [
+      ['first_response_timeout', 'Model response timed out'],
+      ['empty_success_result', 'empty success result'],
+      ['HTTP 400: bad request', 'Upstream rejected the request (400)'],
+      ['Error 401: Unauthorized', 'Authentication failed'],
+      ['429 Too Many Requests', 'Rate limited (429)'],
+      ['HTTP 502: Bad Gateway', 'Upstream service error'],
+      ['connection error: ECONNRESET', 'Network connection interrupted'],
+    ];
+    for (const [input, expectedFragment] of shapes) {
+      expect(toUserFacingErrorText(input), input).toContain(expectedFragment);
+    }
+  });
+
+  it('unknown errors pass through untouched (stream_error kind)', () => {
+    const raw = 'some obscure upstream error';
+    expect(classifyTerminalError(raw)).toBe('stream_error');
+    expect(toUserFacingErrorText(raw)).toBe(raw);
+  });
+});
+
 describe('toUserFacingErrorText', () => {
   it('maps 400 / bad request to a locale-neutral configuration hint', () => {
     const result = toUserFacingErrorText('HTTP 400: bad request - ROLE_UNSPECIFIED');

@@ -308,36 +308,29 @@ export const ContentBlockView = memo(function ContentBlockView({
         );
       }
 
-      const renderMarkdown = (mdText: string) => (
-        <PanelErrorBoundary
-          name="MessageMarkdown"
-          fallback={
-            <div
-              {...AUTO_TEXT_DIRECTION_PROPS}
-              className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words text-start"
-            >
-              {mdText}
-            </div>
-          }
-        >
-          <Suspense
-            fallback={
-              <div
-                {...AUTO_TEXT_DIRECTION_PROPS}
-                className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words text-start"
-              >
-                {mdText}
-              </div>
-            }
+      const renderMarkdown = (mdText: string) => {
+        // Shared fallback: identical for the error boundary and the lazy-load
+        // suspense, so the plain-text degradation path stays one definition.
+        const fallback = (
+          <div
+            {...AUTO_TEXT_DIRECTION_PROPS}
+            className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words text-start"
           >
-            <MessageMarkdown
-              normalizedText={escapeThinkTags(mdText)}
-              isStreaming={isStreaming}
-              components={markdownComponents}
-            />
-          </Suspense>
-        </PanelErrorBoundary>
-      );
+            {mdText}
+          </div>
+        );
+        return (
+          <PanelErrorBoundary name="MessageMarkdown" fallback={fallback}>
+            <Suspense fallback={fallback}>
+              <MessageMarkdown
+                normalizedText={escapeThinkTags(mdText)}
+                isStreaming={isStreaming}
+                components={markdownComponents}
+              />
+            </Suspense>
+          </PanelErrorBoundary>
+        );
+      };
 
       // Raw agent-protocol markup (tool_use / tool_result / turn tags emitted
       // as plain text by a degraded model) must never render as chat prose:
