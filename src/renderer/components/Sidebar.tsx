@@ -258,9 +258,12 @@ export function Sidebar() {
     async (sessionId: string) => {
       setShowSettings(false);
 
-      if (activeSessionId === sessionId) return;
-
-      setActiveSession(sessionId);
+      // Re-clicking the active session must still fall through to the loads
+      // below: a pane stuck empty (e.g. the boot restore fetch failed) can
+      // only recover by re-selecting its own session.
+      if (activeSessionId !== sessionId) {
+        setActiveSession(sessionId);
+      }
 
       // Read sessionStates at call-time from the store rather than closing over
       // the selector value. The selector returns a new object reference every

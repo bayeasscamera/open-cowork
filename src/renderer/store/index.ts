@@ -836,6 +836,40 @@ if (typeof window !== 'undefined') {
       if (!exists) return false;
       store.setShowSettings(false);
       store.setActiveSession(sessionId);
+      // This bridge only flips the active session: without the loads below the
+      // pane renders empty (verified live 2026-09-27). Mirror the Sidebar
+      // click flow so scripted navigation shows real content.
+      const state = useAppStore.getState().sessionStates[sessionId];
+      const needsMessages = !state?.messages?.length;
+      const needsSteps = !state?.traceSteps?.length;
+      if (
+        (needsMessages || needsSteps) &&
+        typeof window !== 'undefined' &&
+        window.electronAPI
+      ) {
+        if (needsMessages) {
+          window.electronAPI
+            .invoke<Message[]>({ type: 'session.getMessages', payload: { sessionId } })
+            .then((messages) => {
+              if (Array.isArray(messages) && messages.length > 0) {
+                useAppStore.getState().setMessages(sessionId, messages);
+              }
+            })
+            .catch((err: unknown) => {
+              console.error('[__navigate] Failed to load session messages:', err);
+            });
+        }
+        if (needsSteps) {
+          window.electronAPI
+            .invoke<TraceStep[]>({ type: 'session.getTraceSteps', payload: { sessionId } })
+            .then((steps) => {
+              useAppStore.getState().setTraceSteps(sessionId, Array.isArray(steps) ? steps : []);
+            })
+            .catch((err: unknown) => {
+              console.error('[__navigate] Failed to load trace steps:', err);
+            });
+        }
+      }
     }
     return true;
   };
