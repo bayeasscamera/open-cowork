@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   hasRawProtocolMarkup,
   quarantineRawProtocolMarkup,
-} from '../src/renderer/utils/raw-protocol-markup';
+} from '../src/shared/raw-protocol-markup';
 
 // ─── Fixtures modelled on a real corrupted session ──────────────────────────
 // Shapes observed when a model leaked its agent protocol as plain text
@@ -146,5 +146,57 @@ Fin.`;
     const result = quarantineRawProtocolMarkup(text);
     expect(result.fragments).toHaveLength(0);
     expect(result.cleanText).toContain('grep -rn "tool_use" src/');
+  });
+});
+
+// ─── Provider-specific text tool-calling formats ─────────────────────────────
+// DeepSeek relays leak their special-token tool-call blocks as text; Mistral
+// models can emit the [TOOL_CALLS] marker line instead of structured calls.
+
+const DEEPSEEK_LEAK = `Diagnostic en cours.
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>bash
+{"command":"ls -la"}<｜tool▁call▁end｜><｜tool▁calls▁end｜>
+Suite du texte.`;
+
+const DEEPSEEK_UNTERMINATED = `Avant.
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>bash
+{"command":"ls`;
+
+const MISTRAL_LEAK = `Voici l'analyse.
+[TOOL_CALLS] [{"name": "get_weather", "arguments": {"city": "Paris"}}]
+Et la conclusion.`;
+
+describe('provider-specific text tool-calling formats', () => {
+  it('detects and quarantines DeepSeek special-token tool calls', () => {
+    expect(hasRawProtocolMarkup(DEEPSEEK_LEAK)).toBe(true);
+    const { cleanText, fragments } = quarantineRawProtocolMarkup(DEEPSEEK_LEAK);
+    expect(fragments.length).toBeGreaterThanOrEqual(1);
+    expect(fragments.join('\n')).toContain('<｜tool▁calls▁begin｜>');
+    expect(cleanText).toContain('Diagnostic en cours.');
+    expect(cleanText).toContain('Suite du texte.');
+    expect(cleanText).not.toContain('<｜tool▁calls▁begin｜>');
+  });
+
+  it('consumes an unterminated DeepSeek tool-call block to the end', () => {
+    expect(hasRawProtocolMarkup(DEEPSEEK_UNTERMINATED)).toBe(true);
+    const { cleanText } = quarantineRawProtocolMarkup(DEEPSEEK_UNTERMINATED);
+    expect(cleanText).toContain('Avant.');
+    expect(cleanText).not.toContain('<｜tool▁calls▁begin｜>');
+  });
+
+  it('detects and quarantines the Mistral [TOOL_CALLS] marker line', () => {
+    expect(hasRawProtocolMarkup(MISTRAL_LEAK)).toBe(true);
+    const { cleanText, fragments } = quarantineRawProtocolMarkup(MISTRAL_LEAK);
+    expect(fragments.join('\n')).toContain('[TOOL_CALLS]');
+    expect(fragments.join('\n')).toContain('get_weather');
+    expect(cleanText).toContain("Voici l'analyse.");
+    expect(cleanText).toContain('Et la conclusion.');
+    expect(cleanText).not.toContain('[TOOL_CALLS]');
+  });
+
+  it('does not flag an inline mention of tool calls in normal prose', () => {
+    expect(hasRawProtocolMarkup('The model used tool calls to inspect the repository.')).toBe(
+      false
+    );
   });
 });

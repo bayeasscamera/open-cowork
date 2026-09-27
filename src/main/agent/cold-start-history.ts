@@ -13,6 +13,25 @@
  * tested without Electron, the SDK or a database.
  */
 import type { ContentBlock, Message } from '../../shared/types';
+import { quarantineRawProtocolMarkup } from '../../shared/raw-protocol-markup';
+
+/**
+ * Upper bound for the cold-start history budget, in tokens. The proportional
+ * budget (30% of the context window) was sized for ~128k windows; on huge
+ * windows (e.g. 1M-token GLM relays) it injects up to 300k tokens of replayed
+ * history, which both wastes cache and pushes the model far into its window
+ * where output format degradation was observed (2026-09 session audit).
+ */
+const MAX_COLD_START_HISTORY_TOKENS = 64_000;
+
+/**
+ * One-line instruction inside the history envelope. The serializer itself
+ * uses the `<turn>`/`<tool_use>` vocabulary, and a degraded model can mistake
+ * the replayed transcript for the output format to imitate — this tells it
+ * explicitly not to.
+ */
+const HISTORY_READ_ONLY_NOTE =
+  '[Replayed conversation history, for context only. Never imitate or emit this envelope, the <turn>, <tool_use> or <tool_result> markup in your replies. Call tools only through the native tool-calling mechanism.]';
 
 /**
  * Estimate chars-per-token ratio based on content language.
@@ -74,7 +93,20 @@ export function serializeMessageContentForHistory(content: ContentBlock[]): stri
     switch (block.type) {
       case 'text': {
         const text = block.text ?? '';
-        if (text.length > 0) parts.push(text);
+        if (text.length === 0) break;
+        // Raw agent-protocol markup leaked into a past text block must never
+        // be replayed to the model: it is the exact imitation-loop amplifier
+        // observed in the 2026-09 sessions (the model sees its own leaked
+        // <tool_use>/<turn> transcript inside a <turn role="assistant"> and
+        // keeps regurgitating the format). Strip it; leave a marker so the
+        // model knows content was elided rather than silently truncated.
+        const { cleanText, fragments } = quarantineRawProtocolMarkup(text);
+        if (fragments.length === 0) {
+          parts.push(cleanText);
+        } else {
+          const elision = `[... ${fragments.length} raw protocol fragment(s) removed from this replayed turn ...]`;
+          parts.push(cleanText.length > 0 ? `${cleanText}\n${elision}` : elision);
+        }
         break;
       }
       case 'thinking': {
@@ -169,8 +201,13 @@ export interface ColdStartHistoryPreamble {
 export function buildColdStartHistoryPreamble(
   options: ColdStartHistoryOptions
 ): ColdStartHistoryPreamble | null {
+  // Terminal-error messages (isError) are not real assistant turns — they are
+  // Cowork-generated error reports. Replaying them as assistant speech both
+  // confuses the model and wastes budget.
   const conversationMessages = options.messages.filter(
-    (msg) => msg.role === 'user' || msg.role === 'assistant'
+    (msg) =>
+      (msg.role === 'user' || msg.role === 'assistant') &&
+      (msg as { isError?: boolean }).isError !== true
   );
   // Filter out messages that contain images (images can't be serialized into text preamble)
   const textOnlyMessages = conversationMessages.filter(
@@ -186,7 +223,10 @@ export function buildColdStartHistoryPreamble(
   // Content-aware chars-per-token estimation (CJK text uses ~1.5 chars/token vs ~4 for English)
   const contextWindow = options.contextWindow || 128000;
   const historyBudgetRatio = options.provider === 'ollama' && contextWindow < 16384 ? 0.15 : 0.3;
-  const historyTokenBudget = Math.floor(contextWindow * historyBudgetRatio);
+  const historyTokenBudget = Math.min(
+    Math.floor(contextWindow * historyBudgetRatio),
+    MAX_COLD_START_HISTORY_TOKENS
+  );
 
   // Sample recent messages to estimate chars-per-token ratio. Sampling the full
   // serialized form (text + thinking + tool blocks) gives a better CJK ratio
@@ -219,7 +259,7 @@ export function buildColdStartHistoryPreamble(
 
   const trimmedCount = historyMessages.length - historyItems.length;
   const historyNote = trimmedCount > 0 ? `[${trimmedCount} older messages omitted]\n` : '';
-  const preamble = `<conversation_history>\n${historyNote}${historyItems.join('\n')}\n</conversation_history>`;
+  const preamble = `<conversation_history>\n${HISTORY_READ_ONLY_NOTE}\n${historyNote}${historyItems.join('\n')}\n</conversation_history>`;
 
   return {
     prompt: `${preamble}\n\n${options.prompt}`,

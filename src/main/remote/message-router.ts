@@ -7,6 +7,7 @@ import path from 'node:path';
 import { log, logError } from '../utils/logger';
 import { isUncPath, isWindowsDrivePath } from '../../shared/local-file-path';
 import { resolvePathAgainstWorkspace } from '../../shared/workspace-path';
+import { quarantineRawProtocolMarkup } from '../../shared/raw-protocol-markup';
 import type {
   RemoteMessage,
   RemoteResponse,
@@ -503,26 +504,37 @@ export class MessageRouter {
    */
   private async sendFinalResponse(sessionId: string, originalMessage: RemoteMessage): Promise<void> {
     const responseText = this.responseBuffers.get(sessionId);
-    
+
     if (!responseText || !this.responseCallback) {
       return;
     }
-    
+
+    // Remote channels (Feishu/Slack/Lark) must never receive raw agent-protocol
+    // markup a degraded model leaked into its text (tool_use/turn tags with
+    // embedded commands). Strip it exactly like the local chat display does.
+    const { cleanText } = quarantineRawProtocolMarkup(responseText);
+    if (!cleanText.trim()) {
+      log('[MessageRouter] Final response was pure raw protocol markup; nothing to send:', {
+        sessionId,
+      });
+      return;
+    }
+
     log('[MessageRouter] Sending final response:', {
       sessionId,
-      textLength: responseText.length,
+      textLength: cleanText.length,
     });
-    
+
     const response: RemoteResponse = {
       channelType: originalMessage.channelType,
       channelId: originalMessage.channelId,
       content: {
         type: 'markdown',
-        markdown: responseText,
+        markdown: cleanText,
       },
       replyTo: originalMessage.id,
     };
-    
+
     await this.responseCallback(response);
   }
   

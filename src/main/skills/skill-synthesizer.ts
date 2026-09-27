@@ -24,6 +24,7 @@ import {
   proposalsDirForActiveSkillsDir,
 } from './skill-proposals';
 import type { Message } from '../../shared/types';
+import { quarantineRawProtocolMarkup } from '../../shared/raw-protocol-markup';
 import type Database from 'better-sqlite3';
 
 interface SynthesizedSkillResult {
@@ -239,7 +240,8 @@ export class SkillSynthesizer {
 
       for (const block of msg.content) {
         if (block.type === 'text' && block.text) {
-          textParts.push(block.text.slice(0, 300));
+          // Never feed leaked raw agent-protocol markup to the synthesis LLM.
+          textParts.push(quarantineRawProtocolMarkup(block.text).cleanText.slice(0, 300));
         } else if (block.type === 'tool_use' || (block as { type?: string }).type === 'toolCall') {
           const b = block as { name?: string; input?: unknown };
           toolUses.push(`${b.name || 'tool'}(${JSON.stringify(b.input || {}).slice(0, 100)})`);

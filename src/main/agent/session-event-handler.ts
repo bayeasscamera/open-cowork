@@ -23,6 +23,7 @@ import {
 } from './agent-runner-message-end';
 import type { LoopGuard, LoopGuardDecision, ToolCallDescriptor } from './agent-runner-loop-guard';
 import { normalizeToolExecutionResultForUi } from './tool-result-utils';
+import { quarantineRawProtocolMarkup } from '../../shared/raw-protocol-markup';
 
 /** Mutable runner state the handler reads and writes through accessors. */
 export interface PiSessionEventState {
@@ -50,6 +51,13 @@ export interface PiSessionToolActivity {
   end(input: { toolCallId: string; toolName: string; isError: boolean; output?: string }): void;
 }
 
+/** Detail passed to PiSessionEventContext.reportProtocolLeak (kept separate so the contract test's single-line interface extraction stays accurate). */
+export interface ProtocolLeakDetail {
+  sessionId: string;
+  fragmentCount: number;
+  sample: string;
+}
+
 /** Everything the handler needs from the runner; no implicit singleton. */
 export interface PiSessionEventContext {
   sessionId: string;
@@ -71,6 +79,13 @@ export interface PiSessionEventContext {
   sanitizeOutputPaths(content: string): string;
   /** Records tool executions in the control center activity feed. */
   toolActivity?: PiSessionToolActivity;
+  /**
+   * Reports that an assistant text block carried raw agent-protocol markup
+   * (tool_use/turn tags leaked as plain text). Optional so the handler stays
+   * usable in tests. Used for telemetry and causal error-pattern memory; the
+   * persisted message content is deliberately left untouched.
+   */
+  reportProtocolLeak?(detail: ProtocolLeakDetail): void;
 }
 
 /** Bridges agent SDK session events to the Open Cowork ServerEvent protocol. */
@@ -171,6 +186,19 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
             if (cleanText) {
               contentBlocks.push({ type: 'text', text: ctx.sanitizeOutputPaths(cleanText) });
             }
+            // Telemetry: raw agent-protocol markup in a text block means the
+            // model is leaking its function-calling protocol as plain text
+            // (observed with degraded relays). The stored message content is
+            // deliberately untouched — the renderer quarantines it for
+            // display and cold-start strips it before model replay.
+            const protocolLeak = quarantineRawProtocolMarkup(cleanText);
+            if (protocolLeak.fragments.length > 0) {
+              ctx.reportProtocolLeak?.({
+                sessionId: ctx.sessionId,
+                fragmentCount: protocolLeak.fragments.length,
+                sample: protocolLeak.fragments[0]?.slice(0, 120) ?? '',
+              });
+            }
             if (artifacts.length > 0) {
               for (const step of buildArtifactTraceSteps(artifacts)) {
                 ctx.sendTraceStep(step);
@@ -260,7 +288,9 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
           if (ctx.state.isTwoStageArmed() && isTerminalTextOnly) {
             const draftText = contentBlocks
               .filter((block) => block.type === 'text')
-              .map((block) => ('text' in block ? block.text : ''))
+              .map((block) =>
+                'text' in block ? quarantineRawProtocolMarkup(block.text).cleanText : ''
+              )
               .join('\n\n')
               .trim();
             ctx.state.stashPipelineDraft(assistantMsg, draftText);

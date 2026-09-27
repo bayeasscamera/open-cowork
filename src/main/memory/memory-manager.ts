@@ -3,6 +3,7 @@ import type { Message, MemoryEntry, ContentBlock } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { logError, logWarn } from '../utils/logger';
 import type { MemoryLLMClientLike } from './memory-llm-client';
+import { buildSummaryTranscript } from './memory-utils';
 
 interface ContextStrategy {
   type: 'full' | 'compressed' | 'rolling';
@@ -453,15 +454,7 @@ NOTE: The full message history is available. Review the last few exchanges to qu
     }
 
     try {
-      const transcript = messages
-        .map((m) => {
-          const text = m.content
-            .filter((b) => b.type === 'text')
-            .map((b) => (b as { type: 'text'; text: string }).text)
-            .join('\n');
-          return `[${m.role.toUpperCase()}]: ${text}`;
-        })
-        .join('\n\n');
+      const transcript = buildSummaryTranscript(messages);
 
       const result = await this.llmClient.complete({
         systemPrompt: `You are a concise conversation summarizer. 

@@ -385,6 +385,53 @@ describe('handlePiSessionEvent — message_end', () => {
     expect(draft.message?.content).toEqual([{ type: 'text', text: 'draft answer' }]);
   });
 
+  it('reports a protocol leak in a text block without rewriting the stored message', () => {
+    const reportProtocolLeak = vi.fn();
+    const h = makeHarness({ reportProtocolLeak } as never);
+    const leaky =
+      'Prose saine.\n<tool_use name="bash" id="call_x">{"command":"ls"}<' + '/tool_use>';
+    vi.mocked(resolveMessageEndPayload).mockReturnValue(
+      makePayload({ effectiveContent: [{ type: 'text', text: leaky }] })
+    );
+    h.run({ type: 'message_end', message });
+    // Stored message keeps the raw text (display-side quarantine owns rendering)
+    const sent = h.effects.sendMessage.mock.calls[0][0] as Message;
+    expect(sent.content[0]).toEqual({ type: 'text', text: leaky });
+    expect(reportProtocolLeak).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'sess-1', fragmentCount: 1 })
+    );
+  });
+
+  it('does not report anything for clean text blocks', () => {
+    const cleanSpy = vi.fn();
+    const h = makeHarness({ reportProtocolLeak: cleanSpy } as never);
+    vi.mocked(resolveMessageEndPayload).mockReturnValue(
+      makePayload({ effectiveContent: [{ type: 'text', text: 'clean answer' }] })
+    );
+    h.run({ type: 'message_end', message });
+    expect(cleanSpy).not.toHaveBeenCalled();
+    expect(h.effects.sendMessage).toHaveBeenCalled();
+  });
+
+  it('quarantines leaked markup out of the stashed two-stage draft', () => {
+    const h = makeHarness();
+    h.armTwoStage();
+    vi.mocked(resolveMessageEndPayload).mockReturnValue(
+      makePayload({
+        effectiveContent: [
+          {
+            type: 'text',
+            text: 'Draft answer.\n<turn role="assistant">\n<tool_use name="bash" id="call_y">{"command":"ls"}<' +
+              '/tool_use>\n<' + '/turn>',
+          },
+        ],
+      })
+    );
+    h.run({ type: 'message_end', message });
+    expect(h.effects.sendMessage).not.toHaveBeenCalled();
+    expect(h.getPipelineDraft().text).toBe('Draft answer.');
+  });
+
   it('drops a text block whose extracted text is empty', () => {
     const h = makeHarness();
     h.armTwoStage();

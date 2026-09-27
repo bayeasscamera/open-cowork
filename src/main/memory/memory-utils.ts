@@ -2,6 +2,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ContentBlock, Message } from '../../shared/types';
+import { quarantineRawProtocolMarkup } from '../../shared/raw-protocol-markup';
 import type {
   AppliedCoreMemoryAction,
   CoreMemoryActionInput,
@@ -384,4 +385,27 @@ export function getFileSizeBytes(filePath: string): number {
 export function isSubPath(filePath: string, rootPath: string): boolean {
   const relative = path.relative(path.resolve(rootPath), path.resolve(filePath));
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/**
+ * Build the "[ROLE]: text" transcript fed to the conversation summarizer.
+ * Assistant text blocks pass through the protocol-leak quarantine first: raw
+ * agent-protocol markup leaked by a degraded model (tool_use/turn tags with
+ * embedded commands) must never contaminate summaries or compressed context.
+ * Empty turns (pure markup) are omitted so the summarizer never sees a
+ * dangling "[ASSISTANT]: " line.
+ */
+export function buildSummaryTranscript(messages: Message[]): string {
+  const turns: string[] = [];
+  for (const m of messages) {
+    const text = m.content
+      .filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text')
+      .map((b) => quarantineRawProtocolMarkup(b.text).cleanText)
+      .join('\n')
+      .trim();
+    if (text) {
+      turns.push(`[${m.role.toUpperCase()}]: ${text}`);
+    }
+  }
+  return turns.join('\n\n');
 }
