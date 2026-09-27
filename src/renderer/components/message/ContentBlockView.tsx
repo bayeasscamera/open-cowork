@@ -15,7 +15,10 @@ import {
 } from '../../utils/markdown-local-link';
 import { normalizeLatexDelimiters } from '../../utils/latex-delimiters';
 import { AUTO_TEXT_DIRECTION_PROPS } from '../../utils/text-direction';
-import { quarantineRawProtocolMarkup } from '../../utils/raw-protocol-markup';
+import {
+  quarantineRawProtocolMarkup,
+  type RawProtocolQuarantineResult,
+} from '../../../shared/raw-protocol-markup';
 import type { ToolUseContent, ToolResultContent, FileAttachmentContent } from '../../types';
 import { FileText } from 'lucide-react';
 import { CodeBlock } from './CodeBlock';
@@ -33,6 +36,15 @@ const MessageMarkdown = lazy(() =>
 // Render them as regular links instead of strikethrough links.
 function normalizeCitationMarkdownLinks(markdown: string): string {
   return markdown.replace(/~\[(.+?)\]\(([^)\s]+)\)~/g, '[$1]($2)');
+}
+
+// Normalizations applied to assistant text before markdown rendering (and,
+// via rawProtocolQuarantine, before protocol-leak quarantine so the detection
+// sees the same text the renderer displays).
+function normalizeTextBlockMarkdown(text: string): string {
+  return normalizeCitationMarkdownLinks(
+    normalizeLocalFileMarkdownLinks(normalizeLatexDelimiters(text))
+  );
 }
 
 export const ContentBlockView = memo(function ContentBlockView({
@@ -112,6 +124,17 @@ export const ContentBlockView = memo(function ContentBlockView({
     const parts = splitChildrenByFileMentions(normalized);
     return renderFileMentionParts(parts, keyPrefix);
   };
+
+  // Protocol-leak quarantine for assistant text, memoized so a large leaked
+  // message (50KB+) is scanned once per content change instead of once per
+  // streaming tick. Null for user content and non-text blocks (the user path
+  // never rewrites content and other block types cannot carry the markup).
+  const rawProtocolQuarantine: RawProtocolQuarantineResult | null = useMemo(() => {
+    if (isUser || block.type !== 'text') return null;
+    return quarantineRawProtocolMarkup(
+      normalizeTextBlockMarkdown((block as { type: 'text'; text: string }).text || '')
+    );
+  }, [block, isUser]);
 
   const markdownComponents = useMemo(
     () => ({
@@ -266,9 +289,7 @@ export const ContentBlockView = memo(function ContentBlockView({
     case 'text': {
       const textBlock = block as { type: 'text'; text: string };
       const text = textBlock.text || '';
-      const normalizedText = normalizeCitationMarkdownLinks(
-        normalizeLocalFileMarkdownLinks(normalizeLatexDelimiters(text))
-      );
+      const normalizedText = normalizeTextBlockMarkdown(text);
 
       if (!text) {
         return <span className="text-text-muted italic">{t('messageCard.emptyText')}</span>;
@@ -322,7 +343,8 @@ export const ContentBlockView = memo(function ContentBlockView({
       // as plain text by a degraded model) must never render as chat prose:
       // quarantine it into the collapsed notice instead. User content is never
       // rewritten — the branch above handles it.
-      const { cleanText, fragments } = quarantineRawProtocolMarkup(normalizedText);
+      const { cleanText, fragments } =
+        rawProtocolQuarantine ?? quarantineRawProtocolMarkup(normalizedText);
       if (fragments.length > 0) {
         return (
           <>

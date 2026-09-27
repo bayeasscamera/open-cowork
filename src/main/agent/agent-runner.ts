@@ -106,6 +106,7 @@ import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import {
   buildTerminalErrorEmissionDetails,
   buildTerminalErrorMessage,
+  classifyTerminalError,
   resolveAbortDisposition,
   shouldPreserveExistingTrace,
   toUserFacingErrorText,
@@ -1310,6 +1311,8 @@ export class CoworkAgentRunner {
             role: 'assistant',
             content: [{ type: 'text', text: messageText }],
             timestamp: Date.now(),
+            isError: true,
+            errorCode: classifyTerminalError(errorText),
           });
         }
 
@@ -1371,6 +1374,22 @@ export class CoworkAgentRunner {
         emitTerminalError,
         sanitizeOutputPaths: (content) => sanitizeOutputPaths(content),
         toolActivity,
+        reportProtocolLeak: (detail) => {
+          logCtxWarn(
+            `[CoworkAgentRunner] Raw agent-protocol markup leaked as text (${detail.fragmentCount} fragment(s)) — renderer quarantines display, cold-start strips replay. Sample:`,
+            detail.sample
+          );
+          try {
+            this.memoryManager?.recordErrorPattern(
+              'model leaked raw tool-calling protocol markup (<tool_use>/<turn>) as plain text instead of structured tool calls',
+              'The model degraded after an upstream failure and imitated the conversation transcript format. Display is quarantined automatically; if this recurs, recreate the session or switch model/protocol.',
+              'Avoid re-sending the leaked markup to the model; rely on native tool_calls only.',
+              session.id
+            );
+          } catch (memoryErr) {
+            logWarn('[CoworkAgentRunner] Failed to record protocol-leak pattern:', memoryErr);
+          }
+        },
       };
 
       const unsubscribe = piSession.subscribe((event) => {
@@ -1446,8 +1465,15 @@ export class CoworkAgentRunner {
           id: uuidv4(),
           sessionId: session.id,
           role: 'assistant',
-          content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+          content: [
+            {
+              type: 'text',
+              text: '**Error**: The request timed out — no response was received from upstream for an extended period.',
+            },
+          ],
           timestamp: Date.now(),
+          isError: true,
+          errorCode: 'timeout',
         };
         this.sendMessage(session.id, errorMsg);
         this.sendTraceUpdate(session.id, thinkingStepId, {
@@ -1665,8 +1691,15 @@ export class CoworkAgentRunner {
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+            content: [
+              {
+                type: 'text',
+                text: '**Error**: The request timed out — no response was received from upstream for an extended period.',
+              },
+            ],
             timestamp: Date.now(),
+            isError: true,
+            errorCode: 'timeout',
           };
           this.sendMessage(session.id, errorMsg);
           this.sendTraceUpdate(session.id, thinkingStepId, {

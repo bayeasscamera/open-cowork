@@ -174,7 +174,20 @@
     "disclaimer": "Open Cowork est propulsé par l’IA et peut faire des erreurs. Vérifiez les informations importantes.",
     "noModel": "Aucun modèle",
     "connectorCount_one": "{{count}} connecteur",
-    "connectorCount_other": "{{count}} connecteurs"
+    "connectorCount_other": "{{count}} connecteurs",
+    "terminalError": {
+      "title": "Échec de la requête",
+      "kinds": {
+        "timeout": "Le modèle ne répondait plus — aucune sortie en amont pendant une période prolongée.",
+        "empty_result": "Le modèle a renvoyé un résultat vide ; le modèle ou la passerelle est peut-être incompatible.",
+        "upstream_400": "La requête a été rejetée en amont (400) — la configuration modèle/protocole est peut-être incompatible.",
+        "auth_failed": "Échec d'authentification — vérifiez la clé API.",
+        "rate_limited": "Limite de débit atteinte (429) — réessayez plus tard.",
+        "server_error": "Erreur du service en amont — le service du modèle est peut-être surchargé.",
+        "network_error": "Connexion réseau interrompue.",
+        "stream_error": "Le flux de réponse a échoué."
+      }
+    }
   },
   "compaction": {
     "turnsLeft": "tours restants",

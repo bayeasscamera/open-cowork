@@ -1,8 +1,10 @@
 // Collapsible "thinking" block — Claude extended thinking display
-import { Suspense, lazy, useState, memo } from 'react';
+import { Suspense, lazy, useState, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Brain } from 'lucide-react';
 import { PanelErrorBoundary } from '../PanelErrorBoundary';
+import { quarantineRawProtocolMarkup } from '../../../shared/raw-protocol-markup';
+import { RawProtocolNotice } from './RawProtocolNotice';
 
 const MessageMarkdown = lazy(() =>
   import('../MessageMarkdown').then((module) => ({ default: module.MessageMarkdown }))
@@ -39,16 +41,27 @@ export function escapeThinkTags(text: string): string {
 
 interface ThinkingBlockProps {
   block: { type: 'thinking'; thinking: string };
+  /** Start expanded — deep-linking diagnostics and tests. */
+  defaultExpanded?: boolean;
 }
 
-export const ThinkingBlock = memo(function ThinkingBlock({ block }: ThinkingBlockProps) {
+export const ThinkingBlock = memo(function ThinkingBlock({
+  block,
+  defaultExpanded = false,
+}: ThinkingBlockProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const text = block.thinking || '';
+  // Same protocol-leak quarantine as assistant text blocks: thinking content
+  // that carried raw agent markup must never render as prose either.
+  const { cleanText, fragments } = useMemo(
+    () => (text ? quarantineRawProtocolMarkup(text) : { cleanText: '', fragments: [] }),
+    [text]
+  );
   if (!text) return null;
 
   // Preview: first ~80 chars, clean up broken ** markers from truncation
-  let preview = text.length > 80 ? text.substring(0, 77) + '...' : text;
+  let preview = cleanText.length > 80 ? cleanText.substring(0, 77) + '...' : cleanText;
   // Strip a trailing unclosed ** that truncation may have created
   preview = preview.replace(/\*{1,2}(?:\.{3})?$/, (m) => {
     // Keep the ... suffix if present, just remove the dangling asterisks
@@ -79,17 +92,20 @@ export const ThinkingBlock = memo(function ThinkingBlock({ block }: ThinkingBloc
       </button>
 
       {expanded && (
-        <div className="border-t border-border/50 px-4 py-3 animate-fade-in">
-          <div className="text-sm text-text-secondary leading-relaxed prose-chat max-w-none">
-            <PanelErrorBoundary
-              name="ThinkingMarkdown"
-              fallback={<div className="whitespace-pre-wrap">{text}</div>}
-            >
-              <Suspense fallback={<div className="whitespace-pre-wrap">{text}</div>}>
-                <MessageMarkdown normalizedText={escapeThinkTags(text)} />
-              </Suspense>
-            </PanelErrorBoundary>
-          </div>
+        <div className="border-t border-border/50 px-4 py-3 animate-fade-in space-y-2">
+          {cleanText && (
+            <div className="text-sm text-text-secondary leading-relaxed prose-chat max-w-none">
+              <PanelErrorBoundary
+                name="ThinkingMarkdown"
+                fallback={<div className="whitespace-pre-wrap">{cleanText}</div>}
+              >
+                <Suspense fallback={<div className="whitespace-pre-wrap">{cleanText}</div>}>
+                  <MessageMarkdown normalizedText={escapeThinkTags(cleanText)} />
+                </Suspense>
+              </PanelErrorBoundary>
+            </div>
+          )}
+          <RawProtocolNotice fragments={fragments} />
         </div>
       )}
     </div>

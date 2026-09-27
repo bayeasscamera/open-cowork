@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildTerminalErrorEmissionDetails,
   buildTerminalErrorMessage,
+  classifyTerminalError,
   resolveAbortDisposition,
   resolveAssistantStreamErrorText,
   resolveMessageEndPayload,
@@ -42,7 +43,7 @@ describe('resolveMessageEndPayload', () => {
     expect(result.shouldEmitMessage).toBe(false);
     expect(result.effectiveContent).toEqual([]);
     expect(result.errorText).toBe(
-      '模型响应超时：长时间未收到上游返回，请稍后重试或检查当前模型/网关负载。'
+      'Model response timed out: no upstream output was received for an extended period. Retry later or check the current model/gateway load.'
     );
   });
 
@@ -60,35 +61,38 @@ describe('resolveMessageEndPayload', () => {
     expect(result.shouldEmitMessage).toBe(false);
     expect(result.effectiveContent).toEqual([]);
     expect(result.errorText).toBe(
-      '模型返回了一个空的成功结果，当前模型或网关兼容性可能有问题，请重试或切换协议后再试。'
+      'The model returned an empty success result. The current model or gateway may have a compatibility problem. Retry or switch protocol.'
     );
   });
 
-  it('preserves literal <think> in text as-is (never parsed)', () => {
+  it('preserves literal \u003Cthink\u003E in text as-is (never parsed)', () => {
     const result = resolveMessageEndPayload({
       message: {
         role: 'assistant',
-        content: [{ type: 'text', text: 'Use <think>reasoning</think> to think' }],
+        content: [
+          { type: 'text', text: 'Use \u003Cthink\u003Ereasoning\u003C/think\u003E to think' },
+        ],
         stopReason: 'stop',
       },
       streamedText: '',
     });
 
     expect(result.effectiveContent).toEqual([
-      { type: 'text', text: 'Use <think>reasoning</think> to think' },
+      { type: 'text', text: 'Use \u003Cthink\u003Ereasoning\u003C/think\u003E to think' },
     ]);
   });
 
-  it('preserves literal <think> in thinking block content (reasoning field mentions <think>)', () => {
+  it('preserves literal \u003Cthink\u003E in thinking block content (reasoning field mentions \u003Cthink\u003E)', () => {
     const result = resolveMessageEndPayload({
       message: {
         role: 'assistant',
         content: [
           {
             type: 'thinking',
-            thinking: 'The user asks about <think> and </think> tags and what they mean.',
+            thinking:
+              'The user asks about \u003Cthink\u003E and \u003C/think\u003E tags and what they mean.',
           },
-          { type: 'text', text: 'The <think> tag wraps reasoning.' },
+          { type: 'text', text: 'The \u003Cthink\u003E tag wraps reasoning.' },
         ],
         stopReason: 'stop',
       },
@@ -98,56 +102,76 @@ describe('resolveMessageEndPayload', () => {
     expect(result.effectiveContent).toEqual([
       {
         type: 'thinking',
-        thinking: 'The user asks about <think> and </think> tags and what they mean.',
+        thinking:
+          'The user asks about \u003Cthink\u003E and \u003C/think\u003E tags and what they mean.',
       },
-      { type: 'text', text: 'The <think> tag wraps reasoning.' },
+      { type: 'text', text: 'The \u003Cthink\u003E tag wraps reasoning.' },
     ]);
   });
 
-  it('preserves literal <think> in streamedText when message content is empty (Ollama streaming fallback)', () => {
+  it('preserves literal \u003Cthink\u003E in streamedText when message content is empty (Ollama streaming fallback)', () => {
     const result = resolveMessageEndPayload({
       message: {
         role: 'assistant',
         content: [],
         stopReason: 'stop',
       },
-      streamedText: 'The <think> tag is used for reasoning, not <think>actual reasoning</think>.',
+      streamedText:
+        'The \u003Cthink\u003E tag is used for reasoning, not \u003Cthink\u003Eactual reasoning\u003C/think\u003E.',
     });
 
     expect(result.effectiveContent).toEqual([
       {
         type: 'text',
-        text: 'The <think> tag is used for reasoning, not <think>actual reasoning</think>.',
+        text: 'The \u003Cthink\u003E tag is used for reasoning, not \u003Cthink\u003Eactual reasoning\u003C/think\u003E.',
       },
     ]);
   });
 });
 
+describe('classifyTerminalError', () => {
+  it('classifies the documented upstream failure kinds into stable codes', () => {
+    expect(classifyTerminalError('first_response_timeout')).toBe('timeout');
+    expect(classifyTerminalError('empty_success_result')).toBe('empty_result');
+    expect(classifyTerminalError('HTTP 400: bad request')).toBe('upstream_400');
+    expect(classifyTerminalError('invalid request: unsupported parameter')).toBe('upstream_400');
+    expect(classifyTerminalError('Error 401: Unauthorized')).toBe('auth_failed');
+    expect(classifyTerminalError('403 Forbidden')).toBe('auth_failed');
+    expect(classifyTerminalError('429 Too Many Requests')).toBe('rate_limited');
+    expect(classifyTerminalError('too many requests')).toBe('rate_limited');
+    expect(classifyTerminalError('HTTP 502: Bad Gateway')).toBe('server_error');
+    expect(classifyTerminalError('overloaded_error')).toBe('server_error');
+    expect(classifyTerminalError('connection error: ECONNRESET')).toBe('network_error');
+    expect(classifyTerminalError('fetch failed')).toBe('network_error');
+    expect(classifyTerminalError('some obscure upstream error')).toBe('stream_error');
+  });
+});
+
 describe('toUserFacingErrorText', () => {
-  it('maps 400 / bad request to configuration hint', () => {
+  it('maps 400 / bad request to a locale-neutral configuration hint', () => {
     const result = toUserFacingErrorText('HTTP 400: bad request - ROLE_UNSPECIFIED');
-    expect(result).toContain('请求被上游拒绝（400）');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Upstream rejected the request (400)');
+    expect(result).toContain('Raw error:');
     expect(result).toContain('ROLE_UNSPECIFIED');
   });
 
   it('maps invalid request to configuration hint', () => {
     const result = toUserFacingErrorText('invalid request: unsupported parameter "store"');
-    expect(result).toContain('请求被上游拒绝（400）');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Upstream rejected the request (400)');
+    expect(result).toContain('Raw error:');
   });
 
   it('maps 401 to authentication hint', () => {
     const result = toUserFacingErrorText('Error 401: Unauthorized');
-    expect(result).toContain('认证失败');
-    expect(result).toContain('API Key');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Authentication failed');
+    expect(result).toContain('API key');
+    expect(result).toContain('Raw error:');
   });
 
   it('maps 429 / rate limit to throttle hint', () => {
     const result = toUserFacingErrorText('429 Too Many Requests - rate limit exceeded');
-    expect(result).toContain('请求被限流（429）');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Rate limited (429)');
+    expect(result).toContain('Raw error:');
   });
 
   it('passes through unknown errors unchanged', () => {
@@ -157,57 +181,73 @@ describe('toUserFacingErrorText', () => {
 
   it('still maps first_response_timeout correctly (regression)', () => {
     expect(toUserFacingErrorText('first_response_timeout')).toBe(
-      '模型响应超时：长时间未收到上游返回，请稍后重试或检查当前模型/网关负载。'
+      'Model response timed out: no upstream output was received for an extended period. Retry later or check the current model/gateway load.'
     );
   });
 
   it('maps 5xx server errors to upstream service hint', () => {
     const result = toUserFacingErrorText('HTTP 502: Bad Gateway');
-    expect(result).toContain('上游服务异常');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Upstream service error');
+    expect(result).toContain('Raw error:');
     expect(result).toContain('502');
   });
 
   it('maps "server error" to upstream service hint', () => {
     const result = toUserFacingErrorText('internal server error');
-    expect(result).toContain('上游服务异常');
+    expect(result).toContain('Upstream service error');
   });
 
   it('maps "overloaded" to upstream service hint', () => {
     const result = toUserFacingErrorText('overloaded_error');
-    expect(result).toContain('上游服务异常');
+    expect(result).toContain('Upstream service error');
   });
 
   it('maps "terminated" to network connection hint', () => {
     const result = toUserFacingErrorText('terminated');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
     expect(result).toContain('terminated');
   });
 
   it('maps "connection error" to network connection hint', () => {
     const result = toUserFacingErrorText('connection error: ECONNRESET');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
   });
 
   it('maps "fetch failed" to network connection hint', () => {
     const result = toUserFacingErrorText('fetch failed');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
   });
 
   it('maps "other side closed" to network connection hint', () => {
     const result = toUserFacingErrorText('other side closed');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
   });
 
   it('maps "too many requests" without status code to throttle hint', () => {
     const result = toUserFacingErrorText('too many requests');
-    expect(result).toContain('请求被限流（429）');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Rate limited (429)');
+    expect(result).toContain('Raw error:');
   });
 
   it('maps "retry delay exceeded" to network connection hint', () => {
     const result = toUserFacingErrorText('retry delay exceeded');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
+  });
+
+  it('never emits hardcoded locale text (main process stays locale-neutral)', () => {
+    const samples = [
+      'HTTP 400: bad request',
+      'Error 401: Unauthorized',
+      '429 Too Many Requests',
+      'HTTP 502: Bad Gateway',
+      'terminated',
+      'first_response_timeout',
+      'empty_success_result',
+    ];
+    for (const sample of samples) {
+      const cjk = toUserFacingErrorText(sample).match(/[\u4e00-\u9fff]/);
+      expect(cjk, `CJK characters leaked for input: ${sample}`).toBeNull();
+    }
   });
 });
 
@@ -236,7 +276,7 @@ describe('resolveAssistantStreamErrorText', () => {
       },
     });
 
-    expect(result).toContain('请求被上游拒绝（400）');
+    expect(result).toContain('Upstream rejected the request (400)');
     expect(result).toContain('malformed tool call JSON');
   });
 
@@ -256,7 +296,6 @@ describe('resolveAssistantStreamErrorText', () => {
           cacheRead: 0,
           cacheWrite: 0,
           totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
         },
         stopReason: 'aborted',
         timestamp: 0,
@@ -286,12 +325,12 @@ describe('buildTerminalErrorMessage', () => {
 
     expect(result).toContain('Partial analysis already streamed');
     expect(result).toContain('**Error**: HTTP 400: invalid request');
-    expect(result).toContain('请检查配置后重试');
+    expect(result).toContain('Check the configuration and retry');
   });
 
   it('uses the retry hint for non-4xx terminal errors', () => {
     const result = buildTerminalErrorMessage('connection reset');
-    expect(result).toContain('Agent 正在自动重试');
+    expect(result).toContain('The agent is retrying automatically');
   });
 });
 
@@ -314,7 +353,7 @@ describe('buildTerminalErrorEmissionDetails', () => {
     });
 
     expect(result.partialText).toBe('');
-    expect(result.messageText).toContain('Agent 正在自动重试');
+    expect(result.messageText).toContain('The agent is retrying automatically');
   });
 });
 

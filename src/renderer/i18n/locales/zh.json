@@ -989,7 +989,20 @@
     "disclaimer": "Open Cowork 由 AI 驱动，可能会出错，请务必自行复核结果。",
     "noModel": "无模型",
     "connectorCount_one": "{{count}} 个连接器",
-    "connectorCount_other": "{{count}} 个连接器"
+    "connectorCount_other": "{{count}} 个连接器",
+    "terminalError": {
+      "title": "请求失败",
+      "kinds": {
+        "timeout": "模型长时间未返回任何输出，已停止等待。",
+        "empty_result": "模型返回了空的成功结果，模型或网关可能不兼容。",
+        "upstream_400": "上游拒绝请求（400）——模型/协议配置可能不兼容。",
+        "auth_failed": "认证失败——请检查 API Key。",
+        "rate_limited": "请求被限流（429）——请稍后重试。",
+        "server_error": "上游服务异常——模型服务可能过载。",
+        "network_error": "网络连接中断。",
+        "stream_error": "响应流失败。"
+      }
+    }
   },
   "context": {
     "progress": "进度",

@@ -2,7 +2,7 @@
 // Delegates block rendering to ContentBlockView and its sub-components.
 import { useState, memo, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Clock, XCircle, Pencil, RefreshCw } from 'lucide-react';
+import { Copy, Check, Clock, XCircle, Pencil, RefreshCw, AlertOctagon } from 'lucide-react';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '../types';
 import { ContentBlockView } from './message/ContentBlockView';
 
@@ -200,7 +200,27 @@ export const MessageCard = memo(function MessageCard({
         </div>
       ) : (
         // Assistant message — no bubble, direct content (Claude style)
-        <div className="group space-y-1.5">
+        <div
+          className={`group space-y-1.5 ${
+            message.isError
+              ? 'rounded-2xl border border-error/40 bg-error/5 px-3.5 py-2.5'
+              : ''
+          }`}
+        >
+          {message.isError && (
+            <div
+              data-testid="assistant-error-banner"
+              className="flex items-center gap-2 text-error break-words"
+            >
+              <AlertOctagon className="w-4 h-4 flex-shrink-0" />
+              <span className="text-sm font-medium">{t('chat.terminalError.title')}</span>
+              {message.errorCode && (
+                <span className="text-xs text-text-secondary">
+                  {t(`chat.terminalError.kinds.${message.errorCode}`)}
+                </span>
+              )}
+            </div>
+          )}
           {contentBlocks.map((block, index) => {
             // Skip tool_result blocks that are merged into their tool_use card
             if (

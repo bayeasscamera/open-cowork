@@ -183,6 +183,15 @@ export interface Message {
   tokenUsage?: TokenUsage;
   localStatus?: 'queued' | 'cancelled';
   executionTimeMs?: number;
+  /**
+   * True when this assistant message is a Cowork-generated terminal error
+   * report (upstream 400/429/5xx, timeout, empty result...) rather than real
+   * model output. Drives the distinct error card in the renderer and the
+   * exclusion from cold-start history replay.
+   */
+  isError?: boolean;
+  /** Machine-readable terminal error kind, see classifyTerminalError(). */
+  errorCode?: string;
 }
 
 type MessageRole = 'user' | 'assistant' | 'system';

@@ -967,7 +967,20 @@
     "disclaimer": "Open Cowork is AI-powered and may make mistakes. Please double-check responses.",
     "noModel": "No model",
     "connectorCount_one": "{{count}} connector",
-    "connectorCount_other": "{{count}} connectors"
+    "connectorCount_other": "{{count}} connectors",
+    "terminalError": {
+      "title": "Request failed",
+      "kinds": {
+        "timeout": "The model stopped responding — no upstream output for an extended period.",
+        "empty_result": "The model returned an empty success result; the model or gateway may be incompatible.",
+        "upstream_400": "Upstream rejected the request (400) — model/protocol configuration may be incompatible.",
+        "auth_failed": "Authentication failed — check the API key.",
+        "rate_limited": "Rate limit reached (429) — retry later.",
+        "server_error": "Upstream service error — the model service may be overloaded.",
+        "network_error": "Network connection interrupted.",
+        "stream_error": "The response stream failed."
+      }
+    }
   },
   "context": {
     "progress": "Progress",
