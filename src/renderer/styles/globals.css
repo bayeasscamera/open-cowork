@@ -231,6 +231,15 @@
     margin-bottom: 0.75rem;
   }
 
+  /* Fenced code blocks without a language render as inline-styled code inside
+     a class-less <pre> (white-space: pre). Without containment, long lines
+     overflow the message column — the same overflow class as the raw
+     agent-protocol markup bug. Scroll inside the block, like .code-block. */
+  .prose-chat pre:not(.code-block) {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
   .prose-chat p:last-child {
     margin-bottom: 0;
   }
