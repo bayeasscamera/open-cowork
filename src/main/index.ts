@@ -30,6 +30,7 @@ import * as fs from 'fs';
 import { spawn } from 'child_process';
 import { config } from 'dotenv';
 import { initDatabase, closeDatabase, getDatabase } from './db/database';
+import { applyRetention, DEFAULT_RETENTION_POLICY } from './db/retention';
 import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
@@ -1390,6 +1391,18 @@ app
     // This avoids session.start racing the startup path and hitting a null manager.
     sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService, extensionManager);
     attachAgentServices(sessionManager);
+    // Expire stale sessions before anything reads the list, so the sidebar is
+    // built from what actually survives. A session the user pinned, that is
+    // running, or that belongs to a scheduled task's last run is never
+    // touched — see retention.ts.
+    try {
+      applyRetention(db, {
+        ...DEFAULT_RETENTION_POLICY,
+        protectedSessionIds: collectProtectedSessionIds(db),
+      });
+    } catch (retentionErr) {
+      logError('[Startup] Session retention sweep failed:', retentionErr);
+    }
     skillsManager = new SkillsManager(db, {
       getConfiguredGlobalSkillsPath: () => configStore.get('globalSkillsPath') || '',
       setConfiguredGlobalSkillsPath: (nextPath: string) => {
@@ -2115,6 +2128,32 @@ function attachAgentServices(manager: SessionManager): void {
     modelRoutingService.recordRun(input);
     persistRoutingSoon();
   });
+}
+
+/**
+ * Sessions the retention sweep must never expire, whatever their age.
+ *
+ * A scheduled task's `last_run_session_id` is a user-visible breadcrumb — the
+ * link from a recurring job to the transcript it last produced. Expiring it
+ * would leave the task pointing at a session the user can no longer open, so
+ * those ids are protected alongside the pinned and running sessions the policy
+ * already refuses to touch.
+ */
+function collectProtectedSessionIds(db: ReturnType<typeof getDatabase>): string[] {
+  const ids = new Set<string>();
+  try {
+    for (const task of db.scheduledTasks.getAll()) {
+      if (task.last_run_session_id) {
+        ids.add(task.last_run_session_id);
+      }
+    }
+  } catch (error) {
+    // Losing protection is better than failing startup: the policy has its own
+    // age and count rules, so an unreadable task list cannot delete a session
+    // outright, only make it eligible earlier than intended.
+    logError('[Startup] Could not read scheduled tasks for retention protection:', error);
+  }
+  return [...ids];
 }
 
 // Reference benchmarks and end-to-end routing validation (Phases 5.5 / 7.5).

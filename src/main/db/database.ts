@@ -9,6 +9,7 @@ import { app } from 'electron';
 import { join } from 'path';
 import { existsSync, mkdirSync, statSync, renameSync, openSync, readSync, closeSync } from 'fs';
 import { log, logError, logWarn } from '../utils/logger';
+import { boundTraceStepRow } from './retention';
 
 export interface DatabaseInstance {
   // Raw database access (for advanced queries)
@@ -912,6 +913,15 @@ export function initDatabase(): DatabaseInstance {
 
     traceSteps: {
       create: (step: TraceStepRow) => {
+        // Bounded at the storage layer, not at the call sites: a tool that
+        // returns a build log must not be able to add megabytes to one row,
+        // and a bound applied upstream is undone by the next caller that
+        // forgets it. See retention.ts.
+        const bounded = boundTraceStepRow({
+          content: step.content,
+          tool_output: step.tool_output,
+          tool_input: step.tool_input,
+        });
         insertTraceStep.run(
           step.id,
           step.session_id,
@@ -919,10 +929,10 @@ export function initDatabase(): DatabaseInstance {
           step.type,
           step.status,
           step.title,
-          step.content,
+          bounded.content,
           step.tool_name,
-          step.tool_input,
-          step.tool_output,
+          bounded.tool_input,
+          bounded.tool_output,
           step.is_error,
           step.timestamp,
           step.duration
@@ -932,8 +942,11 @@ export function initDatabase(): DatabaseInstance {
       update: (id: string, updates: Partial<TraceStepRow>) => {
         const setClauses: string[] = [];
         const values: unknown[] = [];
+        // Same storage-layer bound as create(): a tool result arrives here as
+        // an update, which is the path a long-running tool actually takes.
+        const boundedUpdates = boundTraceStepRow(updates);
 
-        for (const [key, value] of Object.entries(updates)) {
+        for (const [key, value] of Object.entries(boundedUpdates)) {
           if (value !== undefined) {
             validateIdentifier(key);
             setClauses.push(`${key} = ?`);

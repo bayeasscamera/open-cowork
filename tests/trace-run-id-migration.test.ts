@@ -29,6 +29,7 @@ vi.mock('electron', () => ({
 }));
 
 import { closeDatabase, getDatabase, initDatabase } from '../src/main/db/database';
+import { TRACE_TEXT_LIMITS, TRUNCATION_MARKER } from '../src/main/db/retention';
 import type { TraceStepRow } from '../src/main/db/database';
 
 function insertSession(id: string): void {
@@ -211,5 +212,83 @@ describe('trace_steps.run_id', () => {
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'trace_steps'`)
       .all() as Array<{ name: string }>;
     expect(indexes.map((i) => i.name)).toContain('idx_trace_steps_run');
+  });
+});
+
+describe('trace_steps text bounds', () => {
+  it('stores a truncated tool output rather than the whole thing', () => {
+    // A Bash on a large repo returns megabytes. The bound lives in the storage
+    // layer, so a call site that forgets to slice cannot fill the disk.
+    const db = getDatabase();
+    const sessionId = 'session-bounds';
+    insertSession(sessionId);
+    const huge = 'o'.repeat(500_000);
+    db.traceSteps.create({
+      id: 'huge',
+      session_id: sessionId,
+      run_id: 'run-b',
+      type: 'tool_result',
+      status: 'completed',
+      title: 'Bash',
+      content: null,
+      tool_name: 'Bash',
+      tool_input: null,
+      tool_output: huge,
+      is_error: null,
+      timestamp: 1,
+      duration: null,
+    });
+
+    const row = db.traceSteps.getBySessionId(sessionId).find((r) => r.id === 'huge');
+    expect(row?.tool_output?.length).toBeLessThanOrEqual(TRACE_TEXT_LIMITS.toolOutput);
+    expect(row?.tool_output).toContain(TRUNCATION_MARKER);
+  });
+
+  it('bounds an update as well as a create', () => {
+    // A long-running tool reports its result through traceSteps.update, which
+    // is the path that would otherwise stay unbounded.
+    const db = getDatabase();
+    const sessionId = 'session-update-bounds';
+    insertSession(sessionId);
+    insertStep({
+      id: 'upd1',
+      session_id: sessionId,
+      run_id: 'run-c',
+      type: 'tool_call',
+      title: 'Read',
+    });
+
+    db.traceSteps.update('upd1', {
+      tool_output: 'x'.repeat(200_000),
+      content: 'y'.repeat(200_000),
+    });
+
+    const row = db.traceSteps.getBySessionId(sessionId).find((r) => r.id === 'upd1');
+    expect(row?.tool_output!.length).toBeLessThanOrEqual(TRACE_TEXT_LIMITS.toolOutput);
+    expect(row?.content!.length).toBeLessThanOrEqual(TRACE_TEXT_LIMITS.content);
+  });
+
+  it('leaves a small tool output byte-for-byte identical', () => {
+    const db = getDatabase();
+    const sessionId = 'session-small';
+    insertSession(sessionId);
+    const exact = 'npm test\n3 passed';
+    db.traceSteps.create({
+      id: 'small',
+      session_id: sessionId,
+      run_id: 'run-d',
+      type: 'tool_result',
+      status: 'completed',
+      title: 'Bash',
+      content: null,
+      tool_name: 'Bash',
+      tool_input: null,
+      tool_output: exact,
+      is_error: null,
+      timestamp: 1,
+      duration: null,
+    });
+    const row = db.traceSteps.getBySessionId(sessionId).find((r) => r.id === 'small');
+    expect(row?.tool_output).toBe(exact);
   });
 });
