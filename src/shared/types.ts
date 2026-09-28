@@ -275,6 +275,14 @@ export interface TraceStep {
   isError?: boolean;
   timestamp: number;
   duration?: number;
+  /**
+   * Identifies the agent run (one user turn) that emitted the step. A session
+   * accumulates steps for every turn it has served, so without this a report
+   * or a lookup cannot tell which run a step belongs to — two runs can be
+   * interleaved in the same session, and steps from a finished run can share a
+   * title with a live one. Absent on rows written before the column existed.
+   */
+  runId?: string;
 }
 
 type TraceStepType = 'thinking' | 'text' | 'tool_call' | 'tool_result';

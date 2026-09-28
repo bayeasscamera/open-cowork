@@ -1462,7 +1462,21 @@ export class SessionManager {
   }
 
   getTraceSteps(sessionId: string): TraceStep[] {
-    const rows = this.db.traceSteps.getBySessionId(sessionId);
+    return this.db.traceSteps.getBySessionId(sessionId).map((row) =>
+      this.toTraceStep(row)
+    );
+  }
+
+  /**
+   * Steps of a single agent run. A session accumulates one trace per turn, so
+   * a report about "the run the user is watching" must be able to select that
+   * run instead of every step the session has ever produced.
+   */
+  getRunTraceSteps(sessionId: string, runId: string): TraceStep[] {
+    return this.db.traceSteps.getByRunId(sessionId, runId).map((row) => this.toTraceStep(row));
+  }
+
+  private toTraceStep(row: TraceStepRow): TraceStep {
     const parseToolInput = (value: string | null): Record<string, unknown> | undefined => {
       if (!value) return undefined;
       try {
@@ -1471,8 +1485,9 @@ export class SessionManager {
         return undefined;
       }
     };
-    return rows.map((row) => ({
+    return {
       id: row.id,
+      runId: row.run_id ?? undefined,
       type: row.type as TraceStep['type'],
       status: row.status as TraceStep['status'],
       title: row.title,
@@ -1483,7 +1498,7 @@ export class SessionManager {
       isError: row.is_error === 1 ? true : undefined,
       timestamp: row.timestamp,
       duration: row.duration ?? undefined,
-    }));
+    };
   }
 
   // Handle permission response
@@ -1576,6 +1591,7 @@ export class SessionManager {
     this.db.traceSteps.create({
       id: step.id,
       session_id: sessionId,
+      run_id: step.runId ?? null,
       type: step.type,
       status: step.status,
       title: step.title,

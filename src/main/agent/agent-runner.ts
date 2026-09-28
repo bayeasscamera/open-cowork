@@ -342,6 +342,12 @@ export class CoworkAgentRunner {
   private modelResolver?: (input: AgentModelResolutionInput) => string | undefined;
   private benchmarkRecorder?: (input: AgentRunBenchmarkInput) => void;
   private activeControllers: Map<string, AbortController> = new Map();
+  /**
+   * Run id (one per user turn) stamped onto every trace step the turn emits.
+   * Steps are keyed by session in the UI, so without this a step from a turn
+   * that finished ten messages ago is indistinguishable from a live one.
+   */
+  private activeRunIds: Map<string, string> = new Map();
   private piSessions: Map<string, CachedPiSession> = new Map();
   private toolDisplayNameCache: Map<string, string> = new Map();
   private static readonly MAX_CACHED_SESSIONS = 50;
@@ -657,6 +663,11 @@ export class CoworkAgentRunner {
       // 旧运行时不支持 EventTarget 调整监听上限时忽略即可。
     }
     this.activeControllers.set(session.id, controller);
+    // Every trace step this turn emits is stamped with a run id, so a step can
+    // be attributed to the turn that produced it rather than to the session,
+    // which accumulates steps for every turn it has ever served.
+    const runId = uuidv4();
+    this.activeRunIds.set(session.id, runId);
     // Long-running tools (the swarm) resolve the cancel handle from the
     // registry at execution time, because the cached tool set outlives the
     // turn that built it. See run-abort-registry.ts.
@@ -1806,6 +1817,11 @@ export class CoworkAgentRunner {
       }
 
       this.activeControllers.delete(session.id);
+      // Guarded for the same reason as unregisterRunSignal: if the next turn
+      // already started, its run id must survive this turn's late cleanup.
+      if (this.activeRunIds.get(session.id) === runId) {
+        this.activeRunIds.delete(session.id);
+      }
       unregisterRunSignal(session.id, controller.signal);
       this.pathResolver.unregisterSession(session.id);
 
@@ -1923,7 +1939,12 @@ export class CoworkAgentRunner {
 
   private sendTraceStep(sessionId: string, step: TraceStep): void {
     log(`[Trace] ${step.type}: ${step.title}`);
-    this.sendToRenderer({ type: 'trace.step', payload: { sessionId, step } });
+    // Stamped here rather than at each call site: a step emitted by the event
+    // handler deep in the SDK adapter must land with the same run id as one
+    // emitted directly by this runner.
+    const runId = this.activeRunIds.get(sessionId);
+    const stamped = runId && !step.runId ? { ...step, runId } : step;
+    this.sendToRenderer({ type: 'trace.step', payload: { sessionId, step: stamped } });
   }
 
   private sendTraceUpdate(sessionId: string, stepId: string, updates: Partial<TraceStep>): void {

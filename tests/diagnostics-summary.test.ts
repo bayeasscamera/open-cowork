@@ -222,4 +222,142 @@ describe('buildDiagnosticsSummary', () => {
     expect(redactFileSystemPath('C:\\Users\\tester\\AppData\\Local')).toBe('<abs>/AppData/Local');
     expect(redactFileSystemPath('./relative/path')).toBe('./relative/path');
   });
+
+  it('attributes steps to the run that produced them', () => {
+    // Two turns of the same session, each with an error. Without a run id the
+    // report can only say "this session failed twice"; with one it can point
+    // at the turn under investigation.
+    const session: Session = {
+      id: 'session-runs',
+      title: 'Two turns',
+      status: 'error',
+      cwd: undefined,
+      mountedPaths: [],
+      allowedTools: [],
+      memoryEnabled: false,
+      createdAt: 10,
+      updatedAt: 200,
+    };
+
+    const traceSteps: TraceStep[] = [
+      {
+        id: 'a1',
+        runId: 'run-a',
+        type: 'tool_result',
+        status: 'error',
+        title: 'first turn failed',
+        timestamp: 100,
+        isError: true,
+      },
+      {
+        id: 'b1',
+        runId: 'run-b',
+        type: 'tool_result',
+        status: 'error',
+        title: 'second turn failed',
+        timestamp: 200,
+        isError: true,
+      },
+      {
+        id: 'legacy',
+        type: 'thinking',
+        status: 'completed',
+        title: 'step from before the run column',
+        timestamp: 50,
+      },
+    ];
+
+    const summary = buildDiagnosticsSummary({
+      app: {
+        version: '1.0.0',
+        isPackaged: false,
+        platform: 'darwin',
+        arch: 'arm64',
+        nodeVersion: 'v20',
+      },
+      runtime: {
+        currentWorkingDir: null,
+        logsDirectory: '/tmp/logs',
+        logFileCount: 0,
+        totalLogSizeBytes: 0,
+        devLogsEnabled: true,
+      },
+      config: {
+        provider: 'openai',
+        model: 'gpt-test',
+        baseUrl: null,
+        customProtocol: null,
+        sandboxEnabled: false,
+        thinkingEnabled: false,
+        apiKeyConfigured: true,
+        agentCliPathConfigured: false,
+        defaultWorkdir: null,
+        globalSkillsPathConfigured: false,
+      },
+      sandbox: { mode: 'native', initialized: false },
+      sessions: [session],
+      logFiles: [],
+      deps: {
+        getMessages: () => [],
+        getTraceSteps: () => traceSteps,
+      },
+    });
+
+    const item = summary.sessions.items[0];
+    // Three steps, but only the two that carry a run id are counted as runs.
+    expect(item.traceStepCount).toBe(3);
+    expect(item.runCount).toBe(2);
+    expect(item.latestRunId).toBe('run-b');
+    expect(item.latestErrorStep?.runId).toBe('run-b');
+    expect(summary.recentErrorSteps.map((s) => s.runId)).toEqual(['run-b', 'run-a']);
+  });
+
+  it('reports no run for a session whose steps predate the column', () => {
+    const session: Session = {
+      id: 'session-legacy',
+      title: 'Legacy',
+      status: 'idle',
+      cwd: undefined,
+      mountedPaths: [],
+      allowedTools: [],
+      memoryEnabled: false,
+      createdAt: 10,
+      updatedAt: 20,
+    };
+
+    const summary = buildDiagnosticsSummary({
+      app: { version: '1.0.0', isPackaged: false, platform: 'darwin', arch: 'arm64', nodeVersion: 'v20' },
+      runtime: {
+        currentWorkingDir: null,
+        logsDirectory: '/tmp/logs',
+        logFileCount: 0,
+        totalLogSizeBytes: 0,
+        devLogsEnabled: true,
+      },
+      config: {
+        provider: 'openai',
+        model: 'gpt-test',
+        baseUrl: null,
+        customProtocol: null,
+        sandboxEnabled: false,
+        thinkingEnabled: false,
+        apiKeyConfigured: true,
+        agentCliPathConfigured: false,
+        defaultWorkdir: null,
+        globalSkillsPathConfigured: false,
+      },
+      sandbox: { mode: 'native', initialized: false },
+      sessions: [session],
+      logFiles: [],
+      deps: {
+        getMessages: () => [],
+        getTraceSteps: () => [
+          { id: 'old', type: 'thinking', status: 'completed', title: 'old', timestamp: 1 },
+        ],
+      },
+    });
+
+    expect(summary.sessions.items[0].runCount).toBe(0);
+    expect(summary.sessions.items[0].latestRunId).toBeNull();
+  });
 });

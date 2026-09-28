@@ -262,6 +262,115 @@ export function useSessionTraceSteps(sessionId: string | undefined): TraceStep[]
   );
 }
 
+// ---------------------------------------------------------------------------
+// Trace step index
+// ---------------------------------------------------------------------------
+
+/**
+ * Lookup tables for the trace steps of one session.
+ *
+ * A session keeps one step per thought, tool call and tool result for every
+ * turn it has ever served, and the list is reloaded whole on every session
+ * switch. Both tool blocks used to answer "what is the duration / tool name of
+ * this step?" with a linear scan over that entire list, once per rendered
+ * block — quadratic in the length of the conversation, which is the one thing
+ * that grows while the user watches.
+ *
+ * Steps are keyed by id AND type because the two tool blocks look for the
+ * same id under different types: a tool_call step and the tool_result step that
+ * completes it share the tool-use id.
+ *
+ * Cached per array reference in a WeakMap, like the block index: a new array
+ * rebuilds, an unchanged one is free, nothing can go stale.
+ */
+export interface TraceStepIndex {
+  /** Steps by `${id} ${type}` — the pairing key both tool blocks need. */
+  byIdAndType: Map<string, TraceStep>;
+  /** Steps grouped by the run (user turn) that emitted them, oldest first. */
+  byRunId: Map<string, TraceStep[]>;
+  /** The run id of the most recently added step, or undefined when none. */
+  latestRunId: string | undefined;
+}
+
+/** Composite key for a step: id plus type, since both are needed to identify it. */
+export function traceStepKey(id: string, type: TraceStep['type']): string {
+  return `${id} ${type}`;
+}
+
+const traceStepIndexCache = new WeakMap<TraceStep[], TraceStepIndex>();
+
+const EMPTY_TRACE_STEP_INDEX: TraceStepIndex = {
+  byIdAndType: new Map(),
+  byRunId: new Map(),
+  latestRunId: undefined,
+};
+
+export function buildTraceStepIndex(steps: TraceStep[]): TraceStepIndex {
+  const cached = traceStepIndexCache.get(steps);
+  if (cached) return cached;
+
+  const byIdAndType = new Map<string, TraceStep>();
+  const byRunId = new Map<string, TraceStep[]>();
+  let latestRunId: string | undefined;
+
+  for (const step of steps) {
+    if (!step || typeof step.id !== 'string') continue;
+    byIdAndType.set(traceStepKey(step.id, step.type), step);
+    // Steps written before the run column existed carry no run id. They still
+    // resolve through byIdAndType; they simply are not attributed to a turn.
+    if (step.runId) {
+      const bucket = byRunId.get(step.runId);
+      if (bucket) {
+        bucket.push(step);
+      } else {
+        byRunId.set(step.runId, [step]);
+      }
+      latestRunId = step.runId;
+    }
+  }
+
+  const index: TraceStepIndex = { byIdAndType, byRunId, latestRunId };
+  traceStepIndexCache.set(steps, index);
+  return index;
+}
+
+/** The empty index, for callers with no session. */
+export function emptyTraceStepIndex(): TraceStepIndex {
+  return EMPTY_TRACE_STEP_INDEX;
+}
+
+/**
+ * The step answering a tool_use id — the same lookup the tool blocks perform,
+ * exposed for components that only hold a tool-use id.
+ */
+export function findToolResultStep(
+  index: TraceStepIndex,
+  toolUseId: string
+): TraceStep | undefined {
+  return index.byIdAndType.get(traceStepKey(toolUseId, 'tool_result'));
+}
+
+/** The tool_call step that opened a tool_use id. */
+export function findToolCallStep(
+  index: TraceStepIndex,
+  toolUseId: string
+): TraceStep | undefined {
+  return index.byIdAndType.get(traceStepKey(toolUseId, 'tool_call'));
+}
+
+/**
+ * The steps of one run, oldest first — the per-turn view a report needs when
+ * a session has served several turns. Returns undefined when the run is
+ * unknown, so a caller can tell "no such run" from "a run with no steps".
+ */
+export function selectRunTraceSteps(
+  steps: TraceStep[],
+  runId: string | undefined
+): TraceStep[] | undefined {
+  if (!runId) return undefined;
+  return buildTraceStepIndex(steps).byRunId.get(runId);
+}
+
 /**
  * Blocks of one message, with a stable empty fallback. Memoised on the block
  * array itself so an unchanged message never recomputes the tool pairings.

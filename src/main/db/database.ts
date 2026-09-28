@@ -36,6 +36,7 @@ export interface DatabaseInstance {
     create: (step: TraceStepRow) => void;
     update: (id: string, updates: Partial<TraceStepRow>) => void;
     getBySessionId: (sessionId: string) => TraceStepRow[];
+    getByRunId: (sessionId: string, runId: string) => TraceStepRow[];
     deleteBySessionId: (sessionId: string) => void;
   };
 
@@ -104,6 +105,8 @@ export interface MessageRow {
 export interface TraceStepRow {
   id: string;
   session_id: string;
+  /** Agent run (one user turn) that emitted the step; null on pre-migration rows. */
+  run_id?: string | null;
   type: string;
   status: string;
   title: string;
@@ -332,6 +335,7 @@ function initializeSchema(database: Database.Database): void {
     CREATE TABLE IF NOT EXISTS trace_steps (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
+      run_id TEXT,
       type TEXT NOT NULL,
       status TEXT NOT NULL,
       title TEXT NOT NULL,
@@ -345,6 +349,11 @@ function initializeSchema(database: Database.Database): void {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
+
+    // A session accumulates trace steps for every turn it has served. The run
+    // column is what lets a report or a lookup attribute a step to one turn;
+    // without it the only grouping available is the whole session.
+    ensureColumn(database, 'trace_steps', 'run_id', 'run_id TEXT');
 
     // Create index for faster message queries
     database.exec(`
@@ -365,6 +374,11 @@ function initializeSchema(database: Database.Database): void {
     database.exec(`
     CREATE INDEX IF NOT EXISTS idx_trace_steps_timestamp
     ON trace_steps(session_id, timestamp)
+  `);
+
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_trace_steps_run
+    ON trace_steps(session_id, run_id, timestamp)
   `);
 
     // Create memory_entries table (for future use)
@@ -723,13 +737,17 @@ export function initDatabase(): DatabaseInstance {
 
   const insertTraceStep = rawDb.prepare(`
     INSERT OR REPLACE INTO trace_steps (
-      id, session_id, type, status, title, content, tool_name, tool_input, tool_output, is_error, timestamp, duration
+      id, session_id, run_id, type, status, title, content, tool_name, tool_input, tool_output, is_error, timestamp, duration
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getTraceStepsBySessionStmt = rawDb.prepare(`
     SELECT * FROM trace_steps WHERE session_id = ? ORDER BY timestamp ASC
+  `);
+
+  const getTraceStepsByRunStmt = rawDb.prepare(`
+    SELECT * FROM trace_steps WHERE session_id = ? AND run_id = ? ORDER BY timestamp ASC
   `);
 
   const deleteTraceStepsBySessionStmt = rawDb.prepare(`
@@ -897,6 +915,7 @@ export function initDatabase(): DatabaseInstance {
         insertTraceStep.run(
           step.id,
           step.session_id,
+          step.run_id ?? null,
           step.type,
           step.status,
           step.title,
@@ -931,6 +950,10 @@ export function initDatabase(): DatabaseInstance {
 
       getBySessionId: (sessionId: string): TraceStepRow[] => {
         return getTraceStepsBySessionStmt.all(sessionId) as TraceStepRow[];
+      },
+
+      getByRunId: (sessionId: string, runId: string): TraceStepRow[] => {
+        return getTraceStepsByRunStmt.all(sessionId, runId) as TraceStepRow[];
       },
 
       deleteBySessionId: (sessionId: string) => {

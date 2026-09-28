@@ -4,6 +4,8 @@ import { ChevronDown, ChevronRight, Loader2, XCircle, CheckCircle2 } from 'lucid
 import { useAppStore } from '../../store';
 import {
   buildSessionBlockIndex,
+  buildTraceStepIndex,
+  findToolResultStep,
   useSessionMessages,
   useSessionTraceSteps,
 } from '../../store/selectors';
@@ -108,11 +110,11 @@ export const ToolUseBlock = memo(function ToolUseBlock({
       )
     : false;
 
-  // Duration from trace steps
+  // Duration from trace steps — via the shared index instead of a scan over
+  // every step the session has ever produced, per rendered block.
   let duration: number | undefined;
   if (message?.sessionId) {
-    const resultStep = traceSteps.find((s) => s.id === block.id && s.type === 'tool_result');
-    duration = resultStep?.duration;
+    duration = findToolResultStep(buildTraceStepIndex(traceSteps), block.id)?.duration;
   }
 
   return (

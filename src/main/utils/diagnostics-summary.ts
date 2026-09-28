@@ -21,6 +21,10 @@ interface DiagnosticsSummarySessionItem {
   updatedAt: string | null;
   messageCount: number;
   traceStepCount: number;
+  /** Distinct runs behind those steps. Steps predating the column count as none. */
+  runCount: number;
+  /** The most recent run id, so a report points at the turn under investigation. */
+  latestRunId: string | null;
   errorStepCount: number;
   lastUserMessageMeta: MessageMetaSummary | null;
   lastAssistantMessageMeta: MessageMetaSummary | null;
@@ -39,6 +43,8 @@ interface MessageMetaSummary {
 
 interface TraceStepMetaSummary {
   id: string;
+  /** Run (user turn) that emitted the step; null on steps predating the column. */
+  runId: string | null;
   type: TraceStep['type'];
   status: TraceStep['status'];
   toolName: string | null;
@@ -230,6 +236,7 @@ function summarizeMessageMeta(message?: Message): MessageMetaSummary | null {
 function summarizeTraceStepMeta(step: TraceStep): TraceStepMetaSummary {
   return {
     id: step.id,
+    runId: step.runId ?? null,
     type: step.type,
     status: step.status,
     toolName: step.toolName || null,
@@ -257,6 +264,20 @@ function buildSessionDiagnosticSummary(
       ? [...errorSteps].sort((a, b) => b.timestamp - a.timestamp)[0]
       : undefined;
 
+  // Runs are identified by id, so two turns that share a title still count
+  // separately. Steps with no run id predate the column and are not counted.
+  const runIds = new Set<string>();
+  let latestRunId: string | null = null;
+  let latestRunTimestamp = -Infinity;
+  for (const step of traceSteps) {
+    if (!step.runId) continue;
+    runIds.add(step.runId);
+    if (step.timestamp >= latestRunTimestamp) {
+      latestRunTimestamp = step.timestamp;
+      latestRunId = step.runId;
+    }
+  }
+
   return {
     id: session.id,
     status: session.status,
@@ -266,6 +287,8 @@ function buildSessionDiagnosticSummary(
     updatedAt: toIsoTimestamp(session.updatedAt),
     messageCount: messages.length,
     traceStepCount: traceSteps.length,
+    runCount: runIds.size,
+    latestRunId,
     errorStepCount: errorSteps.length,
     lastUserMessageMeta: summarizeMessageMeta(recentUserMessage),
     lastAssistantMessageMeta: summarizeMessageMeta(recentAssistantMessage),

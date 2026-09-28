@@ -3,6 +3,8 @@ import { useState, memo, useMemo } from 'react';
 import { ChevronDown, ChevronRight, XCircle, CheckCircle2 } from 'lucide-react';
 import {
   buildSessionBlockIndex,
+  buildTraceStepIndex,
+  findToolCallStep,
   useSessionMessages,
   useSessionTraceSteps,
 } from '../../store/selectors';
@@ -46,7 +48,7 @@ export const ToolResultBlock = memo(function ToolResultBlock({
   let toolName: string | undefined;
   let toolDisplayName: string | undefined;
   if (message?.sessionId) {
-    const toolCallStep = traceSteps.find((s) => s.id === block.toolUseId && s.type === 'tool_call');
+    const toolCallStep = findToolCallStep(buildTraceStepIndex(traceSteps), block.toolUseId);
     if (toolCallStep) {
       toolName = toolCallStep.toolName;
       toolDisplayName = toolCallStep.title;
