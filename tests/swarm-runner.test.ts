@@ -61,6 +61,7 @@ import {
   withTaskTimeout,
   type SubAgentSessionArgs,
 } from '../src/main/agent/swarm-runner';
+import { SubAgentGate } from '../src/main/agent/sub-agent-gate';
 import { ASK_TEAMMATE_TRIGGER_RULE } from '../src/main/agent/teammate-tool';
 import {
   __resetTeammateTeamsForTest,
@@ -497,6 +498,73 @@ describe('createSwarmRunner', () => {
     });
     await runner(makeTask('reviewer'), '');
     expect(launchSession.mock.calls[0][0].config.model).toBe('review-model');
+  });
+
+  it('forwards the plan signal as the runner cancellation handle', async () => {
+    const launchSession = vi.fn(async (args: SubAgentSessionArgs) => {
+      expect(args.signal).toBeDefined();
+      return { output: 'ok', modifiedFiles: [] };
+    });
+    const runner = createSwarmRunner({ cwd, getConfig: () => makeConfig({}), launchSession });
+    const controller = new AbortController();
+
+    await runner(makeTask('developer'), '', controller.signal);
+
+    expect(launchSession.mock.calls[0][0].signal).toBe(controller.signal);
+  });
+
+  it('never launches a session when the plan is already cancelled', async () => {
+    const launchSession = vi.fn(async () => ({ output: 'ok', modifiedFiles: [] }));
+    const gate = new SubAgentGate(1);
+    const runner = createSwarmRunner({
+      cwd,
+      getConfig: () => makeConfig({}),
+      launchSession,
+      gate,
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(runner(makeTask('developer'), '', controller.signal)).rejects.toThrow(
+      'Sub-agent aborted'
+    );
+    expect(launchSession).not.toHaveBeenCalled();
+    // The gate slot was never taken, so the hierarchy semaphore stays free for
+    // the next sub-agent instead of being starved for the whole session.
+    expect(gate.activeCount).toBe(0);
+  });
+
+  it('returns the global gate slot when the local limiter rejects on cancel', async () => {
+    const launchSession = vi.fn(async () => ({ output: 'ok', modifiedFiles: [] }));
+    const gate = new SubAgentGate(2);
+    // The local swarm budget is already saturated, so the runner parks on the
+    // limiter while holding the global slot.
+    const runner = createSwarmRunner({
+      cwd,
+      getConfig: () => makeConfig({}),
+      launchSession,
+      gate,
+      maxConcurrentOverride: 1,
+    });
+
+    const blocker = createSwarmRunner({
+      cwd,
+      getConfig: () => makeConfig({}),
+      launchSession,
+      maxConcurrentOverride: 1,
+    });
+    const held = blocker(makeTask('architect'), '');
+    // The blocking task is still in flight, holding the only local slot.
+    await new Promise((r) => setTimeout(r, 10));
+
+    const controller = new AbortController();
+    const parked = runner(makeTask('developer'), '', controller.signal);
+    controller.abort();
+
+    await expect(parked).rejects.toThrow('Sub-agent aborted');
+    // The global slot taken before the limiter parked must be handed back.
+    expect(gate.activeCount).toBe(0);
+    await held;
   });
 
   it('falls back to the active profile exactly once when the sub-agent model fails', async () => {

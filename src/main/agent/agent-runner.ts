@@ -44,6 +44,7 @@ import {
   syncSandboxChangesToHost,
 } from './agent-runner-sandbox-session';
 import { createStreamLivenessWatcher } from './stream-liveness';
+import { registerRunSignal, unregisterRunSignal } from './run-abort-registry';
 import { buildMcpServersConfig, type McpServersCache } from './mcp-servers-config';
 import { buildCoworkAppendPrompt } from './runtime-config-summary';
 import { setupSkillsDirectories } from './skills-directory-setup';
@@ -656,6 +657,10 @@ export class CoworkAgentRunner {
       // 旧运行时不支持 EventTarget 调整监听上限时忽略即可。
     }
     this.activeControllers.set(session.id, controller);
+    // Long-running tools (the swarm) resolve the cancel handle from the
+    // registry at execution time, because the cached tool set outlives the
+    // turn that built it. See run-abort-registry.ts.
+    registerRunSignal(session.id, controller.signal);
 
     // Phase 6 control center: tool executions are mirrored into the activity
     // feed. One recorder per run keeps the toolCallId mapping session-scoped.
@@ -1779,6 +1784,7 @@ export class CoworkAgentRunner {
       }
 
       this.activeControllers.delete(session.id);
+      unregisterRunSignal(session.id, controller.signal);
       this.pathResolver.unregisterSession(session.id);
 
       // If a terminal error was emitted (400, timeout, stream error) AND the SDK

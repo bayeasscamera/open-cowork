@@ -34,6 +34,7 @@ import {
 import { buildProposeSkillTool, createSwarmRunner } from '../agent/swarm-runner';
 import { listProposals, proposeSkill } from '../skills/skill-proposals';
 import { startDelegation, listDelegations, subAgentGate } from '../agent/background-delegations';
+import { getRunSignal } from '../agent/run-abort-registry';
 import { recordSwarmExecution } from '../agent/swarm-stats';
 import {
   disposeTeammateTeam,
@@ -1115,8 +1116,12 @@ export function buildAgentMetaTools(
         // The teammate bus is per-plan scratch state: drop it as soon as the
         // plan settles (even on failure). Exchanges live on the tasks, so the
         // report is unaffected.
+        // Resolved HERE, not at tool-build time: the tool set is cached across
+        // turns, so a signal captured when the tools were built would belong to
+        // an earlier turn. Without it the swarm ignores Stop and keeps billing.
+        const runSignal = getRunSignal(options.sessionId);
         const executed = await coordinator
-          .executePlan(plan.id)
+          .executePlan(plan.id, runSignal ? { signal: runSignal } : {})
           .finally(() => disposeTeammateTeam(plan.id));
         recordSwarmExecution(executed, Date.now() - swarmStartedAt);
 

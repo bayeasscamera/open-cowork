@@ -500,13 +500,36 @@ export class TaskSlotLimiter {
     return this.active;
   }
 
-  async acquire(): Promise<void> {
+  /**
+   * Take a slot, waiting for one when the local swarm budget is exhausted.
+   *
+   * A queued holder that is cancelled while waiting drops out of the queue
+   * instead of being handed a slot it will never use — otherwise the slot
+   * transfer in release() keeps handing out capacity to a dead run, and the
+   * coordinator's `Promise.all` never settles.
+   */
+  async acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error('Sub-agent aborted');
     if (this.active < this.max) {
       this.active += 1;
       return;
     }
-    await new Promise<void>((resolve) => {
-      this.waiters.push(resolve);
+    await new Promise<void>((resolve, reject) => {
+      const waiter: () => void = () => {
+        cleanup();
+        resolve();
+      };
+      const onAbort = () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index !== -1) this.waiters.splice(index, 1);
+        cleanup();
+        reject(new Error('Sub-agent aborted'));
+      };
+      const cleanup = () => {
+        signal?.removeEventListener('abort', onAbort);
+      };
+      this.waiters.push(waiter);
+      signal?.addEventListener('abort', onAbort, { once: true });
     });
     // The slot was transferred by release(): active already reflects it.
   }
@@ -1073,6 +1096,15 @@ function resolveGuardrails(config: AppConfig): TaskGuardrails {
 }
 
 /**
+ * Take the global hierarchy slot, reporting whether one was actually held so
+ * the caller can release it when the local limiter rejects on the same cancel.
+ */
+async function acquireGate(gate: SubAgentGate, signal?: AbortSignal): Promise<boolean> {
+  await gate.acquire(signal);
+  return true;
+}
+
+/**
  * After a successful task with modified files, verify the syntax of every
  * changed TS/JS file and allow ONE corrective re-run with the same profile.
  */
@@ -1159,21 +1191,39 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
     options.maxConcurrentOverride ?? resolveGuardrails(getConfig()).maxConcurrent
   );
 
-  return async (task: AgentTask, context: string): Promise<SubAgentRunResult> => {
+  return async (
+    task: AgentTask,
+    context: string,
+    signal?: AbortSignal
+  ): Promise<SubAgentRunResult> => {
     const appConfig = getConfig();
     const baseGuardrails = resolveGuardrails(appConfig);
     const timeoutMs = options.timeoutMsOverride ?? baseGuardrails.timeoutMs;
     const profile = resolveSubAgentProfile(task.role, appConfig, task.criticalPath);
-    const extras = options.taskExtras?.(task) ?? {};
+    // The plan-level signal (third argument) takes precedence over the
+    // per-task extras: it is the one the coordinator owns, so a user cancel
+    // reaches the session even when no taskExtras factory is configured.
+    const extras = {
+      ...(options.taskExtras?.(task) ?? {}),
+      ...(signal ? { signal } : {}),
+    };
+    const taskSignal = extras.signal;
     const personaFields = {
       ...(profile.personaName ? { personaName: profile.personaName } : {}),
       ...(profile.systemPrompt ? { systemPrompt: profile.systemPrompt } : {}),
     };
 
     // GLOBAL hierarchical semaphore first (all levels combined), then the
-    // local swarm limiter.
-    if (options.gate) await options.gate.acquire();
-    await limiter.acquire();
+    // local swarm limiter. Either acquire can reject on cancel, so each slot
+    // that was actually taken is released on the way out — the try/finally
+    // below only covers what it opened.
+    const gateHeld = options.gate ? await acquireGate(options.gate, taskSignal) : false;
+    try {
+      await limiter.acquire(taskSignal);
+    } catch (error) {
+      if (gateHeld) options.gate?.release();
+      throw error;
+    }
     log(`[SwarmRunner] ${task.role} starting with model "${profile.label}"`);
     try {
       try {
@@ -1192,7 +1242,7 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
             ? {
                 gateSlot: {
                   release: () => options.gate!.release(),
-                  reacquire: () => options.gate!.acquire(),
+                  reacquire: () => options.gate!.acquire(taskSignal),
                 },
               }
             : {}),
@@ -1237,7 +1287,7 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
             ? {
                 gateSlot: {
                   release: () => options.gate!.release(),
-                  reacquire: () => options.gate!.acquire(),
+                  reacquire: () => options.gate!.acquire(taskSignal),
                 },
               }
             : {}),
@@ -1256,7 +1306,9 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
       }
     } finally {
       limiter.release();
-      options.gate?.release();
+      // Only release a gate slot we actually hold: acquireGate may have
+      // rejected without ever incrementing it.
+      if (gateHeld) options.gate?.release();
     }
   };
 }

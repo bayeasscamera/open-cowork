@@ -117,7 +117,17 @@ export interface PlanAggregation {
   recovered: number;
 }
 
-export type SubAgentRunnerFn = (task: AgentTask, context: string) => Promise<SubAgentRunResult>;
+/**
+ * Runs one sub-agent. `signal` is the plan-level cancellation signal threaded
+ * down from executePlan(): it is forwarded to the runner so a user cancel
+ * actually reaches the sub-agent session. Runners that predate cancellation
+ * simply ignore the third argument.
+ */
+export type SubAgentRunnerFn = (
+  task: AgentTask,
+  context: string,
+  signal?: AbortSignal
+) => Promise<SubAgentRunResult>;
 
 /** Result of a sub-agent run: free text plus the files the agent modified. */
 export interface SubAgentRunResult {
@@ -263,21 +273,22 @@ export class MultiAgentCoordinator extends EventEmitter {
    * `skipped` instead of being left `pending` forever — the silent partial
    * failure this policy was introduced to eliminate.
    */
-  public async executePlan(planId: string): Promise<MultiAgentPlan> {
+  public async executePlan(planId: string, options: { signal?: AbortSignal } = {}): Promise<MultiAgentPlan> {
     const plan = this.activePlans.get(planId);
     if (!plan) throw new Error(`Plan ${planId} not found`);
 
+    const { signal } = options;
     plan.status = 'executing';
     plan.updatedAt = Date.now();
     this.emit('plan:updated', plan);
 
-    await this.runDag(plan);
+    await this.runDag(plan, signal);
 
-    if (plan.aggregationPolicy === 'retry-failed-only') {
+    if (plan.aggregationPolicy === 'retry-failed-only' && !signal?.aborted) {
       // One recovery round: retry the failed tasks, re-open the dependents they
       // had blocked, and run the DAG again. Newly failed tasks are NOT retried
       // a second time — the whole policy stays bounded to one retry per task.
-      await this.retryFailedTasks(plan);
+      await this.retryFailedTasks(plan, signal);
       this.reopenRecoveredDependents(plan);
       await this.runDag(plan);
     }
@@ -286,9 +297,9 @@ export class MultiAgentCoordinator extends EventEmitter {
     // the reviewer and security reports already exist and can be confronted.
     // Never on the default path: it costs extra model calls (see
     // CROSS_VERIFICATION_COST).
-    if (plan.crossVerification && this.runnerFn) {
+    if (plan.crossVerification && this.runnerFn && !signal?.aborted) {
       try {
-        plan.crossVerificationResults = await this.runCrossVerification(plan);
+        plan.crossVerificationResults = await this.runCrossVerification(plan, signal);
       } catch (err) {
         // Cross-verification is an enhancement: a failure must not fail the
         // plan whose real work already completed.
@@ -307,10 +318,18 @@ export class MultiAgentCoordinator extends EventEmitter {
    * Run the DAG to quiescence: every ready task concurrently, then mark the
    * tasks that can never become ready as skipped. A genuine cycle (nothing
    * becomes ready and nothing can be marked) ends the loop instead of hanging.
+   *
+   * A cancellation ends the loop too: without it the `while (true)` would keep
+   * scheduling waves against a signal every runner now honours, and the plan
+   * would resolve only once each in-flight task unwound.
    */
-  private async runDag(plan: MultiAgentPlan): Promise<void> {
+  private async runDag(plan: MultiAgentPlan, signal?: AbortSignal): Promise<void> {
     // eslint-disable-next-line no-constant-condition
     while (true) {
+      if (signal?.aborted) {
+        this.cancelRemainingTasks(plan);
+        return;
+      }
       const readyTasks = this.getReadyTasks(plan);
       if (readyTasks.length === 0) {
         const stillPending = plan.tasks.some((task) => task.status === 'pending');
@@ -323,10 +342,24 @@ export class MultiAgentCoordinator extends EventEmitter {
       }
 
       // Execute ready tasks concurrently
-      await Promise.all(readyTasks.map((task) => this.runTask(plan, task)));
+      await Promise.all(readyTasks.map((task) => this.runTask(plan, task, signal)));
     }
 
     this.markBlockedTasksSkipped(plan);
+  }
+
+  /**
+   * Cancellation is not a failure: every task that never got to run is marked
+   * skipped with an explicit reason instead of left pending (which would make
+   * the plan look unfinished) or failed (which would blame the sub-agent).
+   */
+  private cancelRemainingTasks(plan: MultiAgentPlan): void {
+    for (const task of plan.tasks) {
+      if (task.status !== 'pending' && task.status !== 'in_progress') continue;
+      task.status = 'skipped';
+      task.error = 'Cancelled by user';
+      task.completedAt = Date.now();
+    }
   }
 
   /**
@@ -361,7 +394,7 @@ export class MultiAgentCoordinator extends EventEmitter {
   }
 
   /** Run one task and fold its outcome into the plan (never throws). */
-  private async runTask(plan: MultiAgentPlan, task: AgentTask): Promise<void> {
+  private async runTask(plan: MultiAgentPlan, task: AgentTask, signal?: AbortSignal): Promise<void> {
     task.status = 'in_progress';
     task.startedAt = Date.now();
     this.emit('task:started', { planId: plan.id, task });
@@ -371,7 +404,7 @@ export class MultiAgentCoordinator extends EventEmitter {
       // reviewer AND security both get a copy — capped to keep token cost
       // bounded for long upstream outputs.
       const depContext = capDependencyContext(this.buildDependencyContext(plan, task));
-      const run = await this.invokeRunner(task, depContext);
+      const run = await this.invokeRunner(task, depContext, signal);
 
       this.applyTaskSuccess(task, run);
       this.emit('task:completed', {
@@ -386,6 +419,16 @@ export class MultiAgentCoordinator extends EventEmitter {
       // invalidate exactly those entries instead of rescanning the workspace.
       this.invalidateModifiedFiles(task.modifiedFiles ?? []);
     } catch (err) {
+      // An abort is a user decision, not a sub-agent failure: report it as
+      // skipped so the aggregation does not blame the runner for stopping.
+      if (signal?.aborted) {
+        task.status = 'skipped';
+        task.error = 'Cancelled by user';
+        task.completedAt = Date.now();
+        this.emit('task:failed', { planId: plan.id, task });
+        log(`[MultiAgentCoordinator] Task ${task.id} cancelled by user`);
+        return;
+      }
       task.status = 'failed';
       task.error = err instanceof Error ? err.message : String(err);
       this.emit('task:failed', { planId: plan.id, task });
@@ -394,11 +437,15 @@ export class MultiAgentCoordinator extends EventEmitter {
   }
 
   /** Simulated execution when no runner is configured (tests / fallback). */
-  private async invokeRunner(task: AgentTask, context: string): Promise<SubAgentRunResult> {
+  private async invokeRunner(
+    task: AgentTask,
+    context: string,
+    signal?: AbortSignal
+  ): Promise<SubAgentRunResult> {
     if (!this.runnerFn) {
       return { output: `Output for ${task.title} verified.` };
     }
-    return this.runnerFn(task, context);
+    return this.runnerFn(task, context, signal);
   }
 
   /** Copy a successful runner result onto the task. */
@@ -470,20 +517,35 @@ export class MultiAgentCoordinator extends EventEmitter {
    * become `completed`/`recovered`; the rest stay `failed` with their latest
    * error. Never re-runs successful work and never loops.
    */
-  private async retryFailedTasks(plan: MultiAgentPlan): Promise<void> {
+  private async retryFailedTasks(plan: MultiAgentPlan, signal?: AbortSignal): Promise<void> {
     if (!this.runnerFn) return;
     const failed = plan.tasks.filter((task) => task.status === 'failed');
     for (const task of failed) {
+      // A cancel landing mid-retry stops the round here instead of spending
+      // the remaining retries on a plan the user already abandoned.
+      if (signal?.aborted) {
+        task.status = 'skipped';
+        task.error = 'Cancelled by user';
+        task.completedAt = Date.now();
+        continue;
+      }
       task.retried = true;
       task.status = 'in_progress';
       try {
         const depContext = capDependencyContext(this.buildDependencyContext(plan, task));
-        const run = await this.runnerFn(task, depContext);
+        const run = await this.runnerFn(task, depContext, signal);
+        if (signal?.aborted) throw new Error('Cancelled by user');
         this.applyTaskSuccess(task, run);
         task.recovered = true;
         this.invalidateModifiedFiles(task.modifiedFiles ?? []);
         log(`[MultiAgentCoordinator] Retry recovered task ${task.id}`);
       } catch (err) {
+        if (signal?.aborted) {
+          task.status = 'skipped';
+          task.error = 'Cancelled by user';
+          task.completedAt = Date.now();
+          continue;
+        }
         task.status = 'failed';
         task.error = err instanceof Error ? err.message : String(err);
         logError(`[MultiAgentCoordinator] Retry of task ${task.id} failed:`, err);
@@ -539,7 +601,10 @@ export class MultiAgentCoordinator extends EventEmitter {
    *    never force-converged.
    * Research cross-verification lives in background-delegations.ts (Zone 2).
    */
-  private async runCrossVerification(plan: MultiAgentPlan): Promise<CrossVerificationResult[]> {
+  private async runCrossVerification(
+    plan: MultiAgentPlan,
+    signal?: AbortSignal
+  ): Promise<CrossVerificationResult[]> {
     const runner = this.runnerFn;
     if (!runner) return [];
     const results: CrossVerificationResult[] = [];
@@ -566,7 +631,8 @@ export class MultiAgentCoordinator extends EventEmitter {
             buildDeveloperReviewRerunContext({
               reviewPoint: finding.point,
               previousOutput: developer.result ?? '',
-            })
+            }),
+            signal
           );
           modelCalls = CROSS_VERIFICATION_COST.codeReviewRerun;
           addressed = true;

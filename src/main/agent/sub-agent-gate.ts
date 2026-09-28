@@ -24,13 +24,36 @@ export class SubAgentGate {
     return this.active;
   }
 
-  async acquire(): Promise<void> {
+  /**
+   * Take a slot, waiting for one when the budget is exhausted.
+   *
+   * With a `signal`, a queued holder that gets cancelled while waiting is
+   * REMOVED from the queue instead of being woken by the next release: without
+   * it a cancelled sub-agent would sit in the FIFO forever, keep the next
+   * release reserved, and the parent's `Promise.all` would never settle.
+   */
+  async acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error('Sub-agent aborted');
     if (this.active < this.max) {
       this.active += 1;
       return;
     }
-    await new Promise<void>((resolve) => {
-      this.waiters.push(resolve);
+    await new Promise<void>((resolve, reject) => {
+      const waiter: () => void = () => {
+        cleanup();
+        resolve();
+      };
+      const onAbort = () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index !== -1) this.waiters.splice(index, 1);
+        cleanup();
+        reject(new Error('Sub-agent aborted'));
+      };
+      const cleanup = () => {
+        signal?.removeEventListener('abort', onAbort);
+      };
+      this.waiters.push(waiter);
+      signal?.addEventListener('abort', onAbort, { once: true });
     });
   }
 
