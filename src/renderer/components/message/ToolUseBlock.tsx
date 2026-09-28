@@ -3,6 +3,11 @@ import { memo } from 'react';
 import { ChevronDown, ChevronRight, Loader2, XCircle, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import {
+  buildSessionBlockIndex,
+  useSessionMessages,
+  useSessionTraceSteps,
+} from '../../store/selectors';
+import {
   shouldPreferToolResultImages,
   shouldRenderToolResultText,
   shouldUseScreenshotSummary,
@@ -27,12 +32,8 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   allBlocks,
   message,
 }: ToolUseBlockProps) {
-  const traceSteps = useAppStore((s) =>
-    message?.sessionId ? (s.sessionStates[message.sessionId]?.traceSteps ?? []) : []
-  );
-  const allMessages = useAppStore((s) =>
-    message?.sessionId ? (s.sessionStates[message.sessionId]?.messages ?? []) : []
-  );
+  const traceSteps = useSessionTraceSteps(message?.sessionId);
+  const allMessages = useSessionMessages(message?.sessionId);
   const activeTurn = useAppStore((s) =>
     message?.sessionId ? (s.sessionStates[message.sessionId]?.activeTurn ?? null) : null
   );
@@ -53,23 +54,13 @@ export const ToolUseBlock = memo(function ToolUseBlock({
     return <TodoWriteBlock block={block} />;
   }
 
-  // Find matching tool_result: first in same message, then across all session messages
-  let toolResult = allBlocks?.find(
+  // Find matching tool_result: first in same message, then across all session
+  // messages — via the shared index instead of a scan per rendered block.
+  const localResult = allBlocks?.find(
     (b) => b.type === 'tool_result' && (b as ToolResultContent).toolUseId === block.id
   ) as ToolResultContent | undefined;
-
-  if (!toolResult && message?.sessionId) {
-    for (const msg of allMessages) {
-      if (!Array.isArray(msg.content)) continue;
-      const found = (msg.content as ContentBlock[]).find(
-        (b) => b.type === 'tool_result' && (b as ToolResultContent).toolUseId === block.id
-      );
-      if (found) {
-        toolResult = found as ToolResultContent;
-        break;
-      }
-    }
-  }
+  const toolResult =
+    localResult ?? (message?.sessionId ? buildSessionBlockIndex(allMessages).toolResultByToolUseId.get(block.id) : undefined);
 
   // Determine state: running / success / error
   // Only show spinner if session still has an active turn; otherwise treat as done

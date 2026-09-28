@@ -1,7 +1,11 @@
 // Fallback ToolResultBlock — only renders for truly orphan results (no matching tool_use anywhere)
 import { useState, memo, useMemo } from 'react';
 import { ChevronDown, ChevronRight, XCircle, CheckCircle2 } from 'lucide-react';
-import { useAppStore } from '../../store';
+import {
+  buildSessionBlockIndex,
+  useSessionMessages,
+  useSessionTraceSteps,
+} from '../../store/selectors';
 import {
   shouldPreferToolResultImages,
   shouldRenderToolResultText,
@@ -24,25 +28,16 @@ export const ToolResultBlock = memo(function ToolResultBlock({
   allBlocks,
   message,
 }: ToolResultBlockProps) {
-  const traceSteps = useAppStore((s) =>
-    message?.sessionId ? (s.sessionStates[message.sessionId]?.traceSteps ?? []) : []
-  );
-  const allMessages = useAppStore((s) =>
-    message?.sessionId ? (s.sessionStates[message.sessionId]?.messages ?? []) : []
-  );
+  const traceSteps = useSessionTraceSteps(message?.sessionId);
+  const allMessages = useSessionMessages(message?.sessionId);
   const [expanded, setExpanded] = useState(false);
 
-  // If a ToolUseBlock in any message already merges this result, hide this block
+  // If a ToolUseBlock in any message already merges this result, hide this
+  // block. Served from the shared index: this used to scan every message ×
+  // every block, per rendered result, on each streamed turn.
   const isOrphan = useMemo(() => {
     if (!message?.sessionId) return true;
-    for (const msg of allMessages) {
-      if (!Array.isArray(msg.content)) continue;
-      const hasMatchingToolUse = (msg.content as ContentBlock[]).some(
-        (b) => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
-      );
-      if (hasMatchingToolUse) return false;
-    }
-    return true;
+    return !buildSessionBlockIndex(allMessages).toolUseById.has(block.toolUseId);
   }, [allMessages, block.toolUseId, message?.sessionId]);
 
   if (!isOrphan) return null;
@@ -57,9 +52,13 @@ export const ToolResultBlock = memo(function ToolResultBlock({
       toolDisplayName = toolCallStep.title;
     }
   }
-  const toolUseBlock = allBlocks?.find(
-    (b) => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
-  ) as ToolUseContent | undefined;
+  const toolUseBlock =
+    (allBlocks?.find(
+      (b) => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
+    ) as ToolUseContent | undefined) ??
+    (message?.sessionId
+      ? buildSessionBlockIndex(allMessages).toolUseById.get(block.toolUseId)
+      : undefined);
   if (!toolName) {
     toolName = toolUseBlock?.name;
   }

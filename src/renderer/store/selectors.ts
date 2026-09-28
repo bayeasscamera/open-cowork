@@ -16,8 +16,29 @@
 
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './index';
-import type { Session, Message, TraceStep, Settings, AppConfig } from '../types';
+import type {
+  Session,
+  Message,
+  TraceStep,
+  Settings,
+  AppConfig,
+  ContentBlock,
+  ToolUseContent,
+  ToolResultContent,
+} from '../types';
 import type { GlobalNotice, SessionExecutionClock, CompactionEvent } from './index';
+
+/**
+ * Shared empty references.
+ *
+ * A `?? []` inside a zustand selector allocates a NEW array on every read, so
+ * `Object.is` never matches and the component re-renders on every unrelated
+ * store update — with a streamed response that is once per frame. Returning a
+ * shared constant keeps the subscription stable.
+ */
+const EMPTY_STEPS: TraceStep[] = [];
+const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_BLOCKS: ContentBlock[] = [];
 
 // ---------------------------------------------------------------------------
 // Session domain
@@ -68,9 +89,12 @@ export function useActiveSessionMessages(): Message[] {
 /**
  * Returns the messages for an arbitrary session by ID.
  * Useful in list components that render session previews.
+ *
+ * The empty fallback is a shared constant: a fresh `[]` here would fail the
+ * store's identity check on every read and re-render subscribers constantly.
  */
-export function useSessionMessages(sessionId: string): Message[] {
-  return useAppStore((s) => s.sessionStates[sessionId]?.messages ?? []);
+export function useSessionMessages(sessionId: string | undefined): Message[] {
+  return useAppStore((s) => (sessionId ? s.sessionStates[sessionId]?.messages : undefined) ?? EMPTY_MESSAGES);
 }
 
 /** Returns the in-progress (streaming) text of the active session's response. */
@@ -164,8 +188,86 @@ export function useActiveExecutionClock(): SessionExecutionClock | undefined {
 /** Returns the trace steps for the active session. */
 export function useActiveTraceSteps(): TraceStep[] {
   return useAppStore((s) =>
-    s.activeSessionId ? (s.sessionStates[s.activeSessionId]?.traceSteps ?? []) : []
+    s.activeSessionId ? (s.sessionStates[s.activeSessionId]?.traceSteps ?? EMPTY_STEPS) : EMPTY_STEPS
   );
+}
+
+// ---------------------------------------------------------------------------
+// Tool block index
+// ---------------------------------------------------------------------------
+
+/**
+ * Lookup tables for the tool blocks of one session, so the chat no longer
+ * scans every message for every rendered block.
+ *
+ * Both ToolUseBlock and ToolResultBlock pair a `tool_use` with its
+ * `tool_result`. They used to do that with a nested loop over all messages ×
+ * all blocks, per component, recomputed whenever the message list changed — and
+ * the message list changes on every streamed turn. With a few dozen tool calls
+ * that is quadratic work in the hot path, on exactly the long sessions where
+ * the UI already struggles.
+ *
+ * The index is cached per message-array reference in a WeakMap: a new array
+ * (any real change) rebuilds, an unchanged one is free, and nothing can go
+ * stale because the cache entry dies with the array it was built from.
+ */
+export interface SessionBlockIndex {
+  /** tool_use blocks by their own id. */
+  toolUseById: Map<string, ToolUseContent>;
+  /** tool_result blocks by the id of the tool_use they answer. */
+  toolResultByToolUseId: Map<string, ToolResultContent>;
+}
+
+const blockIndexCache = new WeakMap<Message[], SessionBlockIndex>();
+
+/** Stable empty index, so a session with no messages never allocates. */
+const EMPTY_BLOCK_INDEX: SessionBlockIndex = {
+  toolUseById: new Map(),
+  toolResultByToolUseId: new Map(),
+};
+
+function isContentBlockList(content: unknown): content is ContentBlock[] {
+  return Array.isArray(content);
+}
+
+export function buildSessionBlockIndex(messages: Message[]): SessionBlockIndex {
+  const cached = blockIndexCache.get(messages);
+  if (cached) return cached;
+  const toolUseById = new Map<string, ToolUseContent>();
+  const toolResultByToolUseId = new Map<string, ToolResultContent>();
+  for (const message of messages) {
+    if (!isContentBlockList(message.content)) continue;
+    for (const block of message.content) {
+      if (block.type === 'tool_use' && block.id) {
+        toolUseById.set(block.id, block as ToolUseContent);
+      } else if (block.type === 'tool_result' && block.toolUseId) {
+        toolResultByToolUseId.set(block.toolUseId, block as ToolResultContent);
+      }
+    }
+  }
+  const index: SessionBlockIndex = { toolUseById, toolResultByToolUseId };
+  blockIndexCache.set(messages, index);
+  return index;
+}
+
+/** The empty index, for callers with no session. */
+export function emptySessionBlockIndex(): SessionBlockIndex {
+  return EMPTY_BLOCK_INDEX;
+}
+
+/** Trace steps of one session, with a stable empty fallback. */
+export function useSessionTraceSteps(sessionId: string | undefined): TraceStep[] {
+  return useAppStore((s) =>
+    sessionId ? (s.sessionStates[sessionId]?.traceSteps ?? EMPTY_STEPS) : EMPTY_STEPS
+  );
+}
+
+/**
+ * Blocks of one message, with a stable empty fallback. Memoised on the block
+ * array itself so an unchanged message never recomputes the tool pairings.
+ */
+export function useMessageBlocks(blocks: ContentBlock[] | undefined): ContentBlock[] {
+  return blocks ?? EMPTY_BLOCKS;
 }
 
 /** Returns the context window size (token count) for the active session. */
