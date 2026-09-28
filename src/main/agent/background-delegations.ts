@@ -72,6 +72,14 @@ import {
 const MAX_INJECTED_RESULT_CHARS = 12_000;
 const MAX_PERSISTED_RESULT_CHARS = 20_000;
 const MAX_LOG_STEPS = 40;
+/**
+ * How many delegations stay tracked, in memory AND on disk.
+ *
+ * The bound has to cover both. Bounding only what is written to disk leaves
+ * the in-memory map growing for the whole life of the process, and the tracking
+ * panel is handed the entire map on every progress event — so a long session
+ * keeps serialising records the user can no longer see.
+ */
 const MAX_TRACKED_TASKS = 60;
 /** One resume attempt per task: a task interrupted again must not loop forever. */
 export const MAX_DELEGATION_RESUME_ATTEMPTS = 1;
@@ -443,6 +451,49 @@ function pushLog(delegation: BackgroundDelegation, kind: DelegationLogEntry['kin
   if (delegation.log.length > MAX_LOG_STEPS) delegation.log.shift();
 }
 
+/**
+ * Drop the oldest finished delegations once the tracked set outgrows the cap.
+ *
+ * A delegation is only evictable when nothing can still reach it: it must be
+ * finished (a running one owns an AbortController and a live sub-agent), and
+ * settled on both sides — its result already delivered to the session, and no
+ * cross-verification batch still covering it. Evicting an undelivered result
+ * would silently drop a report the user was about to be told about, and
+ * evicting a task a cross-check is still reading would break that pass.
+ *
+ * Called after each insertion, so the map cannot outgrow the cap no matter how
+ * many delegations a session runs.
+ */
+function evictOverflowingDelegations(): void {
+  if (delegations.size <= MAX_TRACKED_TASKS) return;
+  const covered = new Set<string>();
+  for (const batches of researchCrossChecks.values()) {
+    for (const check of batches) {
+      for (const id of check.delegationIds) covered.add(id);
+    }
+  }
+  // Newest first: the eviction order is the recency order, so what survives is
+  // always the most recent history.
+  const evictable = Array.from(delegations.values())
+    .filter(
+      (d) =>
+        d.status !== 'running' &&
+        d.delivered &&
+        !d.interrupted &&
+        !covered.has(d.id) &&
+        !d.resumedBy
+    )
+    .sort((a, b) => a.startedAt - b.startedAt);
+
+  let excess = delegations.size - MAX_TRACKED_TASKS;
+  for (const delegation of evictable) {
+    if (excess <= 0) break;
+    delegations.delete(delegation.id);
+    detachedWaiters.delete(delegation.id);
+    excess--;
+  }
+}
+
 function emit(delegation: BackgroundDelegation, kind: 'status' | 'progress', detail?: string): void {
   const event: ServerEvent = {
     type: 'background.task',
@@ -564,6 +615,7 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
     ...(options.crossVerify ? { crossVerify: true } : {}),
   };
   delegations.set(id, delegation);
+  evictOverflowingDelegations();
   pushLog(delegation, 'launched', `Task delegated (role: ${role}, depth: ${depth})`);
   persist();
 
