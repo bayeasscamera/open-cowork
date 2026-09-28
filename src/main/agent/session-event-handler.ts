@@ -40,6 +40,12 @@ export interface PiSessionEventTelemetry {
   markFirstStreamEvent(eventType: string): void;
   hasReceivedFirstStreamEvent(): boolean;
   getFirstStreamLatencyMs(): number | null;
+  /**
+   * A tool started/finished. Optional so a telemetry double that does not track
+   * tools (tests, diagnostics) stays valid.
+   */
+  beginToolCall?(toolName?: string): void;
+  endToolCall?(): void;
 }
 
 /**
@@ -306,6 +312,10 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
 
     case 'tool_execution_start': {
       logCtx(`[CoworkAgentRunner] Tool execution start: ${event.toolName}`);
+      // The SDK is now silent for the whole execution, so the inactivity
+      // countdown must be suspended — otherwise a long build is mistaken for a
+      // dead stream and the run is aborted mid-work.
+      ctx.telemetry.beginToolCall?.(event.toolName);
       // ── Loop guard layer 2: per-tool cumulative frequency ──
       ctx.handleLoopGuardDecision(
         ctx.loopGuard.recordToolInvocation(event.toolName),
@@ -321,6 +331,9 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
     }
 
     case 'tool_execution_end': {
+      // Re-arm BEFORE the early return: an aborted run still must not leave a
+      // phantom tool in flight, and dispose() follows either way.
+      ctx.telemetry.endToolCall?.();
       if (ctx.isAborted()) break;
       const toolCallId = event.toolCallId;
       const isError = event.isError;

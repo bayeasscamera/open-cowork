@@ -155,6 +155,22 @@ export interface AppConfig {
   lastActiveSessionId?: string;
   lastActiveCwd?: string;
   lastActiveSessionUpdatedAt?: number; // epoch ms — used to show "last seen X days ago"
+
+  // Stream liveness guardrails (see stream-liveness.ts)
+  streamTimeout?: StreamTimeoutConfig;
+}
+
+/**
+ * How long a turn may stay silent before it is aborted, and how long a single
+ * tool execution may run. They are separate because a tool in flight produces
+ * no stream events by design: the inactivity window governs waiting on the
+ * model, the ceiling governs work that is actually running.
+ */
+export interface StreamTimeoutConfig {
+  /** No stream event at all for this long → abort. Default 5 min. */
+  activityTimeoutMs: number;
+  /** One tool execution longer than this → abort. Default 15 min. 0 = no ceiling. */
+  toolExecutionCeilingMs: number;
 }
 
 export interface MemoryModelRuntimeConfig {
@@ -288,6 +304,13 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
     ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
   contextWindow: (v) => typeof v === 'number' && v > 0,
   maxTokens: (v) => typeof v === 'number' && v > 0,
+  streamTimeout: (v) =>
+    typeof v === 'object' &&
+    v !== null &&
+    typeof (v as { activityTimeoutMs?: unknown }).activityTimeoutMs === 'number' &&
+    (v as { activityTimeoutMs: number }).activityTimeoutMs > 0 &&
+    typeof (v as { toolExecutionCeilingMs?: unknown }).toolExecutionCeilingMs === 'number' &&
+    (v as { toolExecutionCeilingMs: number }).toolExecutionCeilingMs >= 0,
 };
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -359,6 +382,17 @@ const defaultConfigSet: ApiConfigSet = {
   profiles: defaultProfiles,
   enableThinking: false,
   updatedAt: '1970-01-01T00:00:00.000Z',
+};
+
+/**
+ * Stream liveness defaults. The inactivity window keeps its historical 5 min
+ * (it only ever fires when the model itself is silent), while the tool ceiling
+ * is deliberately much larger: a heavy build legitimately runs for many
+ * minutes, and only a genuinely stuck tool should hit it.
+ */
+const DEFAULT_STREAM_TIMEOUT: StreamTimeoutConfig = {
+  activityTimeoutMs: 5 * 60 * 1000,
+  toolExecutionCeilingMs: 15 * 60 * 1000,
 };
 
 // Sub-agents inherit the active profile by default — zero surprise for a
@@ -434,6 +468,7 @@ const defaultConfig: AppConfig = {
   subAgents: DEFAULT_SUB_AGENTS,
   imageGeneration: DEFAULT_IMAGE_GENERATION,
   openjev: { enabled: false, baseUrl: 'http://127.0.0.1:8080' },
+  streamTimeout: DEFAULT_STREAM_TIMEOUT,
   enableThinking: false,
   isConfigured: false,
 };

@@ -97,6 +97,8 @@ function makeHarness(over: Partial<PiSessionEventContext> = {}) {
   const markFirstStreamEvent = vi.fn();
   const hasReceivedFirstStreamEvent = vi.fn(() => true);
   const getFirstStreamLatencyMs = vi.fn(() => 42);
+  const beginToolCall = vi.fn();
+  const endToolCall = vi.fn();
   const recordAssistantMessage = vi.fn(() => ({ action: 'none', reason: 'ok' }));
   const recordToolInvocation = vi.fn(() => ({ action: 'none', reason: 'ok' }));
   const isAborted = vi.fn(() => false);
@@ -107,7 +109,13 @@ function makeHarness(over: Partial<PiSessionEventContext> = {}) {
     model: { id: 'model-1', provider: 'anthropic', api: 'anthropic' },
     usedSyntheticModel: false,
     isAborted,
-    telemetry: { markFirstStreamEvent, hasReceivedFirstStreamEvent, getFirstStreamLatencyMs },
+    telemetry: {
+      markFirstStreamEvent,
+      hasReceivedFirstStreamEvent,
+      getFirstStreamLatencyMs,
+      beginToolCall,
+      endToolCall,
+    },
     loopGuard: {
       recordAssistantMessage,
       recordToolInvocation,
@@ -155,7 +163,13 @@ function makeHarness(over: Partial<PiSessionEventContext> = {}) {
       handleLoopGuardDecision,
       sanitizeOutputPaths,
     },
-    telemetry: { markFirstStreamEvent, hasReceivedFirstStreamEvent, getFirstStreamLatencyMs },
+    telemetry: {
+      markFirstStreamEvent,
+      hasReceivedFirstStreamEvent,
+      getFirstStreamLatencyMs,
+      beginToolCall,
+      endToolCall,
+    },
     loopGuard: { recordAssistantMessage, recordToolInvocation },
     isAborted,
     getStreamedText: () => streamedText,
@@ -523,6 +537,9 @@ describe('handlePiSessionEvent — tool execution', () => {
     const h = makeHarness();
     h.run({ type: 'tool_execution_start', toolName: 'Bash' });
     expect(mocks.logCtx).toHaveBeenCalledWith('[CoworkAgentRunner] Tool execution start: Bash');
+    // A tool in flight silences the stream: the liveness watcher must suspend
+    // its inactivity countdown or a long build is aborted mid-run.
+    expect(h.telemetry.beginToolCall).toHaveBeenCalledWith('Bash');
     expect(h.loopGuard.recordToolInvocation).toHaveBeenCalledWith('Bash');
     expect(h.effects.handleLoopGuardDecision).toHaveBeenCalledWith(
       { action: 'none', reason: 'ok' },
@@ -539,6 +556,8 @@ describe('handlePiSessionEvent — tool execution', () => {
       isError: false,
       result: 'out',
     });
+    // The tool is done, so the countdown is re-armed for the model again.
+    expect(h.telemetry.endToolCall).toHaveBeenCalled();
     expect(h.effects.sendTraceUpdate).toHaveBeenCalledWith(
       'tc1',
       expect.objectContaining({

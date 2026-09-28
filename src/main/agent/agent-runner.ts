@@ -1239,9 +1239,17 @@ export class CoworkAgentRunner {
       });
 
       // Stream liveness: warn on a slow Ollama cold start, cancel that warning on
-      // the first event, abort after 5 minutes without activity and count event
+      // the first event, abort after the inactivity window and count event
       // types for diagnostics. The policy lives in stream-liveness; the effects
       // (trace updates, abort, logging) stay here.
+      // The two windows are configurable and deliberately different: the
+      // inactivity window governs waiting on the model, while the much longer
+      // ceiling governs a tool that is actually running (and therefore silent).
+      const streamTimeout = {
+        activityTimeoutMs: runtimeConfig.streamTimeout?.activityTimeoutMs ?? 5 * 60 * 1000,
+        toolExecutionCeilingMs:
+          runtimeConfig.streamTimeout?.toolExecutionCeilingMs ?? 15 * 60 * 1000,
+      };
       const streamLiveness = createStreamLivenessWatcher({
         provider,
         promptStartedAt,
@@ -1270,7 +1278,21 @@ export class CoworkAgentRunner {
           }
         },
         onActivityTimeout: () => {
-          logWarn('[CoworkAgentRunner] Prompt timed out (no activity for 5 min), aborting');
+          logWarn(
+            `[CoworkAgentRunner] Prompt timed out (no activity for ${Math.round(
+              streamTimeout.activityTimeoutMs / 1000
+            )}s), aborting`
+          );
+          abortedByTimeout = true;
+          controller.abort();
+        },
+        activityTimeoutMs: streamTimeout.activityTimeoutMs,
+        toolExecutionCeilingMs: streamTimeout.toolExecutionCeilingMs,
+        onToolExecutionTimeout: (toolLabel) => {
+          logWarn(
+            `[CoworkAgentRunner] Tool "${toolLabel}" exceeded the ` +
+              `${Math.round(streamTimeout.toolExecutionCeilingMs / 1000)}s ceiling, aborting`
+          );
           abortedByTimeout = true;
           controller.abort();
         },
