@@ -19,6 +19,7 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import { ModelRegistry } from './shared-auth';
 import { createCompactionExtensionFactory } from './compaction-extension';
+import { effectiveContextWindow, resolveCompactionSettings } from './compaction-policy';
 import { log, logWarn } from '../utils/logger';
 import type { Session } from '../../shared/types';
 
@@ -100,34 +101,27 @@ export async function createPiSession(deps: CreatePiSessionDeps): Promise<PiAgen
 
   const modelRegistry = new ModelRegistry(deps.authStorage);
 
-  // Ollama-specific compaction tuning based on actual context window
-  const contextWindow = deps.piModel.contextWindow || 128000;
-  let compactionSettings: {
-    enabled: boolean;
-    reserveTokens?: number;
-    keepRecentTokens?: number;
+  // Ollama-specific compaction tuning based on actual context window. The
+  // decision itself lives in compaction-policy so the sub-agent paths apply the
+  // same rule; only the log wording stays local to the main agent.
+  const compactionInput = {
+    contextWindow: deps.piModel.contextWindow,
+    provider: deps.provider,
   };
-  if (deps.provider === 'ollama' && contextWindow < 16384) {
-    // Very small context: disable compaction (weak models produce unreliable summaries)
-    compactionSettings = { enabled: false };
+  const contextWindow = effectiveContextWindow(compactionInput);
+  const tuned = resolveCompactionSettings(compactionInput);
+  const compactionSettings = tuned ?? { enabled: true };
+  if (tuned && tuned.enabled === false) {
     log(
       '[CoworkAgentRunner] Ollama small context model, disabling auto-compaction (contextWindow:',
       contextWindow,
       ')'
     );
-  } else if (deps.provider === 'ollama' && contextWindow < 65536) {
-    // Medium context: scale reserves proportionally
-    compactionSettings = {
-      enabled: true,
-      reserveTokens: Math.floor(contextWindow * 0.15),
-      keepRecentTokens: Math.floor(contextWindow * 0.25),
-    };
+  } else if (tuned && tuned.reserveTokens !== undefined) {
     log(
       '[CoworkAgentRunner] Ollama medium context, scaled compaction:',
       JSON.stringify(compactionSettings)
     );
-  } else {
-    compactionSettings = { enabled: true };
   }
 
   const { session: newPiSession } = await createAgentSession({

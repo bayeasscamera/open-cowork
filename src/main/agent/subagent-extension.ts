@@ -21,6 +21,7 @@ import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resol
 import type { ServerEvent } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import type { TaskQueue } from './task-queue';
+import { resolveSubAgentCompactionSettings } from './compaction-policy';
 
 const MAX_TIMEOUT_MS = 300_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -273,7 +274,12 @@ function createSpawnSubagentTool(
           customTools: mcpCustomTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
-            compaction: { enabled: false },
+            // Same reasoning as the swarm runner: no compaction here meant a
+            // child reading several files simply overflowed and failed.
+            compaction: resolveSubAgentCompactionSettings({
+              contextWindow: piModel.contextWindow,
+              provider: piModel.provider,
+            }),
             retry: { enabled: true, maxRetries: 1 },
           }),
           resourceLoader,

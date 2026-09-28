@@ -24,6 +24,7 @@ import { logWarn } from '../utils/logger';
 import { normalizeTokenUsage } from './agent-runner-formatting';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resolution';
+import { resolveSubAgentCompactionSettings } from './compaction-policy';
 import {
   SHELL_TOOLS,
   WRITE_TOOLS,
@@ -220,7 +221,13 @@ export async function createPiTaskSession(context: WorkflowTaskContext): Promise
     customTools,
     sessionManager: PiSessionManager.inMemory(),
     settingsManager: PiSettingsManager.inMemory({
-      compaction: { enabled: false },
+      // A task sub-agent had no context management at all; a long task would
+      // overflow its window and fail irrecoverably. Shared policy, same as the
+      // swarm and the sub-agent extension.
+      compaction: resolveSubAgentCompactionSettings({
+        contextWindow: piModel.contextWindow,
+        provider: piModel.provider,
+      }),
       retry: { enabled: true, maxRetries: 1 },
     }),
     resourceLoader,

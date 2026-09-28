@@ -66,6 +66,8 @@ import type {
   SubAgentRunnerFn,
 } from './multi-agent-coordinator';
 import { buildCorrectiveContext } from './cross-verification';
+import { resolveSubAgentCompactionSettings } from './compaction-policy';
+import { shouldRetryOnContextOverflow } from './context-overflow';
 import {
   buildAskTeammateTool,
   buildTeammateResponder,
@@ -871,7 +873,14 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
     ],
     sessionManager: PiSessionManager.inMemory(),
     settingsManager: PiSettingsManager.inMemory({
-      compaction: { enabled: false },
+      // A sub-agent used to run with compaction hard-disabled, so reading a
+      // few files overflowed its window and the task failed for good. The
+      // shared policy keeps context management on unless the model is too small
+      // to summarise usefully.
+      compaction: resolveSubAgentCompactionSettings({
+        contextWindow: model.contextWindow,
+        provider: model.provider,
+      }),
       retry: { enabled: true, maxRetries: 1 },
     }),
     resourceLoader,
@@ -1266,8 +1275,26 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           logError(`[SwarmRunner] Task ${task.role} failed on model "${profile.label}":`, error);
           throw error;
         }
-        // Exactly one fallback attempt — never a retry loop.
         const reason = error instanceof Error ? error.message : String(error);
+        // A context overflow replayed against a model with the same (or a
+        // smaller) window fails identically: the task re-reads the same files
+        // into a fresh session and overflows at the same point. Retrying would
+        // bill the user twice for an outcome that is already decided. Only a
+        // strictly larger window is worth the second attempt.
+        const overflow = shouldRetryOnContextOverflow({
+          error,
+          sourceWindow: profile.config.contextWindow,
+          fallbackWindow: appConfig.contextWindow,
+        });
+        if (!overflow.retry) {
+          logError(
+            `[SwarmRunner] Task ${task.role} overflowed the context window on "${profile.label}" ` +
+              `(${reason}) — skipping the model fallback, which cannot recover from this`,
+            error
+          );
+          throw error;
+        }
+        // Exactly one fallback attempt — never a retry loop.
         const activeLabel = `active/${appConfig.model || appConfig.provider}`;
         logWarn(
           `[SwarmRunner] Sub-agent model "${profile.label}" failed (${reason}) — ` +
