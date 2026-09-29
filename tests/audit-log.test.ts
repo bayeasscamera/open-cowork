@@ -49,12 +49,40 @@ describe('audit-log', () => {
     expect(parsed.entries).toHaveLength(1);
   });
 
-  it('clears the log and resets the sequence', () => {
-    const log = new AuditLog();
+  it('clears the log without ever reusing an entry id', () => {
+    // The old behaviour reset the id sequence on clear(), so the first entry
+    // after a clear() could carry the same id as an entry that had already
+    // been exported — two different justifications, one identifier.
+    let tick = 0;
+    const log = new AuditLog(() => 1000 + tick++);
     const first = log.append({ action: 'a', justification: 'x', authorization: 'auto' });
     log.clear();
     const second = log.append({ action: 'b', justification: 'y', authorization: 'auto' });
     expect(log.size()).toBe(1);
-    expect(second.id).toBe(first.id);
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it('keeps ids unique across repeated clears, whatever the clock does', () => {
+    // The collision was timing-dependent: the ids only matched while `now()`
+    // returned the same value, so a fast machine hid it.
+    let tick = 0;
+    const log = new AuditLog(() => 1000 + tick++ * 37);
+    const seen = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      const entry = log.append({ action: 'a', justification: 'x', authorization: 'auto' });
+      expect(seen.has(entry.id)).toBe(false);
+      seen.add(entry.id);
+      if (i % 3 === 0) log.clear();
+    }
+    expect(seen.size).toBe(20);
+  });
+
+  it('numbers entries in order within a log', () => {
+    const log = new AuditLog(() => 7);
+    const first = log.append({ action: 'a', justification: 'x', authorization: 'auto' });
+    const second = log.append({ action: 'b', justification: 'y', authorization: 'auto' });
+    expect(first.id).not.toBe(second.id);
+    expect(first.id.startsWith('audit-1-')).toBe(true);
+    expect(second.id.startsWith('audit-2-')).toBe(true);
   });
 });

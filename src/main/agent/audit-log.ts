@@ -16,15 +16,24 @@ export type { AuditAuthorization, AuditEntry, NewAuditEntry } from '../../shared
  */
 export class AuditLog {
   private entries: AuditEntry[] = [];
-  private sequence = 0;
+  /**
+   * Entries are identified across a log's whole life, not just within one
+   * generation. It used to reset on clear(), so an id built from it collided
+   * with an entry that had already been exported: two different
+   * justifications, the same identifier, and an exported trail that could no
+   * longer point at one of them unambiguously.
+   */
+  private idCounter = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
   public append(entry: NewAuditEntry): AuditEntry {
-    this.sequence += 1;
+    this.idCounter += 1;
     const record: AuditEntry = {
       ...entry,
-      id: 'audit-' + this.sequence.toString(36) + '-' + this.now().toString(36),
+      // The counter is what makes the id unique; the timestamp keeps entries
+      // sortable and readable in an export.
+      id: 'audit-' + this.idCounter.toString(36) + '-' + this.now().toString(36),
       at: entry.at ?? this.now(),
     };
     this.entries.push(record);
@@ -45,7 +54,8 @@ export class AuditLog {
 
   public clear(): void {
     this.entries = [];
-    this.sequence = 0;
+    // idCounter deliberately survives: an id already handed out must never be
+    // handed out again, even in a log that starts over.
   }
 
   /** Machine-readable export used by the 'Export audit log' action. */
