@@ -83,6 +83,17 @@ describe('ProjectDetailView — two-column layout', () => {
     expect(pages).toContain('openProjectsList');
     expect(pages).toContain('setActiveSession(sessionId)');
   });
+
+  it('adds an EXISTING unassigned conversation via linkSession (no prompt needed)', () => {
+    // Genuine missing flow: previously only new sessions (with a prompt) or
+    // sidebar moves could join a project. The detail view now lists sessions
+    // with no projectId and links them through the existing linkSession IPC.
+    expect(pages).toContain("t('projects.addExisting')");
+    expect(pages).toContain('linkableSessions');
+    expect(pages).toContain('!s.projectId');
+    expect(pages).toContain('projects.linkSession(projectId, sessionId)');
+    expect(pages).toContain('updateSession(sessionId, { projectId })');
+  });
 });
 
 describe('Sidebar entry point', () => {

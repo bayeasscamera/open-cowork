@@ -873,6 +873,10 @@
     "pinSession": "置顶对话",
     "unpinSession": "取消置顶",
     "sectionConversations": "对话",
+    "addExisting": "添加已有对话",
+    "addExistingConversation": "将已有对话加入此项目",
+    "searchUnassigned": "搜索未归属的对话…",
+    "noUnassignedSessions": "没有未归属的对话 — 所有对话都已属于某个项目。",
     "newConversationHint": "在此项目中开始对话",
     "requiredField": "此项为必填",
     "saveShortcutHint": "按 ⌘↵ 保存",
@@ -903,6 +907,7 @@
       "detachFailed": "移除文件失败",
       "archiveFailed": "归档项目失败",
       "deleteFailed": "删除项目失败",
+      "linkFailed": "将会话加入项目失败",
       "nameAndWorkdirRequired": "名称和工作目录为必填项"
     }
   },

@@ -441,6 +441,10 @@
     "pinSession": "Épingler la conversation",
     "unpinSession": "Désépingler la conversation",
     "sectionConversations": "Conversations",
+    "addExisting": "Ajouter existante",
+    "addExistingConversation": "Ajouter une conversation existante à ce projet",
+    "searchUnassigned": "Rechercher une conversation libre…",
+    "noUnassignedSessions": "Aucune conversation libre — chacune appartient déjà à un projet.",
     "newConversationHint": "Démarrer une conversation dans ce projet",
     "requiredField": "Ce champ est requis",
     "saveShortcutHint": "Appuyez sur ⌘↵ pour enregistrer",
@@ -471,6 +475,7 @@
       "detachFailed": "Échec du retrait du fichier",
       "archiveFailed": "Échec de l'archivage du projet",
       "deleteFailed": "Échec de la suppression du projet",
+      "linkFailed": "Échec de l'ajout de la conversation au projet",
       "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis"
     }
   },

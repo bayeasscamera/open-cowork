@@ -851,6 +851,10 @@
     "pinSession": "Pin conversation",
     "unpinSession": "Unpin conversation",
     "sectionConversations": "Conversations",
+    "addExisting": "Add existing",
+    "addExistingConversation": "Add an existing conversation to this project",
+    "searchUnassigned": "Search unassigned conversations…",
+    "noUnassignedSessions": "No unassigned conversations — every conversation already belongs to a project.",
     "newConversationHint": "Start a conversation in this project",
     "requiredField": "This field is required",
     "saveShortcutHint": "Press ⌘↵ to save",
@@ -881,6 +885,7 @@
       "detachFailed": "Failed to remove file",
       "archiveFailed": "Failed to archive project",
       "deleteFailed": "Failed to delete project",
+      "linkFailed": "Failed to add the conversation to the project",
       "nameAndWorkdirRequired": "Name and workspace folder are required"
     }
   },

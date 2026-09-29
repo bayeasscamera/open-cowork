@@ -836,6 +836,47 @@ function ProjectDetailView({ projectId }: { projectId: string }) {
   const [starting, setStarting] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [linkSearch, setLinkSearch] = useState('');
+
+  // Conversations not yet attached to any project — candidates the user can
+  // add to this project. Sessions already in a (possibly other) project are
+  // excluded: membership is single, shown as a move in the sidebar.
+  const linkableSessions = useMemo(
+    () =>
+      sessions
+        .filter((s) => !s.projectId)
+        .filter((s) =>
+          linkSearch.trim()
+            ? s.title.toLowerCase().includes(linkSearch.trim().toLowerCase())
+            : true
+        )
+        .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)),
+    [sessions, linkSearch]
+  );
+
+  const linkExistingSession = useCallback(
+    async (sessionId: string) => {
+      setLinking(true);
+      setError(null);
+      try {
+        const result = await window.electronAPI.projects.linkSession(projectId, sessionId);
+        if (!result.success) {
+          setError(result.error || t('projects.errors.linkFailed'));
+          return;
+        }
+        useAppStore.getState().updateSession(sessionId, { projectId });
+        setLinkPickerOpen(false);
+        setLinkSearch('');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t('projects.errors.linkFailed'));
+      } finally {
+        setLinking(false);
+      }
+    },
+    [projectId, t]
+  );
 
   // Pull the context-injection usage (and re-sync the project) from the backend.
   const refresh = useCallback(async () => {
@@ -1240,9 +1281,56 @@ function ProjectDetailView({ projectId }: { projectId: string }) {
 
           {/* Recent sessions of this project */}
           <section className="mt-7">
-            <h2 className="mb-1.5 text-[13px] font-semibold text-text-primary">
-              {t('projects.sectionConversations')}
-            </h2>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <h2 className="text-[13px] font-semibold text-text-primary">
+                {t('projects.sectionConversations')}
+              </h2>
+              <button
+                onClick={() => setLinkPickerOpen((prev) => !prev)}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                title={t('projects.addExistingConversation')}
+                aria-expanded={linkPickerOpen}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>{t('projects.addExisting')}</span>
+              </button>
+            </div>
+            {linkPickerOpen && (
+              <div className="mb-2 rounded-xl border border-border-subtle bg-surface/60 p-2">
+                <div className="flex items-center gap-2 rounded-lg bg-background px-2 py-1.5">
+                  <Search className="h-3.5 w-3.5 flex-shrink-0 text-text-muted" />
+                  <input
+                    value={linkSearch}
+                    onChange={(e) => setLinkSearch(e.target.value)}
+                    placeholder={t('projects.searchUnassigned')}
+                    className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary outline-none placeholder:text-text-muted"
+                  />
+                </div>
+                <div className="mt-1 max-h-48 overflow-y-auto">
+                  {linkableSessions.length === 0 ? (
+                    <p className="px-2 py-3 text-center text-[12px] text-text-muted">
+                      {t('projects.noUnassignedSessions')}
+                    </p>
+                  ) : (
+                    linkableSessions.slice(0, 20).map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => void linkExistingSession(s.id)}
+                        disabled={linking}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-text-primary transition-colors hover:bg-surface-hover disabled:opacity-50"
+                        title={s.title}
+                      >
+                        <Plus className="h-3 w-3 flex-shrink-0 text-text-muted" />
+                        <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                        <span className="flex-shrink-0 text-[11px] text-text-muted">
+                          {formatRelativeTime(s.updatedAt || s.createdAt, i18n.language)}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
             {recentSessions.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border-muted bg-surface/40 px-4 py-6 text-center">
                 <p className="text-[12px] text-text-muted">{t('projects.noSessionsInProject')}</p>
