@@ -112,6 +112,7 @@ import {
   resolveAbortDisposition,
   shouldPreserveExistingTrace,
   toUserFacingErrorText,
+  type TerminalErrorCode,
 } from './agent-runner-message-end';
 import {
   applyPiModelRuntimeOverrides,
@@ -120,6 +121,7 @@ import {
   resolvePiRouteProtocol,
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
+import { shouldFallbackToProvider } from './provider-fallback';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
 import { buildAbortUserMessage } from './agent-runner-loop-guard';
 import { createLoopGuardController } from './loop-guard-controller';
@@ -287,6 +289,32 @@ export interface AgentRunBenchmarkInput {
   prompt: string;
   success: boolean;
   latencyMs: number;
+}
+
+/**
+ * Outcome of a single run attempt, returned so the caller can decide whether a
+ * retry on another provider is safe. `retryable` is deliberately narrow: it is
+ * true only for a rate limit / gateway / network failure that produced no tool
+ * execution, which is the one case where replaying the turn cannot duplicate a
+ * side effect. `errorCode` lets the caller route without re-parsing the message.
+ */
+export interface AgentRunResult {
+  /** True when the turn completed without a terminal error. */
+  ok: boolean;
+  /** Machine-readable failure kind, or undefined on success. */
+  errorCode?: TerminalErrorCode;
+  /** Raw error text as classified, useful for logging. */
+  errorText?: string;
+  /** True when this failure may be replayed on another provider. */
+  retryable: boolean;
+  /** Tool calls started during the attempt; non-zero blocks any replay. */
+  toolExecutions: number;
+  /**
+   * Publish the error that was held back for this turn. The caller invokes it
+   * when it decides not to retry, so a failure is either replaced by a
+   * successful answer or shown exactly once — never both. Idempotent.
+   */
+  flushError(): void;
 }
 
 interface AgentRunnerOptions {
@@ -651,9 +679,51 @@ export class CoworkAgentRunner {
     return fallback;
   }
 
-  async run(session: Session, prompt: string, existingMessages: Message[]): Promise<void> {
+  async run(
+    session: Session,
+    prompt: string,
+    existingMessages: Message[]
+  ): Promise<AgentRunResult> {
     const runStartTime = Date.now();
     logCtx('[CoworkAgentRunner] run() started');
+
+    // Counts tool calls independently of the control center: the recorder above
+    // is optional, and a provider fallback that read a missing recorder as
+    // "zero tools" would replay a turn whose side effects already landed.
+    let startedToolExecutions = 0;
+    const bumpToolCount = (): void => {
+      startedToolExecutions += 1;
+    };
+    // Set by the catch block when an exception escapes the try; the early
+    // returns inside the try build their result directly.
+    let runResult: AgentRunResult | undefined;
+    // A terminal error held back while the caller decides whether to replay the
+    // turn on another provider. Publishing it now would leave a stale 429 banner
+    // in the transcript right next to the answer the retry produces. It stays
+    // local to this run (no instance field) so concurrent sessions can never
+    // cross-flush each other's held error.
+    let pendingTerminalError:
+      | { messageText: string; errorCode: TerminalErrorCode }
+      | undefined;
+    // Publishes the held-back error. The session manager calls this when it
+    // cannot retry, so the user always ends up with exactly one message
+    // describing what happened — never a banner followed by a success.
+    const flushPendingTerminalError = (): void => {
+      if (!pendingTerminalError) {
+        return;
+      }
+      const { messageText, errorCode } = pendingTerminalError;
+      pendingTerminalError = undefined;
+      this.sendMessage(session.id, {
+        id: uuidv4(),
+        sessionId: session.id,
+        role: 'assistant',
+        content: [{ type: 'text', text: messageText }],
+        timestamp: Date.now(),
+        isError: true,
+        errorCode,
+      });
+    };
 
     const controller = new AbortController();
     try {
@@ -675,6 +745,8 @@ export class CoworkAgentRunner {
 
     // Phase 6 control center: tool executions are mirrored into the activity
     // feed. One recorder per run keeps the toolCallId mapping session-scoped.
+    // The recorder is optional (no control center), so the fallback policy gets
+    // its tool count from `bumpToolCount`, which is wired unconditionally.
     const toolActivity = this.activityTracker
       ? new ToolActivityRecorder(this.activityTracker, session.id)
       : undefined;
@@ -1344,15 +1416,15 @@ export class CoworkAgentRunner {
 
         if (!hasEmittedError) {
           hasEmittedError = true;
-          this.sendMessage(session.id, {
-            id: uuidv4(),
-            sessionId: session.id,
-            role: 'assistant',
-            content: [{ type: 'text', text: messageText }],
-            timestamp: Date.now(),
-            isError: true,
+          // A rate limit / gateway failure with no tool side effect may still be
+          // replayed on another provider by the session manager. Persisting the
+          // error now would leave a stale 429 banner in the transcript next to
+          // the answer the retry produces, so the message is held back and
+          // flushed only when the turn ends without a retry.
+          pendingTerminalError = {
+            messageText,
             errorCode: classifyTerminalError(errorText),
-          });
+          };
         }
 
         this.sendTraceUpdate(session.id, thinkingStepId, {
@@ -1413,6 +1485,7 @@ export class CoworkAgentRunner {
         emitTerminalError,
         sanitizeOutputPaths: (content) => sanitizeOutputPaths(content),
         toolActivity,
+        onToolExecutionStart: bumpToolCount,
         reportProtocolLeak: (detail) => {
           logCtxWarn(
             `[CoworkAgentRunner] Raw agent-protocol markup leaked as text (${detail.fragmentCount} fragment(s)) — renderer quarantines display, cold-start strips replay. Sample:`,
@@ -1519,7 +1592,13 @@ export class CoworkAgentRunner {
           status: 'error',
           title: 'Request timed out',
         });
-        return;
+        return this.buildRunResult({
+          errorCode: 'timeout',
+          terminalErrorText,
+          startedToolExecutions,
+          aborted: true,
+          flushError: flushPendingTerminalError,
+        });
       }
       // If the SDK swallowed the AbortError after a loop-guard abort, preserve
       // the 'error' trace status that handleLoopGuardDecision already published.
@@ -1534,7 +1613,13 @@ export class CoworkAgentRunner {
         logCtx(
           `[CoworkAgentRunner] Aborted by ${abortDisposition === 'loop_guard' ? 'loop guard' : 'stream error'} (detected after prompt returned)`
         );
-        return;
+        return this.buildRunResult({
+          errorCode: classifyTerminalError(terminalErrorText ?? 'stream_error'),
+          terminalErrorText,
+          startedToolExecutions,
+          aborted: true,
+          flushError: flushPendingTerminalError,
+        });
       }
 
       // ── Two-stage pipeline finalization ───────────────────────────────
@@ -1765,18 +1850,54 @@ export class CoworkAgentRunner {
             title: 'Cancelled',
           });
         }
+        // A turn the user cancelled, that timed out, or that the loop guard
+        // stopped is never replayed. A stream error is different: the abort
+        // there is the runner's own doing *because* the provider failed (see
+        // emitTerminalError with {abort: true}), so a 429 surfaced that way —
+        // terminalErrorText set, no tools run — stays retryable.
+        const userStop = abortDisposition === 'user' || abortDisposition === 'timeout';
+        runResult = this.buildRunResult({
+          errorCode:
+            terminalErrorText && !userStop
+              ? classifyTerminalError(terminalErrorText)
+              : abortDisposition === 'timeout'
+                ? 'timeout'
+                : undefined,
+          terminalErrorText,
+          startedToolExecutions,
+          aborted: userStop,
+          flushError: flushPendingTerminalError,
+        });
       } else {
         logCtxError('[CoworkAgentRunner] Error:', error);
 
-        const errorText = toUserFacingErrorText(toErrorText(error));
-        const errorMsg: Message = {
-          id: uuidv4(),
-          sessionId: session.id,
-          role: 'assistant',
-          content: [{ type: 'text', text: `**Error**: ${errorText}` }],
-          timestamp: Date.now(),
-        };
-        this.sendMessage(session.id, errorMsg);
+        // Hold back when this failure could be replayed on another provider —
+        // the caller flushes it if no retry happens. Publish immediately only
+        // for errors that can never be retried (auth, bad request, turns that
+        // already ran tools), so behaviour for those paths is unchanged.
+        const thrownText = toErrorText(error);
+        const thrownCode = classifyTerminalError(thrownText);
+        const retryableThrown = shouldFallbackToProvider({
+          errorCode: thrownCode,
+          toolExecutions: startedToolExecutions,
+          aborted: controller.signal.aborted,
+        });
+        if (retryableThrown) {
+          pendingTerminalError = {
+            messageText: `**Error**: ${toUserFacingErrorText(thrownText)}`,
+            errorCode: thrownCode,
+          };
+        } else {
+          const errorText = toUserFacingErrorText(thrownText);
+          const errorMsg: Message = {
+            id: uuidv4(),
+            sessionId: session.id,
+            role: 'assistant',
+            content: [{ type: 'text', text: `**Error**: ${errorText}` }],
+            timestamp: Date.now(),
+          };
+          this.sendMessage(session.id, errorMsg);
+        }
 
         this.sendTraceStep(session.id, {
           id: uuidv4(),
@@ -1790,6 +1911,16 @@ export class CoworkAgentRunner {
         if (error instanceof Error) {
           (error as Error & { alreadyReportedToUser?: boolean }).alreadyReportedToUser = true;
         }
+        // An exception that escapes the try is a terminal failure of the
+        // attempt. Classify the raw text so the caller can still retry a
+        // rate limit that surfaced as a thrown provider error.
+        runResult = this.buildRunResult({
+          errorCode: thrownCode,
+          terminalErrorText: thrownText,
+          startedToolExecutions,
+          aborted: controller.signal.aborted,
+          flushError: flushPendingTerminalError,
+        });
       }
     } finally {
       // Close activities the provider never completed (abort, stream error,
@@ -1856,6 +1987,51 @@ export class CoworkAgentRunner {
           }),
       });
     }
+
+    // A turn that fell through the try without an early return still needs its
+    // result: either a clean completion or the terminal error that was emitted
+    // above. The catch block sets it when an exception escapes.
+    return (
+      runResult ??
+      this.buildRunResult({
+        errorCode: terminalErrorText
+          ? classifyTerminalError(terminalErrorText)
+          : undefined,
+        terminalErrorText,
+        startedToolExecutions,
+        aborted: controller.signal.aborted,
+        flushError: flushPendingTerminalError,
+      })
+    );
+  }
+
+  /**
+   * Assemble the outcome of one run attempt. Kept in one place so `run()` and
+   * its early returns can never disagree about what counts as retryable — the
+   * decision is delegated to the shared fallback policy rather than recomputed.
+   */
+  private buildRunResult(input: {
+    errorCode?: TerminalErrorCode;
+    terminalErrorText?: string;
+    startedToolExecutions: number;
+    aborted: boolean;
+    flushError: () => void;
+  }): AgentRunResult {
+    const ok = !input.errorCode;
+    return {
+      ok,
+      ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+      ...(input.terminalErrorText ? { errorText: input.terminalErrorText } : {}),
+      retryable: input.errorCode
+        ? shouldFallbackToProvider({
+            errorCode: input.errorCode,
+            toolExecutions: input.startedToolExecutions,
+            aborted: input.aborted,
+          })
+        : false,
+      toolExecutions: input.startedToolExecutions,
+      flushError: input.flushError,
+    };
   }
 
   /**

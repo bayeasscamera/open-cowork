@@ -86,6 +86,12 @@ export interface PiSessionEventContext {
   /** Records tool executions in the control center activity feed. */
   toolActivity?: PiSessionToolActivity;
   /**
+   * Incremented on every tool_execution_start, independently of the control
+   * center (which is optional). The provider fallback uses it to prove a failed
+   * turn produced no side effects before replaying it on another ConfigSet.
+   */
+  onToolExecutionStart?(): void;
+  /**
    * Reports that an assistant text block carried raw agent-protocol markup
    * (tool_use/turn tags leaked as plain text). Optional so the handler stays
    * usable in tests. Used for telemetry and causal error-pattern memory; the
@@ -327,6 +333,7 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
         label: ctx.getToolDisplayName(event.toolName),
         args: event.args,
       });
+      ctx.onToolExecutionStart?.();
       break;
     }
 

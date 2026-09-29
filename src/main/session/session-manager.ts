@@ -62,11 +62,37 @@ import {
   normalizeGeneratedTitle,
 } from './session-title-utils';
 import { generateTitleWithSdk } from '../agent/sdk-one-shot';
+import { buildFallbackCandidates } from '../agent/provider-fallback';
 import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
 import { buildAttachmentPromptHints } from './attachment-hints';
 
+/**
+ * Outcome of one run attempt, as the session manager sees it. Declared
+ * structurally (rather than imported from the runner) so this module keeps its
+ * no-agent-import testability; the runner's AgentRunResult is assignable to it.
+ * Every non-void result carries flushError, so the caller never has to
+ * distinguish "new-style runner" from mocks: call first.flushError?.() where a
+ * direct call is not guaranteed.
+ */
+interface AgentRunAttempt {
+  ok: boolean;
+  /** True when the failure may be replayed on another provider. */
+  retryable: boolean;
+  errorCode?: string;
+  /** Publishes the error the runner held back while a retry was possible. */
+  flushError?(): void;
+}
+
 interface AgentRunner {
-  run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
+  /**
+   * Runs one turn. Returns the attempt outcome so the caller can decide about a
+   * provider retry; a runner that predates the fallback simply resolves void.
+   */
+  run(
+    session: Session,
+    prompt: string,
+    existingMessages: Message[]
+  ): Promise<AgentRunAttempt | void>;
   cancel(sessionId: string): void;
   clearSdkSession?(sessionId: string): void;
   clearAllSdkSessions?(): void;
@@ -906,8 +932,11 @@ export class SessionManager {
           });
         }
 
-        // Run the agent
-        await this.agentRunner.run(session, enhancedPrompt, messagesForContext);
+        // Run the agent. A rate limit / gateway failure that produced no tool
+        // execution is replayed once on the next usable ConfigSet: the first
+        // attempt already told the user what happened, so switching provider
+        // is strictly better than leaving the turn dead.
+        await this.runWithProviderFallback(session, enhancedPrompt, messagesForContext);
 
         if (this.extensionManager) {
           const stableMessages = this.getMessages(session.id);
@@ -954,6 +983,73 @@ export class SessionManager {
         });
       }
     }); // end runWithLogContext
+  }
+
+  /**
+   * Run one turn, replaying it on the next usable ConfigSet when the first
+   * attempt failed in a way that cannot have produced side effects.
+   *
+   * The decision itself lives in `provider-fallback` (pure, unit-tested); this
+   * method only supplies the ConfigSet inventory and executes the retry. At most
+   * one retry happens: a second failure is a real problem with the setup, not a
+   * transient rate limit, and looping would multiply the user's bill.
+   */
+  private async runWithProviderFallback(
+    session: Session,
+    prompt: string,
+    existingMessages: Message[]
+  ): Promise<void> {
+    const first = await this.agentRunner.run(session, prompt, existingMessages);
+    if (!first?.retryable) {
+      // Either the turn succeeded, or it failed in a way another provider would
+      // hit too (auth, bad request) or that already produced side effects. In
+      // every one of those cases the held-back error is the final answer.
+      // Optional call: legacy runners/mocks predate the retry contract.
+      first?.flushError?.();
+      return;
+    }
+
+    const config = configStore.getAll();
+    const candidates = buildFallbackCandidates({
+      configSets: config.configSets,
+      failedConfigSetId: config.activeConfigSetId,
+      projectSet: (setId) => configStore.getConfigSetProjectedConfig(setId),
+      hasUsableCredentials: (candidate) => configStore.hasUsableCredentialsForActiveSet(candidate),
+    });
+
+    const candidate = candidates[0];
+    if (!candidate) {
+      // No other provider is configured: the user needs to see the 429 rather
+      // than an unexplained silence.
+      first.flushError?.();
+      return;
+    }
+
+    logCtx(
+      '[SessionManager] Provider failure on the active set — retrying the turn on',
+      candidate.label
+    );
+    // The retry's answer replaces the held-back error — do NOT flush it here.
+    // Flushing now would publish the 429 banner right before the successful
+    // answer. If the retry fails too, its own error is what the user reads;
+    // otherwise the held error is simply discarded.
+    // Persist the switch so the retry — and every later turn of the session —
+    // uses the working provider instead of the exhausted one.
+    configStore.switchSet({ id: candidate.configSetId });
+    this.sendToRenderer({
+      type: 'session.update',
+      payload: {
+        sessionId: session.id,
+        updates: { model: candidate.config.model },
+      },
+    });
+    session.model = candidate.config.model;
+    this.db.sessions.update(session.id, { model: candidate.config.model });
+
+    const second = await this.agentRunner.run(session, prompt, existingMessages);
+    // No second fallback: a further failure is a real problem with the setup,
+    // and looping would multiply the user's bill. Surface whatever it produced.
+    second?.flushError?.();
   }
 
   private async runSessionTitleGeneration(

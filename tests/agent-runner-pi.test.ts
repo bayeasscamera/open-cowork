@@ -114,9 +114,11 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
     expect(agentRunnerContent).toContain("from './agent-runner-message-end'");
     expect(sessionEventHandlerContent).toContain('resolveMessageEndPayload');
     expect(agentRunnerContent).toContain('toUserFacingErrorText');
-    expect(agentRunnerContent).toContain(
-      'const errorText = toUserFacingErrorText(toErrorText(error));'
-    );
+    // Thrown provider errors are classified centrally; retryable ones (429 /
+    // gateway 5xx) are held back for the session-manager fallback, terminal
+    // ones are published immediately — both through the shared helper.
+    expect(agentRunnerContent).toContain('const thrownText = toErrorText(error);');
+    expect(agentRunnerContent).toContain('toUserFacingErrorText(thrownText)');
   });
 
   it('uses pi DefaultResourceLoader with additionalSkillPaths and appendSystemPrompt', () => {
