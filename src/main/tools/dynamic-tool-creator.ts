@@ -402,23 +402,49 @@ export function buildAgentMetaTools(
       execute: async (_toolCallId, params) => {
         const args = params as { query: string; topK?: number };
         try {
-          const { exec } = await import('child_process');
+          const { execFile } = await import('child_process');
           const { promisify } = await import('util');
-          const execAsync = promisify(exec);
+          // execFile, never exec: a shell would expand `$(...)`, backticks and
+          // `;` inside the query. The query is model-authored, and a model that
+          // read an untrusted file can be made to author one — so the query
+          // reaches grep as ONE argv element and is never parsed as syntax.
+          const execFileAsync = promisify(execFile);
 
+          // grep BRE alternation. Only characters that are safe inside a BRE
+          // survive, so a payload cannot reach even the argv layer intact.
           const keywords = args.query
-            .replace(/['"]/g, '')
             .split(/\s+/)
-            .filter((w) => w.length > 3)
+            .map((word) => word.replace(/[^\p{L}\p{N}_.-]/gu, ''))
+            .filter((word) => word.length > 3)
             .slice(0, 3)
+            .map((word) => word.replace(/-/g, '\\-'))
             .join('|');
+          if (!keywords) {
+            return {
+              content: [
+                { type: 'text' as const, text: `No usable search terms in: "${args.query}"` },
+              ],
+              details: {},
+            };
+          }
+
+          const grep = async (
+            patterns: string[],
+            targets: string[]
+          ): Promise<string> => {
+            const { stdout } = await execFileAsync(
+              'grep',
+              ['-n', '--include=*.ts', '--include=*.tsx', ...patterns, ...targets],
+              { cwd: process.cwd(), timeout: 10_000, maxBuffer: 1024 * 1024 }
+            );
+            return typeof stdout === 'string' ? stdout : String(stdout ?? '');
+          };
 
           try {
-            const { stdout } = await execAsync(
-              `grep -rn --include="*.ts" --include="*.tsx" -l "${keywords}" src/ 2>/dev/null | head -10`,
-              { cwd: process.cwd(), timeout: 10_000 }
-            );
-            const files = stdout.trim().split('\n').filter(Boolean);
+            // Files first (-l), then the matching lines of each one. A file
+            // path can never be an argument here: it is whatever grep printed.
+            const listing = await grep(['-l', '-r', '-E', keywords], ['src/']);
+            const files = listing.trim().split('\n').filter(Boolean);
             if (files.length === 0) {
               return {
                 content: [{ type: 'text' as const, text: `No results found for: "${args.query}"` }],
@@ -431,12 +457,9 @@ export function buildAgentMetaTools(
               '',
             ];
             for (const file of files.slice(0, args.topK ?? 5)) {
-              const { stdout: lines } = await execAsync(
-                `grep -n "${keywords.split('|')[0]}" "${file}" 2>/dev/null | head -5`,
-                { cwd: process.cwd(), timeout: 5_000 }
-              ).catch(() => ({ stdout: '' }));
+              const lines = await grep(['-E', keywords], [file]).catch(() => '');
               results.push(`📄 ${file}`);
-              if (lines) results.push(lines.trim());
+              if (lines) results.push(lines.trim().split('\n').slice(0, 5).join('\n'));
               results.push('');
             }
 

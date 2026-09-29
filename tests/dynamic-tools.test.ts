@@ -145,3 +145,69 @@ describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills',
     expect(runner).not.toContain('getPiToolDefinitions');
   });
 });
+
+/**
+ * `search_codebase` used to run grep through `exec`, interpolating the query
+ * into a shell command line. Its quote-stripping filter let `$(...)`,
+ * backticks, `;`, `|` and `&&` straight through, and a query wrapped in double
+ * quotes is still command substitution to a shell — so a model, or a file that
+ * model had read, could execute anything in the main process with the Electron
+ * app's privileges.
+ */
+describe('search_codebase — shell injection', () => {
+  const marker = path.join(os.tmpdir(), `cowork-inject-${process.pid}-${Date.now()}`);
+
+  const runSearch = (query: string) => {
+    const tool = buildAgentMetaTools().find((t) => t.name === 'search_codebase')!;
+    return (tool as unknown as {
+      execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
+    }).execute('call_search', { query });
+  };
+
+  afterEach(() => {
+    fs.rmSync(marker, { force: true });
+  });
+
+  it.each([
+    ['command substitution', (m: string) => `authx authy $(id>${m})`],
+    ['backtick substitution', (m: string) => 'authx authy `id>' + m + '`'],
+    ['command separator', (m: string) => `authx authy ; touch ${m}`],
+    ['pipe', (m: string) => `authx authy | touch ${m}`],
+    ['and-list', (m: string) => `authx authy && touch ${m}`],
+    ['quoted command', (m: string) => `authx authy 'touch' ${m}`],
+    ['IFS split', (m: string) => `authx authy $IFS touch ${m}`],
+    ['embedded newline', (m: string) => `authx authy\n touch ${m}`],
+  ])('does not execute a %s payload', async (_label, build) => {
+    await runSearch(build(marker));
+    // Whatever the tool returns, nothing ran: the marker was never created.
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
+  it('still searches for a normal query', async () => {
+    const result = await runSearch('DynamicSkillRegistry');
+    expect(result.content[0].text).toContain('DynamicSkillRegistry');
+    expect(result.content[0].text).toMatch(/Found in|No results/);
+  });
+
+  it('reports cleanly when a query has no usable search term', async () => {
+    const result = await runSearch('a b c');
+    expect(result.content[0].text).toContain('No usable search terms');
+  });
+
+  it('runs grep through execFile, never a shell', () => {
+    // The structural guarantee, so a future edit cannot reintroduce a shell.
+    // A template literal inside an error message is harmless; what must not
+    // exist is a shell invocation, or a command line built by interpolation.
+    const creator = fs.readFileSync('src/main/tools/dynamic-tool-creator.ts', 'utf-8');
+    const searchSection = creator.slice(
+      creator.indexOf("name: 'search_codebase'"),
+      creator.indexOf('// 6. TDD Loop')
+    );
+    expect(searchSection).toContain('execFile');
+    expect(searchSection).not.toContain('execAsync');
+    expect(searchSection).not.toMatch(/promisify\(exec\)/);
+    // The only child process spawned is grep, by name, with an argv array.
+    expect([...searchSection.matchAll(/await import\('child_process'\)/g)]).toHaveLength(1);
+    expect(searchSection).toMatch(/execFileAsync\(\s*'grep',\s*\[/);
+  });
+});
