@@ -83,6 +83,22 @@ export class BudgetGuard {
     if (typeof maxDurationMs === 'number' && this.elapsedMs > maxDurationMs) {
       return 'Time budget exceeded (' + this.elapsedMs + 'ms/' + maxDurationMs + 'ms).';
     }
+    // The cost ceiling is declared on TaskBudget, shown on the plan approval
+    // page and summed into the plan total — but nothing ever compared it to
+    // what was actually spent, so a task could display "$0.0100 USD" to the
+    // user and then spend an order of magnitude more without being stopped.
+    // Checked last: the other three are the cheap, deterministic ceilings, and
+    // a caller acting on the first reason should get the most actionable one.
+    const maxCostUsd = this.budget.estimatedCostUsd;
+    if (typeof maxCostUsd === 'number' && this.costUsd > maxCostUsd) {
+      return (
+        'Cost budget exceeded ($' +
+        this.costUsd.toFixed(4) +
+        '/$' +
+        maxCostUsd.toFixed(4) +
+        ').'
+      );
+    }
     return null;
   }
 
@@ -110,6 +126,9 @@ export function budgetIsSatisfiable(budget: TaskBudget): boolean {
     return false;
   }
   if (typeof budget.maxDurationMs === 'number' && budget.maxDurationMs <= 0) {
+    return false;
+  }
+  if (typeof budget.estimatedCostUsd === 'number' && budget.estimatedCostUsd <= 0) {
     return false;
   }
   return true;
