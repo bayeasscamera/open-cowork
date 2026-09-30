@@ -911,6 +911,18 @@
       "nameAndWorkdirRequired": "名称和工作目录为必填项"
     }
   },
+  "panelDock": {
+    "label": "工作区面板"
+  },
+  "modelPicker": {
+    "changeModel": "切换此提供商的活动模型",
+    "title": "模型（{{provider}}）",
+    "add": "+ 添加",
+    "close": "关闭",
+    "addPlaceholder": "例如 deepseek-chat、gpt-4o、mistral",
+    "confirm": "添加模型",
+    "empty": "未配置模型——请在 API 设置中添加。"
+  },
   "delegatedTasks": {
     "title": "委托任务",
     "configure": "配置委托",
@@ -988,6 +1000,8 @@
     "stop": "停止",
     "processing": "处理中...",
     "typeMessage": "输入消息...",
+    "voiceStart": "开始语音输入",
+    "voiceStop": "停止语音输入",
     "loadingConversation": "加载对话中...",
     "startConversation": "开始对话",
     "startFailed": "启动会话失败，请稍后重试。",

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { X } from 'lucide-react';
 import { buildDiffView, diffLineAnchor, type DiffLine } from '../../shared/diff-view';
 import { useAppStore } from '../store';
 
@@ -80,6 +81,7 @@ function DiffLineRow({
 export function DiffPanel() {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -148,12 +150,23 @@ export function DiffPanel() {
 
   return (
     <aside
-      className="flex h-full w-full flex-col border-l border-border bg-background-secondary/40"
+      className="flex h-full w-full flex-col bg-background-secondary/40"
       aria-label={t('diffPanel.title')}
     >
-      <div className="border-b border-border-muted px-4 py-3">
-        <h3 className="text-sm font-semibold text-text-primary">{t('diffPanel.title')}</h3>
-        <p className="mt-0.5 text-xs text-text-muted">{t('diffPanel.description')}</p>
+      <div className="flex items-start justify-between gap-2 border-b border-border-muted px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-text-primary">{t('diffPanel.title')}</h3>
+          <p className="mt-0.5 text-xs text-text-muted">{t('diffPanel.description')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setDiffPanelVisible(false)}
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+          title={t('common.close')}
+          aria-label={t('common.close')}
+        >
+          <X className="h-3 w-3" />
+        </button>
       </div>
       {error && (
         <p role="alert" className="px-4 py-2 text-xs text-rose-500">

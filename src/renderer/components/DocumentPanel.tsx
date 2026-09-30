@@ -107,7 +107,7 @@ export function DocumentPanel() {
   if (!visible) return null;
 
   return (
-    <div className="fixed bottom-16 right-4 top-16 z-40 flex w-[480px] overflow-hidden rounded-xl border border-border bg-background shadow-xl">
+    <div className="flex h-full w-full overflow-hidden bg-background">
       <div className="flex w-full flex-col">
         <div className="flex items-center gap-2 border-b border-border-muted px-3 py-2">
           <FileText className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />

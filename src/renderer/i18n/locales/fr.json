@@ -168,6 +168,8 @@
     "stop": "Arrêter",
     "processing": "Traitement en cours...",
     "typeMessage": "Tapez un message...",
+    "voiceStart": "Activer la dictée vocale",
+    "voiceStop": "Arrêter la dictée vocale",
     "loadingConversation": "Chargement de la conversation...",
     "startConversation": "Démarrer la conversation",
     "startFailed": "Échec du démarrage de la session. Veuillez réessayer.",
@@ -478,6 +480,18 @@
       "linkFailed": "Échec de l'ajout de la conversation au projet",
       "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis"
     }
+  },
+  "panelDock": {
+    "label": "Panneaux de l’espace de travail"
+  },
+  "modelPicker": {
+    "changeModel": "Changer le modèle actif pour ce provider",
+    "title": "Modèles ({{provider}})",
+    "add": "+ ajouter",
+    "close": "fermer",
+    "addPlaceholder": "ex : deepseek-chat, gpt-4o, mistral",
+    "confirm": "Valider le modèle",
+    "empty": "Aucun modèle configuré — ajoutez-en dans les réglages API."
   },
   "delegatedTasks": {
     "title": "Tâches déléguées",

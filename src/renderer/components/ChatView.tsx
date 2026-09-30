@@ -15,6 +15,7 @@ import { useIPC } from '../hooks/useIPC';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 import { MessageCard } from './MessageCard';
 import { ContextUsageBar } from './ContextUsageBar';
+import { PanelDock } from './PanelDock';
 import type { Message, ContentBlock, AppConfig, ProviderProfile, ProviderProfileKey } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock, ChevronDown, Mic, MicOff, Paperclip, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { API_PROVIDER_PRESETS, type SharedProviderPreset } from '../../shared/api-model-presets';
@@ -998,6 +999,10 @@ export function ChatView() {
       {/* Input */}
       <div className="border-t border-border-muted bg-background/92 backdrop-blur-md">
         <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-5">
+          {/* Unified panel dock — views and side inspectors in one glass toolbar */}
+          <div className="flex items-center justify-end pb-2.5">
+            <PanelDock />
+          </div>
           <form
             onSubmit={handleSubmit}
             onDragOver={handleDragOver}
@@ -1177,7 +1182,7 @@ export function ChatView() {
                     type="button"
                     onClick={() => setShowModelPicker(!showModelPicker)}
                     className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-border-subtle bg-surface-muted hover:bg-surface-hover text-[11px] font-medium text-text-primary transition-colors"
-                    title="Changer le modèle actif pour ce provider"
+                    title={t('modelPicker.changeModel')}
                   >
                     <span className="truncate max-w-[100px]">{appConfig?.model || t('chat.noModel')}</span>
                     <ChevronDown className="w-2.5 h-2.5 text-text-muted flex-shrink-0" />
@@ -1186,13 +1191,13 @@ export function ChatView() {
                   {showModelPicker && (
                     <div className="absolute right-0 bottom-full mb-2 w-72 rounded-2xl bg-surface border border-border shadow-soft p-2 z-50 animate-in fade-in zoom-in-95">
                       <div className="px-2 py-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider flex items-center justify-between">
-                        <span>Modèles ({appConfig?.provider || 'openai'})</span>
+                        <span>{t('modelPicker.title', { provider: appConfig?.provider || 'openai' })}</span>
                         <button
                           type="button"
                           onClick={() => setShowAddCustomModel(!showAddCustomModel)}
                           className="text-[11px] text-accent hover:underline lowercase font-normal"
                         >
-                          {showAddCustomModel ? 'fermer' : '+ ajouter'}
+                          {showAddCustomModel ? t('modelPicker.close') : t('modelPicker.add')}
                         </button>
                       </div>
 
@@ -1200,7 +1205,7 @@ export function ChatView() {
                         <div className="p-2 my-1 bg-surface-muted rounded-xl border border-border-subtle flex flex-col gap-1.5">
                           <input
                             type="text"
-                            placeholder="ex: deepseek-chat, gpt-4o, mistral"
+                            placeholder={t('modelPicker.addPlaceholder')}
                             value={customModelInput}
                             onChange={(e) => setCustomModelInput(e.target.value)}
                             onKeyDown={(e) => {
@@ -1220,7 +1225,7 @@ export function ChatView() {
                             }}
                             className="w-full py-1 text-xs rounded bg-accent text-background font-medium hover:bg-accent-hover transition-colors text-center"
                           >
-                            Valider le modèle
+                            {t('modelPicker.confirm')}
                           </button>
                         </div>
                       )}
@@ -1255,7 +1260,7 @@ export function ChatView() {
                           if (allModels.length === 0) {
                             return (
                               <p className="px-2.5 py-2 text-xs text-text-muted italic">
-                                Aucun modèle configuré — ajoutez-en dans les réglages API.
+                                {t('modelPicker.empty')}
                               </p>
                             );
                           }
@@ -1310,7 +1315,7 @@ export function ChatView() {
                       ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/20'
                       : 'border border-border-subtle bg-surface-muted hover:bg-surface-hover text-text-secondary hover:text-text-primary'
                   }`}
-                  title={isListening ? 'Arrêter la dictée vocale' : 'Activer la dictée vocale'}
+                  title={isListening ? t('chat.voiceStop') : t('chat.voiceStart')}
                 >
                   {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                 </button>

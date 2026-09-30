@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
+import { PanelDock } from './PanelDock';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 import type { ContentBlock, AppConfig, ProviderProfile, ProviderProfileKey } from '../types';
 import { getInitialSessionTitle } from '../../shared/session-title';
@@ -546,6 +547,9 @@ export function WelcomeView() {
         </div>
 
         {/* Main Input Card - Right aligned */}
+        <div className="flex items-center justify-end pb-2.5">
+          <PanelDock />
+        </div>
         <form
           onSubmit={handleSubmit}
           onDragOver={handleDragOver}
@@ -666,7 +670,7 @@ export function WelcomeView() {
                   type="button"
                   onClick={() => setShowModelPicker(!showModelPicker)}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-border-subtle bg-surface-muted hover:bg-surface-hover text-xs font-medium text-text-primary transition-colors"
-                  title="Changer le modèle actif pour ce provider"
+                  title={t('modelPicker.changeModel')}
                 >
                   <span className="truncate max-w-[150px]">{appConfig?.model || t('chat.noModel')}</span>
                   <ChevronDown className="w-3 h-3 text-text-muted" />
@@ -675,13 +679,13 @@ export function WelcomeView() {
                 {showModelPicker && (
                   <div className="absolute left-0 bottom-full mb-2 w-72 rounded-2xl bg-surface border border-border shadow-soft p-2 z-50 animate-in fade-in zoom-in-95">
                     <div className="px-2 py-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider flex items-center justify-between">
-                      <span>Modèles ({appConfig?.provider || 'openai'})</span>
+                      <span>{t('modelPicker.title', { provider: appConfig?.provider || 'openai' })}</span>
                       <button
                         type="button"
                         onClick={() => setShowAddCustomModel(!showAddCustomModel)}
                         className="text-[11px] text-accent hover:underline lowercase font-normal"
                       >
-                        {showAddCustomModel ? 'fermer' : '+ ajouter'}
+                        {showAddCustomModel ? t('modelPicker.close') : t('modelPicker.add')}
                       </button>
                     </div>
 
@@ -689,7 +693,7 @@ export function WelcomeView() {
                       <div className="p-2 my-1 bg-surface-muted rounded-xl border border-border-subtle flex flex-col gap-1.5">
                         <input
                           type="text"
-                          placeholder="ex: deepseek-chat, gpt-4o, mistral"
+                          placeholder={t('modelPicker.addPlaceholder')}
                           value={customModelInput}
                           onChange={(e) => setCustomModelInput(e.target.value)}
                           onKeyDown={(e) => {
@@ -709,7 +713,7 @@ export function WelcomeView() {
                           }}
                           className="w-full py-1 text-xs rounded bg-accent text-background font-medium hover:bg-accent-hover transition-colors text-center"
                         >
-                          Valider le modèle
+                          {t('modelPicker.confirm')}
                         </button>
                       </div>
                     )}
@@ -741,7 +745,7 @@ export function WelcomeView() {
                         if (allModels.length === 0) {
                           return (
                             <p className="px-2.5 py-2 text-xs text-text-muted italic">
-                              Aucun modèle configuré — ajoutez-en dans les réglages API.
+                              {t('modelPicker.empty')}
                             </p>
                           );
                         }

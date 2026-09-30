@@ -113,7 +113,7 @@ export function DelegatedTasksPanel() {
   };
 
   return (
-    <div className="fixed bottom-16 right-4 top-16 z-40 flex w-[460px] overflow-hidden rounded-xl border border-border bg-background shadow-xl">
+    <div className="flex h-full w-full overflow-hidden bg-background">
       {/* List column */}
       <div className="flex w-[190px] flex-shrink-0 flex-col border-r border-border-muted">
         <div className="flex items-center justify-between gap-1 px-2.5 py-2 border-b border-border-muted">

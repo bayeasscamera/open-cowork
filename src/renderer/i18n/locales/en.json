@@ -889,6 +889,18 @@
       "nameAndWorkdirRequired": "Name and workspace folder are required"
     }
   },
+  "panelDock": {
+    "label": "Workspace panels"
+  },
+  "modelPicker": {
+    "changeModel": "Change the active model for this provider",
+    "title": "Models ({{provider}})",
+    "add": "+ add",
+    "close": "close",
+    "addPlaceholder": "e.g. deepseek-chat, gpt-4o, mistral",
+    "confirm": "Add model",
+    "empty": "No models configured — add some in the API settings."
+  },
   "delegatedTasks": {
     "title": "Delegated tasks",
     "configure": "Configure delegations",
@@ -966,6 +978,8 @@
     "stop": "Stop",
     "processing": "Processing...",
     "typeMessage": "Type a message...",
+    "voiceStart": "Start voice dictation",
+    "voiceStop": "Stop voice dictation",
     "loadingConversation": "Loading conversation...",
     "startConversation": "Start the conversation",
     "startFailed": "Failed to start session. Please try again.",

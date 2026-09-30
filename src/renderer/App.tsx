@@ -1,6 +1,4 @@
 import { Suspense, lazy, useEffect, useRef, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Loader2 } from 'lucide-react';
 import { useAppStore } from './store';
 import {
   useActiveSessionId,
@@ -123,7 +121,6 @@ function App() {
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
   const diffPanelVisible = useAppStore((s) => s.diffPanelVisible);
-  const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
   const planPanelVisible = useAppStore((s) => s.planPanelVisible);
   const setPlanPanelVisible = useAppStore((s) => s.setPlanPanelVisible);
   const memoryPanelVisible = useAppStore((s) => s.memoryPanelVisible);
@@ -133,13 +130,9 @@ function App() {
   const modelRoutingVisible = useAppStore((s) => s.modelRoutingVisible);
   const setModelRoutingVisible = useAppStore((s) => s.setModelRoutingVisible);
   const projectsPage = useAppStore((s) => s.projectsPage);
-  const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
   const documentPanelVisible = useAppStore((s) => s.documentPanelVisible);
-  const setDocumentPanelVisible = useAppStore((s) => s.setDocumentPanelVisible);
   const delegatedTasksVisible = useAppStore((s) => s.delegatedTasksVisible);
-  const setDelegatedTasksVisible = useAppStore((s) => s.setDelegatedTasksVisible);
   const subAgentsVisible = useAppStore((s) => s.subAgentsVisible);
-  const { t } = useTranslation();
 
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
@@ -345,7 +338,10 @@ function App() {
           !subAgentsVisible &&
           !planPanelVisible &&
           !controlCenterVisible &&
-          !modelRoutingVisible && (
+          !modelRoutingVisible &&
+          !diffPanelVisible &&
+          !documentPanelVisible &&
+          !delegatedTasksVisible && (
           <PanelErrorBoundary
             name="ContextPanel"
             resetKey={activeSessionId}
@@ -356,72 +352,12 @@ function App() {
             </Suspense>
           </PanelErrorBoundary>
         )}
-      {/* Diff Panel toggle + live session diff (local mods only) */}
-      {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
+      {/* Side inspectors — mounted in the layout flow (never floating over the
+          composer like the old pills). One at a time: the PanelDock enforces it. */}
+      {!showSettings && !projectsPage && !subAgentsVisible && (
         <>
-          <button
-            type="button"
-            aria-pressed={modelRoutingVisible}
-            onClick={() => setModelRoutingVisible(!modelRoutingVisible)}
-            className={`fixed bottom-4 right-64 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
-              modelRoutingVisible
-                ? 'border-accent bg-accent/10 text-text-primary'
-                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            {t('modelRouting.short')}
-          </button>
-          <button
-            type="button"
-            aria-pressed={controlCenterVisible}
-            onClick={() => setControlCenterVisible(!controlCenterVisible)}
-            className={`fixed bottom-4 right-52 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
-              controlCenterVisible
-                ? 'border-accent bg-accent/10 text-text-primary'
-                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            {t('controlCenter.short')}
-          </button>
-          <button
-            type="button"
-            aria-pressed={memoryPanelVisible}
-            onClick={() => setMemoryPanelVisible(!memoryPanelVisible)}
-            className={`fixed bottom-4 right-36 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
-              memoryPanelVisible
-                ? 'border-accent bg-accent/10 text-text-primary'
-                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            Memory
-          </button>
-          <button
-            type="button"
-            aria-pressed={planPanelVisible}
-            onClick={() => setPlanPanelVisible(!planPanelVisible)}
-            className={`fixed bottom-4 right-20 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
-              planPanelVisible
-                ? 'border-accent bg-accent/10 text-text-primary'
-                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            Plan
-          </button>
-          <button
-            type="button"
-            aria-pressed={diffPanelVisible}
-            aria-label="Toggle diff panel"
-            onClick={() => setDiffPanelVisible(!diffPanelVisible)}
-            className={`fixed bottom-4 right-4 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
-              diffPanelVisible
-                ? 'border-accent bg-accent/10 text-text-primary'
-                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            Diff
-          </button>
-          {diffPanelVisible && (
-            <div className="fixed bottom-16 right-4 top-16 z-40 w-[380px] rounded-xl border border-border bg-background shadow-xl">
+          {diffPanelVisible && activeSessionId && (
+            <div className="flex h-full w-[380px] shrink-0 border-l border-border bg-background xl:w-[420px]">
               <PanelErrorBoundary name="DiffPanel" resetKey={activeSessionId} fallback={null}>
                 <Suspense fallback={null}>
                   <DiffPanel />
@@ -429,84 +365,23 @@ function App() {
               </PanelErrorBoundary>
             </div>
           )}
-        </>
-      )}
-
-      {/* Async delegation badge: background sub-agents running for the active session */}
-      {activeSessionId && !showSettings && !projectsPage && !subAgentsVisible && (
-        <div className="fixed bottom-4 left-4 z-40 flex flex-col gap-1.5">
-          {runningBackgroundTasks
-            .filter((task) => task.sessionId === activeSessionId)
-            .map((task) => (
-              <button
-                key={task.taskId}
-                onClick={() => setDelegatedTasksVisible(true)}
-                className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-xs text-text-secondary shadow hover:bg-surface-hover transition-colors"
-                title={task.title}
-              >
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
-                <span className="max-w-[260px] truncate">{task.title}</span>
-                <span className="text-text-muted">
-                  {t('backgroundTasks.badge', { count: 1 })}
-                </span>
-              </button>
-            ))}
-        </div>
-      )}
-
-      {/* Document co-editing panel toggle + render */}
-      {!showSettings && !projectsPage && !subAgentsVisible && (
-        <>
-          <button
-            type="button"
-            aria-pressed={documentPanelVisible}
-            aria-label={t('documentPanel.title')}
-            onClick={() => setDocumentPanelVisible(!documentPanelVisible)}
-            className={`fixed bottom-14 right-4 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
-              documentPanelVisible
-                ? 'border-accent bg-accent/10 text-text-primary'
-                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            {t('documentPanel.title')}
-          </button>
           {documentPanelVisible && (
-            <PanelErrorBoundary name="DocumentPanel" fallback={null}>
-              <Suspense fallback={null}>
-                <DocumentPanel />
-              </Suspense>
-            </PanelErrorBoundary>
+            <div className="flex h-full w-[380px] shrink-0 border-l border-border bg-background xl:w-[420px]">
+              <PanelErrorBoundary name="DocumentPanel" fallback={null}>
+                <Suspense fallback={null}>
+                  <DocumentPanel />
+                </Suspense>
+              </PanelErrorBoundary>
+            </div>
           )}
-        </>
-      )}
-
-      {/* Delegated-tasks tracking view (list + live detail + actions + settings) */}
-      {!showSettings && !projectsPage && !subAgentsVisible && (
-        <>
-          <button
-            type="button"
-            aria-pressed={delegatedTasksVisible}
-            aria-label={t('delegatedTasks.title')}
-            onClick={() => setDelegatedTasksVisible(!delegatedTasksVisible)}
-            className={`fixed bottom-4 right-24 z-40 rounded-full border px-3 py-2 text-xs font-medium shadow ${
-              delegatedTasksVisible
-                ? 'border-accent bg-accent/10 text-text-primary'
-                : 'border-border bg-background text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            {t('delegatedTasks.title')}
-            {runningBackgroundTasks.length > 0 && (
-              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-white">
-                {runningBackgroundTasks.length}
-              </span>
-            )}
-          </button>
           {delegatedTasksVisible && (
-            <PanelErrorBoundary name="DelegatedTasksPanel" fallback={null}>
-              <Suspense fallback={null}>
-                <DelegatedTasksPanel />
-              </Suspense>
-            </PanelErrorBoundary>
+            <div className="flex h-full w-[380px] shrink-0 border-l border-border bg-background xl:w-[420px]">
+              <PanelErrorBoundary name="DelegatedTasksPanel" fallback={null}>
+                <Suspense fallback={null}>
+                  <DelegatedTasksPanel />
+                </Suspense>
+              </PanelErrorBoundary>
+            </div>
           )}
         </>
       )}
