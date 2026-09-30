@@ -56,6 +56,22 @@ export interface ClientEventHandlerContext {
   applyAppMenuState?(state: AppMenuState): void;
 }
 
+/**
+ * Forget the persisted resume point when the session it points at is gone.
+ *
+ * `lastActiveSessionId` is deliberately kept when the user merely deselects a
+ * session (see the `session.activate` branch), so it can linger after the
+ * session is deleted. A stale id is harmless — the renderer refuses to restore
+ * a session that is missing from the list — but it is re-sent on every
+ * `session.list` and would be handed to `session.activate` as soon as an id is
+ * reused. Clearing it on delete keeps the resume point trustworthy.
+ */
+function clearLastActiveIfDeleted(sessionId: string): void {
+  if (configStore.get('lastActiveSessionId') === sessionId) {
+    configStore.clearSessionResumePoint();
+  }
+}
+
 export async function handleClientEvent(
   event: ClientEvent,
   context: ClientEventHandlerContext
@@ -134,11 +150,17 @@ export async function handleClientEvent(
     case 'session.stop':
       return sm.stopSession(event.payload.sessionId);
 
-    case 'session.delete':
-      return sm.deleteSession(event.payload.sessionId);
+    case 'session.delete': {
+      const result = await sm.deleteSession(event.payload.sessionId);
+      clearLastActiveIfDeleted(event.payload.sessionId);
+      return result;
+    }
 
-    case 'session.batchDelete':
-      return sm.batchDeleteSessions(event.payload.sessionIds);
+    case 'session.batchDelete': {
+      const result = await sm.batchDeleteSessions(event.payload.sessionIds);
+      for (const deletedId of event.payload.sessionIds) clearLastActiveIfDeleted(deletedId);
+      return result;
+    }
 
     case 'session.rename':
       return sm.renameSession(event.payload.sessionId, event.payload.title);

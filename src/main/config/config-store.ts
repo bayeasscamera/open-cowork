@@ -1343,6 +1343,18 @@ export class ConfigStore {
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
+    // Resume point — carried through normalization, otherwise every read/write
+    // dropped it and the last session was never restored. Assigned conditionally
+    // because the JSON store refuses to persist an explicit `undefined`, and
+    // `clearSessionResumePoint()` relies on the key's absence meaning "no
+    // resume point".
+    const lastActiveSessionId = toNonEmptyString(raw.lastActiveSessionId);
+    const lastActiveCwd = toNonEmptyString(raw.lastActiveCwd);
+    if (lastActiveSessionId) result.lastActiveSessionId = lastActiveSessionId;
+    if (lastActiveCwd) result.lastActiveCwd = lastActiveCwd;
+    if (typeof raw.lastActiveSessionUpdatedAt === 'number') {
+      result.lastActiveSessionUpdatedAt = raw.lastActiveSessionUpdatedAt;
+    }
     this.normalizeModelIds(result);
     return result;
   }
@@ -1519,6 +1531,20 @@ export class ConfigStore {
    */
   set<K extends keyof AppConfig>(key: K, value: AppConfig[K]): void {
     this.update({ [key]: value } as Partial<AppConfig>);
+  }
+
+  /**
+   * Forget the persisted session resume point.
+   *
+   * `update()` cannot be used: its `set(object)` call merges key by key
+   * (verified in `conf`), and it re-reads `getAll()` as its baseline, so a key
+   * omitted from the payload is silently kept. `delete()` is the only removal
+   * the store honours; the store also rejects an explicit `undefined`.
+   */
+  clearSessionResumePoint(): void {
+    this.store.delete('lastActiveSessionId');
+    this.store.delete('lastActiveCwd');
+    this.store.delete('lastActiveSessionUpdatedAt');
   }
 
   /**
@@ -1772,6 +1798,21 @@ export class ConfigStore {
       enableDevLogs:
         updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
       theme: updates.theme !== undefined ? updates.theme : current.theme,
+      // Resume point. These are re-stated here because `update()` ends in
+      // `saveConfig({ ... })` — a literal that omits any key not named. Before
+      // this, `configStore.set('lastActiveSessionId', ...)` was silently
+      // dropped and session restore never happened. Absence in `updates` falls
+      // back to the current value; clearing goes through
+      // `clearSessionResumePoint()`, which deletes the keys from the store.
+      ...('lastActiveSessionId' in updates
+        ? { lastActiveSessionId: updates.lastActiveSessionId }
+        : { lastActiveSessionId: current.lastActiveSessionId }),
+      ...('lastActiveCwd' in updates
+        ? { lastActiveCwd: updates.lastActiveCwd }
+        : { lastActiveCwd: current.lastActiveCwd }),
+      ...('lastActiveSessionUpdatedAt' in updates
+        ? { lastActiveSessionUpdatedAt: updates.lastActiveSessionUpdatedAt }
+        : { lastActiveSessionUpdatedAt: current.lastActiveSessionUpdatedAt }),
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:
