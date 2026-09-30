@@ -31,20 +31,14 @@ let ipcListenerInstalled = false;
 
 /**
  * Best-effort in-app toast for a delegated task outcome, behind the same
- * "Notify when a task finishes" gate as the native notification.
+ * "Notify when a task finishes" gate as the native notification and the
+ * badge flash.
  */
-async function toastDelegationOutcome(
-  title: string,
-  status: 'completed' | 'failed'
-): Promise<void> {
-  try {
-    if (!(await delegationToastEnabled())) return;
-    useAppStore.getState().setGlobalNotice(
-      buildDelegationOutcomeNotice((key, values) => i18n.t(key, values), title, status)
-    );
-  } catch {
-    // The toast is best-effort; the native notification path stays available.
-  }
+function toastDelegationOutcome(title: string, status: 'completed' | 'failed'): void {
+  if (!delegationToastEnabled()) return;
+  useAppStore.getState().setGlobalNotice(
+    buildDelegationOutcomeNotice((key, values) => i18n.t(key, values), title, status)
+  );
 }
 
 export function useIPC() {
@@ -222,7 +216,7 @@ export function useIPC() {
                 eventKind !== 'progress' &&
                 (status === 'completed' || status === 'failed')
               ) {
-                void toastDelegationOutcome(title, status);
+                toastDelegationOutcome(title, status);
               }
             }
             // Any transition (including live progress) refreshes tracking views.
@@ -457,6 +451,24 @@ export function useIPC() {
           });
         } catch (syncErr) {
           console.warn('[useIPC] Failed to sync permissionRules to main:', syncErr);
+        }
+
+        // Hydrate the delegation "notify on completion" setting so the badge
+        // flash, the toast and the native notification share one gate. Kept in
+        // its own try/catch: a failure here must not affect config hydration,
+        // and the store keeps its default until a later read succeeds.
+        try {
+          const delegationSettings = await window.electronAPI.backgroundTasks.getSettings();
+          if (disposed) {
+            return;
+          }
+          if (delegationSettings.success && delegationSettings.settings) {
+            useAppStore
+              .getState()
+              .setNotifyOnCompletion(delegationSettings.settings.notifyOnCompletion);
+          }
+        } catch (settingsErr) {
+          console.warn('[useIPC] Failed to read delegation settings:', settingsErr);
         }
       } catch (error) {
         console.error('[useIPC] Failed to bootstrap config/theme state:', error);

@@ -103,6 +103,7 @@ export function PanelDock({ className = '' }: PanelDockProps) {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
+  const notifyOnCompletion = useAppStore((s) => s.notifyOnCompletion);
 
   const viewVisible: Record<WorkspaceViewPanelId, boolean> = {
     modelRouting: useAppStore((s) => s.modelRoutingVisible),
@@ -147,6 +148,8 @@ export function PanelDock({ className = '' }: PanelDockProps) {
   );
 
   // Flash the badge when a delegated task leaves the running set (= completed).
+  // Honours the same "Notify when a task finishes" gate as the toast and the
+  // native notification, so switching notifications off silences all three.
   const [completedFlash, setCompletedFlash] = useState(false);
   const taskKey = sessionTasks
     .map((task) => task.taskId)
@@ -158,11 +161,12 @@ export function PanelDock({ className = '' }: PanelDockProps) {
     previousTaskKey.current = taskKey;
     const count = (value: string) => (value ? value.split(',').length : 0);
     if (previous !== taskKey && count(taskKey) < count(previous)) {
+      if (!notifyOnCompletion) return;
       setCompletedFlash(true);
       const timer = setTimeout(() => setCompletedFlash(false), 1600);
       return () => clearTimeout(timer);
     }
-  }, [taskKey]);
+  }, [taskKey, notifyOnCompletion]);
 
   return (
     <div className={`flex items-center gap-1.5 ${className}`}>

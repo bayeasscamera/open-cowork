@@ -102,7 +102,7 @@ describe('localized app menu wiring', () => {
 
   it('toasts task outcomes behind the delegation notification gate', () => {
     expect(notices).toContain('notifyOnCompletion');
-    expect(notices).toContain('backgroundTasks.getSettings');
+    expect(notices).toContain('useAppStore.getState().notifyOnCompletion');
     expect(useIpc).toContain('toastDelegationOutcome');
     expect(useIpc).toContain("status === 'completed' || status === 'failed'");
     expect(useIpc).toContain('delegationToastEnabled');

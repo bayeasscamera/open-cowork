@@ -38,6 +38,9 @@ export function DelegationSettingsForm({ compact = false }: { compact?: boolean 
       const result = await window.electronAPI.backgroundTasks.setSettings(next);
       if (result.success && result.settings) {
         setSettings(result.settings);
+        // Mirror the gate into the store so the badge flash and the outcome
+        // toast react immediately, without a restart.
+        useAppStore.getState().setNotifyOnCompletion(result.settings.notifyOnCompletion);
         setError(null);
       } else {
         setError(result.error ?? t('delegatedTasks.actionsError'));

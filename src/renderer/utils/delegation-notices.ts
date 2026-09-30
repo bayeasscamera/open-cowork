@@ -1,4 +1,4 @@
-import type { GlobalNotice } from '../store';
+import { useAppStore, type GlobalNotice } from '../store';
 
 /** Minimal translate signature — keeps the notice builder pure and testable. */
 export type TranslateFn = (key: string, values?: Record<string, string | number>) => string;
@@ -26,9 +26,12 @@ export function buildDelegationOutcomeNotice(
 
 /**
  * Whether the outcome toast may fire — same "Notify when a task finishes"
- * setting as the native notification (delegation settings).
+ * setting as the native notification and the badge flash.
+ *
+ * Read from the store (hydrated once at startup by useIPC and refreshed by
+ * the delegation settings form) rather than re-read over IPC per task, so all
+ * three feedback channels share one source of truth.
  */
-export async function delegationToastEnabled(): Promise<boolean> {
-  const result = await window.electronAPI.backgroundTasks.getSettings();
-  return result.success && result.settings ? result.settings.notifyOnCompletion : false;
+export function delegationToastEnabled(): boolean {
+  return useAppStore.getState().notifyOnCompletion;
 }

@@ -115,6 +115,11 @@ interface AppState {
   runningBackgroundTasks: Array<{ taskId: string; sessionId: string; title: string }>;
   /** Bumped on every background.task event so tracking views refetch. */
   delegationsVersion: number;
+  /**
+   * "Notify when a task finishes" delegation setting. Gates the completion
+   * toast, the badge flash and the native notification alike.
+   */
+  notifyOnCompletion: boolean;
   /** Delegated-tasks tracking panel visibility. */
   delegatedTasksVisible: boolean;
   /** Dedicated full-width Sub-agents view (same level as the projects pages). */
@@ -201,6 +206,7 @@ interface AppState {
   addRunningBackgroundTask: (task: { taskId: string; sessionId: string; title: string }) => void;
   removeRunningBackgroundTask: (taskId: string) => void;
   bumpDelegationsVersion: () => void;
+  setNotifyOnCompletion: (enabled: boolean) => void;
   setDelegatedTasksVisible: (visible: boolean) => void;
   setSubAgentsVisible: (visible: boolean) => void;
   setPendingProposalCount: (count: number) => void;
@@ -321,6 +327,9 @@ export const useAppStore = create<AppState>((set) => ({
   projectsPage: null,
   runningBackgroundTasks: [],
   delegationsVersion: 0,
+  // Matches DEFAULT_DELEGATION_SETTINGS.notifyOnCompletion until the real
+  // setting is hydrated from the main process.
+  notifyOnCompletion: true,
   delegatedTasksVisible: false,
   subAgentsVisible: false,
   pendingProposalCount: 0,
@@ -381,6 +390,7 @@ export const useAppStore = create<AppState>((set) => ({
       runningBackgroundTasks: state.runningBackgroundTasks.filter((t) => t.taskId !== taskId),
     })),
   bumpDelegationsVersion: () => set((state) => ({ delegationsVersion: state.delegationsVersion + 1 })),
+  setNotifyOnCompletion: (enabled) => set({ notifyOnCompletion: enabled }),
   setDelegatedTasksVisible: (visible) => set({ delegatedTasksVisible: visible }),
   setSubAgentsVisible: (visible) => set({ subAgentsVisible: visible }),
   setPendingProposalCount: (count) => set({ pendingProposalCount: Math.max(0, count) }),
