@@ -49,7 +49,7 @@ import { decidePermission } from './config/permission-rules-store';
 import { shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
-import type { ClientEvent, ServerEvent } from '../shared/types';
+import type { AppMenuState, ClientEvent, ServerEvent } from '../shared/types';
 import {
   WORKSPACE_PANELS,
   type WorkspacePanelDescriptor,
@@ -345,6 +345,14 @@ if (!hasSingleInstanceLock) {
 let tray: Tray | null = null;
 
 /**
+ * Renderer-synced application-menu state (localized labels + active-session
+ * flag), pushed over the `appMenu.sync` client event. Until it arrives the
+ * menu falls back to the English labels and keeps session-scoped entries
+ * disabled.
+ */
+let appMenuState: AppMenuState | null = null;
+
+/**
  * "Panels" app-menu item — shows the panel's ⌘/Ctrl+<n> shortcut for
  * discoverability and toggles it through the `panel.toggle` server event,
  * i.e. the same shared entry point as the dock buttons and the renderer
@@ -352,8 +360,11 @@ let tray: Tray | null = null;
  */
 function panelMenuItem(panel: WorkspacePanelDescriptor): Electron.MenuItemConstructorOptions {
   return {
-    label: panel.menuLabel,
+    label: appMenuState?.labels.panelNames[panel.id] ?? panel.menuLabel,
     accelerator: `CmdOrCtrl+${panel.shortcut}`,
+    // Session-scoped entries stay disabled until a session is active — the
+    // same gate the shared toggle enforces for the key handler.
+    enabled: !panel.requiresSession || Boolean(appMenuState?.hasActiveSession),
     click: () => sendToRenderer({ type: 'panel.toggle', payload: panel.id }),
   };
 }
@@ -361,6 +372,9 @@ function panelMenuItem(panel: WorkspacePanelDescriptor): Electron.MenuItemConstr
 function buildMacMenu() {
   if (process.platform !== 'darwin') return;
 
+  // Localized labels pushed by the renderer (`appMenu.sync`); English until
+  // the renderer has synced.
+  const labels = appMenuState?.labels;
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: app.name,
@@ -368,7 +382,7 @@ function buildMacMenu() {
         { role: 'about' },
         { type: 'separator' },
         {
-          label: 'Preferences…',
+          label: labels?.preferences ?? 'Preferences…',
           accelerator: 'CmdOrCtrl+,',
           click: () =>
             mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
@@ -384,7 +398,7 @@ function buildMacMenu() {
       ],
     },
     {
-      label: 'Edit',
+      label: labels?.edit ?? 'Edit',
       submenu: [
         { role: 'undo' },
         { role: 'redo' },
@@ -396,7 +410,7 @@ function buildMacMenu() {
       ],
     },
     {
-      label: 'View',
+      label: labels?.view ?? 'View',
       submenu: [
         { role: 'togglefullscreen' },
         { type: 'separator' },
@@ -407,9 +421,8 @@ function buildMacMenu() {
     },
     {
       // Discoverability: lists every workspace panel with its shortcut.
-      // Items stay enabled and the shared toggle enforces session gating,
-      // exactly like the ⌘/Ctrl+1..7 key handler in the renderer.
-      label: 'Panels',
+      // Session-scoped entries are disabled until a session is active.
+      label: labels?.panels ?? 'Panels',
       submenu: [
         ...WORKSPACE_PANELS.filter((panel) => panel.kind === 'view').map(panelMenuItem),
         { type: 'separator' },
@@ -417,12 +430,30 @@ function buildMacMenu() {
       ],
     },
     {
-      label: 'Window',
+      label: labels?.window ?? 'Window',
       submenu: [{ role: 'minimize' }, { role: 'close' }, { type: 'separator' }, { role: 'front' }],
     },
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/** macOS dock menu — same localized labels as the app menu. */
+function setMacDockMenu() {
+  if (process.platform !== 'darwin') return;
+  const labels = appMenuState?.labels;
+  const dockMenu = Menu.buildFromTemplate([
+    {
+      label: labels?.newSession ?? 'New Session',
+      click: () => mainWindow?.webContents.send('server-event', { type: 'new-session' }),
+    },
+    {
+      label: labels?.settings ?? 'Settings',
+      click: () =>
+        mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
+    },
+  ]);
+  app.dock?.setMenu(dockMenu);
 }
 
 function setupTray() {
@@ -1469,20 +1500,7 @@ app
     createWindow();
 
     // macOS: dock menu
-    if (process.platform === 'darwin') {
-      const dockMenu = Menu.buildFromTemplate([
-        {
-          label: 'New Session',
-          click: () => mainWindow?.webContents.send('server-event', { type: 'new-session' }),
-        },
-        {
-          label: 'Settings',
-          click: () =>
-            mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
-        },
-      ]);
-      app.dock?.setMenu(dockMenu);
-    }
+    setMacDockMenu();
 
     // macOS: send initial system theme to renderer
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2214,6 +2232,11 @@ const clientEventHandlerContext: ClientEventHandlerContext = {
   getWorkingDir,
   setWorkingDir,
   getWorkspacePathUnsupportedReason,
+  applyAppMenuState: (state) => {
+    appMenuState = state;
+    buildMacMenu();
+    setMacDockMenu();
+  },
 };
 
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {

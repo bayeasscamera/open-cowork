@@ -889,6 +889,15 @@
       "nameAndWorkdirRequired": "Name and workspace folder are required"
     }
   },
+  "appMenu": {
+    "preferences": "Preferences…",
+    "edit": "Edit",
+    "view": "View",
+    "panels": "Panels",
+    "window": "Window",
+    "newSession": "New Session",
+    "settings": "Settings"
+  },
   "panelDock": {
     "label": "Workspace panels",
     "shortcut": "{{label}} — {{key}}"
@@ -904,6 +913,8 @@
   },
   "delegatedTasks": {
     "title": "Delegated tasks",
+    "toastCompleted": "\"{{title}}\" completed",
+    "toastFailed": "\"{{title}}\" failed",
     "configure": "Configure delegations",
     "settingsTitle": "Delegation settings",
     "inheritActive": "Inherit active profile",

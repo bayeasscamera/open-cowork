@@ -142,6 +142,7 @@ const ALLOWED_CLIENT_EVENT_MAP: Record<ClientEvent['type'], true> = {
   'permission.response': true,
   'sudo.password.response': true,
   'settings.update': true,
+  'appMenu.sync': true,
   'config.createSet': true,
   'folder.select': true,
   'workdir.get': true,

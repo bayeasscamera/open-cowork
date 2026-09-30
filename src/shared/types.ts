@@ -624,6 +624,29 @@ export interface PermissionRule {
 }
 
 // IPC Event types
+/**
+ * Localized labels for the application menu (macOS). The main process has no
+ * i18n runtime, so the renderer pushes the translated strings and the menu is
+ * rebuilt from them.
+ */
+export interface AppMenuLabels {
+  preferences: string;
+  edit: string;
+  view: string;
+  panels: string;
+  window: string;
+  newSession: string;
+  settings: string;
+  /** Localized panel names keyed by WorkspacePanelId. */
+  panelNames: Record<string, string>;
+}
+
+export interface AppMenuState {
+  labels: AppMenuLabels;
+  /** Session-scoped menu entries stay disabled until a session is active. */
+  hasActiveSession: boolean;
+}
+
 export type ClientEvent =
   | {
       type: 'session.start';
@@ -663,6 +686,7 @@ export type ClientEvent =
   | { type: 'permission.response'; payload: { toolUseId: string; result: PermissionResult } }
   | { type: 'sudo.password.response'; payload: { toolUseId: string; password: string | null } }
   | { type: 'settings.update'; payload: Record<string, unknown> }
+  | { type: 'appMenu.sync'; payload: AppMenuState }
   | {
       type: 'config.createSet';
       payload: { name: string; mode?: 'blank' | 'clone'; fromSetId?: string };

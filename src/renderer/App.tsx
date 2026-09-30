@@ -14,6 +14,7 @@ import {
 } from './store/selectors';
 import { useIPC } from './hooks/useIPC';
 import { useWindowSize } from './hooks/useWindowSize';
+import { startAppMenuSync } from './utils/app-menu-sync';
 import { Sidebar } from './components/Sidebar';
 import { WelcomeView } from './components/WelcomeView';
 import { PermissionDialog } from './components/PermissionDialog';
@@ -151,6 +152,12 @@ function App() {
     // StrictMode, and isElectron/listSessions cannot change after startup.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep the macOS application menu localized and session-aware.
+  useEffect(() => {
+    if (!isElectron) return;
+    return startAppMenuSync();
+  }, [isElectron]);
 
   // Apply theme to document root
   useEffect(() => {

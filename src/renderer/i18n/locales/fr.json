@@ -481,6 +481,15 @@
       "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis"
     }
   },
+  "appMenu": {
+    "preferences": "Préférences…",
+    "edit": "Édition",
+    "view": "Affichage",
+    "panels": "Panneaux",
+    "window": "Fenêtre",
+    "newSession": "Nouvelle session",
+    "settings": "Réglages"
+  },
   "panelDock": {
     "label": "Panneaux de l’espace de travail",
     "shortcut": "{{label}} — {{key}}"
@@ -496,6 +505,8 @@
   },
   "delegatedTasks": {
     "title": "Tâches déléguées",
+    "toastCompleted": "« {{title}} » est terminée",
+    "toastFailed": "« {{title}} » a échoué",
     "configure": "Configurer les délégations",
     "settingsTitle": "Réglages des délégations",
     "inheritActive": "Hériter du profil actif",

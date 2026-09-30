@@ -12,6 +12,10 @@ import type {
 } from '../types';
 import { handleSubagentProgressEvent } from './useSubagentProgress';
 import { toggleWorkspacePanel } from '../utils/workspace-panel-toggles';
+import {
+  buildDelegationOutcomeNotice,
+  delegationToastEnabled,
+} from '../utils/delegation-notices';
 import i18n from '../i18n/config';
 
 // Check if running in Electron
@@ -24,6 +28,24 @@ const isElectron = typeof window !== 'undefined' && window.electronAPI !== undef
 // unmounting a subsequent useIPC caller) tears down the single shared
 // listener, silently dropping subsequent events from main.
 let ipcListenerInstalled = false;
+
+/**
+ * Best-effort in-app toast for a delegated task outcome, behind the same
+ * "Notify when a task finishes" gate as the native notification.
+ */
+async function toastDelegationOutcome(
+  title: string,
+  status: 'completed' | 'failed'
+): Promise<void> {
+  try {
+    if (!(await delegationToastEnabled())) return;
+    useAppStore.getState().setGlobalNotice(
+      buildDelegationOutcomeNotice((key, values) => i18n.t(key, values), title, status)
+    );
+  } catch {
+    // The toast is best-effort; the native notification path stays available.
+  }
+}
 
 export function useIPC() {
   // Handle incoming server events - only setup once across all useIPC() callers.
@@ -188,11 +210,20 @@ export function useIPC() {
             break;
 
           case 'background.task': {
-            const { taskId, sessionId, title, status } = event.payload;
+            const { taskId, sessionId, title, status, eventKind } = event.payload;
             if (status === 'running') {
               store.addRunningBackgroundTask({ taskId, sessionId, title });
             } else {
               store.removeRunningBackgroundTask(taskId);
+              // Lifecycle transition → outcome toast (the badge flash and the
+              // native notification cover the same moment). Cancellations are
+              // user-initiated and never notify; progress events never toast.
+              if (
+                eventKind !== 'progress' &&
+                (status === 'completed' || status === 'failed')
+              ) {
+                void toastDelegationOutcome(title, status);
+              }
             }
             // Any transition (including live progress) refreshes tracking views.
             store.bumpDelegationsVersion();

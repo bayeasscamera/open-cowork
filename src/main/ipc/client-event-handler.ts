@@ -11,7 +11,7 @@
 
 import { isAbsolute } from 'path';
 import { dialog, type BrowserWindow } from 'electron';
-import type { ClientEvent, PermissionRule } from '../../shared/types';
+import type { AppMenuState, ClientEvent, PermissionRule } from '../../shared/types';
 import { configStore, type AppConfig, type AppTheme } from '../config/config-store';
 import { setAutoApproveAll, setPermissionRules } from '../config/permission-rules-store';
 import { eventRequiresSessionManager } from '../client-event-utils';
@@ -52,6 +52,8 @@ export interface ClientEventHandlerContext {
     sessionId?: string
   ): Promise<{ success: boolean; path: string; error?: string }>;
   getWorkspacePathUnsupportedReason(workspacePath?: string): string | null;
+  /** Rebuild the application menu from renderer-synced labels and session state. */
+  applyAppMenuState?(state: AppMenuState): void;
 }
 
 export async function handleClientEvent(
@@ -85,6 +87,12 @@ export async function handleClientEvent(
   const sm = sessionManager!;
 
   switch (event.type) {
+    case 'appMenu.sync': {
+      // Renderer-pushed localized menu labels + session state (no session
+      // manager involved, safe before any session exists).
+      context.applyAppMenuState?.(event.payload);
+      return { success: true };
+    }
     case 'session.start': {
       // When the session starts inside a project, the project's workdir is the
       // workspace unless the caller explicitly overrode cwd.

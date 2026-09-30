@@ -20,7 +20,7 @@ describe('app menu "Panels" lists the workspace shortcuts', () => {
   const dock = read('src/renderer/components/PanelDock.tsx');
 
   it('builds the menu from the shared panel descriptors', () => {
-    expect(main).toContain("label: 'Panels'");
+    expect(main).toContain("labels?.panels ?? 'Panels'");
     expect(main).toContain('WORKSPACE_PANELS.filter');
     expect(main).toContain('panelMenuItem');
     // The shortcut is registered as a real accelerator, so the menu both

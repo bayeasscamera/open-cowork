@@ -911,6 +911,15 @@
       "nameAndWorkdirRequired": "名称和工作目录为必填项"
     }
   },
+  "appMenu": {
+    "preferences": "偏好设置…",
+    "edit": "编辑",
+    "view": "视图",
+    "panels": "面板",
+    "window": "窗口",
+    "newSession": "新建会话",
+    "settings": "设置"
+  },
   "panelDock": {
     "label": "工作区面板",
     "shortcut": "{{label}} — {{key}}"
@@ -926,6 +935,8 @@
   },
   "delegatedTasks": {
     "title": "委托任务",
+    "toastCompleted": "《{{title}}》已完成",
+    "toastFailed": "《{{title}}》失败",
     "configure": "配置委托",
     "settingsTitle": "委托设置",
     "inheritActive": "继承当前配置",
