@@ -1,27 +1,17 @@
 #!/usr/bin/env sh
 
-# Run typecheck + fast test suite before push
+# Run typecheck + lint + tests before push
 # Skippable with: git push --no-verify
 
-echo "🔍 Pre-push: running typecheck..."
-npx tsc --noEmit || {
-  echo ""
-  echo "=========================================="
-  echo "  BLOCKED: TypeScript errors found"
-  echo "  Fix them or push with --no-verify"
-  echo "=========================================="
-  exit 1
-}
-
-echo "🧪 Pre-push: running tests (ABI-safe)..."
+echo "🔍 Pre-push: running checks (typecheck + lint + tests)..."
 # NOTE: no `| tail` here — pipelines swallow the exit code and used to let
-# failing tests pass this gate. The wrapper switches better-sqlite3 to the
-# Node ABI when needed and restores the Electron ABI afterwards.
-node scripts/ensure-native-abi.js run --reporter=dot || {
+# failing tests pass this gate. Tests go through the ABI-safe wrapper
+# (better-sqlite3 Node ABI, Electron ABI restored afterwards).
+npm run check || {
   echo ""
   echo "=========================================="
-  echo "  BLOCKED: Tests failed"
-  echo "  Fix them or push with --no-verify"
+  echo "  BLOCKED: npm run check failed"
+  echo "  Fix or push with --no-verify"
   echo "=========================================="
   exit 1
 }

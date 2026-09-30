@@ -10,9 +10,11 @@ const wrapper = readFileSync(resolve(root, 'scripts/ensure-native-abi.js'), 'utf
 
 describe('ensure-native-abi test wrapper', () => {
   it('routes npm test and coverage through the wrapper, keeps an escape hatch', () => {
-    expect(pkg.scripts.test).toBe('node scripts/ensure-native-abi.js');
+    expect(pkg.scripts.test).toBe('node scripts/ensure-native-abi.js run');
     expect(pkg.scripts['test:coverage']).toBe('node scripts/ensure-native-abi.js run --coverage');
-    expect(pkg.scripts['test:raw']).toBe('vitest');
+    expect(pkg.scripts['test:raw']).toBe('vitest run');
+    // `npm run check` chains typecheck + lint + tests in one shot.
+    expect(pkg.scripts.check).toBe('npm run typecheck && npm run lint && npm run test');
   });
 
   it('rebuild script drives node-gyp directly instead of npm flags npm rejects', () => {
@@ -31,7 +33,10 @@ describe('ensure-native-abi test wrapper', () => {
     const main = wrapper.match(/function main\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
     expect(main).toContain('if (initial.loadOk)');
     // pass-through branch must NOT schedule a restore
-    const passThrough = main.slice(main.indexOf('if (initial.loadOk)'), main.indexOf('if (initial.loadOk)') + 120);
+    const passThrough = main.slice(
+      main.indexOf('if (initial.loadOk)'),
+      main.indexOf('if (initial.loadOk)') + 120
+    );
     expect(passThrough).toContain('runTests(vitestArgs, null)');
   });
 
@@ -69,9 +74,15 @@ describe('ensure-native-abi test wrapper', () => {
     expect(clearIndex).toBeGreaterThan(main.indexOf('runTests(vitestArgs, previousAbi)'));
   });
 
-  it('pre-push gate runs the wrapper and checks its exit code (no silent pipes)', () => {
+  it('pre-push gate runs the full check and preserves its exit code (no silent pipes)', () => {
     const hook = readFileSync(resolve(root, '.husky/pre-push'), 'utf8');
-    expect(hook).toContain('node scripts/ensure-native-abi.js run');
+    expect(hook).toContain('npm run check');
     expect(hook).not.toContain('tail -30');
+  });
+
+  it('pre-commit gate runs lint-staged then the full check', () => {
+    const hook = readFileSync(resolve(root, '.husky/pre-commit'), 'utf8');
+    expect(hook).toContain('npx lint-staged');
+    expect(hook).toContain('npm run check');
   });
 });

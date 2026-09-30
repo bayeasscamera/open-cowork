@@ -158,8 +158,8 @@ Examples: `provider-guidance.test.ts`, `session-manager-crud.test.ts`
 
 | Hook | What it checks |
 |------|---------------|
-| `pre-commit` | lint-staged + `tsc --noEmit` |
-| `pre-push` | `tsc --noEmit` + `vitest run` |
+| `pre-commit` | lint-staged + `npm run check` (typecheck + lint + tests) |
+| `pre-push` | `npm run check` (typecheck + lint + tests) |
 | `commit-msg` | Conventional Commits format |
 
 ---
@@ -198,3 +198,17 @@ Examples: `provider-guidance.test.ts`, `session-manager-crud.test.ts`
 - **MemoryManager causal memory**: when you encounter a recurring bug pattern, call
   `memoryManager.recordErrorPattern(pattern, rootCause, fix, context)` so future
   sessions can skip straight to the fix.
+
+---
+
+## Consignes agent (FR)
+
+- Lance `npm run check` (typecheck + lint + tests) après chaque modification.
+- Ne supprime rien sans demander (code, fichier, dépendance).
+- Ne touche pas aux fichiers hors de la tâche en cours.
+- Fais un commit avant chaque tâche pour pouvoir tout annuler.
+- [`main` / `preload` / `renderer`] : garde bien séparés le processus principal
+  (`src/main`), le `preload` (`src/preload`) et l'interface (`src/renderer`).
+- Teste en priorité les fonctions critiques (traitement photo, appels aux
+  providers d'images) : c'est là qu'une erreur coûte le plus cher.
+- TypeScript est en mode strict (`"strict": true`) : ne le désactive pas.

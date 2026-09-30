@@ -26,11 +26,12 @@ fi
 # Run lint-staged on staged files
 npx lint-staged
 
-# Quick TypeScript check — catches type errors before they reach CI
-npx tsc --noEmit || {
+# Full gate: format/lint-staged already fixed staged files,
+# `npm run check` = typecheck + lint + tests. Blocks the commit on error.
+npm run check || {
   echo ""
   echo "=========================================="
-  echo "  BLOCKED: TypeScript errors found"
+  echo "  BLOCKED: npm run check failed"
   echo "  Fix or commit with --no-verify"
   echo "=========================================="
   exit 1
