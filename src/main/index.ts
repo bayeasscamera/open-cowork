@@ -50,6 +50,10 @@ import { shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { ClientEvent, ServerEvent } from '../shared/types';
+import {
+  WORKSPACE_PANELS,
+  type WorkspacePanelDescriptor,
+} from '../shared/workspace-panels';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
 import { startNavServer, stopNavServer } from './nav-server';
@@ -340,6 +344,20 @@ if (!hasSingleInstanceLock) {
 // Tray instance (kept alive to prevent GC)
 let tray: Tray | null = null;
 
+/**
+ * "Panels" app-menu item — shows the panel's ⌘/Ctrl+<n> shortcut for
+ * discoverability and toggles it through the `panel.toggle` server event,
+ * i.e. the same shared entry point as the dock buttons and the renderer
+ * key handler.
+ */
+function panelMenuItem(panel: WorkspacePanelDescriptor): Electron.MenuItemConstructorOptions {
+  return {
+    label: panel.menuLabel,
+    accelerator: `CmdOrCtrl+${panel.shortcut}`,
+    click: () => sendToRenderer({ type: 'panel.toggle', payload: panel.id }),
+  };
+}
+
 function buildMacMenu() {
   if (process.platform !== 'darwin') return;
 
@@ -385,6 +403,17 @@ function buildMacMenu() {
         { role: 'zoomIn' },
         { role: 'zoomOut' },
         { role: 'resetZoom' },
+      ],
+    },
+    {
+      // Discoverability: lists every workspace panel with its shortcut.
+      // Items stay enabled and the shared toggle enforces session gating,
+      // exactly like the ⌘/Ctrl+1..7 key handler in the renderer.
+      label: 'Panels',
+      submenu: [
+        ...WORKSPACE_PANELS.filter((panel) => panel.kind === 'view').map(panelMenuItem),
+        { type: 'separator' },
+        ...WORKSPACE_PANELS.filter((panel) => panel.kind === 'inspector').map(panelMenuItem),
       ],
     },
     {

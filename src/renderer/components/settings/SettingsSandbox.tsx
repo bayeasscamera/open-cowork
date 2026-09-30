@@ -349,7 +349,7 @@ export function SettingsSandbox() {
 
       {/* Status Details */}
       {sandboxEnabled && (
-        <div className="p-4 rounded-lg bg-surface border border-border space-y-4 animate-in fade-in duration-200">
+        <div className="p-4 rounded-lg bg-surface border border-border space-y-4 animate-fade-in">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-text-primary">
               {t('sandbox.environmentStatus')}

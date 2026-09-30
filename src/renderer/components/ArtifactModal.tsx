@@ -65,9 +65,9 @@ export function ArtifactModal({ filePath, onClose, onRevealInFolder }: ArtifactM
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
       <div
-        className="flex flex-col w-full max-w-4xl h-[85vh] bg-surface rounded-2xl border border-border shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+        className="flex flex-col w-full max-w-4xl h-[85vh] bg-surface rounded-2xl border border-border shadow-2xl overflow-hidden animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

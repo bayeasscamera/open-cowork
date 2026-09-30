@@ -1,4 +1,5 @@
 import type { TaskRunProgress, TaskRunResult, WorkflowState } from './workflow-types';
+import type { WorkspacePanelId } from './workspace-panels';
 
 // Session types
 export interface Session {
@@ -884,6 +885,7 @@ export type ServerEvent =
   | { type: 'native-theme.changed'; payload: { shouldUseDarkColors: boolean } }
   | { type: 'new-session' }
   | { type: 'navigate'; payload: string }
+  | { type: 'panel.toggle'; payload: WorkspacePanelId }
   | { type: 'scheduled-task.error'; payload: { taskId: string; error: string } }
   | {
       type: 'error';

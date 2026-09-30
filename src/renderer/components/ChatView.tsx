@@ -1075,7 +1075,7 @@ export function ChatView() {
                 </button>
 
                 {showActionMenu && (
-                  <div className="absolute left-0 bottom-full mb-2 w-80 rounded-2xl bg-surface border border-border shadow-elevated p-2 z-50 animate-in fade-in zoom-in-95">
+                  <div className="absolute left-0 bottom-full mb-2 w-80 rounded-2xl bg-surface border border-border shadow-elevated p-2 z-50 animate-scale-in">
                     {/* Header */}
                     <div className="px-3 py-1.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
                       {t('permission.actions')}
@@ -1189,7 +1189,7 @@ export function ChatView() {
                   </button>
 
                   {showModelPicker && (
-                    <div className="absolute right-0 bottom-full mb-2 w-72 rounded-2xl bg-surface border border-border shadow-soft p-2 z-50 animate-in fade-in zoom-in-95">
+                    <div className="absolute right-0 bottom-full mb-2 w-72 rounded-2xl bg-surface border border-border shadow-soft p-2 z-50 animate-scale-in">
                       <div className="px-2 py-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider flex items-center justify-between">
                         <span>{t('modelPicker.title', { provider: appConfig?.provider || 'openai' })}</span>
                         <button

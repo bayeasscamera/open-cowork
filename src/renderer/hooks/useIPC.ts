@@ -11,6 +11,7 @@ import type {
   ContentBlock,
 } from '../types';
 import { handleSubagentProgressEvent } from './useSubagentProgress';
+import { toggleWorkspacePanel } from '../utils/workspace-panel-toggles';
 import i18n from '../i18n/config';
 
 // Check if running in Electron
@@ -358,6 +359,12 @@ export function useIPC() {
             if (event.payload === 'settings') {
               store.setShowSettings(true);
             }
+            break;
+
+          case 'panel.toggle':
+            // App menu "Panels" items — same shared entry point as the dock
+            // buttons and the ⌘/Ctrl+1..7 shortcuts.
+            toggleWorkspacePanel(event.payload);
             break;
 
           case 'subagent.progress':

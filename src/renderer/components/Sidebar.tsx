@@ -505,7 +505,7 @@ export function Sidebar() {
               }}
             />
             <div
-              className="absolute right-1.5 bottom-full z-50 mb-1 w-56 rounded-xl bg-surface border border-border shadow-elevated p-1.5 animate-in fade-in zoom-in-95"
+              className="absolute right-1.5 bottom-full z-50 mb-1 w-56 rounded-xl bg-surface border border-border shadow-elevated p-1.5 animate-scale-in"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
