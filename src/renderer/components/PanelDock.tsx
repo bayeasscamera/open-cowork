@@ -1,3 +1,4 @@
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Brain,
@@ -14,22 +15,43 @@ import { useAppStore } from '../store';
 
 type ViewPanelId = 'modelRouting' | 'controlCenter' | 'memory' | 'plan';
 type InspectorPanelId = 'delegatedTasks' | 'document' | 'diff';
+type PanelId = ViewPanelId | InspectorPanelId;
+
+const VIEW_IDS: ViewPanelId[] = ['modelRouting', 'controlCenter', 'memory', 'plan'];
+const INSPECTOR_IDS: InspectorPanelId[] = ['delegatedTasks', 'document', 'diff'];
+
+/** Fixed ⌘/Ctrl+1..7 mapping — stable even when session-gated items are hidden. */
+const SHORTCUT_ORDER: PanelId[] = [...VIEW_IDS, ...INSPECTOR_IDS];
+const SHORTCUT_KEYS = ['1', '2', '3', '4', '5', '6', '7'];
+
+/** Panels that only make sense once a session exists. */
+const SESSION_SCOPED: PanelId[] = ['controlCenter', 'memory', 'plan', 'diff'];
+
+const isViewPanel = (id: PanelId): id is ViewPanelId =>
+  (VIEW_IDS as PanelId[]).includes(id);
+
+const isMacPlatform = (): boolean =>
+  typeof navigator !== 'undefined' &&
+  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+
+const shortcutLabel = (index: number): string =>
+  `${isMacPlatform() ? '⌘' : 'Ctrl+'}${index}`;
 
 interface DockButtonProps {
   icon: LucideIcon;
-  label: string;
+  tooltip: string;
   active: boolean;
   badge?: number;
   onClick: () => void;
 }
 
-function DockButton({ icon: Icon, label, active, badge, onClick }: DockButtonProps) {
+function DockButton({ icon: Icon, tooltip, active, badge, onClick }: DockButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      title={label}
-      aria-label={label}
+      title={tooltip}
+      aria-label={tooltip}
       aria-pressed={active}
       className={`relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors duration-150 ${
         active
@@ -58,96 +80,115 @@ interface PanelDockProps {
  * panels get the accent treatment, running delegated tasks surface as a
  * badge. Opening one inspector closes the others so only a single side
  * panel is ever mounted.
+ *
+ * Every panel is reachable through ⌘/Ctrl+1..7 in dock order.
  */
 export function PanelDock({ className = '' }: PanelDockProps) {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
 
-  const modelRoutingVisible = useAppStore((s) => s.modelRoutingVisible);
-  const controlCenterVisible = useAppStore((s) => s.controlCenterVisible);
-  const memoryPanelVisible = useAppStore((s) => s.memoryPanelVisible);
-  const planPanelVisible = useAppStore((s) => s.planPanelVisible);
-  const delegatedTasksVisible = useAppStore((s) => s.delegatedTasksVisible);
-  const documentPanelVisible = useAppStore((s) => s.documentPanelVisible);
-  const diffPanelVisible = useAppStore((s) => s.diffPanelVisible);
-
-  const setModelRoutingVisible = useAppStore((s) => s.setModelRoutingVisible);
-  const setControlCenterVisible = useAppStore((s) => s.setControlCenterVisible);
-  const setMemoryPanelVisible = useAppStore((s) => s.setMemoryPanelVisible);
-  const setPlanPanelVisible = useAppStore((s) => s.setPlanPanelVisible);
-  const setDelegatedTasksVisible = useAppStore((s) => s.setDelegatedTasksVisible);
-  const setDocumentPanelVisible = useAppStore((s) => s.setDocumentPanelVisible);
-  const setDiffPanelVisible = useAppStore((s) => s.setDiffPanelVisible);
-
   const viewVisible: Record<ViewPanelId, boolean> = {
-    modelRouting: modelRoutingVisible,
-    controlCenter: controlCenterVisible,
-    memory: memoryPanelVisible,
-    plan: planPanelVisible,
-  };
-  const setViewVisible: Record<ViewPanelId, (visible: boolean) => void> = {
-    modelRouting: setModelRoutingVisible,
-    controlCenter: setControlCenterVisible,
-    memory: setMemoryPanelVisible,
-    plan: setPlanPanelVisible,
+    modelRouting: useAppStore((s) => s.modelRoutingVisible),
+    controlCenter: useAppStore((s) => s.controlCenterVisible),
+    memory: useAppStore((s) => s.memoryPanelVisible),
+    plan: useAppStore((s) => s.planPanelVisible),
   };
   const inspectorVisible: Record<InspectorPanelId, boolean> = {
-    delegatedTasks: delegatedTasksVisible,
-    document: documentPanelVisible,
-    diff: diffPanelVisible,
-  };
-  const setInspectorVisible: Record<InspectorPanelId, (visible: boolean) => void> = {
-    delegatedTasks: setDelegatedTasksVisible,
-    document: setDocumentPanelVisible,
-    diff: setDiffPanelVisible,
+    delegatedTasks: useAppStore((s) => s.delegatedTasksVisible),
+    document: useAppStore((s) => s.documentPanelVisible),
+    diff: useAppStore((s) => s.diffPanelVisible),
   };
 
   // Full-page views replace the chat surface, so opening one closes the
   // others instead of leaving hidden flags stacked behind the ternary.
-  const toggleViewPanel = (id: ViewPanelId) => {
-    const open = !viewVisible[id];
-    (Object.keys(setViewVisible) as ViewPanelId[]).forEach((key) => {
-      setViewVisible[key](open && key === id);
-    });
-  };
+  const toggleViewPanel = useCallback((id: ViewPanelId) => {
+    const state = useAppStore.getState();
+    const current: Record<ViewPanelId, boolean> = {
+      modelRouting: state.modelRoutingVisible,
+      controlCenter: state.controlCenterVisible,
+      memory: state.memoryPanelVisible,
+      plan: state.planPanelVisible,
+    };
+    const open = !current[id];
+    state.setModelRoutingVisible(open && id === 'modelRouting');
+    state.setControlCenterVisible(open && id === 'controlCenter');
+    state.setMemoryPanelVisible(open && id === 'memory');
+    state.setPlanPanelVisible(open && id === 'plan');
+  }, []);
 
   // Side inspectors share the right column: only one is mounted at a time.
-  const setInspectorOpen = (id: InspectorPanelId, open: boolean) => {
-    (Object.keys(setInspectorVisible) as InspectorPanelId[]).forEach((key) => {
-      setInspectorVisible[key](open && key === id);
-    });
-  };
+  const setInspectorOpen = useCallback((id: InspectorPanelId, open: boolean) => {
+    const state = useAppStore.getState();
+    state.setDelegatedTasksVisible(open && id === 'delegatedTasks');
+    state.setDocumentPanelVisible(open && id === 'document');
+    state.setDiffPanelVisible(open && id === 'diff');
+  }, []);
 
-  const toggleInspectorPanel = (id: InspectorPanelId) => {
-    setInspectorOpen(id, !inspectorVisible[id]);
-  };
+  const toggleInspectorPanel = useCallback(
+    (id: InspectorPanelId) => {
+      const state = useAppStore.getState();
+      const current: Record<InspectorPanelId, boolean> = {
+        delegatedTasks: state.delegatedTasksVisible,
+        document: state.documentPanelVisible,
+        diff: state.diffPanelVisible,
+      };
+      setInspectorOpen(id, !current[id]);
+    },
+    [setInspectorOpen]
+  );
 
-  const viewItems: Array<{
-    id: ViewPanelId;
+  // ⌘/Ctrl+1..7 — same toggles as the buttons, fixed positions so the
+  // shortcuts never shift when a session-gated item appears or disappears.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      const shortcutIndex = SHORTCUT_KEYS.indexOf(event.key);
+      if (shortcutIndex === -1) return;
+      const id = SHORTCUT_ORDER[shortcutIndex];
+      const state = useAppStore.getState();
+      if (SESSION_SCOPED.includes(id) && !state.activeSessionId) return;
+      event.preventDefault();
+      if (isViewPanel(id)) {
+        toggleViewPanel(id);
+      } else {
+        toggleInspectorPanel(id);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleViewPanel, toggleInspectorPanel]);
+
+  interface DockItem<T extends PanelId = PanelId> {
+    id: T;
     icon: LucideIcon;
     label: string;
     requiresSession: boolean;
-  }> = [
-    { id: 'modelRouting', icon: Route, label: t('modelRouting.short'), requiresSession: false },
-    { id: 'controlCenter', icon: Gauge, label: t('controlCenter.short'), requiresSession: true },
-    { id: 'memory', icon: Brain, label: t('memory.title'), requiresSession: true },
-    { id: 'plan', icon: ListChecks, label: t('planPanel.title'), requiresSession: true },
-  ];
+    shortcut: number;
+  }
 
-  const inspectorItems: Array<{
-    id: InspectorPanelId;
-    icon: LucideIcon;
-    label: string;
-    requiresSession: boolean;
-  }> = [
-    { id: 'delegatedTasks', icon: Users, label: t('delegatedTasks.title'), requiresSession: false },
-    { id: 'document', icon: FileText, label: t('documentPanel.title'), requiresSession: false },
-    { id: 'diff', icon: FileDiff, label: t('diffPanel.title'), requiresSession: true },
-  ];
+  const viewItems: Array<DockItem<ViewPanelId>> = (
+    [
+      { id: 'modelRouting', icon: Route, label: t('modelRouting.short'), requiresSession: false },
+      { id: 'controlCenter', icon: Gauge, label: t('controlCenter.short'), requiresSession: true },
+      { id: 'memory', icon: Brain, label: t('memory.title'), requiresSession: true },
+      { id: 'plan', icon: ListChecks, label: t('planPanel.title'), requiresSession: true },
+    ] as Array<DockItem<ViewPanelId>>
+  ).map((item) => ({ ...item, shortcut: SHORTCUT_ORDER.indexOf(item.id) + 1 }));
+
+  const inspectorItems: Array<DockItem<InspectorPanelId>> = (
+    [
+      { id: 'delegatedTasks', icon: Users, label: t('delegatedTasks.title'), requiresSession: false },
+      { id: 'document', icon: FileText, label: t('documentPanel.title'), requiresSession: false },
+      { id: 'diff', icon: FileDiff, label: t('diffPanel.title'), requiresSession: true },
+    ] as Array<DockItem<InspectorPanelId>>
+  ).map((item) => ({ ...item, shortcut: SHORTCUT_ORDER.indexOf(item.id) + 1 }));
 
   const visibleItems = <T extends { requiresSession: boolean }>(items: T[]): T[] =>
     items.filter((item) => !item.requiresSession || Boolean(activeSessionId));
+
+  const tooltipFor = (item: DockItem): string =>
+    t('panelDock.shortcut', { label: item.label, key: shortcutLabel(item.shortcut) });
 
   const views = visibleItems(viewItems);
   const inspectors = visibleItems(inspectorItems);
@@ -178,7 +219,7 @@ export function PanelDock({ className = '' }: PanelDockProps) {
           <DockButton
             key={item.id}
             icon={item.icon}
-            label={item.label}
+            tooltip={tooltipFor(item)}
             active={viewVisible[item.id]}
             onClick={() => toggleViewPanel(item.id)}
           />
@@ -190,7 +231,7 @@ export function PanelDock({ className = '' }: PanelDockProps) {
           <DockButton
             key={item.id}
             icon={item.icon}
-            label={item.label}
+            tooltip={tooltipFor(item)}
             active={inspectorVisible[item.id]}
             badge={item.id === 'delegatedTasks' ? sessionTasks.length : undefined}
             onClick={() => toggleInspectorPanel(item.id)}

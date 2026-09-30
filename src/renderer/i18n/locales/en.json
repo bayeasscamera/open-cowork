@@ -890,7 +890,8 @@
     }
   },
   "panelDock": {
-    "label": "Workspace panels"
+    "label": "Workspace panels",
+    "shortcut": "{{label}} — {{key}}"
   },
   "modelPicker": {
     "changeModel": "Change the active model for this provider",

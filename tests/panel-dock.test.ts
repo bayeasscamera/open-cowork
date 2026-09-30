@@ -13,9 +13,9 @@ describe('PanelDock — unified workspace dock replaces the floating pills', () 
 
   it('renders every panel from one glass toolbar with tooltips and pressed state', () => {
     expect(dock).toContain('role="toolbar"');
-    expect(dock).toContain('aria-label={label}');
+    expect(dock).toContain('aria-label={tooltip}');
     expect(dock).toContain('aria-pressed={active}');
-    expect(dock).toContain('title={label}');
+    expect(dock).toContain('title={tooltip}');
     expect(dock).toContain('panel-glass');
   });
 
@@ -29,11 +29,15 @@ describe('PanelDock — unified workspace dock replaces the floating pills', () 
   });
 
   it('mounts a single side inspector at a time', () => {
-    expect(dock).toContain('setInspectorVisible[key](open && key === id)');
+    expect(dock).toContain('setInspectorOpen');
+    expect(dock).toContain("state.setDelegatedTasksVisible(open && id === 'delegatedTasks')");
+    expect(dock).toContain("state.setDocumentPanelVisible(open && id === 'document')");
+    expect(dock).toContain("state.setDiffPanelVisible(open && id === 'diff')");
   });
 
   it('closes sibling full-page views when opening one', () => {
-    expect(dock).toContain('setViewVisible[key](open && key === id)');
+    expect(dock).toContain("state.setModelRoutingVisible(open && id === 'modelRouting')");
+    expect(dock).toContain('toggleViewPanel');
   });
 
   it('surfaces running delegated tasks as a badge and a clickable chip', () => {
@@ -45,6 +49,17 @@ describe('PanelDock — unified workspace dock replaces the floating pills', () 
 
   it('hides session-scoped panels when no session is active', () => {
     expect(dock).toContain('!item.requiresSession || Boolean(activeSessionId)');
+    expect(dock).toContain('SESSION_SCOPED');
+  });
+
+  it('binds ⌘/Ctrl+1..7 to the panels in fixed dock order', () => {
+    expect(dock).toContain('SHORTCUT_KEYS');
+    expect(dock).toContain("['1', '2', '3', '4', '5', '6', '7']");
+    expect(dock).toContain('event.metaKey || event.ctrlKey');
+    expect(dock).toContain("window.addEventListener('keydown', onKeyDown)");
+    expect(dock).toContain("window.removeEventListener('keydown', onKeyDown)");
+    // Platform-aware hint in the tooltip.
+    expect(dock).toContain("t('panelDock.shortcut'");
   });
 
   it('is mounted above the composer in chat and above the welcome form', () => {
@@ -66,6 +81,14 @@ describe('PanelDock — unified workspace dock replaces the floating pills', () 
     expect(app).not.toContain('shadow-xl');
   });
 
+  it('slides side panels in with the real animation utility', () => {
+    const tailwind = read('tailwind.config.js');
+    expect(tailwind).toContain("'slide-in-right'");
+    expect(tailwind).toContain('slideInRight');
+    // The side panel containers use it.
+    expect(app).toContain('animate-slide-in-right');
+  });
+
   it('gives every side panel a close affordance in its header', () => {
     for (const file of [
       'src/renderer/components/DiffPanel.tsx',
@@ -76,5 +99,15 @@ describe('PanelDock — unified workspace dock replaces the floating pills', () 
       expect(source).toContain('common.close');
     }
     expect(read('src/renderer/components/DiffPanel.tsx')).toContain('setDiffPanelVisible(false)');
+  });
+
+  it('ships dock and shortcut labels through i18n in all locales', () => {
+    for (const locale of ['fr', 'en', 'zh'] as const) {
+      const dict = read(`src/renderer/i18n/locales/${locale}.json`);
+      expect(dict).toContain('"panelDock"');
+      expect(dict).toContain('"shortcut"');
+      expect(dict).toContain('"modelPicker"');
+      expect(dict).toContain('"voiceStart"');
+    }
   });
 });

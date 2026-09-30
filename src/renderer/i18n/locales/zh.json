@@ -912,7 +912,8 @@
     }
   },
   "panelDock": {
-    "label": "工作区面板"
+    "label": "工作区面板",
+    "shortcut": "{{label}} — {{key}}"
   },
   "modelPicker": {
     "changeModel": "切换此提供商的活动模型",

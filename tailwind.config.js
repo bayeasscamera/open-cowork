@@ -67,6 +67,7 @@ module.exports = {
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
         'slide-up': 'slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        'slide-in-right': 'slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
         'spin-slow': 'spin 2s linear infinite',
         'expand': 'expand 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         'scale-in': 'scaleIn 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -79,6 +80,10 @@ module.exports = {
         slideUp: {
           '0%': { opacity: '0', transform: 'translateY(8px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        slideInRight: {
+          '0%': { opacity: '0', transform: 'translateX(16px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
         },
         expand: {
           '0%': { opacity: '0', maxHeight: '0' },

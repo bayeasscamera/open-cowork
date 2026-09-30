@@ -482,7 +482,8 @@
     }
   },
   "panelDock": {
-    "label": "Panneaux de l’espace de travail"
+    "label": "Panneaux de l’espace de travail",
+    "shortcut": "{{label}} — {{key}}"
   },
   "modelPicker": {
     "changeModel": "Changer le modèle actif pour ce provider",

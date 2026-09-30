@@ -357,7 +357,7 @@ function App() {
       {!showSettings && !projectsPage && !subAgentsVisible && (
         <>
           {diffPanelVisible && activeSessionId && (
-            <div className="flex h-full w-[380px] shrink-0 border-l border-border bg-background xl:w-[420px]">
+            <div className="flex h-full w-[380px] shrink-0 animate-slide-in-right border-l border-border bg-background xl:w-[420px]">
               <PanelErrorBoundary name="DiffPanel" resetKey={activeSessionId} fallback={null}>
                 <Suspense fallback={null}>
                   <DiffPanel />
@@ -366,7 +366,7 @@ function App() {
             </div>
           )}
           {documentPanelVisible && (
-            <div className="flex h-full w-[380px] shrink-0 border-l border-border bg-background xl:w-[420px]">
+            <div className="flex h-full w-[380px] shrink-0 animate-slide-in-right border-l border-border bg-background xl:w-[420px]">
               <PanelErrorBoundary name="DocumentPanel" fallback={null}>
                 <Suspense fallback={null}>
                   <DocumentPanel />
@@ -375,7 +375,7 @@ function App() {
             </div>
           )}
           {delegatedTasksVisible && (
-            <div className="flex h-full w-[380px] shrink-0 border-l border-border bg-background xl:w-[420px]">
+            <div className="flex h-full w-[380px] shrink-0 animate-slide-in-right border-l border-border bg-background xl:w-[420px]">
               <PanelErrorBoundary name="DelegatedTasksPanel" fallback={null}>
                 <Suspense fallback={null}>
                   <DelegatedTasksPanel />
