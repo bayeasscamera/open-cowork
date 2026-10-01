@@ -6,10 +6,9 @@ import type {
 import {
   applyCoreMemoryActions,
   coreMemoryToPromptBlock,
-  loadJsonFile,
   parseCoreCombinedKey,
-  saveJsonFile,
 } from './memory-utils';
+import { loadSecureJsonFile, saveSecureJsonFile } from './memory-file-crypto';
 
 export class CoreMemoryStore {
   private readonly memory: Record<string, string>;
@@ -18,7 +17,7 @@ export class CoreMemoryStore {
     private readonly filePath: string,
     private readonly maxItems = 24
   ) {
-    const raw = loadJsonFile<Record<string, unknown>>(filePath, {});
+    const raw = loadSecureJsonFile<Record<string, unknown>>(filePath, {});
     const normalized: Record<string, string> = {};
     for (const [key, value] of Object.entries(raw)) {
       if (typeof value === 'string' && key.trim()) {
@@ -80,6 +79,6 @@ export class CoreMemoryStore {
   }
 
   save(): void {
-    saveJsonFile(this.filePath, this.memory);
+    saveSecureJsonFile(this.filePath, this.memory);
   }
 }

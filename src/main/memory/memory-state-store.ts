@@ -1,5 +1,5 @@
 import type { MemorySessionStateRecord } from './memory-types';
-import { loadJsonFile, saveJsonFile } from './memory-utils';
+import { loadSecureJsonFile, saveSecureJsonFile } from './memory-file-crypto';
 
 interface SessionStateFile {
   sessions: Record<string, MemorySessionStateRecord>;
@@ -9,7 +9,7 @@ export class MemorySessionStateStore {
   private readonly state: SessionStateFile;
 
   constructor(private readonly filePath: string) {
-    this.state = loadJsonFile<SessionStateFile>(filePath, { sessions: {} });
+    this.state = loadSecureJsonFile<SessionStateFile>(filePath, { sessions: {} });
     if (!this.state.sessions || typeof this.state.sessions !== 'object') {
       this.state.sessions = {};
     }
@@ -58,6 +58,6 @@ export class MemorySessionStateStore {
   }
 
   save(): void {
-    saveJsonFile(this.filePath, this.state);
+    saveSecureJsonFile(this.filePath, this.state);
   }
 }

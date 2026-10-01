@@ -11,10 +11,9 @@ import type {
 import {
   cosineSimilarity,
   lexicalScore,
-  loadJsonFile,
   normalizeWorkspaceKey,
-  saveJsonFile,
 } from './memory-utils';
+import { loadSecureJsonFile, saveSecureJsonFile } from './memory-file-crypto';
 
 interface ExperienceMemoryFile {
   sessions: Array<Record<string, unknown>>;
@@ -205,7 +204,7 @@ export class ExperienceMemoryStore {
   private readonly sessionIndex = new Map<string, SessionMemoryItem>();
 
   constructor(private readonly filePath: string) {
-    const raw = loadJsonFile<ExperienceMemoryFile>(filePath, {
+    const raw = loadSecureJsonFile<ExperienceMemoryFile>(filePath, {
       sessions: [],
       chunks: [],
     });
@@ -328,7 +327,7 @@ export class ExperienceMemoryStore {
   }
 
   save(): void {
-    saveJsonFile(this.filePath, {
+    saveSecureJsonFile(this.filePath, {
       sessions: this.sessions.map(sessionToFileRecord),
       chunks: this.chunks.map(chunkToFileRecord),
     });
