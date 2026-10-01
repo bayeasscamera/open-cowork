@@ -233,6 +233,8 @@ function resolveSubAgentModel(config: AppConfig): Model<Api> {
     customBaseUrl: effectiveBaseUrl,
     rawProvider: config.provider || 'anthropic',
     customProtocol: config.customProtocol,
+    contextWindow: config.contextWindow,
+    maxTokens: config.maxTokens,
   });
   if (registryModel) {
     return registryModel;
@@ -260,6 +262,8 @@ function resolveSubAgentModel(config: AppConfig): Model<Api> {
       customBaseUrl: effectiveBaseUrl,
       rawProvider: config.provider || 'anthropic',
       customProtocol: config.customProtocol,
+      contextWindow: config.contextWindow,
+      maxTokens: config.maxTokens,
     }
   );
   logWarn('[SwarmRunner] Model not in pi-ai registry, using synthetic:', modelString);

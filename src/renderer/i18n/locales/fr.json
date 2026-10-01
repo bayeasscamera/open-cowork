@@ -862,7 +862,7 @@
     "contextWindowPlaceholder": "ex. 1000000",
     "maxOutputTokens": "Tokens de sortie maximum",
     "maxOutputTokensPlaceholder": "ex. 4096",
-    "contextWindowHint": "Laissez vide pour la détection automatique.",
+    "contextWindowHint": "Laissez vide pour la détection automatique. Ces valeurs s’appliquent à tous les modèles, y compris ceux du registre, et pilotent la compactation automatique.",
     "saveFailed": "Échec de l’enregistrement de la configuration API",
     "getStarted": "Commencer",
     "saveSettings": "Enregistrer les paramètres",

@@ -209,6 +209,8 @@ function createSpawnSubagentTool(
           customBaseUrl: config.baseUrl?.trim() || undefined,
           rawProvider: config.provider,
           customProtocol: config.customProtocol,
+          contextWindow: config.contextWindow,
+          maxTokens: config.maxTokens,
         });
         if (!piModel) {
           return {

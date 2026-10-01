@@ -198,6 +198,8 @@ export async function createPiTaskSession(context: WorkflowTaskContext): Promise
     customBaseUrl: config.baseUrl?.trim() || undefined,
     rawProvider: config.provider,
     customProtocol: config.customProtocol,
+    contextWindow: config.contextWindow,
+    maxTokens: config.maxTokens,
   });
   if (!piModel) {
     throw new Error(

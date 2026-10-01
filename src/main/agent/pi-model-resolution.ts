@@ -20,6 +20,13 @@ interface PiModelLookupOptions {
   rawProvider?: string;
   customBaseUrl?: string;
   customProtocol?: string;
+  /**
+   * User-configured context window from the provider profile. When set (> 0) it
+   * overrides whatever the pi-ai registry or the model-name heuristics claim.
+   */
+  contextWindow?: number;
+  /** User-configured max output tokens; overrides the registry value when > 0. */
+  maxTokens?: number;
 }
 
 interface PiModelLookupCandidate {
@@ -156,7 +163,7 @@ export function buildSyntheticPiModel(
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 1_000_000,
-    maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 64000,
+    maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 384000,
   } as Model<Api>;
 }
 
@@ -275,6 +282,28 @@ export function applyPiModelRuntimeOverrides(
   const isCustomProvider = options.rawProvider === 'custom' || options.configProvider === 'custom';
   const shouldHonorConfiguredBaseUrl = options.rawProvider === 'openai' || isCustomProvider;
   const modelHasBaseUrl = Boolean(nextModel.baseUrl);
+
+  // Context window / max output tokens.
+  //
+  // These two used to be applied ONLY in `buildSyntheticPiModel`, i.e. only for
+  // models absent from the pi-ai registry. Every registry model (claude-*,
+  // gpt-*, gemini-*, ...) kept the registry's own numbers, so the "Context
+  // Window" and "Max output tokens" fields in Settings > API were silently
+  // ignored for exactly the models users run every day — the setting looked
+  // wired up but was not. Both are applied here instead, because this is the
+  // single funnel every resolution path goes through (registry and synthetic
+  // alike), so the value a user typed reaches the compaction policy, the context
+  // usage bar and the `session.contextInfo` event consistently.
+  //
+  // Guarded on `> 0`: an absent, zero or negative field means "no override",
+  // which keeps auto-detection (Ollama /api/show, registry defaults) working for
+  // users who left the inputs empty.
+  if (typeof options.contextWindow === 'number' && options.contextWindow > 0) {
+    nextModel = { ...nextModel, contextWindow: options.contextWindow } as typeof nextModel;
+  }
+  if (typeof options.maxTokens === 'number' && options.maxTokens > 0) {
+    nextModel = { ...nextModel, maxTokens: options.maxTokens } as typeof nextModel;
+  }
 
   if (options.customBaseUrl && (shouldHonorConfiguredBaseUrl || !modelHasBaseUrl)) {
     nextModel = { ...nextModel, baseUrl: options.customBaseUrl } as typeof nextModel;

@@ -199,6 +199,8 @@ export async function runPiAiOneShot(
     customBaseUrl: effectiveBaseUrl,
     rawProvider: config.provider || 'anthropic',
     customProtocol: config.customProtocol,
+    contextWindow: config.contextWindow,
+    maxTokens: config.maxTokens,
   });
 
   if (!piModel) {
@@ -227,6 +229,8 @@ export async function runPiAiOneShot(
       customBaseUrl: effectiveBaseUrl,
       rawProvider: config.provider || 'anthropic',
       customProtocol: config.customProtocol,
+      contextWindow: config.contextWindow,
+      maxTokens: config.maxTokens,
     });
     logWarn('[OneShot] Model not in pi-ai registry, using synthetic model:', modelString, '→', api);
   }

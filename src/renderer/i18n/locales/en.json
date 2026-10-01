@@ -342,7 +342,7 @@
     "contextWindowPlaceholder": "Auto-detect",
     "maxOutputTokens": "Max Output Tokens",
     "maxOutputTokensPlaceholder": "Auto-detect",
-    "contextWindowHint": "Leave empty for auto-detection. Override only if the model reports incorrect limits.",
+    "contextWindowHint": "Leave empty for auto-detection. These values apply to every model, including registry models, and drive auto-compaction.",
     "saveFailed": "Failed to save settings. Please try again.",
     "getStarted": "Get Started",
     "saveSettings": "Save Settings",

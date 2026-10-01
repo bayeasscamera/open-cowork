@@ -953,6 +953,8 @@ export class CoworkAgentRunner {
         customBaseUrl: effectiveBaseUrl,
         rawProvider: runtimeConfig.provider,
         customProtocol: runtimeConfig.customProtocol,
+        contextWindow: runtimeConfig.contextWindow,
+        maxTokens: runtimeConfig.maxTokens,
       });
 
       if (!piModel) {
@@ -975,13 +977,15 @@ export class CoworkAgentRunner {
           runtimeConfig.contextWindow,
           runtimeConfig.maxTokens
         );
-        // Apply the same runtime overrides (developer role compat, base URL, API downgrade)
-        // that resolvePiRegistryModel applies to registry models
+        // Apply the same runtime overrides (developer role compat, base URL, API downgrade,
+        // context window) that resolvePiRegistryModel applies to registry models
         piModel = applyPiModelRuntimeOverrides(piModel, {
           configProvider: configProtocol,
           customBaseUrl: effectiveBaseUrl,
           rawProvider: runtimeConfig.provider,
           customProtocol: runtimeConfig.customProtocol,
+          contextWindow: runtimeConfig.contextWindow,
+          maxTokens: runtimeConfig.maxTokens,
         });
         logCtxWarn(
           '[CoworkAgentRunner] Model not in pi-ai registry, using synthetic model:',
