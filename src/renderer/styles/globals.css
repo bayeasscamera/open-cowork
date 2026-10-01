@@ -72,6 +72,33 @@
     --color-error: #dc2626;
   }
 
+  /*
+   * Semantic aliases for floating surfaces (popovers, selectors, menus).
+   *
+   * These are declared once, outside both theme blocks, so they resolve
+   * against whichever theme is active: defining them per-theme would duplicate
+   * the same mapping twice and let the two drift apart.
+   *
+   * Names describe the ROLE a colour plays on a floating panel rather than the
+   * palette it happens to come from — that is what lets a popover be restyled
+   * without touching every component that draws one.
+   */
+  :root {
+    /* Panel background and its separators. */
+    --ev-panneau: var(--color-background-secondary);
+    --ev-filet: var(--color-border-subtle);
+    /* Raised surfaces inside a panel: the search field, a selected row. */
+    --ev-carte: var(--color-surface);
+    --ev-carte-hover: var(--color-surface-hover);
+    /* Text ramp, from primary to faint. */
+    --ev-texte: var(--color-text-primary);
+    --ev-texte-doux: var(--color-text-secondary);
+    --ev-texte-faible: var(--color-text-muted);
+    /* Accent, used for the active-item check. */
+    --ev-bleu: var(--color-accent);
+    --ev-rayon-m: 0.5rem;
+  }
+
   * {
     @apply border-border;
   }

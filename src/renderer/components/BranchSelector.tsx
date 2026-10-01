@@ -224,7 +224,18 @@ export function BranchSelector() {
         onClick={() => setOpen((value) => !value)}
         title={tooltip}
         disabled={disabled}
-        className="flex items-center justify-center rounded-lg p-1.5 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+        className="flex items-center justify-center rounded-lg p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+        style={{ color: 'var(--ev-texte-doux)' }}
+        onMouseEnter={(event) => {
+          if (!disabled) {
+            event.currentTarget.style.background = 'var(--ev-carte-hover)';
+            event.currentTarget.style.color = 'var(--ev-texte)';
+          }
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.background = 'transparent';
+          event.currentTarget.style.color = 'var(--ev-texte-doux)';
+        }}
       >
         <GitBranch className="h-4 w-4" />
       </button>
@@ -233,31 +244,54 @@ export function BranchSelector() {
         <div
           role="dialog"
           aria-label={t('git.branches')}
-          className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-lg bg-background-secondary shadow-elevated"
+          className="panel-glass absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden shadow-elevated"
+          // The floating-surface tokens, so this panel restyles with the theme
+          // without depending on a palette class per surface.
+          style={{
+            background: 'var(--ev-panneau)',
+            borderRadius: 'var(--ev-rayon-m)',
+          }}
         >
-          <div className="flex items-center gap-2 bg-surface px-3 py-2">
-            <Search className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+          {/* Search field: card background, no visible border, magnifier in the
+              soft text tone. */}
+          <div
+            className="flex items-center gap-2 px-3 py-2"
+            style={{ background: 'var(--ev-carte)' }}
+          >
+            <Search className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--ev-texte-doux)' }} />
             <input
               ref={searchRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t('git.searchPlaceholder')}
-              className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+              className="w-full bg-transparent text-sm outline-none"
+              style={{ color: 'var(--ev-texte)' }}
             />
           </div>
 
           <div className="max-h-72 overflow-y-auto py-1">
-            <p className="px-3 py-1 text-xs text-text-muted">{t('git.branchesTitle')}</p>
+            {/* Section heading: small, faint, not bold. */}
+            <p
+              className="px-3 py-1 text-xs font-normal"
+              style={{ color: 'var(--ev-texte-faible)' }}
+            >
+              {t('git.branchesTitle')}
+            </p>
 
             {loading && (
-              <div className="flex items-center gap-2 px-3 py-2 text-sm text-text-muted">
+              <div
+                className="flex items-center gap-2 px-3 py-2 text-sm"
+                style={{ color: 'var(--ev-texte-faible)' }}
+              >
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 {t('git.loading')}
               </div>
             )}
 
             {!loading && filtered.length === 0 && (
-              <p className="px-3 py-2 text-sm text-text-muted">{t('git.noBranches')}</p>
+              <p className="px-3 py-2 text-sm" style={{ color: 'var(--ev-texte-faible)' }}>
+                {t('git.noBranches')}
+              </p>
             )}
 
             {filtered.map((branch) => (
@@ -266,22 +300,36 @@ export function BranchSelector() {
                 type="button"
                 onClick={() => onPickBranch(branch)}
                 disabled={busy}
-                // The current branch gets a lighter background than the panel
-                // and a blue check on the right.
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-surface-hover disabled:opacity-50 ${
-                  branch.current ? 'bg-surface' : ''
-                }`}
+                // No card outline per row: just a hover wash, and a slightly
+                // lighter background for the active branch.
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors disabled:opacity-50"
+                style={{
+                  background: branch.current ? 'var(--ev-carte-hover)' : 'transparent',
+                  borderRadius: 'var(--ev-rayon-m)',
+                }}
+                onMouseEnter={(event) => {
+                  if (!branch.current) {
+                    event.currentTarget.style.background = 'var(--ev-carte-hover)';
+                  }
+                }}
+                onMouseLeave={(event) => {
+                  if (!branch.current) event.currentTarget.style.background = 'transparent';
+                }}
               >
-                <GitBranch className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+                <GitBranch className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--ev-texte-faible)' }} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-text-primary">{branch.name}</span>
+                  <span className="block truncate text-sm" style={{ color: 'var(--ev-texte)' }}>
+                    {branch.name}
+                  </span>
                   {branch.current && data.dirtyCount > 0 && (
-                    <span className="block text-xs text-text-muted">
+                    <span className="block text-xs" style={{ color: 'var(--ev-texte-faible)' }}>
                       {t('git.uncommittedFiles', { count: data.dirtyCount })}
                     </span>
                   )}
                 </span>
-                {branch.current && <Check className="h-3.5 w-3.5 shrink-0 text-accent" />}
+                {branch.current && (
+                  <Check className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--ev-bleu)' }} />
+                )}
               </button>
             ))}
           </div>
@@ -292,7 +340,7 @@ export function BranchSelector() {
             </div>
           )}
 
-          <div className="h-px bg-border-subtle" />
+          <div className="h-px" style={{ background: 'var(--ev-filet)' }} />
 
           <div className="py-1">
             {creating ? (
@@ -306,13 +354,19 @@ export function BranchSelector() {
                     if (event.key === 'Escape') setCreating(false);
                   }}
                   placeholder={t('git.newBranchPlaceholder')}
-                  className="min-w-0 flex-1 rounded bg-surface px-2 py-1 text-sm text-text-primary outline-none placeholder:text-text-muted"
+                  className="min-w-0 flex-1 rounded px-2 py-1 text-sm outline-none"
+                  style={{
+                    background: 'var(--ev-carte)',
+                    color: 'var(--ev-texte)',
+                    borderRadius: 'var(--ev-rayon-m)',
+                  }}
                 />
                 <button
                   type="button"
                   onClick={() => void onCreate()}
                   disabled={!newName.trim() || busy}
-                  className="text-xs text-accent disabled:opacity-40"
+                  className="text-xs disabled:opacity-40"
+                  style={{ color: 'var(--ev-bleu)' }}
                 >
                   {t('git.create')}
                 </button>
@@ -322,7 +376,14 @@ export function BranchSelector() {
                 type="button"
                 onClick={() => setCreating(true)}
                 disabled={busy}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-text-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors disabled:opacity-50"
+                style={{ color: 'var(--ev-texte-doux)', borderRadius: 'var(--ev-rayon-m)' }}
+                onMouseEnter={(event) => {
+                  event.currentTarget.style.background = 'var(--ev-carte-hover)';
+                }}
+                onMouseLeave={(event) => {
+                  event.currentTarget.style.background = 'transparent';
+                }}
               >
                 <Plus className="h-3.5 w-3.5" />
                 {t('git.createAndSwitch')}
@@ -334,7 +395,8 @@ export function BranchSelector() {
               type="button"
               disabled
               title={t('git.gitGraphSoon')}
-              className="flex w-full cursor-not-allowed items-center gap-2 px-3 py-1.5 text-left text-sm text-text-muted opacity-50"
+              className="flex w-full cursor-not-allowed items-center gap-2 px-3 py-1.5 text-left text-sm opacity-50"
+              style={{ color: 'var(--ev-texte-faible)' }}
             >
               <GitBranch className="h-3.5 w-3.5" />
               {t('git.gitGraph')}
@@ -342,8 +404,11 @@ export function BranchSelector() {
           </div>
 
           {pending && (
-            <div className="border-t border-border-subtle bg-surface-muted px-3 py-2">
-              <p className="text-xs text-text-secondary">
+            <div
+              className="border-t px-3 py-2"
+              style={{ borderColor: 'var(--ev-filet)', background: 'var(--ev-carte)' }}
+            >
+              <p className="text-xs" style={{ color: 'var(--ev-texte-doux)' }}>
                 {t('git.uncommittedPrompt', {
                   branch: data.currentBranch ?? '',
                   count: pending.dirtyCount,
@@ -354,7 +419,8 @@ export function BranchSelector() {
                   type="button"
                   onClick={() => void switchTo(pending.branch, true)}
                   disabled={busy}
-                  className="rounded bg-accent px-2 py-1 text-xs text-white disabled:opacity-50"
+                  className="rounded px-2 py-1 text-xs text-white disabled:opacity-50"
+                  style={{ background: 'var(--ev-bleu)', borderRadius: 'var(--ev-rayon-m)' }}
                 >
                   {t('git.stashAndSwitch')}
                 </button>
@@ -362,7 +428,12 @@ export function BranchSelector() {
                   type="button"
                   onClick={() => void switchTo(pending.branch, false)}
                   disabled={busy}
-                  className="rounded bg-surface px-2 py-1 text-xs text-text-secondary disabled:opacity-50"
+                  className="rounded px-2 py-1 text-xs disabled:opacity-50"
+                  style={{
+                    background: 'var(--ev-panneau)',
+                    color: 'var(--ev-texte-doux)',
+                    borderRadius: 'var(--ev-rayon-m)',
+                  }}
                 >
                   {t('git.leaveHere')}
                 </button>
