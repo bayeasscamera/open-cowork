@@ -120,6 +120,42 @@ const DEFAULT_EVAL_CASES: MemoryEvalCase[] = [
       },
     ],
   },
+  {
+    id: 'workspace-isolation',
+    title: 'Workspace isolation: no cross-workspace recall',
+    workspace: '/eval/workspace-c',
+    sessionTitle: 'Dashboard cache TTL',
+    messages: [
+      {
+        role: 'user',
+        text: 'Set the dashboard cache TTL to 60 seconds and document it.',
+        timestamp: 20,
+      },
+      {
+        role: 'assistant',
+        text: 'Done: dashboard cache TTL is 60 seconds, documented in the runbook.',
+        timestamp: 21,
+      },
+    ],
+    queries: [
+      {
+        // The regression gate for strict workspace isolation: the query
+        // deliberately overlaps workspace A's vocabulary, so loose ranking
+        // WOULD surface A's chunks here. Strict mode must still recall only
+        // workspace C evidence and none of A's.
+        id: 'query-c1',
+        prompt: 'Does the gateway token rotation affect our cache TTL?',
+        workspace: '/eval/workspace-c',
+        expectedHits: ['cache', 'TTL', '60'],
+        forbiddenHits: [
+          'gateway token rotation',
+          'remote gateway',
+          'source=/eval/workspace-a',
+          'refunded',
+        ],
+      },
+    ],
+  },
 ];
 
 function createMessages(sessionId: string, messages: MemoryEvalMessage[]) {
@@ -132,6 +168,51 @@ function createMessages(sessionId: string, messages: MemoryEvalMessage[]) {
   }));
 }
 
+/**
+ * Token-based hit matching: every significant token of the hit must be
+ * present, instead of a raw substring `includes()` that a single pasted
+ * sentence can game. Single Latin characters are ignored (noise); CJK
+ * runs count as tokens whatever their length.
+ *
+ * Multi-token hits must additionally co-occur within a tight window: without
+ * proximity, generic tokens (`source`, `workspace`, `eval`) scattered across
+ * boilerplate and the session's OWN markers would false-positive a
+ * cross-workspace hit that never appears as a unit.
+ */
+function hitTokens(hit: string): string[] {
+  // Hyphens stay INSIDE tokens on purpose: `workspace-a` vs `workspace-c`
+  // is the whole distinction between a leak and a false positive, and
+  // splitting it would reduce both to the ever-present `workspace`.
+  return hit
+    .toLowerCase()
+    .split(/[\s,;:/|=_()[\]{}"']+/)
+    .filter((token) => token.length >= 2 || /[\u4e00-\u9fff]/.test(token));
+}
+
+const HIT_PROXIMITY_CHARS = 150;
+
+function tokenPositions(haystack: string, token: string): number[] {
+  const positions: number[] = [];
+  let from = 0;
+  for (;;) {
+    const at = haystack.indexOf(token, from);
+    if (at === -1) return positions;
+    positions.push(at);
+    from = at + token.length;
+  }
+}
+
+function hitMatches(haystack: string, hit: string): boolean {
+  const tokens = hitTokens(hit);
+  if (!tokens.length) return false;
+  if (tokens.length === 1) return haystack.includes(tokens[0]);
+  const positions = tokens.map((token) => tokenPositions(haystack, token));
+  if (positions.some((list) => list.length === 0)) return false;
+  return (positions[0] as number[]).some((anchor) =>
+    positions.every((list) => list.some((at) => Math.abs(at - anchor) <= HIT_PROXIMITY_CHARS))
+  );
+}
+
 function scorePromptPrefix(
   promptPrefix: string,
   expectedHits: string[],
@@ -142,12 +223,8 @@ function scorePromptPrefix(
   matchedForbiddenHits: string[];
 } {
   const normalized = promptPrefix.toLowerCase();
-  const matchedExpectedHits = expectedHits.filter((item) =>
-    normalized.includes(item.toLowerCase())
-  );
-  const matchedForbiddenHits = forbiddenHits.filter((item) =>
-    normalized.includes(item.toLowerCase())
-  );
+  const matchedExpectedHits = expectedHits.filter((item) => hitMatches(normalized, item));
+  const matchedForbiddenHits = forbiddenHits.filter((item) => hitMatches(normalized, item));
   const expectedScore = expectedHits.length ? matchedExpectedHits.length / expectedHits.length : 1;
   const forbiddenPenalty = forbiddenHits.length
     ? matchedForbiddenHits.length / forbiddenHits.length

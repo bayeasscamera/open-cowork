@@ -113,6 +113,22 @@ class EvalMockLLM implements MemoryLLMClientLike {
       request.systemPrompt.includes('Given a full user-assistant session')
     ) {
       const transcript = request.userPrompt;
+      if (transcript.includes('cache TTL')) {
+        return {
+          text: JSON.stringify({
+            session_summary: 'Dashboard cache TTL set to 60 seconds and documented',
+            session_keywords: ['cache', 'TTL'],
+            chunks: [
+              {
+                summary: 'dashboard cache TTL is 60 seconds',
+                details: 'Documented in the runbook.',
+                keywords: ['cache', 'TTL', '60'],
+                source_turns: [1, 2],
+              },
+            ],
+          }),
+        };
+      }
       if (transcript.includes('gateway token rotation')) {
         return {
           text: JSON.stringify({
@@ -299,6 +315,26 @@ describe('MemoryEvalHarness and MemoryPromptOptimizer', () => {
     expect(report.caseResults.length).toBeGreaterThan(1);
     expect(report.averageScore).toBeGreaterThan(0.5);
     expect(fs.existsSync(path.join(artifactDir, 'report.json'))).toBe(true);
+  });
+
+  it('gates workspace isolation: no foreign content in the isolated prompt', async () => {
+    const harness = new MemoryEvalHarness(service, llm);
+    const artifactDir = path.join(tempRoot, 'memory-root', 'artifacts', 'run-iso');
+    // Deterministic only: the model judge scores style, not isolation — the
+    // gate must not depend on it.
+    const report = await harness.run({ artifactDir, useModelJudge: false });
+
+    const isolation = report.caseResults.find((item) => item.caseId === 'workspace-isolation');
+    expect(isolation).toBeDefined();
+    expect(isolation!.queryResults).toHaveLength(1);
+    const query = isolation!.queryResults[0]!;
+    // Own evidence recalled…
+    expect(query.matchedExpectedHits).toEqual(
+      expect.arrayContaining(['cache', 'TTL', '60'])
+    );
+    // …and nothing from the other workspaces leaked in.
+    expect(query.matchedForbiddenHits).toEqual([]);
+    expect(query.finalScore).toBe(1);
   });
 
   it('uses the configured eval artifacts root when no artifactDir is passed', async () => {
