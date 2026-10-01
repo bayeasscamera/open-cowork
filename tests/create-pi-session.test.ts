@@ -177,10 +177,23 @@ describe('createPiSession', () => {
     expect(deps.sessions.size).toBe(2);
   });
 
-  it('uses default compaction settings for non-Ollama providers', async () => {
+  it('scales the compaction reserve with the window for non-Ollama providers', async () => {
+    // Not the SDK's fixed 16 384 reserve: `shouldCompact` is
+    // `tokens > window - reserveTokens`, so a fixed reserve only behaves like a
+    // threshold on a 128k window and delays compaction to 98.4% of a 1M one —
+    // late enough that the turn in flight has already overflowed. The reserve
+    // is derived from the window so the trigger lands at ~80% on every model.
     await createPiSession(makeDeps());
 
-    expect(compactionOf()).toEqual({ enabled: true });
+    const compaction = compactionOf();
+    // The fixture model advertises a 200 000-token window.
+    const CONTEXT_WINDOW = 200_000;
+    expect(compaction.enabled).toBe(true);
+    expect(compaction.reserveTokens).toBe(CONTEXT_WINDOW * 0.2);
+    expect(compaction.reserveTokens).toBeGreaterThan(16_384);
+    // The reserve is 20% of the window, so compaction triggers at 80% of it
+    // (200k - 40k = 160k) instead of the SDK's 91.8% (200k - 16 384).
+    expect(compaction.reserveTokens / CONTEXT_WINDOW).toBeCloseTo(0.2, 2);
   });
 
   it('disables compaction for small Ollama contexts', async () => {

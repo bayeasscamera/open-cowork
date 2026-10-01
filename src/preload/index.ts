@@ -685,6 +685,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('sandbox.retryLimaSetup'),
   },
 
+  // Git methods — every command runs in the main process against the current
+  // workspace; the renderer never spawns git itself.
+  git: {
+    listBranches: (): Promise<{
+      isRepo: boolean;
+      branches: Array<{ name: string; current: boolean }>;
+      currentBranch: string | null;
+      dirtyCount: number;
+      repoRoot: string | null;
+      error?: string;
+    }> => ipcRenderer.invoke('git.listBranches'),
+    isRepository: (): Promise<boolean> => ipcRenderer.invoke('git.isRepository'),
+    checkoutBranch: (
+      name: string,
+      stash?: boolean
+    ): Promise<{ ok: boolean; stashed: boolean; error?: string }> =>
+      ipcRenderer.invoke('git.checkoutBranch', { name, stash: stash === true }),
+    createBranch: (name: string): Promise<{ ok: boolean; stashed: boolean; error?: string }> =>
+      ipcRenderer.invoke('git.createBranch', { name }),
+  },
+
   // Logs methods
   logs: {
     getPath: (): Promise<string | null> => ipcRenderer.invoke('logs.getPath'),
@@ -1417,6 +1438,22 @@ declare global {
         stopLimaInstance: () => Promise<boolean>;
         retrySetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;
         retryLimaSetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;
+      };
+      git: {
+        listBranches: () => Promise<{
+          isRepo: boolean;
+          branches: Array<{ name: string; current: boolean }>;
+          currentBranch: string | null;
+          dirtyCount: number;
+          repoRoot: string | null;
+          error?: string;
+        }>;
+        isRepository: () => Promise<boolean>;
+        checkoutBranch: (
+          name: string,
+          stash?: boolean
+        ) => Promise<{ ok: boolean; stashed: boolean; error?: string }>;
+        createBranch: (name: string) => Promise<{ ok: boolean; stashed: boolean; error?: string }>;
       };
       logs: {
         getPath: () => Promise<string | null>;

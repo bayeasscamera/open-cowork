@@ -1405,13 +1405,13 @@
       "rationale": "提案理由",
       "contentPreview": "查看草稿内容",
       "approve": "批准",
-      "conflictHint": "已存在同名 \u201c{{name}}\u201d 的生效技能 \u2014 请换一个名称批准该提案：",
+      "conflictHint": "已存在同名 “{{name}}” 的生效技能 — 请换一个名称批准该提案：",
       "renamePlaceholder": "新名称（kebab-case）",
       "approveAs": "以此名称批准",
       "reject": "拒绝",
       "rejectTitle": "拒绝 — 永久删除该草稿",
-      "approvedNotice": "\u201c{{name}}\u201d 现已生效。",
-      "rejectedNotice": "\u201c{{name}}\u201d 已被拒绝并删除。",
+      "approvedNotice": "“{{name}}” 现已生效。",
+      "rejectedNotice": "“{{name}}” 已被拒绝并删除。",
       "actionFailed": "操作失败。"
     }
   },
@@ -1984,5 +1984,27 @@
     "resume": "继续",
     "cancel": "取消",
     "dismiss": "隐藏"
+  },
+  "git": {
+    "branches": "分支",
+    "branchesTitle": "分支",
+    "searchPlaceholder": "搜索分支",
+    "noBranches": "没有匹配的分支",
+    "loading": "加载中…",
+    "uncommittedFiles_one": "未提交的更改：{{count}} 个文件",
+    "uncommittedFiles_other": "未提交的更改：{{count}} 个文件",
+    "uncommittedPrompt": "你在 {{branch}} 上有未提交的更改。要带着它们一起切换（stash），还是留在这里？",
+    "stashAndSwitch": "Stash 并切换",
+    "leaveHere": "留在这里",
+    "createAndSwitch": "创建并切换到新分支",
+    "create": "创建",
+    "newBranchPlaceholder": "分支名称",
+    "noWorkspace": "未选择工作区",
+    "gitGraph": "Git Graph",
+    "gitGraphSoon": "即将推出",
+    "switchedTo": "已切换到 {{branch}}",
+    "switchFailed": "无法切换分支",
+    "createFailed": "无法创建分支",
+    "notARepository": "不是 Git 仓库"
   }
 }

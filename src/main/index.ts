@@ -81,6 +81,7 @@ import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { registerConfigIpcHandlers } from './ipc/config-handlers';
 import { registerLogsIpcHandlers } from './ipc/logs-handlers';
+import { registerGitIpcHandlers } from './ipc/git-handlers';
 import { registerMcpIpcHandlers } from './ipc/mcp-handlers';
 import { registerRemoteIpcHandlers } from './ipc/remote-handlers';
 import { registerScheduleIpcHandlers } from './ipc/schedule-handlers';
@@ -2029,6 +2030,12 @@ for (const mod of createBuiltinMods()) {
 registerLogsIpcHandlers({
   getSessionManager: () => sessionManager,
   getMainWindow: () => mainWindow,
+  getCurrentWorkingDir: () => currentWorkingDir,
+});
+
+// Git IPC handlers for the branch selector (see main/ipc/git-handlers.ts).
+// Git always runs in the workspace the app is currently pointed at.
+registerGitIpcHandlers({
   getCurrentWorkingDir: () => currentWorkingDir,
 });
 

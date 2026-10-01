@@ -1405,13 +1405,13 @@
       "rationale": "Rationale",
       "contentPreview": "Show draft content",
       "approve": "Approve",
-      "conflictHint": "An active skill named \u201c{{name}}\u201d already exists \u2014 approve this proposal under a different name:",
+      "conflictHint": "An active skill named “{{name}}” already exists — approve this proposal under a different name:",
       "renamePlaceholder": "new-name (kebab-case)",
       "approveAs": "Approve as",
       "reject": "Reject",
       "rejectTitle": "Reject — permanently deletes the draft",
-      "approvedNotice": "\u201c{{name}}\u201d is now an active skill.",
-      "rejectedNotice": "\u201c{{name}}\u201d was rejected and deleted.",
+      "approvedNotice": "“{{name}}” is now an active skill.",
+      "rejectedNotice": "“{{name}}” was rejected and deleted.",
       "actionFailed": "The action failed."
     }
   },
@@ -1984,5 +1984,27 @@
     "resume": "Resume",
     "cancel": "Cancel",
     "dismiss": "Dismiss"
+  },
+  "git": {
+    "branches": "Branches",
+    "branchesTitle": "Branches",
+    "searchPlaceholder": "Search branches",
+    "noBranches": "No branch matches",
+    "loading": "Loading…",
+    "uncommittedFiles_one": "Uncommitted changes: {{count}} file",
+    "uncommittedFiles_other": "Uncommitted changes: {{count}} files",
+    "uncommittedPrompt": "You have uncommitted changes on {{branch}}. Take them with you (stash) or leave them here?",
+    "stashAndSwitch": "Stash and switch",
+    "leaveHere": "Leave them here",
+    "createAndSwitch": "Create and switch to a new branch",
+    "create": "Create",
+    "newBranchPlaceholder": "Branch name",
+    "gitGraph": "Git Graph",
+    "gitGraphSoon": "Coming soon",
+    "switchedTo": "Switched to {{branch}}",
+    "switchFailed": "Unable to switch branch",
+    "createFailed": "Unable to create the branch",
+    "notARepository": "Not a Git repository",
+    "noWorkspace": "No workspace selected"
   }
 }

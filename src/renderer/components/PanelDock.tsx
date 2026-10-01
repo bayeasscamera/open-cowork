@@ -21,6 +21,7 @@ import {
   type WorkspaceViewPanelId,
 } from '../../shared/workspace-panels';
 import { setInspectorOpen, toggleWorkspacePanel } from '../utils/workspace-panel-toggles';
+import { BranchSelector } from './BranchSelector';
 
 const PANEL_ICONS: Record<WorkspacePanelId, LucideIcon> = {
   modelRouting: Route,
@@ -104,6 +105,9 @@ export function PanelDock({ className = '' }: PanelDockProps) {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const runningBackgroundTasks = useAppStore((s) => s.runningBackgroundTasks);
   const notifyOnCompletion = useAppStore((s) => s.notifyOnCompletion);
+  // The branch selector is only meaningful once a workspace is chosen; before
+  // that there is no directory to run git in.
+  const workingDir = useAppStore((s) => s.workingDir);
 
   const viewVisible: Record<WorkspaceViewPanelId, boolean> = {
     modelRouting: useAppStore((s) => s.modelRoutingVisible),
@@ -210,6 +214,13 @@ export function PanelDock({ className = '' }: PanelDockProps) {
             onClick={() => toggleWorkspacePanel(panel.id)}
           />
         ))}
+        {/* Branch selector sits after the panel toggles: it acts on the
+            workspace rather than switching a view, so it is deliberately not
+            part of the ⌘/Ctrl+1..7 sequence. */}
+        {Boolean(workingDir) && (
+          <span className="mx-0.5 h-4 w-px bg-border-subtle" aria-hidden="true" />
+        )}
+        <BranchSelector />
       </div>
     </div>
   );
