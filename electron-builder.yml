@@ -8,6 +8,11 @@ directories:
 
 npmRebuild: true
 afterPack: ./scripts/after-pack.js
+# Notarization must run on the *signed* bundle, before the DMG is built — an
+# unsigned app is rejected outright and the stapled ticket is what lets
+# Gatekeeper open it on another machine. Wired here: the hook existed but was
+# never referenced, so every release shipped unnotarized.
+afterSign: ./scripts/notarize.js
 afterAllArtifactBuild: ./scripts/compress-dmg.js
 
 files:

@@ -14,6 +14,7 @@ import {
 } from './store/selectors';
 import { useIPC } from './hooks/useIPC';
 import { useWindowSize } from './hooks/useWindowSize';
+import { useWorkspaceLayoutPersistence } from './hooks/useWorkspaceLayout';
 import { startAppMenuSync } from './utils/app-menu-sync';
 import { Sidebar } from './components/Sidebar';
 import { WelcomeView } from './components/WelcomeView';
@@ -139,6 +140,11 @@ function App() {
   const { width } = useWindowSize();
   const initialized = useRef(false);
   const sidebarBeforeSettings = useRef(false);
+
+  // Persist the panel layout so a restart reopens the workspace where it was
+  // left. Restore happens in the `session.list` handler once the resumed
+  // session is known.
+  useWorkspaceLayoutPersistence();
 
   useEffect(() => {
     // Only run once on mount

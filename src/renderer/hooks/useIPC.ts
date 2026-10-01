@@ -12,6 +12,7 @@ import type {
 } from '../types';
 import { handleSubagentProgressEvent } from './useSubagentProgress';
 import { toggleWorkspacePanel } from '../utils/workspace-panel-toggles';
+import { applyPersistedWorkspaceLayout } from './useWorkspaceLayout';
 import {
   buildDelegationOutcomeNotice,
   delegationToastEnabled,
@@ -154,6 +155,11 @@ export function useIPC() {
               const exists = event.payload.sessions.find((s) => s.id === lastActiveSessionId);
               if (exists) {
                 store.setActiveSession(lastActiveSessionId);
+                // Re-open the panels that were on screen for this session, so a
+                // restart lands on the same workspace rather than the bare chat
+                // view. Session-scoped panels stay closed when the session is
+                // missing or the dashboard is showing.
+                applyPersistedWorkspaceLayout(lastActiveSessionId);
                 // Load persisted messages + trace steps asynchronously
                 Promise.all([
                   window.electronAPI.invoke({

@@ -9,6 +9,22 @@ dist-lima-agent/
 dist-mcp/
 release/
 
+# Packaged installers. `release/` already covers electron-builder's output
+# directory, but these are matched by type as well so a DMG produced anywhere
+# else (a custom `directories.output`, a hand-copied artifact, an `npm run
+# build` run with an overridden output path) can never be committed. Each macOS
+# build is ~313MB; a single accidental `git add` would bloat the clone for
+# everyone.
+*.dmg
+*.dmg.blockmap
+*.pkg
+*.exe
+*.msi
+*.AppImage
+*.zip
+*.app
+latest*.yml
+
 # Bundled Node.js binaries
 resources/node/
 
