@@ -207,6 +207,34 @@ export function summarizeText(text: string, maxLength = 220): string {
   return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
+/**
+ * Hard budget helpers for prompt injection.
+ *
+ * A model-driven expansion (`expand_chunk`, `get_raw_session`) must never
+ * decide how much context window it spends: every injected string passes a
+ * character cap, and the assembled prefix passes a global cap. Truncation is
+ * always marked with what was omitted, so the model knows the evidence is
+ * partial rather than complete.
+ */
+
+/** Whole-string cap with an explicit omission marker. */
+export function capInjectedText(text: string, maxChars: number, what: string): string {
+  if (text.length <= maxChars) return text;
+  const kept = text.slice(0, maxChars).trimEnd();
+  return `${kept}\n… [${what} truncated: showing ${kept.length} of ${text.length} chars]`;
+}
+
+/**
+ * Global prefix budget. Sections are ordered by priority (core, project,
+ * experience), so cutting the tail always sacrifices the lowest-priority
+ * evidence first.
+ */
+export function applyPrefixBudget(prefix: string, maxChars: number): string {
+  if (prefix.length <= maxChars) return prefix;
+  const kept = prefix.slice(0, maxChars).trimEnd();
+  return `${kept}\n… [memory_context truncated: showing ${kept.length} of ${prefix.length} chars; lowest-priority sections cut first]`;
+}
+
 export function tokenizeSearchQuery(query: string): string[] {
   return Array.from(new Set(simpleTokenize(query))).slice(0, 16);
 }
