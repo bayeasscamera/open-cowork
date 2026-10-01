@@ -19,12 +19,15 @@ import {
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
 import type { EvidenceKind } from '../../shared/task-contract';
+import type { RuntimeSkillEntry } from '../../shared/skill-runtime-types';
 import { configStore } from '../config/config-store';
 import { logWarn } from '../utils/logger';
 import { normalizeTokenUsage } from './agent-runner-formatting';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resolution';
 import { resolveSubAgentCompactionSettings } from './compaction-policy';
+import { formatSkillHint, selectRelevantSkills, skillSelectionDirs } from './skill-selection';
+import { currentRuntimeSkills } from '../skills/skill-selection-runtime';
 import {
   SHELL_TOOLS,
   WRITE_TOOLS,
@@ -70,8 +73,28 @@ export interface AgentTaskRunnerOptions {
   now?: () => number;
 }
 
-/** System prompt prepended to every workflow task session. */
-export function buildTaskSystemPrompt(context: WorkflowTaskContext): string {
+/**
+ * The text a task is matched against: its prompt plus the task title, so a task
+ * titled "Extract the PDF tables" matches the pdf skill even when the prompt
+ * only says "see the attached report".
+ */
+export function taskSelectionText(context: WorkflowTaskContext): string {
+  const title = typeof context.task?.title === 'string' ? context.task.title : '';
+  return `${title}\n${context.prompt ?? ''}`;
+}
+
+/**
+ * System prompt prepended to every workflow task session.
+ *
+ * `skills` is passed in by the caller so the prompt and the resource loader
+ * advertise the same set; when omitted it is recomputed, which keeps this
+ * function usable on its own.
+ */
+export function buildTaskSystemPrompt(
+  context: WorkflowTaskContext,
+  skills?: RuntimeSkillEntry[]
+): string {
+  const selected = skills ?? selectRelevantSkills(taskSelectionText(context), currentRuntimeSkills());
   return [
     'You are a focused sub-agent inside Cowork, executing ONE atomic task of an already approved plan.',
     'Work only inside the current working directory: ' + context.cwd + '.',
@@ -80,8 +103,14 @@ export function buildTaskSystemPrompt(context: WorkflowTaskContext): string {
       : 'Changes here land in the live workspace and are checkpointed per task.',
     'Respect the declared write scope exactly. Never edit a file outside it.',
     'Do not claim a command passed unless you actually ran it and saw it succeed.',
+    // A task is short by design, so it gets only the skills that match it —
+    // never the full catalogue. The block tells the sub-agent they exist: a
+    // loaded skill the model was never told about is one it will not open.
+    formatSkillHint(selected),
     'When finished, reply with a short report: what you changed, what you ran, and the observed result.',
-  ].join('\n');
+  ]
+    .filter((line) => line.length > 0)
+    .join('\n');
 }
 
 function lastAssistantText(messages: unknown[] | undefined): string {
@@ -209,9 +238,14 @@ export async function createPiTaskSession(context: WorkflowTaskContext): Promise
 
   const codingTools = createCodingTools(context.cwd);
   const customTools: ToolDefinition[] = [];
+  // Selected once so the loader and the prompt advertise the SAME skills. The
+  // loader is given directories, not skills: without additionalSkillPaths this
+  // task had no skill at all, silently.
+  const taskSkills = selectRelevantSkills(taskSelectionText(context), currentRuntimeSkills());
   const resourceLoader = new DefaultResourceLoader({
     cwd: context.cwd,
-    appendSystemPrompt: buildTaskSystemPrompt(context),
+    additionalSkillPaths: skillSelectionDirs(taskSkills),
+    appendSystemPrompt: buildTaskSystemPrompt(context, taskSkills),
   });
   await resourceLoader.reload();
 

@@ -22,6 +22,8 @@ import type { ServerEvent } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import type { TaskQueue } from './task-queue';
 import { resolveSubAgentCompactionSettings } from './compaction-policy';
+import { formatSkillHint, selectRelevantSkills, skillSelectionDirs } from './skill-selection';
+import { currentRuntimeSkills } from '../skills/skill-selection-runtime';
 
 const MAX_TIMEOUT_MS = 300_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -56,6 +58,12 @@ function buildChildSystemPrompt(task: string, resultFormat?: string): string {
     `## Task`,
     task,
   ];
+  // Only the skills matching THIS task. The loader below was previously given
+  // no skill directory at all, so the sub-agent ran with none — silently.
+  const skillHint = formatSkillHint(selectRelevantSkills(task, currentRuntimeSkills()));
+  if (skillHint) {
+    parts.push('', skillHint);
+  }
   if (resultFormat) {
     parts.push('', `## Expected Output Format`, resultFormat);
   }
@@ -262,8 +270,12 @@ function createSpawnSubagentTool(
         const codingTools = createCodingTools(cwd);
 
         const childSystemPrompt = buildChildSystemPrompt(task, result_format);
+        // The loader takes directories, not skills; without this the sub-agent
+        // had none, however relevant the prompt above says they are.
+        const childSkills = selectRelevantSkills(task, currentRuntimeSkills());
         const resourceLoader = new DefaultResourceLoader({
           cwd,
+          additionalSkillPaths: skillSelectionDirs(childSkills),
           appendSystemPrompt: childSystemPrompt,
         });
         await resourceLoader.reload();

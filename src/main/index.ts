@@ -37,6 +37,7 @@ import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { createSkillsRuntimeAdapter } from './skills/skills-runtime-adapter';
 import { baseSkillSources } from './skills/skill-runtime-sources';
+import { setSkillEnabledLookup } from './skills/skill-selection-runtime';
 import { legacySkillPaths } from './agent/skills-paths';
 import { MemoryService } from './memory/memory-service';
 import { MemoryExtension } from './memory/memory-extension';
@@ -1066,6 +1067,9 @@ app
           fallback: legacySkillPaths,
         })
       );
+      // Same registry for delegated tasks in headless mode: the scheduled task
+      // runner uses the very same workflow/swarm paths as the UI.
+      setSkillEnabledLookup(skillsManager);
 
       // Set working directory from --cwd flag
       currentWorkingDir = headlessArgs.cwd;
@@ -1485,6 +1489,9 @@ app
         fallback: legacySkillPaths,
       })
     );
+    // Delegated tasks (workflow, swarm, sub-agent extension) read the same
+    // enabled-skill view through this registry instead of re-deriving it.
+    setSkillEnabledLookup(skillsManager);
     skillsManager.onStorageChanged((event) => {
       sendToRenderer({
         type: 'skills.storageChanged',

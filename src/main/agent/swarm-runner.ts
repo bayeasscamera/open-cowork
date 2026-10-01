@@ -68,6 +68,8 @@ import type {
 import { buildCorrectiveContext } from './cross-verification';
 import { resolveSubAgentCompactionSettings } from './compaction-policy';
 import { shouldRetryOnContextOverflow } from './context-overflow';
+import { formatSkillHint, selectRelevantSkills, skillSelectionDirs } from './skill-selection';
+import { currentRuntimeSkills } from '../skills/skill-selection-runtime';
 import {
   buildAskTeammateTool,
   buildTeammateResponder,
@@ -654,6 +656,15 @@ export function buildChildSystemPrompt(task: AgentTask): string {
     );
   }
   lines.push('', '## Task', task.prompt);
+  // Only the skills that match this task, never the full catalogue: a swarm
+  // agent's budget is one task. Absent before, silently — the loader below
+  // received no skill directory at all.
+  const skillHint = formatSkillHint(
+    selectRelevantSkills(`${task.title}\n${task.prompt ?? ''}`, currentRuntimeSkills())
+  );
+  if (skillHint) {
+    lines.push('', skillHint);
+  }
   return lines.join('\n');
 }
 
@@ -853,8 +864,15 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
   const childSystemPrompt = [buildChildSystemPrompt(args.task), roleSystemPrompt]
     .filter(Boolean)
     .join('\n\n');
+  // The loader takes directories, not skills. Without this the swarm agent saw
+  // no skill at all, even though its prompt may now advertise some.
+  const swarmSkills = selectRelevantSkills(
+    `${args.task.title}\n${args.task.prompt ?? ''}`,
+    currentRuntimeSkills()
+  );
   const resourceLoader = new DefaultResourceLoader({
     cwd: args.cwd,
+    additionalSkillPaths: skillSelectionDirs(swarmSkills),
     appendSystemPrompt: childSystemPrompt,
   });
   await resourceLoader.reload();
