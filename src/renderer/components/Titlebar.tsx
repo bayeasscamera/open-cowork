@@ -1,12 +1,14 @@
 import { Minus, Square, X, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
-const isMac = typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
+import { isMac as isMacPlatform } from '../utils/platform';
 
 export function Titlebar() {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
+  // macOS: traffic lights are positioned natively, so the bar only needs the
+  // left padding and no window buttons. Read once per render.
+  const isMac = isMacPlatform();
 
   const handleMinimize = () => {
     window.electronAPI?.window.minimize();

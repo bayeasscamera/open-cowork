@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { resolveArtifactPath } from '../utils/artifact-path';
+import { isWindows as isWindowsPlatform } from '../utils/platform';
 import {
   extractFilePathFromToolInput,
   extractFilePathFromToolOutput,
@@ -74,7 +75,7 @@ export function ContextPanel() {
       // Escape spaces for shell usage so the path can be pasted into terminal
       let shellPath = path;
       if (path.includes(' ')) {
-        const isWindows = window.electronAPI?.platform === 'win32';
+        const isWindows = isWindowsPlatform();
         shellPath = isWindows ? `"${path}"` : path.replace(/ /g, '\\ ');
       }
       await navigator.clipboard.writeText(shellPath);

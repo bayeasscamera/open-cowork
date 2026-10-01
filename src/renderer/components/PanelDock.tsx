@@ -20,6 +20,7 @@ import {
   type WorkspacePanelId,
   type WorkspaceViewPanelId,
 } from '../../shared/workspace-panels';
+import { isMac } from '../utils/platform';
 import { setInspectorOpen, toggleWorkspacePanel } from '../utils/workspace-panel-toggles';
 import { BranchSelector } from './BranchSelector';
 
@@ -48,13 +49,9 @@ const isInspectorDescriptor = (
  * Reads the real platform from the preload rather than sniffing
  * `navigator.platform`, which Apple has deprecated (it freezes to
  * "MacIntel" on every device, including iPads) and which reports the
- * *browser's* platform rather than the one the app is running on. This is the
- * same `window.electronAPI?.platform === 'darwin'` check already used by
- * Titlebar, SandboxSetupDialog and SettingsSandbox — PanelDock was the last
- * component still going through the user agent.
+ * *browser's* platform rather than the one the app is running on.
  */
-const isMacPlatform = (): boolean =>
-  typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
+const isMacPlatform = (): boolean => isMac();
 
 const shortcutLabel = (index: number): string =>
   `${isMacPlatform() ? '⌘' : 'Ctrl+'}${index}`;

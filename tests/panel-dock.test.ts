@@ -80,13 +80,15 @@ describe('PanelDock — unified workspace dock replaces the floating pills', () 
   // the real platform from the preload, matching Titlebar, SandboxSetupDialog
   // and SettingsSandbox — it was the last component still sniffing the UA.
   it('derives the ⌘/Ctrl shortcut hint from the preload platform, not the user agent', () => {
-    expect(dock).toContain("window.electronAPI?.platform === 'darwin'");
+    // Delegated to the shared helper rather than re-deriving the platform here.
+    expect(dock).toContain("import { isMac } from '../utils/platform'");
     // Strip comments before asserting the absence of the sniffing APIs: the
     // doc block above isMacPlatform() names them precisely to explain why they
     // are no longer used.
     const code = dock.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
     expect(code).not.toContain('navigator.platform');
     expect(code).not.toContain('navigator.userAgent');
+    expect(code).not.toContain('electronAPI?.platform');
   });
 
   it('flashes the delegated-tasks badge green when a task completes', () => {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Shield, AlertCircle, CheckCircle, Settings, Loader2, Server, Cloud } from 'lucide-react';
+import { isMac as isMacPlatform, isWindows as isWindowsPlatform } from '../../utils/platform';
 import { renderLocalizedBannerMessage } from './shared';
 import type { LocalizedBanner } from './shared';
 
@@ -46,9 +47,10 @@ export function SettingsSandbox() {
   const [success, setSuccess] = useState<LocalizedBanner | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  const platform = window.electronAPI?.platform || 'unknown';
-  const isWindows = platform === 'win32';
-  const isMac = platform === 'darwin';
+  // Aliased so the ~20 existing `isWindows` / `isMac` call sites below stay
+  // untouched; the platform question itself now has a single implementation.
+  const isWindows = isWindowsPlatform();
+  const isMac = isMacPlatform();
 
   // Single initialization effect - load config and status together
   useEffect(() => {

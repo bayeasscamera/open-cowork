@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SandboxSetupProgress, SandboxSetupPhase } from '../types';
+import { isMac as isMacPlatform, isWindows } from '../utils/platform';
 import { getSandboxSetupDisplayText } from '../utils/sandbox-i18n';
 
 interface Props {
@@ -89,7 +90,7 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
   const config = phaseConfig[progress.phase];
   const isComplete = progress.phase === 'ready' || progress.phase === 'skipped';
   const isError = progress.phase === 'error';
-  const isMac = window.electronAPI?.platform === 'darwin';
+  const isMac = isMacPlatform();
   const displayText = getSandboxSetupDisplayText(t, progress);
 
   return (
@@ -200,9 +201,9 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
         <div className="px-6 py-4 bg-background-secondary/70 border-t border-border-muted">
           <div className="flex items-center justify-between text-xs text-text-muted">
             <span>
-              {window.electronAPI?.platform === 'win32'
+              {isWindows()
                 ? t('sandbox.footerWsl')
-                : window.electronAPI?.platform === 'darwin'
+                : isMac
                   ? t('sandbox.footerLima')
                   : t('sandbox.footerNative')}
             </span>
