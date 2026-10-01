@@ -24,6 +24,8 @@ import type {
   DiagnosticInput,
   ProviderModelInfo,
 } from '../../shared/types';
+import type { SecretSourceKind, SecretSourceProbe } from '../../shared/secret-source';
+import { getSecretResolver } from '../config/secret-resolver';
 import type { SessionManager } from '../session/session-manager';
 import { getSharedProjectStore } from '../projects/project-store';
 import { collectHealthReport } from '../utils/health-report-collector';
@@ -72,7 +74,7 @@ export function registerConfigIpcHandlers(context: ConfigIpcContext): void {
     configStore.set('isConfigured', configStore.hasAnyUsableCredentials());
 
     // Apply to environment
-    configStore.applyToEnv();
+    await configStore.applyToEnv();
 
     const updatedConfig = configStore.getAll();
     const shouldReloadRunner =
@@ -261,6 +263,89 @@ export function registerConfigIpcHandlers(context: ConfigIpcContext): void {
     } catch (error) {
       logError('[Config] Error discovering local services:', error);
       return [];
+    }
+  });
+
+  // ── External secret sources (Bitwarden / 1Password) ────────────────────
+  // Probing only reports presence + lock state. It never returns a secret, so
+  // this channel is safe to call as often as the Settings UI likes.
+
+  ipcMain.handle(
+    'secrets.probeSource',
+    async (_event, payload: { kind: SecretSourceKind }): Promise<SecretSourceProbe> => {
+      try {
+        return await getSecretResolver().probe(payload.kind);
+      } catch (error) {
+        logError('[Secrets] Probe failed:', error);
+        return {
+          installed: false,
+          unlocked: false,
+          detail: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+  );
+
+  /**
+   * Resolve one ConfigSet's key from its configured source.
+   *
+   * Returns the resolved value so the "Test connection" button can prove an
+   * external key really works. The value is returned to the renderer, which is
+   * the user's own settings surface, and is never persisted by this handler.
+   */
+  ipcMain.handle(
+    'secrets.testConfigSet',
+    async (
+      _event,
+      payload: { configSetId: string }
+    ): Promise<{ ok: boolean; detail: string }> => {
+      try {
+        const config = configStore.getAll();
+        const configSet = config.configSets.find((set) => set.id === payload.configSetId);
+        const storedApiKey =
+          configSet?.profiles[configSet.activeProfileKey]?.apiKey ?? config.apiKey ?? '';
+        const outcome = await getSecretResolver().resolveForConfigSet(
+          payload.configSetId,
+          config.secretSources,
+          storedApiKey
+        );
+        if (outcome.error) {
+          return { ok: false, detail: outcome.error.message };
+        }
+        return {
+          ok: true,
+          detail: outcome.fromLocal
+            ? 'The key is stored locally in the encrypted config store.'
+            : `Resolved from the external vault (${outcome.value ? `${outcome.value.length} characters` : 'empty'}).`,
+        };
+      } catch (error) {
+        logError('[Secrets] Test failed:', error);
+        return {
+          ok: false,
+          detail: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+  );
+
+  /** ConfigSets whose key is declared through more than one external source. */
+  ipcMain.handle('secrets.getConflicts', () => {
+    try {
+      return getSecretResolver().findConflicts(configStore.getAll().secretSources);
+    } catch (error) {
+      logError('[Secrets] Conflict scan failed:', error);
+      return [];
+    }
+  });
+
+  /** Drop cached resolutions — called after the user re-locks or switches. */
+  ipcMain.handle('secrets.invalidate', () => {
+    try {
+      getSecretResolver().invalidate();
+      return { success: true };
+    } catch (error) {
+      logError('[Secrets] Invalidate failed:', error);
+      return { success: false };
     }
   });
 }

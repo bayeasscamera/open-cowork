@@ -34,6 +34,9 @@ import {
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
 import type { ImageGenerationConfig } from '../../shared/types';
+import type { SecretSourceMap } from '../../shared/secret-source';
+import { normalizeSecretSourceMap } from './secret-source-normalize';
+import { getSecretResolver } from './secret-resolver';
 
 /**
  * Application configuration schema
@@ -158,6 +161,15 @@ export interface AppConfig {
 
   // Stream liveness guardrails (see stream-liveness.ts)
   streamTimeout?: StreamTimeoutConfig;
+
+  /**
+   * Per-ConfigSet secret source. Absent or `local` means the key lives in this
+   * encrypted store (the historical default). When a ConfigSet names
+   * Bitwarden or 1Password, `profiles[*].apiKey` holds only the manager's
+   * REFERENCE (an item id or `op://vault/item/field`) — the real value is
+   * resolved at call time and never persisted here.
+   */
+  secretSources?: SecretSourceMap;
 }
 
 /**
@@ -1355,6 +1367,11 @@ export class ConfigStore {
     if (typeof raw.lastActiveSessionUpdatedAt === 'number') {
       result.lastActiveSessionUpdatedAt = raw.lastActiveSessionUpdatedAt;
     }
+    // Secret sources are validated on every read so a hand-edited or corrupted
+    // store can never hand a malformed reference to the resolver. Assigned
+    // conditionally for the same JSON-store reason as the resume point above.
+    const secretSources = normalizeSecretSourceMap(raw.secretSources);
+    if (secretSources) result.secretSources = secretSources;
     this.normalizeModelIds(result);
     return result;
   }
@@ -1954,16 +1971,42 @@ export class ConfigStore {
    * - Custom Anthropic: ANTHROPIC_API_KEY = apiKey
    * - OpenRouter: ANTHROPIC_AUTH_TOKEN = apiKey, ANTHROPIC_API_KEY = '' (proxy mode)
    */
-  applyToEnv(): void {
+  async applyToEnv(): Promise<void> {
     const config = this.getAll();
     const activeProfile = config.profiles?.[config.activeProfileKey] || {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,
     };
+    const storedApiKey = activeProfile.apiKey || '';
+
+    // Resolve the active ConfigSet's key from its configured SecretSource. A
+    // failure (missing CLI, locked vault) leaves the key empty and logs the
+    // reason rather than throwing — the caller decides what to surface.
+    let effectiveApiKey = storedApiKey;
+    const source = config.secretSources?.[config.activeConfigSetId];
+    if (source && source.kind !== 'local') {
+      const outcome = await getSecretResolver().resolveForConfigSet(
+        config.activeConfigSetId,
+        config.secretSources,
+        storedApiKey
+      );
+      if (outcome.error) {
+        log('[Config] External secret could not be resolved:', {
+          configSetId: config.activeConfigSetId,
+          kind: source.kind,
+          code: outcome.error.code,
+          reason: outcome.error.message,
+        });
+        effectiveApiKey = '';
+      } else {
+        effectiveApiKey = outcome.value ?? '';
+      }
+    }
+
     const projectedConfig: AppConfig = {
       ...config,
-      apiKey: activeProfile.apiKey || '',
+      apiKey: effectiveApiKey,
       baseUrl: activeProfile.baseUrl,
       model: activeProfile.model || '',
     };

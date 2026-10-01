@@ -154,10 +154,9 @@ if (dotenvResult.error) {
 }
 
 // Apply saved config (this overrides .env if config exists)
-if (configStore.isConfigured()) {
-  log('[Config] Applying saved configuration...');
-  configStore.applyToEnv();
-}
+// Deferred into the whenReady() bootstrap below: applyToEnv() is asynchronous
+// because a ConfigSet may resolve its key from an external vault CLI, and
+// blocking module initialization on a CLI call would stall the whole process.
 
 // Enable Metal / Hardware Acceleration on macOS for 60/120Hz ProMotion smoothness
 if (process.platform !== 'darwin') {
@@ -895,6 +894,14 @@ let eventSender: ((event: ServerEvent) => void) | null = null;
 app
   .whenReady()
   .then(async () => {
+    // Apply saved config (this overrides .env if config exists). Must run
+    // before any session creation so provider env vars are in place. Async
+    // because a ConfigSet may resolve its key from an external vault CLI.
+    if (configStore.isConfigured()) {
+      log('[Config] Applying saved configuration...');
+      await configStore.applyToEnv();
+    }
+
     // Smoke test mode: verify the app can start, then exit cleanly
     if (process.argv.includes('--smoke-test')) {
       log('[SmokeTest] App launched successfully in smoke test mode');

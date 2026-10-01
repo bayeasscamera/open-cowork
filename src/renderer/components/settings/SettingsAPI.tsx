@@ -21,6 +21,7 @@ import { CommonProviderSetupsCard, GuidanceInlineHint } from '../ProviderGuidanc
 import ApiDiagnosticsPanel from '../ApiDiagnosticsPanel';
 import { SettingsWebSearch } from './SettingsWebSearch';
 import { SettingsImages } from './SettingsImages';
+import { SecretSourceSelector } from './SecretSourceSelector';
 
 interface ModelOptionItem {
   id: string;
@@ -128,6 +129,8 @@ export function SettingsAPI() {
     handleDiagnose,
     handleDeepDiagnose,
     shouldShowOllamaManualModelToggle,
+    secretSources,
+    setSecretSourceForConfigSet,
   } = useApiConfigState();
 
   if (isLoadingConfig) {
@@ -188,6 +191,16 @@ export function SettingsAPI() {
           )}
         </div>
       </div>
+
+      {/* Secret source — decides where this ConfigSet's key comes from */}
+      {activeConfigSetId && (
+        <SecretSourceSelector
+          configSetId={activeConfigSetId}
+          configSetName={currentConfigSet?.name || activeConfigSetId}
+          value={secretSources?.[activeConfigSetId]}
+          onChange={(next) => setSecretSourceForConfigSet(activeConfigSetId, next)}
+        />
+      )}
 
       {/* API Key */}
       <div className="space-y-3 py-5 border-b border-border-muted">

@@ -14,6 +14,7 @@ import type {
   ProviderType,
 } from '../types';
 import { isLoopbackBaseUrl } from '../../shared/network/loopback';
+import type { SecretSourceConfig, SecretSourceMap } from '../../shared/secret-source';
 import {
   DEFAULT_OLLAMA_BASE_URL,
   normalizeOllamaBaseUrl,
@@ -583,6 +584,8 @@ interface ApiConfigState {
   activeConfigSetId: string;
   // Deferred action waiting for unsaved-changes resolution
   pendingConfigSetAction: PendingConfigSetAction | null;
+  // External secret source per ConfigSet (undefined entry = local storage)
+  secretSources: SecretSourceMap;
   // Extended thinking flag
   enableThinking: boolean;
   // Remember last custom protocol so switching back to custom restores it
@@ -656,6 +659,8 @@ type ApiConfigAction =
   | { type: 'SET_CONFIG_SETS'; payload: ApiConfigSet[] }
   | { type: 'SET_ACTIVE_CONFIG_SET_ID'; payload: string }
   | { type: 'SET_PENDING_CONFIG_SET_ACTION'; payload: PendingConfigSetAction | null }
+  // External secret source selection (Bitwarden / 1Password)
+  | { type: 'SET_SECRET_SOURCES'; payload: SecretSourceMap }
   // Loading flags
   | { type: 'SET_IS_LOADING_CONFIG'; payload: boolean }
   | { type: 'SET_IS_SAVING'; payload: boolean }
@@ -759,6 +764,9 @@ function apiConfigReducer(state: ApiConfigState, action: ApiConfigAction): ApiCo
     case 'SET_PENDING_CONFIG_SET_ACTION':
       return { ...state, pendingConfigSetAction: action.payload };
 
+    case 'SET_SECRET_SOURCES':
+      return { ...state, secretSources: action.payload };
+
     case 'SET_IS_LOADING_CONFIG':
       return { ...state, isLoadingConfig: action.payload };
 
@@ -846,6 +854,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     configSets: initialBootstrap.configSets,
     activeConfigSetId: initialBootstrap.activeConfigSetId,
     pendingConfigSetAction: null,
+    secretSources: initialConfig?.secretSources ?? {},
     isMutatingConfigSet: false,
     lastCustomProtocol: initialLastCustomProtocol,
     enableThinking: Boolean(initialConfig?.enableThinking),
@@ -1176,6 +1185,9 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
           ),
         },
       });
+      // Secret sources live outside the draft signature (they do not affect
+      // the provider form), so they are refreshed separately on every load.
+      dispatch({ type: 'SET_SECRET_SOURCES', payload: config?.secretSources ?? {} });
     },
     []
   );
@@ -1339,6 +1351,23 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const setEnableThinking = useCallback((value: boolean) => {
     dispatch({ type: 'SET_ENABLE_THINKING', payload: value });
   }, []);
+
+  /**
+   * Select (or clear) the external secret source for one ConfigSet.
+   * Passing `undefined` returns the ConfigSet to the local encrypted store.
+   */
+  const setSecretSourceForConfigSet = useCallback(
+    (configSetId: string, source: SecretSourceConfig | undefined) => {
+      dispatch({
+        type: 'SET_SECRET_SOURCES',
+        payload: {
+          ...state.secretSources,
+          ...(source ? { [configSetId]: source } : { [configSetId]: undefined }),
+        },
+      });
+    },
+    [state.secretSources]
+  );
 
   useEffect(() => {
     if (!enabled) {
@@ -1770,7 +1799,12 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
 
   const handleSave = useCallback(
     async (options?: { silentSuccess?: boolean }) => {
-      if (requiresApiKey && !apiKey.trim()) {
+      // An external secret source supplies the key at call time, so the
+      // "you forgot the API key" gate only applies to locally-stored keys.
+      const activeSource = state.secretSources[activeConfigSetId];
+      const usesExternalSecret = Boolean(activeSource && activeSource.kind !== 'local');
+
+      if (requiresApiKey && !apiKey.trim() && !usesExternalSecret) {
         showErrorKey('api.testError.missing_key');
         return false;
       }
@@ -1806,6 +1840,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
           profiles: persistedProfiles,
           activeConfigSetId,
           enableThinking,
+          secretSources: state.secretSources,
         };
 
         if (onSave) {
@@ -1850,6 +1885,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       profiles,
       provider,
       requiresApiKey,
+      state.secretSources,
       clearError,
       clearSuccessMessage,
       showErrorKey,
@@ -2136,6 +2172,8 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     handleDeepDiagnose,
     isOllamaMode: provider === 'ollama',
     shouldShowOllamaManualModelToggle,
+    secretSources: state.secretSources,
+    setSecretSourceForConfigSet,
     requiresApiKey,
     detectedProviderSetup,
     protocolGuidanceText,

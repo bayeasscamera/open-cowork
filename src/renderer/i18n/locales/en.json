@@ -676,6 +676,25 @@
     "usedForTokens": "Used for tokens and secrets (e.g., NOTION_TOKEN)",
     "noEnvVars": "No environment variables configured"
   },
+  "secrets": {
+    "title": "Secret source",
+    "description": "Choose where this config set's API key is read from. The default keeps it in the encrypted local store.",
+    "sourceLocal": "Local (encrypted store)",
+    "sourceBitwarden": "Bitwarden",
+    "sourceOnePassword": "1Password",
+    "referenceFor": "Reference used for {{set}}. Only the reference is saved — the key itself is read from your vault at call time.",
+    "referencePlaceholder": "Reference (e.g. {{hint}})",
+    "probing": "Checking the vault…",
+    "cliMissing": "CLI not found. Install it and retry.",
+    "vaultLocked": "Vault locked or not signed in.",
+    "vaultReady": "Vault ready",
+    "retry": "Re-check",
+    "test": "Test connection",
+    "neverStored": "The resolved key is held in memory only and is never written to disk by Cowork.",
+    "probeFailed": "Could not check the vault.",
+    "testFailed": "The connection test could not run.",
+    "conflictWarning": "This key is declared in several sources. {{winner}} is used and the others are ignored."
+  },
   "skills": {
     "storagePathHint": "Choose where custom skills live and how the app refreshes them.",
     "builtinSkillsDesc": "Built-in skills ship with the app and can be toggled when needed.",

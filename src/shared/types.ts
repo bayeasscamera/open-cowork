@@ -1,5 +1,6 @@
 import type { TaskRunProgress, TaskRunResult, WorkflowState } from './workflow-types';
 import type { WorkspacePanelId } from './workspace-panels';
+import type { SecretSourceMap } from './secret-source';
 
 // Session types
 export interface Session {
@@ -1090,6 +1091,12 @@ export interface AppConfig {
   isConfigured: boolean;
   /** OpenJev "System One" routing hint (optional, off by default). */
   openjev?: { enabled: boolean; baseUrl: string };
+  /**
+   * Per-ConfigSet external secret source (Bitwarden / 1Password). Absent or
+   * `local` means the key lives in the encrypted local store; otherwise the
+   * ConfigSet's `apiKey` holds only the vault reference, never the secret.
+   */
+  secretSources?: SecretSourceMap;
 }
 
 interface ProviderPreset {

@@ -163,6 +163,25 @@
     "usedForTokens": "Utilisé pour les jetons et secrets (ex. NOTION_TOKEN)",
     "noEnvVars": "Aucune variable d’environnement configurée"
   },
+  "secrets": {
+    "title": "Source des secrets",
+    "description": "Choisissez d’où est lue la clé API de ce jeu de configuration. Par défaut, elle reste dans le stockage local chiffré.",
+    "sourceLocal": "Local (stockage chiffré)",
+    "sourceBitwarden": "Bitwarden",
+    "sourceOnePassword": "1Password",
+    "referenceFor": "Référence utilisée pour {{set}}. Seule la référence est enregistrée — la clé elle-même est lue dans votre coffre au moment de l’appel.",
+    "referencePlaceholder": "Référence (ex. {{hint}})",
+    "probing": "Vérification du coffre…",
+    "cliMissing": "CLI introuvable. Installez-la puis réessayez.",
+    "vaultLocked": "Coffre verrouillé ou non connecté.",
+    "vaultReady": "Coffre prêt",
+    "retry": "Revérifier",
+    "test": "Tester la connexion",
+    "neverStored": "La clé résolue reste en mémoire et n’est jamais écrite sur le disque par Cowork.",
+    "probeFailed": "Impossible de vérifier le coffre.",
+    "testFailed": "Le test de connexion n’a pas pu s’exécuter.",
+    "conflictWarning": "Cette clé est déclarée dans plusieurs sources. {{winner}} est utilisée et les autres sont ignorées."
+  },
   "chat": {
     "sendMessage": "Envoyer le message",
     "stop": "Arrêter",

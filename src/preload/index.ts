@@ -36,6 +36,7 @@ import type {
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type { HealthReport } from '../shared/health-report';
+import type { SecretSourceKind, SecretSourceProbe } from '../shared/secret-source';
 import type {
   McpServerConfig,
   McpTool,
@@ -524,6 +525,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.diagnose', input),
     discoverLocal: (payload?: { baseUrl?: string }): Promise<LocalOllamaDiscoveryResult> =>
       ipcRenderer.invoke('config.discover-local', payload),
+  },
+
+  /**
+   * External secret managers (Bitwarden / 1Password).
+   *
+   * The renderer only ever selects a source and types a reference; the secret
+   * itself is resolved in the main process and is never handed back except by
+   * `testConfigSet`, which reports success plus a length rather than the value.
+   */
+  secrets: {
+    probeSource: (kind: SecretSourceKind): Promise<SecretSourceProbe> =>
+      ipcRenderer.invoke('secrets.probeSource', { kind }),
+    testConfigSet: (configSetId: string): Promise<{ ok: boolean; detail: string }> =>
+      ipcRenderer.invoke('secrets.testConfigSet', { configSetId }),
+    getConflicts: (): Promise<
+      Array<{ configSetId: string; kinds: SecretSourceKind[]; winner: SecretSourceKind }>
+    > => ipcRenderer.invoke('secrets.getConflicts'),
+    invalidate: (): Promise<{ success: boolean }> => ipcRenderer.invoke('secrets.invalidate'),
   },
 
   /**
@@ -1324,6 +1343,14 @@ declare global {
         }) => Promise<ProviderModelInfo[]>;
         diagnose: (input: DiagnosticInput) => Promise<DiagnosticResult>;
         discoverLocal: (payload?: { baseUrl?: string }) => Promise<LocalOllamaDiscoveryResult>;
+      };
+      secrets: {
+        probeSource: (kind: SecretSourceKind) => Promise<SecretSourceProbe>;
+        testConfigSet: (configSetId: string) => Promise<{ ok: boolean; detail: string }>;
+        getConflicts: () => Promise<
+          Array<{ configSetId: string; kinds: SecretSourceKind[]; winner: SecretSourceKind }>
+        >;
+        invalidate: () => Promise<{ success: boolean }>;
       };
       window: {
         minimize: () => void;

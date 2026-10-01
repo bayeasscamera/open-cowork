@@ -21,6 +21,10 @@ const mocks = vi.hoisted(() => ({
   sendToRenderer: vi.fn(),
   collectHealthReport: vi.fn(),
   projectStoreGet: vi.fn(),
+  secretProbe: vi.fn(),
+  secretResolve: vi.fn(),
+  secretConflicts: vi.fn(),
+  secretInvalidate: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -51,6 +55,14 @@ vi.mock('../src/main/utils/health-report-collector', () => ({
 }));
 vi.mock('../src/main/projects/project-store', () => ({
   getSharedProjectStore: () => ({ get: mocks.projectStoreGet }),
+}));
+vi.mock('../src/main/config/secret-resolver', () => ({
+  getSecretResolver: () => ({
+    probe: mocks.secretProbe,
+    resolveForConfigSet: mocks.secretResolve,
+    findConflicts: mocks.secretConflicts,
+    invalidate: mocks.secretInvalidate,
+  }),
 }));
 
 import { registerConfigIpcHandlers } from '../src/main/ipc/config-handlers';
@@ -100,6 +112,10 @@ describe('config IPC handlers', () => {
       'config.switchSet',
       'config.test',
       'diagnostics.report',
+      'secrets.getConflicts',
+      'secrets.invalidate',
+      'secrets.probeSource',
+      'secrets.testConfigSet',
     ]);
   });
 
@@ -174,5 +190,79 @@ describe('config IPC handlers', () => {
     expect(
       await invoke('config.listModels', { provider: 'ollama', apiKey: 'k', baseUrl: 'http://x' })
     ).toEqual([{ id: 'llama3' }]);
+  });
+
+  describe('external secret sources', () => {
+    it('secrets.probeSource delegates to the resolver', async () => {
+      register();
+      mocks.secretProbe.mockResolvedValue({ installed: true, unlocked: false, detail: 'locked' });
+      expect(await invoke('secrets.probeSource', { kind: 'bitwarden' })).toEqual({
+        installed: true,
+        unlocked: false,
+        detail: 'locked',
+      });
+      expect(mocks.secretProbe).toHaveBeenCalledWith('bitwarden');
+    });
+
+    it('secrets.probeSource degrades to a structured failure instead of throwing', async () => {
+      register();
+      mocks.secretProbe.mockRejectedValueOnce(new Error('boom'));
+      expect(await invoke('secrets.probeSource', { kind: '1password' })).toEqual({
+        installed: false,
+        unlocked: false,
+        detail: 'boom',
+      });
+    });
+
+    it('secrets.testConfigSet reports success without echoing the secret', async () => {
+      register();
+      mocks.store.getAll.mockReturnValue({
+        configSets: [
+          { id: 'set-1', activeProfileKey: 'anthropic', profiles: { anthropic: { apiKey: 'op://v/i/f' } } },
+        ],
+        secretSources: { 'set-1': { kind: '1password', driver: 'cli', reference: 'op://v/i/f' } },
+        apiKey: 'op://v/i/f',
+      });
+      mocks.secretResolve.mockResolvedValue({ value: 'sk-secret', error: null, fromLocal: false });
+      const result = (await invoke('secrets.testConfigSet', { configSetId: 'set-1' })) as {
+        ok: boolean;
+        detail: string;
+      };
+      expect(result.ok).toBe(true);
+      // The detail must describe the secret without containing it.
+      expect(result.detail).not.toContain('sk-secret');
+    });
+
+    it('secrets.testConfigSet surfaces a typed resolution error', async () => {
+      register();
+      mocks.store.getAll.mockReturnValue({
+        configSets: [],
+        secretSources: { 'set-1': { kind: 'bitwarden', driver: 'cli', reference: 'item' } },
+        apiKey: '',
+      });
+      mocks.secretResolve.mockResolvedValue({
+        value: null,
+        error: { code: 'cli-missing', message: 'bw not found' },
+        fromLocal: false,
+      });
+      expect(await invoke('secrets.testConfigSet', { configSetId: 'set-1' })).toEqual({
+        ok: false,
+        detail: 'bw not found',
+      });
+    });
+
+    it('secrets.getConflicts returns the resolver report', async () => {
+      register();
+      mocks.store.getAll.mockReturnValue({ secretSources: {} });
+      const conflicts = [{ configSetId: 's', kinds: ['bitwarden'], winner: 'bitwarden' }];
+      mocks.secretConflicts.mockReturnValue(conflicts);
+      expect(await invoke('secrets.getConflicts')).toEqual(conflicts);
+    });
+
+    it('secrets.invalidate clears the cache and never throws', async () => {
+      register();
+      mocks.secretInvalidate.mockReturnValue(undefined);
+      expect(await invoke('secrets.invalidate')).toEqual({ success: true });
+    });
   });
 });

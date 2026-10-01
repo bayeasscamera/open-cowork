@@ -698,6 +698,25 @@
     "usedForTokens": "用于令牌和密钥（例如：NOTION_TOKEN）",
     "noEnvVars": "未配置环境变量"
   },
+  "secrets": {
+    "title": "密钥来源",
+    "description": "选择该配置集的 API 密钥从哪里读取。默认保存在本地加密存储中。",
+    "sourceLocal": "本地(加密存储)",
+    "sourceBitwarden": "Bitwarden",
+    "sourceOnePassword": "1Password",
+    "referenceFor": "{{set}} 使用的引用。仅保存引用本身——密钥会在调用时从您的密码库中读取。",
+    "referencePlaceholder": "引用(例如 {{hint}})",
+    "probing": "正在检查密码库…",
+    "cliMissing": "未找到 CLI。请安装后重试。",
+    "vaultLocked": "密码库已锁定或未登录。",
+    "vaultReady": "密码库已就绪",
+    "retry": "重新检查",
+    "test": "测试连接",
+    "neverStored": "解析出的密钥仅保存在内存中,Cowork 绝不会将其写入磁盘。",
+    "probeFailed": "无法检查密码库。",
+    "testFailed": "无法运行连接测试。",
+    "conflictWarning": "该密钥在多个来源中重复声明。将使用 {{winner}},其余将被忽略。"
+  },
   "skills": {
     "storagePathHint": "选择自定义技能的存储位置，以及应用如何刷新这些技能。",
     "builtinSkillsDesc": "内置技能随应用提供，可按需启用或停用。",
