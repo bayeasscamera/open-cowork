@@ -135,6 +135,7 @@ import {
   writeResultFileAtomic,
 } from './cli/headless-io';
 import { CrashGuard } from './utils/crash-guard';
+import { resolveAutoUpdater } from './utils/updater-resolve';
 import { bootProfiler } from './startup/boot-perf';
 
 /**
@@ -1650,7 +1651,12 @@ app
     // Auto-updater: check for updates in production
     if (!isDev) {
       import('electron-updater')
-        .then(({ autoUpdater }) => {
+        .then((mod) => {
+          const autoUpdater = resolveAutoUpdater(mod);
+          if (!autoUpdater) {
+            log('[AutoUpdater] autoUpdater export not found, skipping update check.');
+            return;
+          }
           autoUpdater.checkForUpdatesAndNotify().catch((err: unknown) => {
             log('[AutoUpdater] Update check failed:', err);
           });
