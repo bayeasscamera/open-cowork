@@ -39,6 +39,7 @@ import {
   Cpu,
   Copy,
   Layers,
+  X,
 } from 'lucide-react';
 import type { TraceStep, MCPServerInfo, ContentBlock, ToolUseContent } from '../types';
 import { getMcpToolDisplayName } from './message/toolHelpers';
@@ -55,7 +56,7 @@ export function ContextPanel() {
   const toggleContextPanel = useAppStore((s) => s.toggleContextPanel);
   const workingDir = useAppStore((s) => s.workingDir);
   const setGlobalNotice = useAppStore((s) => s.setGlobalNotice);
-  const { getMCPServers, changeWorkingDir } = useIPC();
+  const { getMCPServers, changeWorkingDir, clearWorkingDir } = useIPC();
   const [artifactsOpen, setArtifactsOpen] = useState(true);
   const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<MCPServerInfo[]>([]);
@@ -543,6 +544,39 @@ export function ContextPanel() {
                 <FolderSync className="w-3 h-3" />
               )}
             </button>
+            {!activeSessionId && currentWorkingDir && (
+              <button
+                onClick={async () => {
+                  setIsChangingDir(true);
+                  try {
+                    const result = await clearWorkingDir();
+                    if (!result.success && result.error) {
+                      setGlobalNotice({
+                        id: `change-dir-clear-failed-${Date.now()}`,
+                        type: 'warning',
+                        message: `${t('context.changeDirFailed')}: ${result.error}`,
+                      });
+                    }
+                  } catch (error) {
+                    setGlobalNotice({
+                      id: `change-dir-clear-failed-${Date.now()}`,
+                      type: 'error',
+                      message:
+                        error instanceof Error && error.message
+                          ? `${t('context.changeDirFailed')}: ${error.message}`
+                          : t('context.changeDirFailed'),
+                    });
+                  } finally {
+                    setIsChangingDir(false);
+                  }
+                }}
+                disabled={isChangingDir}
+                className="text-text-muted hover:text-text-primary disabled:opacity-50 transition-colors shrink-0"
+                title={t('context.clearWorkspace')}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
         </div>
       </div>

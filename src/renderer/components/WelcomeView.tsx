@@ -43,7 +43,7 @@ export function WelcomeView() {
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { startSession, changeWorkingDir, isElectron } = useIPC();
+  const { startSession, changeWorkingDir, clearWorkingDir, isElectron } = useIPC();
   const workingDir = useAppStore((state) => state.workingDir);
   const setGlobalNotice = useAppStore((state) => state.setGlobalNotice);
   const isConfigured = useAppStore((state) => state.isConfigured);
@@ -652,6 +652,36 @@ export function WelcomeView() {
                   {workingDir ? workingDir.split(/[/\\]/).pop() : t('welcome.selectWorkingFolder')}
                 </span>
               </button>
+              {workingDir && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const result = await clearWorkingDir();
+                      if (!result.success && result.error) {
+                        setGlobalNotice({
+                          id: `notice-workdir-clear-${Date.now()}`,
+                          type: 'warning',
+                          message: `${t('welcome.clearWorkspaceFailed')}: ${result.error}`,
+                        });
+                      }
+                    } catch (error) {
+                      setGlobalNotice({
+                        id: `notice-workdir-clear-${Date.now()}`,
+                        type: 'error',
+                        message:
+                          error instanceof Error && error.message
+                            ? `${t('welcome.clearWorkspaceFailed')}: ${error.message}`
+                            : t('welcome.clearWorkspaceFailed'),
+                      });
+                    }
+                  }}
+                  className="flex items-center text-sm text-text-muted transition-colors hover:text-text-primary"
+                  title={t('welcome.clearWorkspace')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
 
               {isElectron && (
                 <button

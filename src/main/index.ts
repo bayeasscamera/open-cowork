@@ -824,6 +824,21 @@ async function setWorkingDir(
   newDir: string,
   sessionId?: string
 ): Promise<{ success: boolean; path: string; error?: string }> {
+  // Clearing is only meaningful for the global UI workspace (choose nothing,
+  // choose again later). A live session keeps its own cwd — falling back to
+  // "no directory" mid-chat would silently change tool scoping.
+  if (!newDir) {
+    if (sessionId) {
+      return { success: false, path: '', error: 'Cannot clear the directory of an existing session' };
+    }
+    sendToRenderer({
+      type: 'workdir.changed',
+      payload: { path: '' },
+    });
+    log('[App] Working directory cleared (UI/no workspace)');
+    return { success: true, path: '' };
+  }
+
   const unsupportedReason = getWorkspacePathUnsupportedReason(newDir);
   if (unsupportedReason) {
     return { success: false, path: newDir, error: unsupportedReason };

@@ -915,6 +915,41 @@ export function useIPC() {
     [invoke]
   );
 
+  /**
+   * Point the UI workspace directly at a path (no dialog) — used when
+   * activating a project so the displayed workspace follows it.
+   */
+  const setWorkingDirPath = useCallback(
+    async (
+      path: string,
+      sessionId?: string
+    ): Promise<{ success: boolean; path: string; error?: string }> => {
+      if (!isElectron) {
+        return { success: true, path: '/mock/working/dir' };
+      }
+      return invoke<{ success: boolean; path: string; error?: string }>({
+        type: 'workdir.set',
+        payload: { path, sessionId },
+      });
+    },
+    [invoke]
+  );
+
+  /** Leave the workspace empty so another folder can be chosen later. */
+  const clearWorkingDir = useCallback(async (): Promise<{
+    success: boolean;
+    path: string;
+    error?: string;
+  }> => {
+    if (!isElectron) {
+      return { success: true, path: '' };
+    }
+    return invoke<{ success: boolean; path: string; error?: string }>({
+      type: 'workdir.set',
+      payload: { path: '' },
+    });
+  }, [invoke]);
+
   const getMCPServers = useCallback(async () => {
     if (!isElectron) {
       return [];
@@ -962,6 +997,8 @@ export function useIPC() {
     selectFolder,
     getWorkingDir,
     changeWorkingDir,
+    setWorkingDirPath,
+    clearWorkingDir,
     getMCPServers,
     selectSession,
     isElectron,

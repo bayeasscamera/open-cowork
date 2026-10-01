@@ -59,6 +59,7 @@ export function Sidebar() {
     togglePinSession,
     getSessionMessages,
     getSessionTraceSteps,
+    setWorkingDirPath,
     isElectron,
   } = useIPC();
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -730,6 +731,13 @@ export function Sidebar() {
                           if (!isArchived) {
                             if (willExpand) {
                               setActiveProjectId(project.id);
+                              // The displayed workspace follows the project:
+                              // new sessions already start in project.workdir,
+                              // so the folder button must show it too.
+                              void setWorkingDirPath(project.workdir).catch(() => {
+                                // Non-fatal: activation still worked, only the
+                                // folder display keeps the previous value.
+                              });
                             } else if (isActiveProject) {
                               setActiveProjectId(null);
                             }
