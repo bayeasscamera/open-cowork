@@ -136,6 +136,13 @@ export interface AppConfig {
   // Tray icon + global Alt+Space toggle (background quick access)
   trayEnabled: boolean;
 
+  // Agent-to-Agent (A2A) server: expose this app as an A2A agent over
+  // loopback HTTP. Off by default; the token is a bearer secret stored in
+  // this same encrypted store and never exported to plaintext config.
+  a2aEnabled: boolean;
+  a2aToken: string;
+  a2aPort: number;
+
   // Dedicated memory runtime config
   memoryRuntime: MemoryRuntimeConfig;
 
@@ -459,6 +466,10 @@ const defaultConfig: AppConfig = {
   braveApiKey: '',
   // Close button quits for real by default; the tray is an explicit opt-in.
   trayEnabled: false,
+  // A2A server is opt-in; the token is generated on first enable.
+  a2aEnabled: false,
+  a2aToken: '',
+  a2aPort: 19889,
   memoryRuntime: {
     llm: {
       inheritFromActive: true,
@@ -1384,6 +1395,15 @@ export class ConfigStore {
       braveApiKey:
         typeof raw.braveApiKey === 'string' ? raw.braveApiKey : defaultConfig.braveApiKey,
       trayEnabled: toBoolean(raw.trayEnabled, defaultConfig.trayEnabled),
+      a2aEnabled: toBoolean(raw.a2aEnabled, defaultConfig.a2aEnabled),
+      a2aToken: typeof raw.a2aToken === 'string' ? raw.a2aToken : defaultConfig.a2aToken,
+      a2aPort:
+        typeof raw.a2aPort === 'number' &&
+        Number.isInteger(raw.a2aPort) &&
+        raw.a2aPort > 0 &&
+        raw.a2aPort < 65536
+          ? raw.a2aPort
+          : defaultConfig.a2aPort,
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       subAgents: normalizeSubAgentsConfig(raw.subAgents),
       imageGeneration: normalizeImageGenerationConfig(raw.imageGeneration),
@@ -1566,6 +1586,7 @@ export class ConfigStore {
             key === 'sandboxEnabled' ||
             key === 'memoryEnabled' ||
             key === 'trayEnabled' ||
+            key === 'a2aEnabled' ||
             key === 'enableThinking' ||
             key === 'isConfigured') &&
           typeof rawValue !== 'boolean'

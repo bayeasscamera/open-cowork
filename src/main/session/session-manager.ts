@@ -46,6 +46,23 @@ import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { AgentRuntimeExtensionManager } from '../extensions/agent-runtime-extension-manager';
 import { MemoryManager } from '../memory/memory-manager';
 import { forgetSessionPermissions } from '../config/permission-rules-store';
+
+/** Plain text out of a stored message body (JSON-encoded content blocks). */
+function extractMessageText(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed === 'string') return parsed.trim();
+    if (!Array.isArray(parsed)) return '';
+    return (parsed as Array<{ type?: unknown; text?: unknown }>)
+      .map((block) =>
+        block && block.type === 'text' && typeof block.text === 'string' ? block.text : ''
+      )
+      .join('')
+      .trim();
+  } catch {
+    return '';
+  }
+}
 import {
   log,
   logError,
@@ -527,6 +544,27 @@ export class SessionManager {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  /**
+   * Latest assistant text in a session, for machine consumers (A2A task
+   * artifacts) that cannot subscribe to the renderer's event stream.
+   * Returns null while the assistant has said nothing reportable yet.
+   */
+  public getLastAssistantText(sessionId: string): string | null {
+    try {
+      const rows = this.db.messages.getBySessionId(sessionId);
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const row = rows[i];
+        if (!row || row.role !== 'assistant') continue;
+        const text = extractMessageText(row.content);
+        if (text) return text;
+      }
+      return null;
+    } catch (error) {
+      logError('[SessionManager] Failed to read assistant text:', error);
+      return null;
+    }
   }
 
   // List all sessions

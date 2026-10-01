@@ -1287,6 +1287,25 @@
     "pickerNone": "No time slots selected yet",
     "pickerSuggestions": "Suggestions"
   },
+  "a2a": {
+    "title": "Agent-à-Agent (A2A)",
+    "desc": "Expose cette app comme agent A2A en HTTP local pour que d'autres agents délèguent du travail en lecture seule (questions, recherche de code, recherche web). Les tâches tournent sans interaction : aucune écriture, aucun shell, aucun dialogue de permission. Désactivé par défaut.",
+    "enable": "Activer",
+    "disable": "Désactiver",
+    "loading": "Chargement du statut A2A…",
+    "endpoint": "Point d'accès",
+    "state": "État",
+    "running": "Activé et à l'écoute",
+    "enabledNotRunning": "Activé mais pas à l'écoute (redémarrez l'app)",
+    "disabled": "Désactivé",
+    "token": "Jeton",
+    "newTokenOnce": "Nouveau jeton — copiez-le maintenant, il ne sera affiché qu'une fois :",
+    "copyToken": "Copier le jeton",
+    "regenerate": "Régénérer le jeton",
+    "toggleFailed": "Impossible de basculer le serveur A2A.",
+    "regenerateFailed": "Impossible de régénérer le jeton.",
+    "copyFailed": "Impossible de copier dans le presse-papiers."
+  },
   "remote": {
     "title": "Contrôle à distance",
     "statusRunning": "Service en cours d’exécution",

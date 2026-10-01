@@ -15,6 +15,7 @@ import { ConnectionConfigStep } from './remote/ConnectionConfigStep';
 import { AdvancedConfigStep } from './remote/AdvancedConfigStep';
 import { AuthorizedUsersSection } from './remote/AuthorizedUsersSection';
 import { QuickStartGuide } from './remote/QuickStartGuide';
+import { A2ASection } from './remote/A2ASection';
 import type {
   GatewayStatus,
   PairedUser,
@@ -355,6 +356,8 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         permissionScopes={permissionScopes}
         permissionSeparator={permissionSeparator}
       />
+
+      <A2ASection />
     </div>
   );
 }

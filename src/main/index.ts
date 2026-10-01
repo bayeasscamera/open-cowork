@@ -58,6 +58,9 @@ import {
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
 import { startNavServer, stopNavServer } from './nav-server';
+import { startA2AServer, type A2AServerHandle } from './a2a/a2a-server';
+import { createProductionA2ABackend } from './a2a/a2a-backend';
+import { registerA2AIpcHandlers } from './ipc/a2a-handlers';
 import { ScheduledTaskManager } from './schedule/scheduled-task-manager';
 import { createScheduledTaskStore } from './schedule/scheduled-task-store';
 import {
@@ -898,6 +901,45 @@ async function startSandboxBootstrap(): Promise<void> {
 // Pluggable event sender — defaults to mainWindow IPC, swapped for JSONL in headless mode
 let eventSender: ((event: ServerEvent) => void) | null = null;
 
+/** Live A2A server handle, if the opt-in server is currently running. */
+let a2aServer: A2AServerHandle | null = null;
+
+/**
+ * (Re)start the A2A server from the saved config. Stops the previous
+ * instance first so a port/token change never leaves a stale listener.
+ * No session manager yet (very early boot) or disabled/untokened config →
+ * server stays down. Never throws: A2A must not break startup.
+ */
+function refreshA2AServer(): { running: boolean; url: string } {
+  try {
+    if (a2aServer) {
+      a2aServer.stop();
+      a2aServer = null;
+    }
+    const config = configStore.getAll();
+    if (!config.a2aEnabled || !config.a2aToken || !sessionManager) {
+      return { running: false, url: '' };
+    }
+    a2aServer = startA2AServer({
+      port: config.a2aPort,
+      token: config.a2aToken,
+      appVersion: app.getVersion(),
+      backend: createProductionA2ABackend(sessionManager),
+      onLog: (message, details) =>
+        log(message, details as Record<string, unknown> | undefined),
+    });
+    return { running: true, url: a2aServer.url };
+  } catch (error) {
+    logError('[A2A] Failed to (re)start server:', error);
+    a2aServer = null;
+    return { running: false, url: '' };
+  }
+}
+
+function isA2ARunning(): boolean {
+  return a2aServer !== null;
+}
+
 // Initialize app
 app
   .whenReady()
@@ -1605,6 +1647,10 @@ app
 
     startNavServer(() => mainWindow);
 
+    // Agent-to-Agent server (opt-in, loopback + bearer token). Started from
+    // the saved config here and restarted by the a2a.* IPC handlers below.
+    refreshA2AServer();
+
     const scheduledTaskStore = createScheduledTaskStore(db);
     scheduledTaskManager = new ScheduledTaskManager({
       store: scheduledTaskStore,
@@ -2110,6 +2156,11 @@ registerModsIpcHandlers();
 
 // Remote control IPC handlers (see main/ipc/remote-handlers.ts)
 registerRemoteIpcHandlers();
+// Agent-to-Agent server controls (see main/ipc/a2a-handlers.ts)
+registerA2AIpcHandlers({
+  refreshA2AServer,
+  isA2ARunning,
+});
 // Scheduled task IPC handlers (see main/ipc/schedule-handlers.ts)
 registerScheduleIpcHandlers({
   getScheduledTaskManager: () => scheduledTaskManager,

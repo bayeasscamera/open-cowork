@@ -1243,6 +1243,25 @@
     "pickerNone": "还没有选择时段",
     "pickerSuggestions": "常用建议"
   },
+  "a2a": {
+    "title": "Agent-to-Agent (A2A)",
+    "desc": "通过本地 HTTP 将本应用暴露为 A2A 智能体，供其他智能体委托只读工作（问答、代码搜索、网页查找）。任务以非交互方式运行：不写文件、不执行命令、不弹窗确认。默认关闭。",
+    "enable": "启用",
+    "disable": "停用",
+    "loading": "正在加载 A2A 状态…",
+    "endpoint": "接入点",
+    "state": "状态",
+    "running": "已启用并监听中",
+    "enabledNotRunning": "已启用但未监听（请重启应用）",
+    "disabled": "已停用",
+    "token": "令牌",
+    "newTokenOnce": "新令牌——请立即复制，仅显示一次：",
+    "copyToken": "复制令牌",
+    "regenerate": "重新生成令牌",
+    "toggleFailed": "无法切换 A2A 服务。",
+    "regenerateFailed": "无法重新生成令牌。",
+    "copyFailed": "无法复制到剪贴板。"
+  },
   "remote": {
     "title": "远程控制",
     "statusRunning": "正在运行，可通过飞书控制",

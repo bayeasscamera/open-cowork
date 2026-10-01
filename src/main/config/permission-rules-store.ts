@@ -35,6 +35,48 @@ let rules: PermissionRule[] = [...DEFAULT_RULES];
 const alwaysAllowBySession = new Map<string, Set<string>>();
 
 /**
+ * Non-interactive session lockdown (A2A tasks, and any future headless
+ * consumer): only these tools may run. Everything else is denied WITHOUT
+ * prompting — there is nobody present to answer a dialog, so `ask` degrades
+ * to `deny` for these sessions too.
+ *
+ * Conservative by design: read-only and web-read tools only. MCP tools
+ * (`mcp__…`) are excluded — their side effects are unknown.
+ */
+export const LOCKDOWN_ALLOWED_TOOLS: readonly string[] = [
+  'read',
+  'read_file',
+  'glob',
+  'grep',
+  'list_directory',
+  'ls',
+  'find',
+  'webfetch',
+  'websearch',
+];
+
+/** sessionId → lowercase allowed tool names. Empty = no lockdown. */
+const lockdownBySession = new Map<string, Set<string>>();
+
+/** Confine a session to an explicit tool allowlist (no prompts, ever). */
+export function setSessionToolLockdown(sessionId: string, allowedTools: readonly string[]): void {
+  lockdownBySession.set(
+    sessionId,
+    new Set(allowedTools.map((tool) => tool.toLowerCase()))
+  );
+}
+
+/** True while the session runs under a tool lockdown. */
+export function isSessionLockedDown(sessionId: string): boolean {
+  return lockdownBySession.has(sessionId);
+}
+
+/** Lift a session lockdown (also called by `forgetSessionPermissions`). */
+export function clearSessionToolLockdown(sessionId: string): void {
+  lockdownBySession.delete(sessionId);
+}
+
+/**
  * Sanitize an untrusted rules payload from IPC. Drops entries with empty
  * tool names, coerces invalid `action` values to `'ask'`, and preserves
  * optional string `pattern` fields. Returns null for non-array input.
@@ -124,6 +166,12 @@ export interface PermissionDecisionDetail {
    * Null when no bypass was active or the decision is not a deny.
    */
   overriddenBypass: 'autoApprove' | 'sessionAllow' | null;
+  /**
+   * True when the refusal comes from a non-interactive session lockdown
+   * rather than a user rule. The hook explains it differently (system policy,
+   * not user intent) so the agent adapts to read-only work.
+   */
+  lockdownRefusal: boolean;
 }
 
 export function decidePermissionWithDetail(
@@ -147,26 +195,59 @@ export function decidePermissionWithDetail(
       const session = alwaysAllowBySession.get(sessionId);
       if (session?.has('*') || session?.has(lowered)) overriddenBypass = 'sessionAllow';
     }
-    return { decision: 'deny', matchedDenyRule: { ...rule }, overriddenBypass };
+    return { decision: 'deny', matchedDenyRule: { ...rule }, overriddenBypass, lockdownRefusal: false };
   }
 
-  if (autoApproveAll) return { decision: 'allow', matchedDenyRule: null, overriddenBypass: null };
+  // Step 0b — non-interactive lockdown (A2A). Tools outside the allowlist are
+  // denied without prompting; `ask` also degrades to `deny` because nobody is
+  // present to answer. Explicit allow rules and user bypasses still work for
+  // the listed tools.
+  const lockdown = lockdownBySession.get(sessionId);
+  if (lockdown && !lockdown.has(lowered)) {
+    return { decision: 'deny', matchedDenyRule: null, overriddenBypass: null, lockdownRefusal: true };
+  }
+
+  if (autoApproveAll) return { decision: 'allow', matchedDenyRule: null, overriddenBypass: null, lockdownRefusal: false };
 
   const session = alwaysAllowBySession.get(sessionId);
   if (session?.has('*') || session?.has(lowered)) {
-    return { decision: 'allow', matchedDenyRule: null, overriddenBypass: null };
+    return { decision: 'allow', matchedDenyRule: null, overriddenBypass: null, lockdownRefusal: false };
   }
 
   for (const rule of rules) {
     if (rule.tool.toLowerCase() !== lowered) continue;
     if (rule.pattern && !matchesPattern(rule.pattern, inputStr)) continue;
+    const action = VALID_ACTIONS.has(rule.action) ? rule.action : 'ask';
+    if (action === 'ask' && lockdown) {
+      return { decision: 'deny', matchedDenyRule: null, overriddenBypass: null, lockdownRefusal: true };
+    }
     return {
-      decision: VALID_ACTIONS.has(rule.action) ? rule.action : 'ask',
+      decision: action,
       matchedDenyRule: null,
       overriddenBypass: null,
+      lockdownRefusal: false,
     };
   }
-  return { decision: 'ask', matchedDenyRule: null, overriddenBypass: null };
+  if (lockdown) {
+    // Unknown tools default to `ask` — unanswerable here, so deny.
+    return { decision: 'deny', matchedDenyRule: null, overriddenBypass: null, lockdownRefusal: true };
+  }
+  return { decision: 'ask', matchedDenyRule: null, overriddenBypass: null, lockdownRefusal: false };
+}
+
+/**
+ * The explanation handed to the agent when a NON-INTERACTIVE session lockdown
+ * (A2A task) refuses a tool call. System policy, not user intent: the agent
+ * must stay within read-only work and say so, rather than retry or stall.
+ */
+export function describeLockdownRefusal(toolName: string): string {
+  return (
+    `Tool '${toolName}' is not available in this non-interactive session: ` +
+    `only read-only tools (read, search, list, fetch) are allowed and no ` +
+    `permission prompt can be answered here. Complete the task with the ` +
+    `information you can read, and say explicitly in your answer what you ` +
+    `could not do because write access is disabled — do not retry the call.`
+  );
 }
 
 /**
@@ -193,6 +274,7 @@ export function rememberAlwaysAllow(sessionId: string, toolName: string): void {
 
 export function forgetSessionPermissions(sessionId: string): void {
   alwaysAllowBySession.delete(sessionId);
+  lockdownBySession.delete(sessionId);
 }
 
 function safeStringify(v: unknown): string {

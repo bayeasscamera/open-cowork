@@ -15,7 +15,7 @@ import {
 } from './pi-agent-access';
 import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
-import { decidePermissionWithDetail, describeDenyRefusal, rememberAlwaysAllow } from '../config/permission-rules-store';
+import { decidePermissionWithDetail, describeDenyRefusal, describeLockdownRefusal, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { log, logWarn, logError } from '../utils/logger';
 
 export type PermissionRequestResult = 'allow' | 'deny' | 'allow_always';
@@ -81,11 +81,8 @@ export function installPermissionHook(options: PermissionHookOptions): void {
       const toolName: string = ctx.toolCall?.name ?? '';
       const input: Record<string, unknown> = ctx.args ?? {};
 
-      const { decision, matchedDenyRule, overriddenBypass } = decidePermissionWithDetail(
-        options.sessionId,
-        toolName,
-        input
-      );
+      const { decision, matchedDenyRule, overriddenBypass, lockdownRefusal } =
+        decidePermissionWithDetail(options.sessionId, toolName, input);
       // Human-readable name for prompts/messages (e.g. MCP sanitized
       // 'mcp__chrome__chrome_screenshot__ab12' → 'chrome_screenshot').
       // Rule matching and rememberAlwaysAllow still use the canonical
@@ -94,14 +91,18 @@ export function installPermissionHook(options: PermissionHookOptions): void {
 
       if (decision === 'deny') {
         // A user deny rule names itself so the agent can attribute the refusal
-        // and adapt; a structural deny (e.g. subagent hard-deny) falls back to
-        // the generic wording. Either way the model must react, not stall.
+        // and adapt; a lockdown refusal explains the read-only policy; a
+        // structural deny (e.g. subagent hard-deny) falls back to the generic
+        // wording. Either way the model must react, not stall.
         const reason = matchedDenyRule
           ? describeDenyRefusal(displayName, matchedDenyRule)
-          : `Tool '${displayName}' is denied by your permission rules.`;
+          : lockdownRefusal
+            ? describeLockdownRefusal(displayName)
+            : `Tool '${displayName}' is denied by your permission rules.`;
         log(`[CoworkAgentRunner] Tool '${toolName}' denied by rule`, {
           rule: matchedDenyRule ?? undefined,
           overriddenBypass: overriddenBypass ?? undefined,
+          lockdownRefusal,
         });
         return { block: true, reason };
       }

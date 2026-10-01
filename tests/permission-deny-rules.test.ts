@@ -100,6 +100,11 @@ describe('non-deny behavior unchanged', () => {
   it('detail reports no rule and no override on the allow path', () => {
     setAutoApproveAll(true);
     const detail = decidePermissionWithDetail('s1', 'read', {});
-    expect(detail).toEqual({ decision: 'allow', matchedDenyRule: null, overriddenBypass: null });
+    expect(detail).toEqual({
+      decision: 'allow',
+      matchedDenyRule: null,
+      overriddenBypass: null,
+      lockdownRefusal: false,
+    });
   });
 });

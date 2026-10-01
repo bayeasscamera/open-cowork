@@ -624,6 +624,17 @@ export interface PermissionRule {
   action: 'allow' | 'deny' | 'ask';
 }
 
+/** Status of the opt-in Agent-to-Agent server (token itself never included). */
+export interface A2AStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  url: string;
+  hasToken: boolean;
+  /** Masked preview (`••••abcd`) for display; the full token is shown once on regenerate. */
+  tokenPreview: string;
+}
+
 // IPC Event types
 /**
  * Localized labels for the application menu (macOS). The main process has no

@@ -1221,6 +1221,25 @@
     "pickerNone": "No time slots selected yet",
     "pickerSuggestions": "Suggestions"
   },
+  "a2a": {
+    "title": "Agent-to-Agent (A2A)",
+    "desc": "Expose this app as an A2A agent over loopback HTTP so other agents can delegate read-only work (questions, code search, web lookup). Tasks run non-interactively: no file writes, no shell, no permission prompts. Disabled by default.",
+    "enable": "Enable",
+    "disable": "Disable",
+    "loading": "Loading A2A status…",
+    "endpoint": "Endpoint",
+    "state": "State",
+    "running": "Enabled and listening",
+    "enabledNotRunning": "Enabled but not listening (restart the app)",
+    "disabled": "Disabled",
+    "token": "Token",
+    "newTokenOnce": "New token — copy it now, it will only be shown once:",
+    "copyToken": "Copy token",
+    "regenerate": "Regenerate token",
+    "toggleFailed": "Could not toggle the A2A server.",
+    "regenerateFailed": "Could not regenerate the token.",
+    "copyFailed": "Could not copy to clipboard."
+  },
   "remote": {
     "title": "Remote Control",
     "statusRunning": "Running. Available through Feishu.",

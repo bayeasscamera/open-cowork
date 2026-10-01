@@ -33,6 +33,7 @@ import type {
   DelegationSettings,
   SwarmStats,
   DelegationStats,
+  A2AStatus,
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type { HealthReport } from '../shared/health-report';
@@ -565,6 +566,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   diagnostics: {
     report: (sessionId?: string | null): Promise<HealthReport> =>
       ipcRenderer.invoke('diagnostics.report', { sessionId: sessionId ?? null }),
+  },
+
+  /**
+   * Agent-to-Agent server controls. The bearer token itself is only ever
+   * returned once (on regenerate) — status carries a masked preview.
+   */
+  a2a: {
+    getStatus: (): Promise<A2AStatus> => ipcRenderer.invoke('a2a.getStatus'),
+    setEnabled: (enabled: boolean): Promise<A2AStatus> =>
+      ipcRenderer.invoke('a2a.setEnabled', enabled),
+    regenerateToken: (): Promise<{ token: string; status: A2AStatus }> =>
+      ipcRenderer.invoke('a2a.regenerateToken'),
   },
 
   // Window control methods
@@ -1338,6 +1351,11 @@ declare global {
       };
       diagnostics: {
         report: (sessionId?: string | null) => Promise<HealthReport>;
+      };
+      a2a: {
+        getStatus: () => Promise<A2AStatus>;
+        setEnabled: (enabled: boolean) => Promise<A2AStatus>;
+        regenerateToken: () => Promise<{ token: string; status: A2AStatus }>;
       };
       config: {
         get: () => Promise<AppConfig>;
