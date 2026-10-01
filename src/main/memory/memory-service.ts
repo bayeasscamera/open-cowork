@@ -97,6 +97,18 @@ const PROJECT_MEMORY_ITEM_LIMIT = 12;
 const PROJECT_MEMORY_CHAR_BUDGET = 2000;
 const PROJECT_MEMORY_MIN_CONFIDENCE = 0.5;
 
+/**
+ * Character budget for one raw transcript in a prompt.
+ *
+ * 24k is roughly 6k tokens — enough for a long exchange with context left over
+ * for the conversation, and a fraction of any supported context window. Sized
+ * against the OTHER memory paths rather than the model: this is a navigation
+ * aid, not the primary evidence, and the chunks and summaries it sits beside
+ * are already capped far lower. A transcript that does not fit here should be
+ * reached through a narrower chunk, which is what `expand_chunk` is for.
+ */
+const RAW_SESSION_CHAR_BUDGET = 24_000;
+
 interface ExtractionBundle {
   sessionRow: SessionRow;
   session: MemoryIngestionInput['session'];
@@ -1015,10 +1027,8 @@ export class MemoryService {
           if (session) {
             rawSessions.set(
               action.sessionId,
-              `[Raw Session ${action.sessionId} | Date: ${session.sessionDate} | Source: ${session.sourceWorkspace || 'global'}]\n${JSON.stringify(
-                session.rawSession,
-                null,
-                2
+              `[Raw Session ${action.sessionId} | Date: ${session.sessionDate} | Source: ${session.sourceWorkspace || 'global'}]\n${this.renderBoundedTranscript(
+                session.rawSession
               )}`
             );
           }
@@ -1033,6 +1043,67 @@ export class MemoryService {
     }
 
     return visibleContext;
+  }
+
+  /**
+   * Renders a stored transcript for injection, bounded in BOTH directions:
+   * a character cap, and a cap on how many raw turns are carried.
+   *
+   * WHY THIS EXISTS: `get_raw_session` is a navigation decision the MODEL
+   * makes, and the shipping implementation handed it `JSON.stringify(rawSession,
+   * null, 2)` with no bound. A single 1.5 MB turn produced a 3 MB prompt —
+   * measured, not estimated — which on most providers is the whole context
+   * window spent on one past transcript, on the model's own initiative.
+   *
+   * Three properties matter more than the number chosen:
+   *
+   *  - WHOLE TURNS ONLY. A turn is cut at a boundary and marked. Cutting
+   *    mid-sentence produces text that reads as complete but is not, and the
+   *    model will quote it.
+   *  - IT SAYS SO. A silently shortened transcript is worse than none: the
+   *    model would treat an excerpt as the whole record. The marker names the
+   *    omission and how much was left out.
+   *  - KEEP THE HEAD. The start of a session carries the task that began it;
+   *    the tail is closer to whatever the current turn already holds.
+   *
+   * The pretty-printing indent is dropped deliberately: it cost 40%+ of the
+   * characters and carried no information the model reads.
+   */
+  private renderBoundedTranscript(rawSession: unknown): string {
+    const turns = this.asTranscriptTurns(rawSession);
+    const lines: string[] = [];
+    let budget = RAW_SESSION_CHAR_BUDGET;
+    let omitted = 0;
+
+    for (let i = 0; i < turns.length; i += 1) {
+      const turn = turns[i];
+      const role = turn.role || 'unknown';
+      const line = `[${i + 1}] ${role}: ${turn.content ?? ''}`;
+      if (line.length + 1 > budget) {
+        // Whole turns only: drop this one and everything after it.
+        omitted = turns.length - i;
+        break;
+      }
+      lines.push(line);
+      budget -= line.length + 1;
+    }
+
+    if (omitted > 0) {
+      lines.push(
+        `[... ${omitted} further turn${omitted === 1 ? '' : 's'} omitted: the transcript was truncated at the ${RAW_SESSION_CHAR_BUDGET}-character injection budget. Ask for a narrower window if you need them. ...]`
+      );
+    }
+    return lines.join('\n');
+  }
+
+  private asTranscriptTurns(rawSession: unknown): MemoryTranscriptTurn[] {
+    if (!Array.isArray(rawSession)) {
+      return [];
+    }
+    return rawSession.filter(
+      (entry): entry is MemoryTranscriptTurn =>
+        Boolean(entry) && typeof (entry as { content?: unknown }).content === 'string'
+    );
   }
 
   private formatSummariesOnly(retrieval: ProgressiveRetrievalResult): string {

@@ -332,11 +332,44 @@ describe('WorkflowRegistry persistence', () => {
     await registry.persist('session-1');
     expect(await fs.access(persistence.sessionPath('session-1')).then(() => true)).toBe(true);
 
-    registry.remove('session-1');
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // AWAIT the removal, do not sleep past it. The old `void` + 20ms sleep was
+    // a race: the delete is queued behind any in-flight write and lands on an
+    // fs callback, so on a loaded machine 20ms was not enough and the file was
+    // still there. It passed in isolation and failed in the full suite, which
+    // is the signature of a timing bug rather than a logic one.
+    await registry.remove('session-1');
     expect(
       await fs
         .access(persistence.sessionPath('session-1'))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
+  });
+
+  it('reports the removal even when the file is already gone', async () => {
+    // Idempotent: dropping a session twice is what a retrying caller actually
+    // does, and the second call must resolve rather than reject.
+    const persistence = new WorkflowPersistence({ baseDir: dir });
+    const { registry } = buildApprovedRegistry(persistence);
+    await registry.persist('session-1');
+
+    await registry.remove('session-1');
+    await expect(registry.remove('session-1')).resolves.toBeUndefined();
+  });
+
+  it('cancels a pending debounced save instead of letting it resurrect the file', async () => {
+    const persistence = new WorkflowPersistence({ baseDir: dir });
+    const { registry } = buildApprovedRegistry(persistence);
+    // Queue a write that has not landed yet, then drop the session.
+    await registry.persist('session-2');
+    await registry.remove('session-2');
+
+    // The removal chains after the queued write, so a late save cannot put the
+    // snapshot back. Waiting on the timer is what proves the ordering held.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(
+      await fs
+        .access(persistence.sessionPath('session-2'))
         .then(() => true)
         .catch(() => false)
     ).toBe(false);

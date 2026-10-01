@@ -339,7 +339,22 @@ export class WorkflowRegistry {
     return this.workspaceKeys.get(sessionId) ?? null;
   }
 
-  public remove(sessionId: string): void {
+  /**
+   * Drops a session from the registry and removes its persisted snapshot.
+   *
+   * RETURNS THE REMOVAL PROMISE, which is the whole point of the signature.
+   * The delete is queued behind any write already in flight for this file —
+   * that ordering is deliberate, so a late snapshot cannot resurrect a dropped
+   * session — which makes it genuinely asynchronous. A `void` return forced
+   * callers to guess how long to wait, and guessing (a 20ms sleep) is how a
+   * test that passed in isolation started failing in the full suite.
+   *
+   * The in-memory state is dropped synchronously, so a caller that only cares
+   * about the registry does not have to await anything; the returned promise
+   * matters only to callers that must know the file is gone. It never rejects:
+   * removing a session that was never persisted is a normal retry, not a fault.
+   */
+  public remove(sessionId: string): Promise<void> {
     const timer = this.pendingSaves.get(sessionId);
     if (timer) {
       clearTimeout(timer);
@@ -347,7 +362,7 @@ export class WorkflowRegistry {
     }
     this.entries.delete(sessionId);
     this.workspaceKeys.delete(sessionId);
-    void this.options.persistence?.removeSession(sessionId);
+    return this.options.persistence?.removeSession(sessionId) ?? Promise.resolve();
   }
 
   public clear(): void {
