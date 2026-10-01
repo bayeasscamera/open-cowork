@@ -340,8 +340,12 @@ describe('memory smoke harness', () => {
 
     expect(sameWorkspacePrompt).toContain('gateway token rotation');
     expect(sameWorkspacePrompt).toContain('<experience_memory');
-    expect(otherWorkspacePrompt).toContain('workspace A');
-    expect(otherWorkspacePrompt).toContain('source=/repo/workspace-a');
+    // Strict workspace isolation: from workspace B, workspace A's experience
+    // content must NOT leak into the prompt — only the GLOBAL core block
+    // (shared learnings, no workspace attribution) is still visible.
+    expect(otherWorkspacePrompt).not.toContain('<experience_memory');
+    expect(otherWorkspacePrompt).not.toContain('source=/repo/workspace-a');
+    expect(otherWorkspacePrompt).not.toContain('gateway token rotation');
     expect(otherWorkspacePrompt).toContain('<core_memory>');
   });
 
