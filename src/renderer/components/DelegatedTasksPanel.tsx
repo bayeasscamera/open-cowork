@@ -5,6 +5,7 @@ import {
   FileText,
   Image as ImageIcon,
   RotateCcw,
+  Send,
   Settings,
   Trash2,
   X,
@@ -59,6 +60,8 @@ export function DelegatedTasksPanel() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [redirectDraft, setRedirectDraft] = useState('');
+  const [redirectNotice, setRedirectNotice] = useState<string | null>(null);
   const requestId = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -103,6 +106,23 @@ export function DelegatedTasksPanel() {
     const result = await window.electronAPI.backgroundTasks.retry(taskId);
     if (!result.success) setError(result.error ?? t('delegatedTasks.actionsError'));
     void refresh();
+  };
+
+  const handleRedirect = async (taskId: string) => {
+    const text = redirectDraft.trim();
+    if (!text) return;
+    setError(null);
+    setRedirectNotice(null);
+    const result = await window.electronAPI.backgroundTasks.redirect(taskId, text);
+    if (result.success) {
+      setRedirectDraft('');
+      setRedirectNotice(t('delegatedTasks.redirectSent'));
+    } else {
+      // A refusal is surfaced verbatim: it is the user who must know that a
+      // redirection was refused rather than silently delivered.
+      setRedirectNotice(null);
+      setError(result.error ?? t('delegatedTasks.actionsError'));
+    }
   };
 
   const handleDelete = async (taskId: string) => {
@@ -312,6 +332,45 @@ export function DelegatedTasksPanel() {
                       </li>
                     ))}
                 </ul>
+              </section>
+            )}
+
+            {/* Mid-task redirection — only while the task is running */}
+            {selected.status === 'running' && (
+              <section>
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                  {t('delegatedTasks.redirectTitle')}
+                </h4>
+                <p className="mt-0.5 text-[11px] leading-4 text-text-muted">
+                  {t('delegatedTasks.redirectHint')}
+                </p>
+                <textarea
+                  value={redirectDraft}
+                  onChange={(e) => setRedirectDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      void handleRedirect(selected.id);
+                    }
+                  }}
+                  rows={2}
+                  maxLength={2000}
+                  placeholder={t('delegatedTasks.redirectPlaceholder')}
+                  className="mt-1.5 w-full resize-none rounded-lg border border-border bg-surface px-2 py-1.5 text-[12px] text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                />
+                <div className="mt-1.5 flex items-center gap-2">
+                  <button
+                    onClick={() => void handleRedirect(selected.id)}
+                    disabled={!redirectDraft.trim()}
+                    className="flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-[12px] font-medium text-white disabled:opacity-40 hover:bg-accent/90 transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    {t('delegatedTasks.actions.redirect')}
+                  </button>
+                  {redirectNotice && (
+                    <span className="text-[11px] text-emerald-500">{redirectNotice}</span>
+                  )}
+                </div>
               </section>
             )}
 

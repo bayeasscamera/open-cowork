@@ -979,7 +979,8 @@
     "actions": {
       "cancel": "取消",
       "retry": "重试",
-      "delete": "删除"
+      "delete": "删除",
+      "redirect": "发送重定向"
     },
     "status": {
       "running": "进行中",
@@ -993,7 +994,11 @@
       "assumptions": "假设",
       "limits": "局限",
       "files": "修改的文件"
-    }
+    },
+    "redirectTitle": "重定向此任务",
+    "redirectHint": "为剩余工作追加指引。任务会继续运行，已完成的工作不会丢失。重定向无法授予新的权限。",
+    "redirectPlaceholder": "例如：先专注于 API 层，暂时跳过界面",
+    "redirectSent": "重定向已发送"
   },
   "backgroundTasks": {
     "badge": "后台任务运行中"

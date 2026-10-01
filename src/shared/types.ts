@@ -747,6 +747,10 @@ export type ClientEvent =
   | { type: 'backgroundTasks.list'; payload: { sessionId?: string } }
   | { type: 'backgroundTasks.get'; payload: { taskId: string } }
   | { type: 'backgroundTasks.cancel'; payload: { taskId: string } }
+  | {
+      type: 'backgroundTasks.redirect';
+      payload: { taskId: string; text: string };
+    }
   | { type: 'backgroundTasks.retry'; payload: { taskId: string } }
   | { type: 'backgroundTasks.delete'; payload: { taskId: string } }
   | { type: 'backgroundTasks.getSettings'; payload: Record<string, never> }

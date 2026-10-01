@@ -162,6 +162,7 @@ const ALLOWED_CLIENT_EVENT_MAP: Record<ClientEvent['type'], true> = {
   'backgroundTasks.list': true,
   'backgroundTasks.get': true,
   'backgroundTasks.cancel': true,
+  'backgroundTasks.redirect': true,
   'backgroundTasks.retry': true,
   'backgroundTasks.delete': true,
   'backgroundTasks.getSettings': true,
@@ -381,6 +382,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       taskId: string
     ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
       invoke({ type: 'backgroundTasks.cancel', payload: { taskId } }),
+    /**
+     * Redirect a RUNNING sub-agent without interrupting it: the work already
+     * done is kept and the guidance is delivered on its next turn. A redirect
+     * that asks to widen the sub-agent's permissions or confinement is refused
+     * by the main process and reported back here.
+     */
+    redirect: (
+      taskId: string,
+      text: string
+    ): Promise<{ success: boolean; taskId?: string; error?: string; code?: string }> =>
+      invoke({ type: 'backgroundTasks.redirect', payload: { taskId, text } }),
     retry: (
       taskId: string
     ): Promise<{ success: boolean; taskId?: string; error?: string }> =>
@@ -1241,6 +1253,10 @@ declare global {
         cancel: (
           taskId: string
         ) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>;
+        redirect: (
+          taskId: string,
+          text: string
+        ) => Promise<{ success: boolean; taskId?: string; error?: string; code?: string }>;
         retry: (
           taskId: string
         ) => Promise<{ success: boolean; taskId?: string; error?: string }>;

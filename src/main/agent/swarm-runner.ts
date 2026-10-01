@@ -67,6 +67,7 @@ import type {
 } from './multi-agent-coordinator';
 import { buildCorrectiveContext } from './cross-verification';
 import { checkFilesSemantics, formatSemanticIssues } from './lsp-verification';
+import { registerSubAgent, unregisterSubAgent } from './sub-agent-redirect';
 import { resolveSubAgentCompactionSettings } from './compaction-policy';
 import { shouldRetryOnContextOverflow } from './context-overflow';
 import { formatSkillHint, selectRelevantSkills, skillSelectionDirs } from './skill-selection';
@@ -931,6 +932,11 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
     );
   }
 
+  // Register the live session so the user can redirect this sub-agent while it
+  // runs. Unregistered in the finally below, so the registry only ever holds
+  // sessions that are genuinely in flight.
+  registerSubAgent(args.task.id, session, args.task.role);
+
   const modifiedFiles = new Set<string>();
   let finalText = '';
   let inputTokens = 0;
@@ -1027,6 +1033,9 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
     unsubscribe();
+    // Stop accepting redirections the moment the session ends, so a later
+    // redirect cannot be "delivered" into a dead session.
+    unregisterSubAgent(args.task.id);
     if (team) {
       // Last boundary: answer questions that arrived just before the task
       // ended, then stop being answerable. A failing drain must never break

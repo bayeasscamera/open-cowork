@@ -549,7 +549,8 @@
     "actions": {
       "cancel": "Annuler",
       "retry": "Relancer",
-      "delete": "Supprimer"
+      "delete": "Supprimer",
+      "redirect": "Envoyer la redirection"
     },
     "status": {
       "running": "en cours",
@@ -563,7 +564,11 @@
       "assumptions": "Hypothèses",
       "limits": "Limites",
       "files": "Fichiers modifiés"
-    }
+    },
+    "redirectTitle": "Rediriger cette tâche",
+    "redirectHint": "Ajoute une consigne pour le travail restant. La tâche continue et rien de ce qui est déjà fait n'est perdu. Une redirection ne peut pas accorder de nouvelles permissions.",
+    "redirectPlaceholder": "ex. Se concentrer d’abord sur la couche API, laisser l’interface de côté",
+    "redirectSent": "Redirection envoyée"
   },
   "backgroundTasks": {
     "badge": "tâche de fond en cours"

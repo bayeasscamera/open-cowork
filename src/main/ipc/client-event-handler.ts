@@ -35,6 +35,7 @@ import {
   setDelegationSettings,
 } from '../agent/background-delegations';
 import { getSwarmStats } from '../agent/swarm-stats';
+import { sendRedirect } from '../agent/sub-agent-redirect';
 import { listWorkspaceDocs, readWorkspaceDoc, writeWorkspaceDoc } from '../documents/document-doc';
 import { SystemNotifier } from '../utils/system-notifier';
 import { sendToRenderer } from '../events/renderer-sender';
@@ -525,6 +526,21 @@ export async function handleClientEvent(
       } catch (error) {
         logError('[IPC] backgroundTasks.cancel failed:', error);
         return { success: false, error: 'Failed to cancel task' };
+      }
+    }
+
+    case 'backgroundTasks.redirect': {
+      try {
+        // A redirection can never widen a sub-agent's confinement — that is
+        // enforced structurally by the tool layer and, for explicit requests,
+        // refused here and reported back to the user.
+        const result = await sendRedirect(event.payload.taskId, event.payload.text);
+        return result.ok
+          ? { success: true, taskId: result.taskId }
+          : { success: false, error: result.rejection.reason, code: result.rejection.code };
+      } catch (error) {
+        logError('[IPC] backgroundTasks.redirect failed:', error);
+        return { success: false, error: 'Failed to send the redirection' };
       }
     }
 

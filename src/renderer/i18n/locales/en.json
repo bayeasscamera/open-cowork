@@ -957,7 +957,8 @@
     "actions": {
       "cancel": "Cancel",
       "retry": "Retry",
-      "delete": "Delete"
+      "delete": "Delete",
+      "redirect": "Send redirection"
     },
     "status": {
       "running": "running",
@@ -971,7 +972,11 @@
       "assumptions": "Assumptions",
       "limits": "Limits",
       "files": "Modified files"
-    }
+    },
+    "redirectTitle": "Redirect this task",
+    "redirectHint": "Adds guidance for the work that remains. The task keeps running and nothing already done is lost. A redirection cannot grant new permissions.",
+    "redirectPlaceholder": "e.g. Focus on the API layer first, skip the UI for now",
+    "redirectSent": "Redirection sent"
   },
   "backgroundTasks": {
     "badge": "background task running"
