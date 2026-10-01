@@ -74,6 +74,21 @@ describe('PanelDock — unified workspace dock replaces the floating pills', () 
     expect(dock).toContain("t('panelDock.shortcut'");
   });
 
+  // Regression: the ⌘/Ctrl hint used to be derived from `navigator.platform`,
+  // which Apple has deprecated (it freezes to "MacIntel" on every device) and
+  // which describes the browser rather than the running app. The dock now reads
+  // the real platform from the preload, matching Titlebar, SandboxSetupDialog
+  // and SettingsSandbox — it was the last component still sniffing the UA.
+  it('derives the ⌘/Ctrl shortcut hint from the preload platform, not the user agent', () => {
+    expect(dock).toContain("window.electronAPI?.platform === 'darwin'");
+    // Strip comments before asserting the absence of the sniffing APIs: the
+    // doc block above isMacPlatform() names them precisely to explain why they
+    // are no longer used.
+    const code = dock.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toContain('navigator.platform');
+    expect(code).not.toContain('navigator.userAgent');
+  });
+
   it('flashes the delegated-tasks badge green when a task completes', () => {
     const tailwind = read('tailwind.config.js');
     expect(tailwind).toContain("'badge-flash'");

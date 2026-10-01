@@ -42,9 +42,19 @@ const isInspectorDescriptor = (
 ): panel is WorkspacePanelDescriptor & { id: WorkspaceInspectorPanelId } =>
   panel.kind === 'inspector';
 
+/**
+ * True on macOS, so shortcuts are labelled ⌘1..⌘7 instead of Ctrl+1..Ctrl+7.
+ *
+ * Reads the real platform from the preload rather than sniffing
+ * `navigator.platform`, which Apple has deprecated (it freezes to
+ * "MacIntel" on every device, including iPads) and which reports the
+ * *browser's* platform rather than the one the app is running on. This is the
+ * same `window.electronAPI?.platform === 'darwin'` check already used by
+ * Titlebar, SandboxSetupDialog and SettingsSandbox — PanelDock was the last
+ * component still going through the user agent.
+ */
 const isMacPlatform = (): boolean =>
-  typeof navigator !== 'undefined' &&
-  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+  typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
 
 const shortcutLabel = (index: number): string =>
   `${isMacPlatform() ? '⌘' : 'Ctrl+'}${index}`;
