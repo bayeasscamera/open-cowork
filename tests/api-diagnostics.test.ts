@@ -81,12 +81,15 @@ vi.mock('../src/main/utils/logger', () => ({
 
 import { discoverLocalOllama, runDiagnostics } from '../src/main/config/api-diagnostics';
 import { resetOllamaModelIndexCache } from '../src/main/config/ollama-api';
+import { getCapabilityCache } from '../src/main/config/capability-cache';
 
 describe('runDiagnostics TLS step', () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     resetOllamaModelIndexCache();
+    // The 24h disk cache would otherwise leak results between tests.
+    getCapabilityCache().clear();
     mocks.dnsLookup.mockReset();
     mocks.tcpConnect.mockReset();
     mocks.tlsConnect.mockReset();

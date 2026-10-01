@@ -36,12 +36,15 @@ vi.mock('../src/main/utils/retry.ts', () => ({
 
 import { discoverLocalOllama } from '../src/main/config/api-diagnostics';
 import { resetOllamaModelIndexCache } from '../src/main/config/ollama-api';
+import { getCapabilityCache } from '../src/main/config/capability-cache';
 
 describe('discoverLocalOllama', () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     resetOllamaModelIndexCache();
+    // The 24h disk cache would otherwise leak results between tests.
+    getCapabilityCache().clear();
     global.fetch = vi.fn();
   });
 
@@ -127,5 +130,26 @@ describe('discoverLocalOllama', () => {
     expect(result.available).toBe(true);
     expect(result.status).toBe('models_available');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves a fresh disk entry without network (stale-while-revalidate)', async () => {
+    vi.mocked(global.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: [{ id: 'cached-model' }] }), { status: 200 })
+    );
+    const first = await discoverLocalOllama();
+    expect(first.status).toBe('models_available');
+
+    // Endpoint goes down; the disk entry still answers from cache…
+    vi.mocked(global.fetch).mockRejectedValue(new Error('fetch failed'));
+    resetOllamaModelIndexCache();
+    const second = await discoverLocalOllama();
+    expect(second.available).toBe(true);
+    expect(second.models).toEqual(['cached-model']);
+    // …while the background refresh corrects the entry for the next call.
+    await vi.waitFor(() => {
+      expect(getCapabilityCache().getStale('ollama-discovery')).toMatchObject({
+        available: false,
+      });
+    });
   });
 });

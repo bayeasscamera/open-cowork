@@ -228,3 +228,35 @@ export function resetSecretResolver(): void {
 
 /** The precedence order, re-exported so Settings renders it in the same order. */
 export { SECRET_SOURCE_PRECEDENCE };
+
+/**
+ * Race a promise against a wall-clock budget. On expiry the slow work is NOT
+ * cancelled (a CLI call finishes on its own timeout) — the caller just stops
+ * waiting for it. Used at boot so a locked vault cannot hold the window back.
+ */
+export function withBudget<T>(work: Promise<T>, budgetMs: number): Promise<T | null> {
+  if (!Number.isFinite(budgetMs) || budgetMs < 0) return work.then((value) => value);
+  return new Promise<T | null>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(null);
+    }, budgetMs);
+    if (typeof timer.unref === 'function') timer.unref();
+    work.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      }
+    );
+  });
+}

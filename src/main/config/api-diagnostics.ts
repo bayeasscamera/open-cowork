@@ -33,6 +33,10 @@ import type {
 import { log, logWarn } from '../utils/logger';
 import { probeWithSdk } from '../agent/sdk-one-shot';
 import { fetchOllamaModelIndex } from './ollama-api';
+import { getCapabilityCache, CAPABILITY_CACHE_TTL_MS } from './capability-cache';
+
+/** Disk-cache key for the last local-Ollama discovery (endpoints move rarely). */
+const OLLAMA_DISCOVERY_CACHE_KEY = 'ollama-discovery';
 
 const STEP_NAMES: DiagnosticStepName[] = ['dns', 'tcp', 'tls', 'auth', 'model'];
 const TCP_TIMEOUT_MS = 5000;
@@ -710,21 +714,71 @@ export async function discoverLocalOllama(input?: {
       ? normalizeOllamaBaseUrl(preferredBaseUrl) || DEFAULT_OLLAMA_BASE_URL
       : DEFAULT_OLLAMA_BASE_URL;
 
+  // Stale-while-revalidate: a fresh disk entry answers instantly (no network
+  // on the Settings path) while a background refresh keeps it honest. A
+  // provider that went down is still detected — one Settings-open later, from
+  // the refresh — never silently trusted forever (24h TTL).
+  const cache = getCapabilityCache();
+  const cached = cache.get<LocalOllamaDiscoveryResult>(
+    OLLAMA_DISCOVERY_CACHE_KEY,
+    CAPABILITY_CACHE_TTL_MS
+  );
+  if (cached && cached.baseUrl === baseUrl) {
+    void fetchOllamaModelIndex({ baseUrl })
+      .then((result) => {
+        const models = result.models.map((item) => item.id);
+        cache.set(OLLAMA_DISCOVERY_CACHE_KEY, {
+          available: true,
+          baseUrl: result.baseUrl,
+          models,
+          status: models.length > 0 ? 'models_available' : 'service_available',
+        } satisfies LocalOllamaDiscoveryResult);
+      })
+      .catch(() => {
+        cache.set(OLLAMA_DISCOVERY_CACHE_KEY, {
+          available: false,
+          baseUrl,
+          status: 'unavailable',
+        } satisfies LocalOllamaDiscoveryResult);
+      });
+    return cached;
+  }
+
   try {
     const result = await fetchOllamaModelIndex({ baseUrl });
     const models = result.models.map((item) => item.id);
 
     if (!models?.length) {
       log('[Diagnostics] Local Ollama discovered without loaded models');
-      return { available: true, baseUrl: result.baseUrl, models: [], status: 'service_available' };
+      const outcome = {
+        available: true,
+        baseUrl: result.baseUrl,
+        models: [],
+        status: 'service_available',
+      } satisfies LocalOllamaDiscoveryResult;
+      cache.set(OLLAMA_DISCOVERY_CACHE_KEY, outcome);
+      return outcome;
     }
 
     log('[Diagnostics] Local Ollama discovered', {
       modelCount: models.length,
       baseUrl: result.baseUrl,
     });
-    return { available: true, baseUrl: result.baseUrl, models, status: 'models_available' };
+    const outcome = {
+      available: true,
+      baseUrl: result.baseUrl,
+      models,
+      status: 'models_available',
+    } satisfies LocalOllamaDiscoveryResult;
+    cache.set(OLLAMA_DISCOVERY_CACHE_KEY, outcome);
+    return outcome;
   } catch {
-    return { available: false, baseUrl, status: 'unavailable' };
+    const outcome = {
+      available: false,
+      baseUrl,
+      status: 'unavailable',
+    } satisfies LocalOllamaDiscoveryResult;
+    cache.set(OLLAMA_DISCOVERY_CACHE_KEY, outcome);
+    return outcome;
   }
 }

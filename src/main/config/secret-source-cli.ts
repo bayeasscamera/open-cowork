@@ -19,6 +19,7 @@ import type {
 } from '../../shared/secret-source';
 import { isValidOnePasswordReference } from '../../shared/secret-source';
 import { logWarn } from '../utils/logger';
+import { getCapabilityCache, CAPABILITY_CACHE_TTL_MS } from './capability-cache';
 
 /** Bound every CLI call: a vault waiting on a biometric prompt must not hang boot. */
 const CLI_TIMEOUT_MS = 10_000;
@@ -89,8 +90,23 @@ function firstErrorLine(stderr: string): string {
   return line.length > 200 ? `${line.slice(0, 200)}…` : line;
 }
 
+/** Disk-cache key for "is this manager CLI installed (+ version)?". Lock state stays live. */
+function cliPresenceCacheKey(command: string): string {
+  return `cli-presence:${command}`;
+}
+
 /** Shared "is this binary installed?" probe. */
 async function probeInstalled(command: string): Promise<SecretSourceProbe> {
+  // CLI presence changes only when the user installs/upgrades something, so a
+  // 24h disk entry skips the spawn on every Settings open. Lock state is NOT
+  // cached — it is re-checked live by the caller on every probe.
+  const cached = getCapabilityCache().get<SecretSourceProbe>(
+    cliPresenceCacheKey(command),
+    CAPABILITY_CACHE_TTL_MS
+  );
+  if (cached && cached.installed) {
+    return { ...cached, unlocked: false, detail: undefined };
+  }
   const outcome = await runCommand(command, ['--version']);
   if (outcome.missingBinary) {
     return {
@@ -102,6 +118,7 @@ async function probeInstalled(command: string): Promise<SecretSourceProbe> {
   if (!outcome.ok) {
     // Present but unhappy (e.g. a wrapper that exits non-zero): treat as
     // installed so the UI offers the login flow rather than "install the CLI".
+    // Deliberately NOT cached: a broken wrapper may be fixed at any moment.
     return {
       installed: true,
       unlocked: false,
@@ -109,7 +126,9 @@ async function probeInstalled(command: string): Promise<SecretSourceProbe> {
     };
   }
   const version = outcome.stdout.trim().split(/\r?\n/)[0];
-  return { installed: true, unlocked: false, version };
+  const probe: SecretSourceProbe = { installed: true, unlocked: false, version };
+  getCapabilityCache().set(cliPresenceCacheKey(command), probe);
+  return probe;
 }
 
 /**

@@ -132,6 +132,14 @@ import {
   writeResultFileAtomic,
 } from './cli/headless-io';
 import { CrashGuard } from './utils/crash-guard';
+import { bootProfiler } from './startup/boot-perf';
+
+/**
+ * How long GUI boot waits for an external vault CLI before showing the window
+ * anyway (local keys are already applied; the vault answer lands in the
+ * background). Well under the 10s CLI timeout, well over a healthy unlock.
+ */
+const BOOT_EXTERNAL_SECRET_BUDGET_MS = 2_500;
 import {
   BackgroundJobRegistry,
   migrateLegacyDynamicSkillsToProposals,
@@ -895,12 +903,45 @@ app
   .whenReady()
   .then(async () => {
     // Apply saved config (this overrides .env if config exists). Must run
-    // before any session creation so provider env vars are in place. Async
-    // because a ConfigSet may resolve its key from an external vault CLI.
+    // before any session creation so provider env vars are in place.
+    //
+    // Boot budget: an external vault CLI (Bitwarden/1Password) can take up to
+    // 10s on a locked vault. In GUI mode the window must not wait for that —
+    // local keys apply synchronously, the vault answer lands in the background
+    // and is re-applied (see below). Headless keeps the full wait: it starts a
+    // session immediately, so there is nothing to show meanwhile.
+    bootProfiler.mark('whenReady-start');
     if (configStore.isConfigured()) {
       log('[Config] Applying saved configuration...');
-      await configStore.applyToEnv();
+      if (process.argv.includes('--headless')) {
+        await configStore.applyToEnv();
+      } else {
+        const { externalDeferred } = await configStore.applyToEnv({
+          externalBudgetMs: BOOT_EXTERNAL_SECRET_BUDGET_MS,
+        });
+        if (externalDeferred) {
+          void configStore.whenExternalSecretsSettled().then(async () => {
+            try {
+              await configStore.applyToEnv();
+              sendToRenderer({
+                type: 'config.status',
+                payload: {
+                  isConfigured: configStore.isConfigured(),
+                  config: configStore.getAll(),
+                },
+              });
+              log('[Config] Background vault resolution applied.');
+            } catch (error) {
+              logError(
+                '[Config] Background vault resolution failed:',
+                error instanceof Error ? error.message : String(error)
+              );
+            }
+          });
+        }
+      }
     }
+    bootProfiler.mark('config-applied');
 
     // Smoke test mode: verify the app can start, then exit cleanly
     if (process.argv.includes('--smoke-test')) {
@@ -1420,6 +1461,7 @@ app
 
     // Initialize database
     const db = initDatabase();
+    bootProfiler.mark('database-ready');
 
     pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
     memoryService = new MemoryService(db, {
@@ -1520,6 +1562,7 @@ app
 
     // Show window after core managers are ready so first-load actions can be handled.
     createWindow();
+    bootProfiler.mark('managers-ready-window-shown');
 
     // macOS: dock menu
     setMacDockMenu();
@@ -1527,6 +1570,8 @@ app
     // macOS: send initial system theme to renderer
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.on('did-finish-load', () => {
+        bootProfiler.mark('window-did-finish-load');
+        log(`[BootPerf] Boot stages (ms):\n${bootProfiler.format()}`);
         sendToRenderer({
           type: 'native-theme.changed',
           payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },

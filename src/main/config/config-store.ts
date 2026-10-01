@@ -36,7 +36,7 @@ import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-mo
 import type { ImageGenerationConfig } from '../../shared/types';
 import type { SecretSourceMap } from '../../shared/secret-source';
 import { normalizeSecretSourceMap } from './secret-source-normalize';
-import { getSecretResolver } from './secret-resolver';
+import { getSecretResolver, withBudget } from './secret-resolver';
 
 /**
  * Application configuration schema
@@ -882,6 +882,12 @@ function defaultProtocolForProvider(provider: ProviderType): CustomProtocolType 
 
 export class ConfigStore {
   private store: Store<AppConfig>;
+  /**
+   * Non-null while an external vault resolution is still in flight. Boot
+   * defers it off the critical path (see `applyToEnv` budget option); session
+   * start awaits it only in that window, and is free otherwise.
+   */
+  private pendingExternalSecrets: Promise<void> | null = null;
 
   constructor() {
     const storeOptions: StoreOptions<AppConfig> & { projectName?: string } = {
@@ -2001,7 +2007,7 @@ export class ConfigStore {
    * - Custom Anthropic: ANTHROPIC_API_KEY = apiKey
    * - OpenRouter: ANTHROPIC_AUTH_TOKEN = apiKey, ANTHROPIC_API_KEY = '' (proxy mode)
    */
-  async applyToEnv(): Promise<void> {
+  async applyToEnv(options?: { externalBudgetMs?: number }): Promise<{ externalDeferred: boolean }> {
     const config = this.getAll();
     const activeProfile = config.profiles?.[config.activeProfileKey] || {
       apiKey: config.apiKey,
@@ -2013,24 +2019,63 @@ export class ConfigStore {
     // Resolve the active ConfigSet's key from its configured SecretSource. A
     // failure (missing CLI, locked vault) leaves the key empty and logs the
     // reason rather than throwing — the caller decides what to surface.
+    //
+    // `externalBudgetMs` bounds how long BOOT waits for the vault CLI: on
+    // expiry the env keeps the local value and the resolution continues in the
+    // background (tracked by `pendingExternalSecrets`), so a locked vault
+    // cannot hold the window back. Omit the budget (settings save, headless)
+    // to wait for the full resolution as before.
     let effectiveApiKey = storedApiKey;
+    let externalDeferred = false;
     const source = config.secretSources?.[config.activeConfigSetId];
     if (source && source.kind !== 'local') {
-      const outcome = await getSecretResolver().resolveForConfigSet(
+      const resolution = getSecretResolver().resolveForConfigSet(
         config.activeConfigSetId,
         config.secretSources,
         storedApiKey
       );
-      if (outcome.error) {
-        log('[Config] External secret could not be resolved:', {
-          configSetId: config.activeConfigSetId,
-          kind: source.kind,
-          code: outcome.error.code,
-          reason: outcome.error.message,
-        });
-        effectiveApiKey = '';
+      if (options?.externalBudgetMs !== undefined) {
+        const budgeted = await withBudget(resolution, options.externalBudgetMs);
+        if (budgeted === null) {
+          // Budget expired: env keeps going with the local value; the vault
+          // answer lands via the tracked promise and the caller re-applies it.
+          externalDeferred = true;
+          this.pendingExternalSecrets = resolution.then(
+            () => {
+              this.pendingExternalSecrets = null;
+            },
+            () => {
+              this.pendingExternalSecrets = null;
+            }
+          );
+          log('[Config] External secret budget expired, deferring vault resolution to background:', {
+            configSetId: config.activeConfigSetId,
+            kind: source.kind,
+          });
+        } else if (budgeted.error) {
+          log('[Config] External secret could not be resolved:', {
+            configSetId: config.activeConfigSetId,
+            kind: source.kind,
+            code: budgeted.error.code,
+            reason: budgeted.error.message,
+          });
+          effectiveApiKey = '';
+        } else {
+          effectiveApiKey = budgeted.value ?? '';
+        }
       } else {
-        effectiveApiKey = outcome.value ?? '';
+        const outcome = await resolution;
+        if (outcome.error) {
+          log('[Config] External secret could not be resolved:', {
+            configSetId: config.activeConfigSetId,
+            kind: source.kind,
+            code: outcome.error.code,
+            reason: outcome.error.message,
+          });
+          effectiveApiKey = '';
+        } else {
+          effectiveApiKey = outcome.value ?? '';
+        }
       }
     }
 
@@ -2160,6 +2205,20 @@ export class ConfigStore {
       GEMINI_API_KEY: process.env.GEMINI_API_KEY ? '✓ Set' : '(empty/unset)',
       GEMINI_BASE_URL: process.env.GEMINI_BASE_URL || '(default)',
     });
+    return { externalDeferred };
+  }
+
+  /** True while a background vault resolution from a budgeted `applyToEnv` is still running. */
+  hasPendingExternalSecrets(): boolean {
+    return this.pendingExternalSecrets !== null;
+  }
+
+  /**
+   * Resolves when any in-flight background vault resolution settles.
+   * Immediately resolved when idle, so gating on it is free on the hot path.
+   */
+  whenExternalSecretsSettled(): Promise<void> {
+    return this.pendingExternalSecrets ?? Promise.resolve();
   }
 
   /**

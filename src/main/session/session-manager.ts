@@ -398,6 +398,14 @@ export class SessionManager {
   ): Promise<Session> {
     log('[SessionManager] Starting new session:', title);
 
+    // Boot may have deferred an external vault resolution off the critical
+    // path. A session started in that window must see the resolved key, so it
+    // waits — but only in that window: when idle this is a resolved promise.
+    if (configStore.hasPendingExternalSecrets()) {
+      await configStore.whenExternalSecretsSettled();
+      await configStore.applyToEnv();
+    }
+
     const session = this.createSession(title, cwd, allowedTools, memoryEnabled, projectId);
 
     // Save to database
