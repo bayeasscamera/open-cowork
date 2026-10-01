@@ -252,6 +252,19 @@ export interface SubAgentsConfig {
   timeoutMs: number;
   /** Maximum sub-agents running at once (default 2, capped at 8). */
   maxConcurrent: number;
+  /**
+   * OPT-IN: type-check a sub-agent's modified files with a real TypeScript
+   * Program, on top of the always-on AST syntax check.
+   *
+   * Off by default because it is expensive: measured on this repo, a full
+   * Program costs ~2.4 s and ~1 GB RSS cold (against 23 ms / 24 MB for the
+   * AST parse). The Program is cached per project, so a warm pass is far
+   * cheaper, but the first pass is heavy enough that it must not be
+   * unconditional.
+   */
+  semanticVerification?: boolean;
+  /** Time budget for one semantic pass in ms (default 20000). */
+  semanticVerificationBudgetMs?: number;
 }
 
 const DEFAULT_CONFIG_SET_ID = 'default';
@@ -708,6 +721,23 @@ export function normalizeSubAgentsConfig(raw: unknown): SubAgentsConfig {
       typeof value.maxConcurrent === 'number' && Number.isFinite(value.maxConcurrent)
         ? Math.max(1, Math.min(8, Math.round(value.maxConcurrent)))
         : DEFAULT_SUB_AGENTS.maxConcurrent,
+    // Opt-in only: absent, or any non-`true` value, stays OFF. Never coerce a
+    // truthy non-boolean here — a stray string must not silently enable a
+    // ~1 GB verification pass. The key is omitted when unset (rather than
+    // written as `false`) so a store round-trip through the UI does not gain a
+    // field the user never set — same convention as `criticality`.
+    ...(value.semanticVerification !== undefined
+      ? { semanticVerification: value.semanticVerification === true }
+      : {}),
+    ...(typeof value.semanticVerificationBudgetMs === 'number' &&
+    Number.isFinite(value.semanticVerificationBudgetMs)
+      ? {
+          semanticVerificationBudgetMs: Math.max(
+            1_000,
+            Math.min(120_000, Math.round(value.semanticVerificationBudgetMs))
+          ),
+        }
+      : {}),
   };
 }
 

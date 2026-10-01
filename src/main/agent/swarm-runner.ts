@@ -66,6 +66,7 @@ import type {
   SubAgentRunnerFn,
 } from './multi-agent-coordinator';
 import { buildCorrectiveContext } from './cross-verification';
+import { checkFilesSemantics, formatSemanticIssues } from './lsp-verification';
 import { resolveSubAgentCompactionSettings } from './compaction-policy';
 import { shouldRetryOnContextOverflow } from './context-overflow';
 import { formatSkillHint, selectRelevantSkills, skillSelectionDirs } from './skill-selection';
@@ -1119,11 +1120,20 @@ interface SwarmRunnerOptions {
 interface TaskGuardrails {
   timeoutMs: number;
   maxConcurrent: number;
+  /** Opt-in semantic (type) verification, in addition to the AST check. */
+  semanticVerification: boolean;
+  semanticVerificationBudgetMs?: number;
 }
 
 function resolveGuardrails(config: AppConfig): TaskGuardrails {
   const subAgents: SubAgentsConfig = config.subAgents ?? normalizeSubAgentsConfig(undefined);
-  return { timeoutMs: subAgents.timeoutMs, maxConcurrent: subAgents.maxConcurrent };
+  return {
+    timeoutMs: subAgents.timeoutMs,
+    maxConcurrent: subAgents.maxConcurrent,
+    // Off unless explicitly enabled — the semantic pass is expensive.
+    semanticVerification: subAgents.semanticVerification === true,
+    semanticVerificationBudgetMs: subAgents.semanticVerificationBudgetMs,
+  };
 }
 
 /**
@@ -1138,6 +1148,12 @@ async function acquireGate(gate: SubAgentGate, signal?: AbortSignal): Promise<bo
 /**
  * After a successful task with modified files, verify the syntax of every
  * changed TS/JS file and allow ONE corrective re-run with the same profile.
+ *
+ * When the semantic pass is opted in, it runs in ADDITION to the AST check
+ * (never instead of it) and reuses the very same single corrective re-run:
+ * both checks run first, and one re-run is spent on whichever found
+ * something. A second, separate re-run would double the model cost for a
+ * marginal gain, and the re-run result is re-verified by the same pair.
  */
 async function finalizeTaskResult(
   task: AgentTask,
@@ -1148,7 +1164,8 @@ async function finalizeTaskResult(
   usedConfig: AppConfig,
   launchSession: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>,
   cwd: string,
-  timeoutMs: number
+  timeoutMs: number,
+  guardrails: TaskGuardrails
 ): Promise<SubAgentRunResult> {
   let output = result.output;
   let modifiedFiles = result.modifiedFiles;
@@ -1164,17 +1181,44 @@ async function finalizeTaskResult(
   addUsage(result.tokenUsage);
   let syntaxIssues = await checkModifiedFilesSyntax(modifiedFiles);
 
-  if (syntaxIssues.length > 0) {
-    const listed = syntaxIssues.map((i) => `${i.file}:${i.line} — ${i.message}`).join('\n');
-    logWarn(`[SwarmRunner] ${task.role} introduced syntax errors; one corrective re-run`);
+  // Semantic (type) verification: opt-in, additive, and it never throws — a
+  // missing compiler or an exhausted budget simply yields no findings.
+  const runSemanticCheck = (files: string[]) =>
+    guardrails.semanticVerification
+      ? checkFilesSemantics(files, {
+          ...(guardrails.semanticVerificationBudgetMs !== undefined
+            ? { budgetMs: guardrails.semanticVerificationBudgetMs }
+            : {}),
+        })
+      : Promise.resolve([]);
+
+  let semanticIssues = await runSemanticCheck(modifiedFiles);
+
+  // ONE corrective re-run for BOTH checks: whichever found something drives
+  // the same single retry, then both are re-verified.
+  const needsRetry = syntaxIssues.length > 0 || semanticIssues.length > 0;
+  if (needsRetry) {
+    const semanticListed = formatSemanticIssues(semanticIssues);
+    const syntaxListed = syntaxIssues.map((i) => `${i.file}:${i.line} — ${i.message}`).join('\n');
+    const reasons: string[] = [];
+    if (syntaxIssues.length > 0) reasons.push('syntax errors');
+    if (semanticIssues.length > 0) reasons.push('type errors');
+    logWarn(
+      `[SwarmRunner] ${task.role} introduced ${reasons.join(' and ')}; one corrective re-run`
+    );
+    const details = [syntaxListed, semanticListed].filter(Boolean).join('\n');
+    const kind = syntaxIssues.length > 0 ? 'syntax' : 'type';
     const retry = await withTaskTimeout(
       (signal) =>
         launchSession({
           task,
           context: `${context}\n\n${buildCorrectiveContext({
-            reason: 'Your previous changes introduced syntax errors — fix them',
-            details: listed,
-            instruction: 'Re-apply the changes correctly using write/edit inside the workspace.',
+            reason: `Your previous changes introduced ${reasons.join(' and ')} — fix them`,
+            details,
+            instruction:
+              kind === 'type'
+                ? 'Fix the reported type errors. Re-apply the changes correctly using write/edit inside the workspace.'
+                : 'Re-apply the changes correctly using write/edit inside the workspace.',
           })}`,
           config: usedConfig,
           cwd,
@@ -1183,7 +1227,7 @@ async function finalizeTaskResult(
           signal,
         }) as unknown as Promise<SubAgentSessionResult>,
       timeoutMs,
-      `${task.role}:${task.id}:syntax-fix`
+      `${task.role}:${task.id}:${kind}-fix`
     );
     // The retry receives the same profile; restore it from the label owner by
     // re-running with the original config through a fresh launcher call.
@@ -1194,16 +1238,22 @@ async function finalizeTaskResult(
       teammateExchanges.push(...retry.teammateExchanges);
     }
     syntaxIssues = await checkModifiedFilesSyntax(modifiedFiles);
+    semanticIssues = await runSemanticCheck(modifiedFiles);
   }
+
+  // Both checks are reported, so a silent regression in one is still visible
+  // even when the other one is clean.
+  const reportedIssues = [
+    ...syntaxIssues.map((i) => `${i.file}:${i.line} ${i.message}`),
+    ...semanticIssues.map((i) => `${i.file}:${i.line} ${i.message}`),
+  ];
 
   return {
     output,
     modifiedFiles,
     usedFallback,
     modelUsed: modelLabel,
-    syntaxIssues: syntaxIssues.length
-      ? syntaxIssues.map((i) => `${i.file}:${i.line} ${i.message}`)
-      : undefined,
+    syntaxIssues: reportedIssues.length ? reportedIssues : undefined,
     tokenUsage: sawUsage ? usage : undefined,
     ...(teammateExchanges.length ? { teammateExchanges } : {}),
   };
@@ -1287,7 +1337,8 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           profile.config,
           launchSession,
           options.cwd,
-          timeoutMs
+          timeoutMs,
+          baseGuardrails
         );
       } catch (error) {
         // A user cancellation must surface as cancelled — NOT be masked by
@@ -1350,7 +1401,8 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           appConfig,
           launchSession,
           options.cwd,
-          timeoutMs
+          timeoutMs,
+          baseGuardrails
         );
       }
     } finally {

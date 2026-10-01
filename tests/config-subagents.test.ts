@@ -48,6 +48,48 @@ describe('sub-agents config normalization', () => {
     });
   });
 
+  describe('semantic verification (Chantier 2 opt-in)', () => {
+    it('is OFF by default — the type-check pass is expensive', () => {
+      // The key is OMITTED rather than set to false, so a store round-trip
+      // through the UI does not gain a field the user never set.
+      expect(normalizeSubAgentsConfig(undefined).semanticVerification).toBeUndefined();
+      expect(normalizeSubAgentsConfig({}).semanticVerification).toBeUndefined();
+    });
+
+    it('is ON only for an explicit boolean true', () => {
+      expect(normalizeSubAgentsConfig({ semanticVerification: true }).semanticVerification).toBe(
+        true
+      );
+    });
+
+    it('never coerces a truthy non-boolean into enabling it', () => {
+      // A stray string must not silently switch on a ~1 GB verification pass.
+      expect(
+        normalizeSubAgentsConfig({ semanticVerification: 'yes' as unknown as boolean })
+          .semanticVerification
+      ).toBe(false);
+      expect(
+        normalizeSubAgentsConfig({ semanticVerification: 1 as unknown as boolean })
+          .semanticVerification
+      ).toBe(false);
+    });
+
+    it('clamps the budget between 1s and 120s', () => {
+      expect(
+        normalizeSubAgentsConfig({ semanticVerificationBudgetMs: 10 })
+          .semanticVerificationBudgetMs
+      ).toBe(1_000);
+      expect(
+        normalizeSubAgentsConfig({ semanticVerificationBudgetMs: 999_999 })
+          .semanticVerificationBudgetMs
+      ).toBe(120_000);
+    });
+
+    it('leaves the budget undefined when not supplied', () => {
+      expect('semanticVerificationBudgetMs' in normalizeSubAgentsConfig({})).toBe(false);
+    });
+  });
+
   it('clamps the timeout between 10s and 300s', () => {
     expect(normalizeSubAgentsConfig({ timeoutMs: 1 }).timeoutMs).toBe(10_000);
     expect(normalizeSubAgentsConfig({ timeoutMs: 9_999_999 }).timeoutMs).toBe(300_000);

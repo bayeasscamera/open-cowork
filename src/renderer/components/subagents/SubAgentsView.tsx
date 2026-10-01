@@ -36,6 +36,13 @@ interface SubAgentsDraft {
     critical?: RoleSelection;
     economical?: RoleSelection;
   };
+  /**
+   * Opt-in type-checking of sub-agent edits (Chantier 2). Not yet exposed as a
+   * control here, but round-tripped for the same reason as `criticality`: a
+   * config-file value must never be silently dropped by a UI save.
+   */
+  semanticVerification?: boolean;
+  semanticVerificationBudgetMs?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -104,6 +111,15 @@ export function buildSubAgentsUpdate(draft: SubAgentsDraft): SubAgentsDraft {
       1,
       MAX_CONCURRENT
     ),
+    // Carried through unchanged: this view does not own the toggle, so it must
+    // preserve what the config file says rather than resetting it to false.
+    ...(draft.semanticVerification !== undefined
+      ? { semanticVerification: draft.semanticVerification === true }
+      : {}),
+    ...(typeof draft.semanticVerificationBudgetMs === 'number' &&
+    Number.isFinite(draft.semanticVerificationBudgetMs)
+      ? { semanticVerificationBudgetMs: draft.semanticVerificationBudgetMs }
+      : {}),
   };
 }
 
@@ -229,6 +245,8 @@ export function SubAgentsView({ onClose }: { onClose?: () => void } = {}) {
           criticality: sub?.criticality,
           timeoutMs: sub?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           maxConcurrent: sub?.maxConcurrent ?? DEFAULT_MAX_CONCURRENT,
+          semanticVerification: sub?.semanticVerification,
+          semanticVerificationBudgetMs: sub?.semanticVerificationBudgetMs,
         })
       );
       setSets(buildConfigSetLites(raw));
@@ -268,6 +286,8 @@ export function SubAgentsView({ onClose }: { onClose?: () => void } = {}) {
           criticality: sub?.criticality,
           timeoutMs: sub?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           maxConcurrent: sub?.maxConcurrent ?? DEFAULT_MAX_CONCURRENT,
+          semanticVerification: sub?.semanticVerification,
+          semanticVerificationBudgetMs: sub?.semanticVerificationBudgetMs,
         })
       );
       setSaved(true);
