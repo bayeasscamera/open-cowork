@@ -41,6 +41,12 @@ const CACHE_TTL_MS = 3600 * 1000;
 export class CodeGraphIndexer {
   private index: Map<string, CodeSymbol[]> = new Map();
   private isScanning: boolean = false;
+  /**
+   * Serialize full scans: the symbol index is shared, so two concurrent
+   * traversals race on `index.clear()` and interleave symbols. Callers
+   * arriving mid-scan wait their turn instead of corrupting each other.
+   */
+  private scanQueue: Promise<unknown> = Promise.resolve();
   private cacheDir: string;
   private readonly scannedDirs = new Set<string>();
   private tsModulePromise: Promise<typeof import('typescript')> | null = null;
@@ -215,8 +221,37 @@ export class CodeGraphIndexer {
       }
     }
 
-    this.isScanning = true;
     this.scannedDirs.add(dirPath);
+    // Queued behind any running scan: the flag is set by guardedScan when
+    // this traversal actually starts, so isCurrentlyScanning stays truthful.
+    const run = this.scanQueue.then(() => this.guardedScan(dirPath, extensions));
+    // The chain itself never rejects (the caller still sees its own error),
+    // so one failed scan cannot wedge every later scan behind it.
+    this.scanQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** One serialized traversal with a flag that resets on every exit path. */
+  private async guardedScan(dirPath: string, extensions: string[]): Promise<CodeGraphIndex> {
+    this.isScanning = true;
+    try {
+      return await this.scanDirectoryUncached(dirPath, extensions);
+    } finally {
+      // A stuck flag silently disables every later scan (and every
+      // concurrent caller that checked it), so it resets on all paths.
+      this.isScanning = false;
+    }
+  }
+
+  /**
+   * The actual traversal. Only called with `isScanning` already set;
+   * factored out so the flag reset above covers throws, early returns and
+   * rejected dynamic imports alike.
+   */
+  private async scanDirectoryUncached(
+    dirPath: string,
+    extensions: string[]
+  ): Promise<CodeGraphIndex> {
     const allSymbols: CodeSymbol[] = [];
     let filesCount = 0;
 
@@ -259,7 +294,6 @@ export class CodeGraphIndexer {
       this.index.get(key)!.push(sym);
     }
 
-    this.isScanning = false;
     const fp = this.computeFingerprint(dirPath, extensions);
     const result: CodeGraphIndex = {
       symbols: allSymbols,

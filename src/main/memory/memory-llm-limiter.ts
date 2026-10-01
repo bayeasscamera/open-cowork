@@ -27,6 +27,17 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+/** Thrown when `acquire()` cannot grant a slot within its budget. */
+export class MemoryLlmTimeoutError extends Error {
+  constructor(waitedMs: number) {
+    super(`Memory LLM limiter acquire timed out after ${waitedMs}ms`);
+    this.name = 'MemoryLlmTimeoutError';
+  }
+}
+
+/** Fail-fast budget for one `acquire()` (overridable per call). */
+export const DEFAULT_ACQUIRE_TIMEOUT_MS = 120_000;
+
 export class MemoryLlmLimiter {
   private running = 0;
   private readonly waiters: Waiter[] = [];
@@ -46,18 +57,35 @@ export class MemoryLlmLimiter {
     return this.waiters.length;
   }
 
-  async acquire(priority: MemoryLlmPriority = 'background'): Promise<void> {
+  /**
+   * Take a slot, waiting at most `timeoutMs` (default 120s). A missed
+   * `release()` or a wedged provider must fail the waiter loudly instead of
+   * parking it — and an unbounded waiter list — forever.
+   */
+  async acquire(
+    priority: MemoryLlmPriority = 'background',
+    options?: { timeoutMs?: number }
+  ): Promise<void> {
+    const budgetMs =
+      options?.timeoutMs !== undefined && options.timeoutMs >= 0
+        ? options.timeoutMs
+        : DEFAULT_ACQUIRE_TIMEOUT_MS;
+    const deadline = Date.now() + budgetMs;
     for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw new MemoryLlmTimeoutError(budgetMs);
+      }
       const cooldownMs = this.cooldownUntil - Date.now();
       if (cooldownMs > 0) {
-        await sleep(cooldownMs);
+        await sleep(Math.min(cooldownMs, remaining));
         continue;
       }
       if (this.running < this.maxConcurrent) {
         this.running += 1;
         return;
       }
-      await new Promise<void>((resolve) => this.enqueue({ priority, resolve }));
+      await this.enqueueWaiter(priority, remaining);
     }
   }
 
@@ -72,7 +100,6 @@ export class MemoryLlmLimiter {
     this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + cooldownMs);
     this.scheduleCooldownPump();
   }
-
   private enqueue(waiter: Waiter): void {
     if (waiter.priority === 'foreground') {
       const firstBackground = this.waiters.findIndex((item) => item.priority === 'background');
@@ -84,6 +111,32 @@ export class MemoryLlmLimiter {
       return;
     }
     this.waiters.push(waiter);
+  }
+
+  /**
+   * Queue a waiter that gives up after `timeoutMs`: it is removed from the
+   * queue and the caller gets a `MemoryLlmTimeoutError`. A waiter the pump
+   * already dequeued is unaffected (already gone from the array — resolve wins).
+   */
+  private enqueueWaiter(priority: MemoryLlmPriority, timeoutMs: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const entry: Waiter = {
+        priority,
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      };
+      const timer = setTimeout(() => {
+        const index = this.waiters.indexOf(entry);
+        if (index !== -1) {
+          this.waiters.splice(index, 1);
+        }
+        reject(new MemoryLlmTimeoutError(timeoutMs));
+      }, timeoutMs);
+      timer.unref?.();
+      this.enqueue(entry);
+    });
   }
 
   private pump(): void {

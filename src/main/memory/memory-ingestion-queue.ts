@@ -11,6 +11,10 @@ export class MemoryIngestionQueue {
         this.chains.delete(key);
       }
     });
+    // `next` is returned to the caller, which observes the rejection; without
+    // this, `tracked` rejects a second time with nobody listening and every
+    // failed task also surfaces as an unhandledRejection.
+    void tracked.catch(() => undefined);
     this.chains.set(key, tracked);
     return next;
   }
