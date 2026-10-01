@@ -1,0 +1,91 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`core memory key derivation (golden) > derives: a bare key with no category is the key 1`] = `"language"`;
+
+exports[`core memory key derivation (golden) > derives: a key that looks like a category is not split twice 1`] = `"preferences.language"`;
+
+exports[`core memory key derivation (golden) > derives: a whitespace-only key names nothing 1`] = `""`;
+
+exports[`core memory key derivation (golden) > derives: category prefixes the key 1`] = `"preferences.language"`;
+
+exports[`core memory key derivation (golden) > derives: each category keeps its own namespace 1`] = `"skills.typescript"`;
+
+exports[`core memory key derivation (golden) > derives: identity is a category too 1`] = `"identity.name"`;
+
+exports[`core memory key derivation (golden) > derives: key is trimmed 1`] = `"preferences.language"`;
+
+exports[`core memory key derivation (golden) > derives: key may contain dots 1`] = `"preferences.editor.tab.size"`;
+
+exports[`core memory key derivation (golden) > derives: unknown category falls back to the bare key 1`] = `"language"`;
+
+exports[`core memory key derivation (golden) > round-trips every golden key through the parser without loss 1`] = `
+{
+  "combined": "preferences.language",
+  "name": "category prefixes the key",
+  "parsedCategory": "preferences",
+  "parsedKey": "language",
+}
+`;
+
+exports[`core memory key derivation (golden) > round-trips every golden key through the parser without loss 2`] = `
+{
+  "combined": "skills.typescript",
+  "name": "each category keeps its own namespace",
+  "parsedCategory": "skills",
+  "parsedKey": "typescript",
+}
+`;
+
+exports[`core memory key derivation (golden) > round-trips every golden key through the parser without loss 3`] = `
+{
+  "combined": "identity.name",
+  "name": "identity is a category too",
+  "parsedCategory": "identity",
+  "parsedKey": "name",
+}
+`;
+
+exports[`core memory key derivation (golden) > round-trips every golden key through the parser without loss 4`] = `
+{
+  "combined": "language",
+  "name": "unknown category falls back to the bare key",
+  "parsedCategory": undefined,
+  "parsedKey": "language",
+}
+`;
+
+exports[`core memory key derivation (golden) > round-trips every golden key through the parser without loss 5`] = `
+{
+  "combined": "language",
+  "name": "a bare key with no category is the key",
+  "parsedCategory": undefined,
+  "parsedKey": "language",
+}
+`;
+
+exports[`core memory key derivation (golden) > round-trips every golden key through the parser without loss 6`] = `
+{
+  "combined": "preferences.language",
+  "name": "key is trimmed",
+  "parsedCategory": "preferences",
+  "parsedKey": "language",
+}
+`;
+
+exports[`core memory key derivation (golden) > round-trips every golden key through the parser without loss 7`] = `
+{
+  "combined": "preferences.editor.tab.size",
+  "name": "key may contain dots",
+  "parsedCategory": "preferences",
+  "parsedKey": "editor.tab.size",
+}
+`;
+
+exports[`core memory key derivation (golden) > round-trips every golden key through the parser without loss 8`] = `
+{
+  "combined": "preferences.language",
+  "name": "a key that looks like a category is not split twice",
+  "parsedCategory": "preferences",
+  "parsedKey": "language",
+}
+`;

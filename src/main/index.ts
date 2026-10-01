@@ -988,6 +988,10 @@ app
           // No confirmDelete in headless: deletions fail closed with
           // confirmation_required instead of being auto-approved.
         },
+        // Headless runs read the same layered project memory as the desktop
+        // path, so a recorded fact is not invisible just because nobody
+        // opened the preview panel.
+        resolveProjectMemory,
       });
       const headlessExtensionManager = new AgentRuntimeExtensionManager([
         new MemoryExtension(memoryService),
@@ -1434,6 +1438,9 @@ app
           }
         },
       },
+      // The four-layer project memory reaches the model through the single
+      // existing prompt path; same resolver as the preview panel above.
+      resolveProjectMemory,
     });
     const extensionManager = new AgentRuntimeExtensionManager([
       new MemoryExtension(memoryService),
@@ -2102,18 +2109,29 @@ registerWorkflowIpcHandlers({
 
 // Project memory (Phase 4): four-layer memory per workspace, with the same
 // per-session workspace resolution as the workflow registry.
+//
+// ONE resolver, two consumers: the IPC preview below and the MemoryService
+// prompt path both read it. Resolving it twice is how the preview and the
+// prompt could come to disagree about which workspace a memory belongs to.
+//
+// A hoisted function, not a const, so the MemoryService construction earlier in
+// bootstrap — which runs from a function called long before this line — can
+// pass it in.
+function resolveProjectMemory(sessionId: string) {
+  const entry = workflowRegistry.getOrCreate(sessionId);
+  if (!entry) {
+    return null;
+  }
+  const workspaceKey = workflowRegistry.workspaceKey(sessionId);
+  if (!workspaceKey) {
+    return null;
+  }
+  return { store: entry.memory as ProjectMemoryStore, workspaceKey };
+}
+
+// Project memory IPC (preview panel).
 registerProjectMemoryIpcHandlers({
-  resolve: (sessionId) => {
-    const entry = workflowRegistry.getOrCreate(sessionId);
-    if (!entry) {
-      return null;
-    }
-    const workspaceKey = workflowRegistry.workspaceKey(sessionId);
-    if (!workspaceKey) {
-      return null;
-    }
-    return { store: entry.memory as ProjectMemoryStore, workspaceKey };
-  },
+  resolve: resolveProjectMemory,
 });
 
 // Control center (Phase 6): activity feed, detached-task queue, notifications

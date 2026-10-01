@@ -28,6 +28,19 @@ export interface AppliedCoreMemoryAction {
   key: string;
   value?: string | null;
   combinedKey: string;
+  /**
+   * Whether the row this action addressed already existed.
+   *
+   * Read from the SAME map the action then writes, so it cannot go stale: no
+   * intervening write can land between the observation and the act. For a
+   * `delete` it means a row was actually removed; for a write it means the
+   * value was replaced rather than created.
+   *
+   * It is about the ROW, not the value — a row stored as the empty string
+   * reports true even though a later read of its value would look absent. That
+   * divergence is the seam's, stated here rather than smoothed over.
+   */
+  replaced: boolean;
 }
 
 export interface CoreMemoryEntry {

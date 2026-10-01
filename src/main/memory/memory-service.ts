@@ -16,6 +16,8 @@ import { MemoryNavigator } from './memory-navigator';
 import { DEFAULT_MEMORY_PROMPTS, type MemoryPromptSet } from './memory-prompts';
 import { MemoryRetriever } from './memory-retriever';
 import { MemorySessionStateStore } from './memory-state-store';
+import type { ProjectMemoryStore } from './project-memory-store';
+import type { MemoryQuery } from '../../shared/project-memory-types';
 import type {
   ChunkMemoryItem,
   MemoryDebugFileContent,
@@ -67,6 +69,33 @@ interface MemoryPaths {
   stateFilePath: string;
   artifactsDir: string;
 }
+
+/**
+ * Resolves the layered project-memory store backing a session, if any.
+ *
+ * Injected rather than imported so MemoryService keeps no hard dependency on
+ * the workflow registry that owns those stores: a session with no workflow has
+ * no project memory, and that is a normal answer, not a failure.
+ */
+type ProjectMemoryResolver = (
+  sessionId: string
+) => { store: ProjectMemoryStore; workspaceKey: string } | null;
+
+/**
+ * How much layered project memory reaches the prompt.
+ *
+ * Sizing is a judgement, not a measurement: the core block holds at most 24
+ * short entries and this section is a few hundred words at this budget. The
+ * point is not to be exact but to make the layer BOUNDED, so a workspace with
+ * 500 project memories cannot crowd out the conversation.
+ *
+ * The confidence floor keeps the layer from asserting things the agent itself
+ * marked as doubtful; below it, a memory is still listed in the UI but is not
+ * something to hand a model as fact.
+ */
+const PROJECT_MEMORY_ITEM_LIMIT = 12;
+const PROJECT_MEMORY_CHAR_BUDGET = 2000;
+const PROJECT_MEMORY_MIN_CONFIDENCE = 0.5;
 
 interface ExtractionBundle {
   sessionRow: SessionRow;
@@ -166,6 +195,7 @@ export class MemoryService {
   private readonly tools: MemoryToolDefinition[];
   private filesStore?: MemoryFilesStore;
   private readonly personalHost?: PersonalMemoryHost;
+  private readonly resolveProjectMemory?: ProjectMemoryResolver;
   private currentPathsKey: string | null = null;
   private coreStore: CoreMemoryStore | null = null;
   private stateStore: MemorySessionStateStore | null = null;
@@ -177,9 +207,17 @@ export class MemoryService {
       llmClient?: MemoryLLMClientLike;
       prompts?: Partial<MemoryPromptSet>;
       personalHost?: PersonalMemoryHost;
+      /**
+       * Resolves the layered project-memory store for a session, when one is
+       * registered. Optional so every existing construction site keeps
+       * working; when absent the layer contributes nothing to the prompt,
+       * which is exactly the behaviour it had before being wired in.
+       */
+      resolveProjectMemory?: ProjectMemoryResolver;
     }
   ) {
     this.personalHost = options?.personalHost;
+    this.resolveProjectMemory = options?.resolveProjectMemory;
     this.llmClient = options?.llmClient || new MemoryLLMClient();
     const promptSet: MemoryPromptSet = {
       ...DEFAULT_MEMORY_PROMPTS,
@@ -460,7 +498,7 @@ export class MemoryService {
     };
   }
 
-  async buildPromptPrefix(session: { cwd?: string }, prompt: string): Promise<string> {
+  async buildPromptPrefix(session: { id?: string; cwd?: string }, prompt: string): Promise<string> {
     if (!this.isEnabled()) {
       return '';
     }
@@ -469,6 +507,13 @@ export class MemoryService {
     const corePromptBlock = this.getCoreStore().toPromptBlock();
     if (corePromptBlock !== 'None') {
       sections.push(`<core_memory>\n${escapeMemoryContextText(corePromptBlock)}\n</core_memory>`);
+    }
+
+    const projectMemoryBlock = this.buildProjectMemoryBlock(session, prompt);
+    if (projectMemoryBlock) {
+      sections.push(
+        `<project_memory>\n${escapeMemoryContextText(projectMemoryBlock)}\n</project_memory>`
+      );
     }
 
     const experienceContext = await this.buildExperienceContext(
@@ -496,6 +541,94 @@ export class MemoryService {
       ...sections,
       '</memory_context>',
     ].join('\n');
+  }
+
+  /**
+   * Renders the layered project memory for this session, or '' when there is
+   * none to show.
+   *
+   * This store had a full ranking model — four weighted layers, freshness
+   * decay, provenance, TTL — and no way to reach the model: its only caller was
+   * the preview IPC. It is the best-designed memory layer in the app, so it is
+   * wired into the single existing prompt path rather than given a fourth one.
+   *
+   * CAPPED, because nothing else in this file is. The file listing is capped
+   * and the core block is capped, but experience context never was; leaving
+   * this one uncapped would be the same defect wearing a new hat. The cap is
+   * whole-ITEM, never mid-item, and it says when it truncated so the model
+   * knows the list is partial rather than complete.
+   */
+  private buildProjectMemoryBlock(
+    session: { id?: string; cwd?: string },
+    prompt: string
+  ): string {
+    const sessionId = session.id;
+    if (!sessionId || !this.resolveProjectMemory) {
+      return '';
+    }
+
+    let target: { store: ProjectMemoryStore; workspaceKey: string } | null;
+    try {
+      target = this.resolveProjectMemory(sessionId);
+    } catch {
+      // A resolver failure must not cost the conversation its other memory.
+      return '';
+    }
+    if (!target) {
+      return '';
+    }
+
+    const query: MemoryQuery = {
+      workspaceKey: target.workspaceKey,
+      query: prompt,
+      // No `limit` here on purpose: the limit is this method's own contract,
+      // applied AFTER formatting so the elision count is exact. Passing it to
+      // the query would cap `items` silently and leave `considered` as the only
+      // record that more existed — a prompt that looks complete and is not.
+      minConfidence: PROJECT_MEMORY_MIN_CONFIDENCE,
+    };
+
+    let injection: ReturnType<ProjectMemoryStore['buildInjection']>;
+    try {
+      injection = target.store.buildInjection(query);
+    } catch {
+      return '';
+    }
+
+    const lines: string[] = [];
+    let budget = PROJECT_MEMORY_CHAR_BUDGET;
+
+    for (const scored of injection.items) {
+      if (lines.length >= PROJECT_MEMORY_ITEM_LIMIT) {
+        break;
+      }
+      const marker = scored.item.provenance
+        ? `[${scored.item.provenance.source}: ${scored.item.provenance.reference}]`
+        : `[${scored.item.layer}]`;
+      const line = `- (${scored.item.layer} ${marker}) ${scored.item.statement}`;
+      // A line that cannot fit whole is dropped rather than cut: a truncated
+      // statement is a fact the model may act on as if it were complete.
+      if (line.length + 1 > budget) {
+        break;
+      }
+      lines.push(line);
+      budget -= line.length + 1;
+    }
+
+    if (!lines.length) {
+      return '';
+    }
+
+    // `considered` is what the store ranked BEFORE this method trimmed, so the
+    // difference is the honest count of what the model cannot see. Without
+    // this line a truncated block reads as the whole picture.
+    const elided = Math.max(0, injection.considered - lines.length);
+    if (elided > 0) {
+      lines.push(
+        `- (${elided} more project ${elided === 1 ? 'memory' : 'memories'} not shown: over the injection budget)`
+      );
+    }
+    return lines.join('\n');
   }
 
   enqueueIngestion(input: MemoryIngestionInput): Promise<void> {

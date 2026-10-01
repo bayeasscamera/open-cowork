@@ -273,7 +273,22 @@ export function stripTrailingSlashes(value?: string): string | undefined {
   return value?.trim().replace(/\/+$/, '') || undefined;
 }
 
-function resolveCoreCombinedKey(
+/**
+ * Joins a core memory's category and key into the single string that becomes
+ * its JSON property name.
+ *
+ * THIS IS A STORED-IDENTITY FUNCTION, not a formatting helper. The core memory
+ * store is a flat `Record<string, string>`, so this string IS the row's
+ * identity: change the join rule and the next extraction writes a SECOND row
+ * beside the first — `preferences.language` and `preferences-lang` would both
+ * answer the same question, neither would ever be updated again, and the 24-item
+ * cap would eventually evict one of them silently. The golden table in
+ * tests/core-memory-key-identity.test.ts is what would catch that.
+ *
+ * Exported for that test and for any caller that must address a row it did not
+ * just write; kept as one function so the rule cannot be spelled twice.
+ */
+export function resolveCoreCombinedKey(
   category: CoreMemoryCategory | undefined,
   key: string
 ): string {
@@ -325,6 +340,15 @@ export function applyCoreMemoryActions(
       continue;
     }
 
+    // Observed from the map this action is about to write — one read, one
+    // write, no window between them. The JSON store has no transaction to
+    // defer to, so the guarantee comes from being this close to the write.
+    //
+    // `nextMemory` is the right map to read, not `existingMemory`: two actions
+    // in one batch may address the same key, and the second must see the
+    // first's effect or a re-remembered value would report itself as a create.
+    const replaced = Object.prototype.hasOwnProperty.call(nextMemory, combinedKey);
+
     if (op === 'delete') {
       delete nextMemory[combinedKey];
       applied.push({
@@ -332,6 +356,7 @@ export function applyCoreMemoryActions(
         category: action.category,
         key: action.key,
         combinedKey,
+        replaced,
       });
       continue;
     }
@@ -348,6 +373,7 @@ export function applyCoreMemoryActions(
       key: action.key,
       value,
       combinedKey,
+      replaced,
     });
   }
 
