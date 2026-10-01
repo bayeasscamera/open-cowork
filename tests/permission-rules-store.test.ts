@@ -165,13 +165,13 @@ describe('permission-rules-store', () => {
       expect(decidePermission(SESSION_A, 'Bash', {})).toBe('allow');
     });
 
-    it('always-allow takes precedence over a configured deny rule', () => {
-      // Security note: this matches the documented matching order (session
-      // memory first, then rules). If this behaviour ever needs to change
-      // for security reasons, this test should fail loudly.
+    it('deny rules win over session always-allow (explicit refusals are persistent guardrails)', () => {
+      // Since explicit refusal rules (/deny): a user deny rule is a persistent
+      // guardrail, so it overrides the per-session "always allow" memory and
+      // Full Access alike — the refusal is reported with its explanation.
       setPermissionRules([{ tool: 'bash', action: 'deny' }]);
       rememberAlwaysAllow(SESSION_A, 'bash');
-      expect(decidePermission(SESSION_A, 'bash', {})).toBe('allow');
+      expect(decidePermission(SESSION_A, 'bash', {})).toBe('deny');
     });
   });
 
@@ -266,12 +266,12 @@ describe('permission-rules-store', () => {
       expect(decidePermission(SESSION_A, 'unknown_custom_tool', {})).toBe('allow');
     });
 
-    it('when enabled, takes precedence even over explicit deny rules', () => {
+    it('explicit deny rules hold even under Full Access', () => {
       setPermissionRules([{ tool: 'bash', action: 'deny' }]);
       expect(decidePermission(SESSION_A, 'bash', {})).toBe('deny');
 
       setAutoApproveAll(true);
-      expect(decidePermission(SESSION_A, 'bash', {})).toBe('allow');
+      expect(decidePermission(SESSION_A, 'bash', {})).toBe('deny');
 
       setAutoApproveAll(false);
       expect(decidePermission(SESSION_A, 'bash', {})).toBe('deny');

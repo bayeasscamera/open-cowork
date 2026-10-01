@@ -15,7 +15,7 @@ import {
 } from './pi-agent-access';
 import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
-import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
+import { decidePermissionWithDetail, describeDenyRefusal, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { log, logWarn, logError } from '../utils/logger';
 
 export type PermissionRequestResult = 'allow' | 'deny' | 'allow_always';
@@ -40,9 +40,11 @@ export interface PermissionHookOptions {
  * fires for built-in tools (read, bash, edit, write) — the SDK ignores
  * wrapped `execute` functions on built-in tools passed via `options.tools`.
  *
- * The hook consults `decidePermission` from the main-process rules cache:
+ * The hook consults `decidePermissionWithDetail` from the main-process rules cache:
  *  - 'allow' → delegate to SDK's original hook (proceeds normally)
- *  - 'deny'  → return { block: true, reason } (SDK treats as tool error)
+ *  - 'deny'  → return { block: true, reason } (SDK treats as tool error).
+ *    User deny rules win even under Full Access; the reason names the rule
+ *    and tells the model to adapt rather than retry or stall.
  *  - 'ask'   → await requestPermission() IPC round-trip to PermissionDialog
  *
  * Known limitation: the async requestPermission wait (user dialog) causes
@@ -79,7 +81,11 @@ export function installPermissionHook(options: PermissionHookOptions): void {
       const toolName: string = ctx.toolCall?.name ?? '';
       const input: Record<string, unknown> = ctx.args ?? {};
 
-      const decision = decidePermission(options.sessionId, toolName, input);
+      const { decision, matchedDenyRule, overriddenBypass } = decidePermissionWithDetail(
+        options.sessionId,
+        toolName,
+        input
+      );
       // Human-readable name for prompts/messages (e.g. MCP sanitized
       // 'mcp__chrome__chrome_screenshot__ab12' → 'chrome_screenshot').
       // Rule matching and rememberAlwaysAllow still use the canonical
@@ -87,11 +93,17 @@ export function installPermissionHook(options: PermissionHookOptions): void {
       const displayName = getDisplayName(toolName);
 
       if (decision === 'deny') {
-        log(`[CoworkAgentRunner] Tool '${toolName}' denied by rule`);
-        return {
-          block: true,
-          reason: `Tool '${displayName}' is denied by your permission rules.`,
-        };
+        // A user deny rule names itself so the agent can attribute the refusal
+        // and adapt; a structural deny (e.g. subagent hard-deny) falls back to
+        // the generic wording. Either way the model must react, not stall.
+        const reason = matchedDenyRule
+          ? describeDenyRefusal(displayName, matchedDenyRule)
+          : `Tool '${displayName}' is denied by your permission rules.`;
+        log(`[CoworkAgentRunner] Tool '${toolName}' denied by rule`, {
+          rule: matchedDenyRule ?? undefined,
+          overriddenBypass: overriddenBypass ?? undefined,
+        });
+        return { block: true, reason };
       }
 
       if (decision === 'ask') {

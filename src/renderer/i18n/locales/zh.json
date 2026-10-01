@@ -170,6 +170,8 @@
     "generalDesc": "外观、语言等通用偏好",
     "diagnostics": "诊断",
     "diagnosticsDesc": "检查凭据、工作区、沙箱与存储",
+    "permissions": "拒绝规则",
+    "permissionsDesc": "显式拒绝规则，在完全访问模式下依然生效",
     "groupModel": "模型与 AI",
     "groupExtensions": "扩展与工具",
     "groupPersonal": "个性化",
@@ -1332,6 +1334,18 @@
   },
   "time": {
     "now": "刚刚"
+  },
+  "permissions": {
+    "denyTitle": "显式拒绝规则",
+    "denyDesc": "拒绝规则是持久护栏：即使在完全访问模式下也会阻止匹配的工具调用，并会告知智能体被拒绝的内容，以便其调整方案而不是静默失败。模式中的 * 为通配符，与工具输入进行匹配。",
+    "denyWinsOverFullAccess": "完全访问已开启——以下拒绝规则依然生效并优先。",
+    "noDenyRules": "暂无拒绝规则。在下方添加一条，例如 bash + *.env*。",
+    "allInputs": "全部输入",
+    "removeRule": "删除此规则",
+    "addRule": "添加规则",
+    "toolPlaceholder": "工具（例如 bash）",
+    "patternPlaceholder": "模式，例如 *.env*（留空 = 全部输入）",
+    "patternHint": "* 匹配任意文本。示例：*.env*（触及 .env 的命令）、*rm -rf*（破坏性删除）、*migrations*（数据库迁移）。"
   },
   "permission": {
     "permissionRequired": "需要权限",

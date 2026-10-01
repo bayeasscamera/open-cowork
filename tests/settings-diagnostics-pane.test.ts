@@ -26,7 +26,7 @@ describe('diagnostics page', () => {
     expect(panel).toContain("import { SettingsDiagnostics } from './settings/SettingsDiagnostics';");
     expect(panel).toContain("| 'diagnostics'");
     expect(panel).toContain("'diagnostics',");
-    expect(panel).toContain("tabs: ['diagnostics', 'logs', 'general']");
+    expect(panel).toContain("tabs: ['diagnostics', 'logs', 'permissions', 'general']");
     expect(panel).toContain('<SettingsDiagnostics isActive={activeTab ===');
     expect(panel).toContain("t('settings.diagnostics')");
   });

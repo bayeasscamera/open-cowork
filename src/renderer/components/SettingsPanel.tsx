@@ -4,6 +4,7 @@ import {
   Settings,
   Plug,
   Shield,
+  ShieldAlert,
   Package,
   Clock3,
   Wifi,
@@ -30,6 +31,7 @@ import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
 import { SettingsPersonalization } from './settings/SettingsPersonalization';
+import { SettingsPermissions } from './settings/SettingsPermissions';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -45,6 +47,7 @@ interface SettingsPanelProps {
     | 'remote'
     | 'logs'
     | 'diagnostics'
+    | 'permissions'
     | 'general';
 }
 
@@ -60,6 +63,7 @@ type TabId =
   | 'remote'
   | 'logs'
   | 'diagnostics'
+  | 'permissions'
   | 'general';
 
 const VALID_TABS = new Set<TabId>([
@@ -74,6 +78,7 @@ const VALID_TABS = new Set<TabId>([
   'remote',
   'logs',
   'diagnostics',
+  'permissions',
   'general',
 ]);
 
@@ -87,7 +92,7 @@ const TAB_GROUPS: TabGroup[] = [
   { labelKey: 'settings.groupExtensions', tabs: ['connectors', 'skills'] },
   { labelKey: 'settings.groupPersonal', tabs: ['personalization', 'memory'] },
   { labelKey: 'settings.groupAutomation', tabs: ['schedule', 'remote'] },
-  { labelKey: 'settings.groupSystem', tabs: ['diagnostics', 'logs', 'general'] },
+  { labelKey: 'settings.groupSystem', tabs: ['diagnostics', 'logs', 'permissions', 'general'] },
 ];
 
 /**
@@ -235,6 +240,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.diagnostics'),
       icon: Stethoscope,
       description: t('settings.diagnosticsDesc'),
+    },
+    {
+      id: 'permissions' as TabId,
+      label: t('settings.permissions'),
+      icon: ShieldAlert,
+      description: t('settings.permissionsDesc'),
     },
   ];
   const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
@@ -420,6 +431,11 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
                 <div className={activeTab === 'diagnostics' ? '' : 'hidden'}>
                   {viewedTabs.has('diagnostics') && (
                     <SettingsDiagnostics isActive={activeTab === 'diagnostics'} />
+                  )}
+                </div>
+                <div className={activeTab === 'permissions' ? '' : 'hidden'}>
+                  {viewedTabs.has('permissions') && (
+                    <SettingsPermissions isActive={activeTab === 'permissions'} />
                   )}
                 </div>
               </div>

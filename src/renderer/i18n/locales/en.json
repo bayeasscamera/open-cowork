@@ -170,6 +170,8 @@
     "generalDesc": "Appearance, language & preferences",
     "diagnostics": "Diagnostics",
     "diagnosticsDesc": "Check credentials, workspace, sandbox and storage",
+    "permissions": "Refusals",
+    "permissionsDesc": "Explicit deny rules that hold even in Full Access",
     "groupModel": "Model & AI",
     "groupExtensions": "Extensions & Tools",
     "groupPersonal": "Personalization",
@@ -1310,6 +1312,18 @@
   },
   "time": {
     "now": "now"
+  },
+  "permissions": {
+    "denyTitle": "Explicit refusal rules",
+    "denyDesc": "A deny rule is a persistent guardrail: it blocks the matching tool call even in Full Access mode, and the agent is told what was refused so it can adapt instead of failing silently. Pattern uses * as a wildcard matched against the tool input.",
+    "denyWinsOverFullAccess": "Full Access is ON — your deny rules below still apply and win over it.",
+    "noDenyRules": "No refusal rules yet. Add one below, e.g. bash + *.env*.",
+    "allInputs": "all inputs",
+    "removeRule": "Remove this rule",
+    "addRule": "Add rule",
+    "toolPlaceholder": "Tool (e.g. bash)",
+    "patternPlaceholder": "Pattern, e.g. *.env* (empty = all inputs)",
+    "patternHint": "* matches any text. Examples: *.env* (any command touching .env), *rm -rf* (destructive deletes), *migrations* (database migrations)."
   },
   "permission": {
     "permissionRequired": "Permission Required",

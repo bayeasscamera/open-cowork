@@ -86,12 +86,17 @@ export function isAutoApproveAll(): boolean {
  * Decide how a given tool call should be handled.
  *
  * Matching order:
- *   0. Global autoApproveAll flag (Full Access mode)
- *   1. Session-scoped "always allow" memory (including '*' for full session bypass)
- *   2. First rule whose `tool` matches (case-insensitive) AND whose
+ *   0. User DENY rules (explicit refusals). They win over EVERYTHING below —
+ *      Full Access mode, session "always allow" memory, everything. A deny
+ *      rule is a persistent guardrail ("never touch .env"), not a suggestion,
+ *      so no convenience bypass may silently override it: the refusal is
+ *      reported with the rule attached instead.
+ *   1. Global autoApproveAll flag (Full Access mode)
+ *   2. Session-scoped "always allow" memory (including '*' for full session bypass)
+ *   3. First rule whose `tool` matches (case-insensitive) AND whose
  *      optional `pattern` (glob-ish: `*` = any substring) matches the
  *      stringified input
- *   3. Default: 'ask' for unknown tools (conservative)
+ *   4. Default: 'ask' for unknown tools (conservative)
  *
  * Defence-in-depth: even though `setPermissionRules` sanitizes input, we
  * re-validate the matched rule's action here so a malformed rule that
@@ -103,21 +108,81 @@ export function decidePermission(
   toolName: string,
   input: Record<string, unknown>
 ): 'allow' | 'deny' | 'ask' {
-  if (autoApproveAll) return 'allow';
+  return decidePermissionWithDetail(sessionId, toolName, input).decision;
+}
 
+export interface PermissionDecisionDetail {
+  decision: 'allow' | 'deny' | 'ask';
+  /**
+   * The user deny rule that refused the call, if any. Non-null exactly when
+   * the decision is a user-deny refusal — the hook turns it into the
+   * explanation the agent receives.
+   */
+  matchedDenyRule: PermissionRule | null;
+  /**
+   * Which convenience bypass the deny rule overrode, for honest logging.
+   * Null when no bypass was active or the decision is not a deny.
+   */
+  overriddenBypass: 'autoApprove' | 'sessionAllow' | null;
+}
+
+export function decidePermissionWithDetail(
+  sessionId: string,
+  toolName: string,
+  input: Record<string, unknown>
+): PermissionDecisionDetail {
   const lowered = toolName.toLowerCase();
+  const inputStr = safeStringify(input);
+
+  // Step 0 — explicit user refusals first. A deny rule that matches the tool
+  // AND its pattern refuses even under Full Access: report what it overrode.
+  for (const rule of rules) {
+    if (rule.action !== 'deny') continue;
+    if (rule.tool.toLowerCase() !== lowered) continue;
+    if (rule.pattern && !matchesPattern(rule.pattern, inputStr)) continue;
+    let overriddenBypass: PermissionDecisionDetail['overriddenBypass'] = null;
+    if (autoApproveAll) {
+      overriddenBypass = 'autoApprove';
+    } else {
+      const session = alwaysAllowBySession.get(sessionId);
+      if (session?.has('*') || session?.has(lowered)) overriddenBypass = 'sessionAllow';
+    }
+    return { decision: 'deny', matchedDenyRule: { ...rule }, overriddenBypass };
+  }
+
+  if (autoApproveAll) return { decision: 'allow', matchedDenyRule: null, overriddenBypass: null };
 
   const session = alwaysAllowBySession.get(sessionId);
-  if (session?.has('*') || session?.has(lowered)) return 'allow';
-
-  const inputStr = safeStringify(input);
+  if (session?.has('*') || session?.has(lowered)) {
+    return { decision: 'allow', matchedDenyRule: null, overriddenBypass: null };
+  }
 
   for (const rule of rules) {
     if (rule.tool.toLowerCase() !== lowered) continue;
     if (rule.pattern && !matchesPattern(rule.pattern, inputStr)) continue;
-    return VALID_ACTIONS.has(rule.action) ? rule.action : 'ask';
+    return {
+      decision: VALID_ACTIONS.has(rule.action) ? rule.action : 'ask',
+      matchedDenyRule: null,
+      overriddenBypass: null,
+    };
   }
-  return 'ask';
+  return { decision: 'ask', matchedDenyRule: null, overriddenBypass: null };
+}
+
+/**
+ * The explanation handed to the agent when a user deny rule refuses a tool
+ * call. It names the rule (so the refusal is attributable, not mysterious)
+ * and tells the model what to do instead of just failing: report the refusal
+ * to the user and adapt the approach rather than retrying or going silent.
+ */
+export function describeDenyRefusal(toolName: string, rule: PermissionRule): string {
+  const scope = rule.pattern ? ` matching '${rule.pattern}'` : '';
+  return (
+    `Tool '${toolName}' is blocked by your deny rule (tool '${rule.tool}'${scope}). ` +
+    `Explain to the user what was refused and why, then adapt your approach ` +
+    `to achieve the goal without the blocked action — do not retry the same ` +
+    `call and do not fail silently.`
+  );
 }
 
 export function rememberAlwaysAllow(sessionId: string, toolName: string): void {

@@ -253,6 +253,18 @@
   "time": {
     "now": "maintenant"
   },
+  "permissions": {
+    "denyTitle": "Règles de refus explicites",
+    "denyDesc": "Une règle de refus est un garde-fou persistant : elle bloque l'appel d'outil correspondant même en mode Accès total, et l'agent est informé de ce qui a été refusé pour adapter son approche au lieu d'échouer silencieusement. Le motif utilise * comme joker, comparé à l'entrée de l'outil.",
+    "denyWinsOverFullAccess": "L'Accès total est ACTIVÉ — vos règles de refus ci-dessous s'appliquent quand même et priment.",
+    "noDenyRules": "Aucune règle de refus. Ajoutez-en une ci-dessous, ex. bash + *.env*.",
+    "allInputs": "toutes les entrées",
+    "removeRule": "Supprimer cette règle",
+    "addRule": "Ajouter",
+    "toolPlaceholder": "Outil (ex. bash)",
+    "patternPlaceholder": "Motif, ex. *.env* (vide = toutes les entrées)",
+    "patternHint": "* remplace n'importe quel texte. Exemples : *.env* (commande touchant .env), *rm -rf* (suppressions destructrices), *migrations* (migrations de base)."
+  },
   "permission": {
     "permissionRequired": "Autorisation requise",
     "tool": "Outil :",
@@ -334,6 +346,8 @@
     "generalDesc": "Apparence, langue et préférences",
     "diagnostics": "Diagnostics",
     "diagnosticsDesc": "Vérifier identifiants, espace de travail, bac à sable et stockage",
+    "permissions": "Refus",
+    "permissionsDesc": "Règles de refus explicites, même en Accès total",
     "groupModel": "Modèle & IA",
     "groupExtensions": "Extensions & Outils",
     "groupPersonal": "Personnalisation",

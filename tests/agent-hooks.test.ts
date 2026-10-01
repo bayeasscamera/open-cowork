@@ -10,7 +10,11 @@ const mocks = vi.hoisted(() => ({
   runPreToolUse: vi.fn(),
   runPostToolUse: vi.fn(),
   recordSkillUseIfApplicable: vi.fn(),
-  decidePermission: vi.fn(),
+  decidePermissionWithDetail: vi.fn(),
+  describeDenyRefusal: vi.fn(
+    (toolName: string, rule: { tool: string; pattern?: string }) =>
+      `Tool '${toolName}' is blocked by your deny rule (tool '${rule.tool}'${rule.pattern ? ` matching '${rule.pattern}'` : ''}).`
+  ),
   rememberAlwaysAllow: vi.fn(),
 }));
 
@@ -27,7 +31,8 @@ vi.mock('../src/main/mods/skill-doctor', () => ({
   recordSkillUseIfApplicable: mocks.recordSkillUseIfApplicable,
 }));
 vi.mock('../src/main/config/permission-rules-store', () => ({
-  decidePermission: mocks.decidePermission,
+  decidePermissionWithDetail: mocks.decidePermissionWithDetail,
+  describeDenyRefusal: mocks.describeDenyRefusal,
   rememberAlwaysAllow: mocks.rememberAlwaysAllow,
 }));
 vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logWarn: vi.fn(), logError: vi.fn() }));
@@ -74,7 +79,11 @@ beforeEach(() => {
   afterHook = undefined;
   makeAgent();
   mocks.getPiAgentInternals.mockReturnValue(agent);
-  mocks.decidePermission.mockReturnValue('allow');
+  mocks.decidePermissionWithDetail.mockReturnValue({
+    decision: 'allow',
+    matchedDenyRule: null,
+    overriddenBypass: null,
+  });
   mocks.runPreToolUse.mockReturnValue({ block: false });
   mocks.runPostToolUse.mockImplementation(
     (_call: unknown, result: { content: string }) => result.content
@@ -104,16 +113,42 @@ describe('installPermissionHook', () => {
   it('blocks a denied tool without consulting the SDK hook', async () => {
     const sdkHook = vi.fn(async () => 'sdk');
     mocks.getPiAgentInternals.mockReturnValue(makeAgent(sdkHook));
-    mocks.decidePermission.mockReturnValue('deny');
+    mocks.decidePermissionWithDetail.mockReturnValue({
+      decision: 'deny',
+      matchedDenyRule: { tool: 'read', action: 'deny' },
+      overriddenBypass: null,
+    });
 
     installPermissionHook(permissionOptions(vi.fn()));
     const result = await beforeHook?.(ctx);
 
     expect(result).toEqual({
       block: true,
-      reason: "Tool 'nice-Read' is denied by your permission rules.",
+      reason: "Tool 'nice-Read' is blocked by your deny rule (tool 'read').",
     });
     expect(sdkHook).not.toHaveBeenCalled();
+  });
+
+  it('hands the agent the deny rule explanation so it can adapt', async () => {
+    mocks.getPiAgentInternals.mockReturnValue(makeAgent(vi.fn()));
+    mocks.decidePermissionWithDetail.mockReturnValue({
+      decision: 'deny',
+      matchedDenyRule: { tool: 'bash', pattern: '*.env*', action: 'deny' },
+      overriddenBypass: 'autoApprove',
+    });
+
+    installPermissionHook(permissionOptions(vi.fn()));
+    const result = await beforeHook?.(ctx);
+
+    expect(mocks.describeDenyRefusal).toHaveBeenCalledWith('nice-Read', {
+      tool: 'bash',
+      pattern: '*.env*',
+      action: 'deny',
+    });
+    expect(result).toEqual({
+      block: true,
+      reason: "Tool 'nice-Read' is blocked by your deny rule (tool 'bash' matching '*.env*').",
+    });
   });
 
   it('delegates to the SDK hook when the decision allows the call', async () => {
@@ -130,7 +165,11 @@ describe('installPermissionHook', () => {
   it('asks the renderer and proceeds when the user allows', async () => {
     const requestPermission = vi.fn(async () => 'allow' as const);
     installPermissionHook(permissionOptions(requestPermission));
-    mocks.decidePermission.mockReturnValue('ask');
+    mocks.decidePermissionWithDetail.mockReturnValue({
+      decision: 'ask',
+      matchedDenyRule: null,
+      overriddenBypass: null,
+    });
 
     const result = await beforeHook?.(ctx);
 
@@ -144,7 +183,11 @@ describe('installPermissionHook', () => {
   });
 
   it('blocks when the user denies', async () => {
-    mocks.decidePermission.mockReturnValue('ask');
+    mocks.decidePermissionWithDetail.mockReturnValue({
+      decision: 'ask',
+      matchedDenyRule: null,
+      overriddenBypass: null,
+    });
     installPermissionHook(permissionOptions(vi.fn(async () => 'deny' as const)));
 
     const result = await beforeHook?.(ctx);
@@ -153,7 +196,11 @@ describe('installPermissionHook', () => {
   });
 
   it('remembers always-allow decisions with the canonical tool name', async () => {
-    mocks.decidePermission.mockReturnValue('ask');
+    mocks.decidePermissionWithDetail.mockReturnValue({
+      decision: 'ask',
+      matchedDenyRule: null,
+      overriddenBypass: null,
+    });
     installPermissionHook(permissionOptions(vi.fn(async () => 'allow_always' as const)));
 
     await beforeHook?.(ctx);
@@ -162,7 +209,11 @@ describe('installPermissionHook', () => {
   });
 
   it('fails closed when the permission request throws', async () => {
-    mocks.decidePermission.mockReturnValue('ask');
+    mocks.decidePermissionWithDetail.mockReturnValue({
+      decision: 'ask',
+      matchedDenyRule: null,
+      overriddenBypass: null,
+    });
     installPermissionHook(
       permissionOptions(
         vi.fn(async () => {
