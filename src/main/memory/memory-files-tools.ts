@@ -60,7 +60,14 @@ export function createMemoryFileTools(options: MemoryFileToolOptions): AgentRunt
       { path, old_str: Type.String({ minLength: 1 }), new_str: Type.String(), if_version: version },
       { additionalProperties: false }
     ),
-    memory_delete: Type.Object({ path, if_version: version }, { additionalProperties: false }),
+    memory_delete: Type.Object(
+      {
+        path,
+        if_version: version,
+        purge_history: Type.Optional(Type.Boolean()),
+      },
+      { additionalProperties: false }
+    ),
   };
   const descriptions = {
     memory_list: 'List versioned memory-file metadata and optional previews.',
@@ -71,7 +78,7 @@ export function createMemoryFileTools(options: MemoryFileToolOptions): AgentRunt
     memory_append: 'Append to an existing memory file using its previously read version.',
     memory_str_replace: 'Replace an exact unique passage using the previously read file version.',
     memory_delete:
-      'Delete only on explicit user request. Every call requires fresh trusted UI confirmation, even in full access mode.',
+      'Delete only on explicit user request. Every call requires fresh trusted UI confirmation, even in full access mode. History is retained for recovery unless purge_history is true, which forgets the file completely.',
   };
   return (Object.keys(schemas) as Array<keyof typeof schemas>).map((name) => ({
     name,
@@ -93,6 +100,7 @@ export function createMemoryFileTools(options: MemoryFileToolOptions): AgentRunt
           new_str: string;
           path_prefix?: string;
           include_preview?: boolean;
+          purge_history?: boolean;
         };
         switch (name) {
           case 'memory_list':
@@ -121,6 +129,9 @@ export function createMemoryFileTools(options: MemoryFileToolOptions): AgentRunt
             if (!options.isEnabled() || signal?.aborted)
               return result({ error: 'memory_disabled' });
             // Store performs CAS after approval, so intervening changes cannot be deleted.
+            if (p.purge_history === true) {
+              return result(store.hardDelete(owner, p.path, p.if_version));
+            }
             return result(store.delete(owner, p.path, p.if_version));
           }
         }

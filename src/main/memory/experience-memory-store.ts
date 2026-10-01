@@ -341,14 +341,32 @@ export class ExperienceMemoryStore {
       sessionTopK?: number;
       queryEmbedding?: number[];
       currentWorkspace?: string | null;
+      /**
+       * When true (and a workspace is known), chunks/sessions from a DIFFERENT
+       * workspace never rank — a mere -0.03 boost lets a highly-relevant
+       * foreign chunk beat a mediocre local one, leaking project A's content
+       * into project B's prompt. Unattributed (null) items count as shared.
+       */
+      strictWorkspace?: boolean;
     }
   ): ProgressiveRetrievalResult {
     const chunkTopK = options?.chunkTopK ?? 10;
     const sessionTopK = options?.sessionTopK ?? 5;
     const currentWorkspace = normalizeWorkspaceKey(options?.currentWorkspace || null);
     const queryEmbedding = options?.queryEmbedding;
+    const strict = options?.strictWorkspace === true && currentWorkspace !== null;
+    const visibleChunks = strict
+      ? this.chunks.filter(
+          (item) => item.sourceWorkspace === currentWorkspace || item.sourceWorkspace == null
+        )
+      : this.chunks;
+    const visibleSessions = strict
+      ? this.sessions.filter(
+          (item) => item.sourceWorkspace === currentWorkspace || item.sourceWorkspace == null
+        )
+      : this.sessions;
 
-    const rankedChunks = this.rankItems(query, this.chunks, chunkTopK, queryEmbedding, currentWorkspace, (item) => [
+    const rankedChunks = this.rankItems(query, visibleChunks, chunkTopK, queryEmbedding, currentWorkspace, (item) => [
       item.summary,
       item.details,
       item.rawText,
@@ -358,7 +376,7 @@ export class ExperienceMemoryStore {
     ].join(' '));
     const rankedSessions = this.rankItems(
       query,
-      this.sessions,
+      visibleSessions,
       sessionTopK,
       queryEmbedding,
       currentWorkspace,

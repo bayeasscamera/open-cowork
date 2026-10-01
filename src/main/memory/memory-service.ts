@@ -42,6 +42,7 @@ import {
   getFileTimestampMs,
   isSubPath,
   isoNow,
+  isWorkspaceVisible,
   loadJsonFile,
   messagesToTranscript,
   normalizeWorkspaceKey,
@@ -994,6 +995,9 @@ export class MemoryService {
       sessionTopK: 5,
       queryEmbedding,
       currentWorkspace,
+      // Prompt injection is workspace-scoped: another workspace's content
+      // never ranks here, even when highly relevant (see strictWorkspace).
+      strictWorkspace: true,
     });
     if (!retrieval.broadSummaries.length) {
       return '';
@@ -1016,18 +1020,23 @@ export class MemoryService {
       for (const action of decision.actions) {
         if (action.type === 'expand_chunk' && action.chunkId) {
           const chunk = store.getChunk(action.chunkId);
-          if (chunk) {
+          // The model names the chunk id: re-check the workspace here, or a
+          // foreign chunk smuggles another project's raw text into this
+          // prompt despite strict ranking above.
+          if (chunk && isWorkspaceVisible(chunk.sourceWorkspace, currentWorkspace)) {
             expandedChunks.set(action.chunkId, {
               rawText: chunk.rawText,
               keywords: chunk.keywords,
               sessionId: chunk.sessionId,
               sourceWorkspace: chunk.sourceWorkspace || null,
             });
+          } else if (chunk) {
+            log('[MemoryService] Skipped cross-workspace chunk expansion:', action.chunkId);
           }
         }
         if (action.type === 'expand_session' && action.sessionId) {
           const session = store.getSession(action.sessionId);
-          if (session) {
+          if (session && isWorkspaceVisible(session.sourceWorkspace, currentWorkspace)) {
             expandedSessions.set(action.sessionId, {
               summary: session.summary,
               keywords: session.keywords,
@@ -1044,7 +1053,7 @@ export class MemoryService {
         }
         if (action.type === 'get_raw_session' && action.sessionId) {
           const session = store.getSession(action.sessionId);
-          if (session) {
+          if (session && isWorkspaceVisible(session.sourceWorkspace, currentWorkspace)) {
             rawSessions.set(
               action.sessionId,
               `[Raw Session ${action.sessionId} | Date: ${session.sessionDate} | Source: ${session.sourceWorkspace || 'global'}]\n${this.renderBoundedTranscript(

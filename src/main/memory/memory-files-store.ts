@@ -639,8 +639,7 @@ export class MemoryFilesStore {
    * Delete a file (a deletion marker is kept in bounded history).
    * `ifVersion` must match the current token.
    */
-  delete(owner: string, path: string, ifVersion: string): MemoryDeleteResult {
-    assertOwner(owner);
+  delete(owner: string, path: string, ifVersion: string): MemoryDeleteResult {    assertOwner(owner);
     const canonical = canonicalizeMemoryPath(path);
     this.assertToken(ifVersion);
     try {
@@ -679,6 +678,26 @@ export class MemoryFilesStore {
       if (error instanceof MemoryFilesError) throw error;
       throw new MemoryFilesError('db_error', 'Memory file database operation failed.');
     }
+  }
+
+  /**
+   * Definitive deletion: same CAS as `delete()`, but the revision history for
+   * the path is purged too, so no content survives in `readHistory()`. This
+   * is the only deletion that honors "forget this completely".
+   */
+  hardDelete(owner: string, path: string, ifVersion: string): MemoryDeleteResult {
+    const result = this.delete(owner, path, ifVersion);
+    try {
+      assertOwner(owner);
+      const canonical = canonicalizeMemoryPath(path);
+      this.db
+        .prepare('DELETE FROM memory_files_history WHERE owner = ? AND path = ?')
+        .run(owner, canonical);
+    } catch (error) {
+      if (error instanceof MemoryFilesError) throw error;
+      throw new MemoryFilesError('db_error', 'Memory file database operation failed.');
+    }
+    return result;
   }
 
   /**

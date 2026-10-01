@@ -208,6 +208,23 @@ export function summarizeText(text: string, maxLength = 220): string {
 }
 
 /**
+ * Workspace visibility for prompt injection.
+ *
+ * A stored item is visible in a session's prompt when it belongs to the same
+ * workspace, when it is unattributed (legacy null = shared), or when there is
+ * no session workspace to scope against. Items from a DIFFERENT workspace are
+ * never visible — relevance does not override this.
+ */
+export function isWorkspaceVisible(
+  sourceWorkspace: string | null | undefined,
+  currentWorkspace: string | null | undefined
+): boolean {
+  if (!currentWorkspace) return true;
+  if (sourceWorkspace == null) return true;
+  return sourceWorkspace === currentWorkspace;
+}
+
+/**
  * Hard budget helpers for prompt injection.
  *
  * A model-driven expansion (`expand_chunk`, `get_raw_session`) must never
