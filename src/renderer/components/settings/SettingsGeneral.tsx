@@ -173,8 +173,13 @@ export function SettingsGeneral() {
   const summary = summarizeConfiguration(appConfig);
   const configured = Boolean(appConfig?.isConfigured);
   const platform = window.electronAPI?.platform || 'darwin';
-  const isArm = navigator.userAgent.includes('Arm') || navigator.userAgent.includes('Apple');
-  const architecture = isArm ? 'arm64' : 'x64';
+  // Architecture comes from the main process (`process.arch`), not from
+  // `navigator.userAgent`. The UA describes the browser engine, not the running
+  // binary: an x64 Electron build on Apple silicon reports "Intel" and was
+  // therefore mislabelled `x64`. Reading a global that does not exist in a
+  // non-DOM environment (tests, SSR) also threw `navigator is not defined`,
+  // taking the whole settings screen down with it.
+  const architecture = window.electronAPI?.arch || 'x64';
   const currentLanguageName =
     LANGUAGES.find((lang) => lang.code === currentLang)?.nativeName ?? currentLang;
 

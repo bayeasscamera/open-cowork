@@ -444,6 +444,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Platform info
   platform: process.platform,
+  /**
+   * CPU architecture of the running app, straight from the process.
+   *
+   * The renderer used to infer this from `navigator.userAgent`, which is wrong
+   * twice over: UA sniffing is deprecated on Apple platforms, and the UA
+   * describes the *browser engine*, not the binary Cowork is running as. An
+   * x64 Electron build on Apple silicon reports "Intel" in its UA and was
+   * therefore labelled `x64` in the settings overview.
+   */
+  arch: process.arch,
 
   // System theme
   getSystemTheme: () => ipcRenderer.invoke('system.getTheme'),
@@ -1272,6 +1282,12 @@ declare global {
         }>;
       };
       platform: NodeJS.Platform;
+      /**
+       * CPU architecture of the running app (`process.arch`). Always defined;
+       * falls back to `x64` where it is somehow absent so the settings overview
+       * degrades instead of throwing.
+       */
+      arch: string;
       getSystemTheme: () => Promise<{ shouldUseDarkColors: boolean }>;
       getVersion: () => Promise<string>;
       openExternal: (url: string) => Promise<boolean>;

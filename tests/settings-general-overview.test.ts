@@ -114,6 +114,7 @@ beforeEach(() => {
   vi.stubGlobal('window', {
     electronAPI: {
       platform: 'darwin',
+      arch: 'arm64',
       getVersion,
       config: { get: configGet, save },
     },
@@ -183,6 +184,50 @@ describe('settings general overview', () => {
     expect(
       view.sections.some((section) => section.props.title === 'general.systemSection')
     ).toBe(true);
+  });
+
+  // Regression: the architecture row used to be derived from
+  // `navigator.userAgent`, which (a) threw `navigator is not defined` wherever
+  // no DOM global exists, and (b) reported the wrong architecture anyway — the
+  // UA describes the browser engine, so an x64 Electron build on Apple silicon
+  // was labelled `x64`. `process.arch` exposed by the preload is the truth.
+  it('reports the architecture from the preload, not the user agent', () => {
+    vi.stubGlobal('window', {
+      electronAPI: {
+        platform: 'darwin',
+        arch: 'arm64',
+        getVersion,
+        config: { get: configGet, save },
+      },
+    });
+    // An x64 UA on an arm64 host must not win over the real architecture.
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 ... Intel Mac OS X ... x86_64' });
+    expect(render().text).toContain('arm64');
+  });
+
+  it('renders without throwing when no DOM globals exist at all', () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('window', {
+      electronAPI: {
+        platform: 'darwin',
+        arch: 'arm64',
+        getVersion,
+        config: { get: configGet, save },
+      },
+    });
+    // No `navigator` global: the component must still render.
+    expect(() => render()).not.toThrow();
+  });
+
+  it('degrades to x64 when the preload does not report an architecture', () => {
+    vi.stubGlobal('window', {
+      electronAPI: {
+        platform: 'darwin',
+        getVersion,
+        config: { get: configGet, save },
+      },
+    });
+    expect(render().text).toContain('x64');
   });
 
   it('applies the selected theme through updateSettings', () => {
