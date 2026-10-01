@@ -5,6 +5,7 @@ import type { AppConfig } from '../config/config-store';
 import { configStore } from '../config/config-store';
 import type { DatabaseInstance, SessionRow } from '../db/database';
 import { log, logError, logWarn } from '../utils/logger';
+import { redactSecrets } from '../utils/secret-redaction';
 import { CoreMemoryStore } from './core-memory-store';
 import { CoreMemoryExtractor } from './core-memory-extractor';
 import { ExperienceMemoryExtractor } from './experience-memory-extractor';
@@ -797,12 +798,15 @@ export class MemoryService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logError('[MemoryService] Failed to ingest memory:', error);
+      // Exception text can echo memory content (paths, snippets): redact
+      // before persisting, since state is re-exposed via getOverview().
+      const safeMessage = redactSecrets(message).slice(0, 500);
       stateStore.set({
         sessionId: session.id,
         sourceWorkspace,
         lastProcessedMessageCount,
         lastIngestedAt: previousState?.lastIngestedAt || null,
-        lastError: message,
+        lastError: safeMessage,
         createdAt: previousState?.createdAt || Date.now(),
         updatedAt: Date.now(),
       });

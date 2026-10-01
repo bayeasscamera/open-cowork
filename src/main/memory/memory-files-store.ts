@@ -26,6 +26,7 @@
 
 import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
+import { redactSecrets } from '../utils/secret-redaction';
 
 /** Machine-readable error codes for MemoryFilesError. */
 type MemoryFilesErrorCode =
@@ -493,6 +494,9 @@ export class MemoryFilesStore {
   write(owner: string, path: string, content: string, ifVersion: string): MemoryWriteResult {
     assertOwner(owner);
     const canonical = canonicalizeMemoryPath(path);
+    // Secrets pasted into a memory file must not rest on disk: redact the
+    // fragment before validation so quotas/versions apply to stored bytes.
+    content = redactSecrets(content);
     this.assertContent(content);
     this.assertToken(ifVersion);
     try {
@@ -592,7 +596,9 @@ export class MemoryFilesStore {
     if (typeof content !== 'string' || content.length === 0) {
       throw new MemoryFilesError('invalid_input', 'Append content must be a non-empty string.');
     }
-    return this.transform(owner, path, ifVersion, (existing) => `${existing}${content}`);
+    // Same redaction as write(): only the appended fragment is rewritten,
+    // already-stored content was redacted when it was written.
+    return this.transform(owner, path, ifVersion, (existing) => `${existing}${redactSecrets(content)}`);
   }
 
   /**
@@ -623,7 +629,9 @@ export class MemoryFilesStore {
       if (content.indexOf(oldStr, first + 1) !== -1) {
         throw new MemoryFilesError('ambiguous_match', 'old_str must match exactly one location.');
       }
-      return `${content.slice(0, first)}${newStr}${content.slice(first + oldStr.length)}`;
+      // Inserted text is redacted like any other write path.
+      const safeNew = redactSecrets(newStr);
+      return `${content.slice(0, first)}${safeNew}${content.slice(first + oldStr.length)}`;
     });
   }
 

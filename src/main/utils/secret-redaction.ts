@@ -6,6 +6,9 @@
  *   - the security-redactor mod   (src/main/mods/builtin-mods.ts)
  *   - the main logger            (src/main/utils/logger.ts)
  *   - the headless stdout writer  (src/main/cli/headless-io.ts)
+ *   - the memory pipeline         (transcripts at ingestion, memory files on
+ *     write, persisted ingest errors — so secrets pasted in chat never rest
+ *     in cleartext on disk and never leave for the LLM/embedding provider)
  *
  * Rules run in order; specific token patterns (sk-, ghp_, JWT, SSH, …) must run
  * BEFORE the generic `key=value` rule so a prefixed key is attributed to its own
@@ -26,6 +29,14 @@ const SECRET_REDACTION_RULES: SecretRedactionRule[] = [
   { pattern: /\bghp_[A-Za-z0-9]{30,}\b/g, placeholder: '[REDACTED-TOKEN]' },
   { pattern: /\bgho_[A-Za-z0-9]{30,}\b/g, placeholder: '[REDACTED-TOKEN]' },
   { pattern: /\bgithub_pat_[A-Za-z0-9_]{30,}\b/g, placeholder: '[REDACTED-TOKEN]' },
+  // GitLab personal access tokens.
+  { pattern: /\bglpat-[A-Za-z0-9_-]{20,}\b/g, placeholder: '[REDACTED-TOKEN]' },
+  // AWS access key IDs (the secret key travels with them too often to ignore).
+  { pattern: /\bAKIA[0-9A-Z]{16}\b/g, placeholder: '[REDACTED-KEY]' },
+  // Google API keys.
+  { pattern: /\bAIza[0-9A-Za-z_-]{35}\b/g, placeholder: '[REDACTED-KEY]' },
+  // npm auth tokens (//registry…/:_authToken=… lines in .npmrc pastes).
+  { pattern: /_authToken\s*=\s*[A-Za-z0-9._~+/-]{12,}/g, placeholder: '_authToken=[REDACTED]' },
   // Slack tokens (xoxb- / xoxa- / xoxp- / xoxr- / xoxs-).
   { pattern: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g, placeholder: '[REDACTED-TOKEN]' },
   // HTTP Authorization bearer tokens.

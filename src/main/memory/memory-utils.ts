@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ContentBlock, Message } from '../../shared/types';
 import { quarantineRawProtocolMarkup } from '../../shared/raw-protocol-markup';
+import { redactSecrets } from '../utils/secret-redaction';
 import type {
   AppliedCoreMemoryAction,
   CoreMemoryActionInput,
@@ -178,9 +179,12 @@ export function messagesToTranscript(messages: Message[]): MemoryTranscriptTurn[
       if (!content) {
         return null;
       }
+      // THE choke point: every stored transcript, every LLM extraction input
+      // and every embedding derives from these turns. Redacting here means a
+      // pasted secret never rests on disk and never leaves for the provider.
       return {
         role: message.role,
-        content,
+        content: redactSecrets(content),
         messageId: message.id,
         timestamp: message.timestamp,
       };
