@@ -38,6 +38,12 @@ interface RunCodeChildOptions {
   write: (line: string) => void;
   /** Read one JSONL line. Injected for testability. */
   read: () => Promise<string | null>;
+  /**
+   * The V8 heap limit actually in force for this process. Read here, in the
+   * child module, because the script itself is evaluated in a `new Function`
+   * body where `require` is not in scope.
+   */
+  heapLimitBytes: () => number;
 }
 
 /**
@@ -102,7 +108,16 @@ function createToolsProxy(
 export async function runCodeChild(options: RunCodeChildOptions & {
   maxToolCalls: number;
 }): Promise<void> {
-  const { source, transpile, write, read, maxToolCalls } = options;
+  const { source, transpile, write, read, maxToolCalls, heapLimitBytes } = options;
+
+  // Report the real limit first, so the host can prove the cap was applied
+  // rather than merely intended.
+  try {
+    write(JSON.stringify({ type: 'ready', heapLimitBytes: heapLimitBytes() }));
+  } catch {
+    // A failure to self-report must not stop the run; the host treats `ready`
+    // as optional.
+  }
 
   let compiled: string;
   try {

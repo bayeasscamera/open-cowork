@@ -27,6 +27,23 @@ export const runCodeRequestSchema = z.object({
 });
 export type RunCodeRequest = z.infer<typeof runCodeRequestSchema>;
 
+/**
+ * Child -> main, once, immediately at startup.
+ *
+ * This exists so the memory cap is OBSERVABLE rather than merely configured. A
+ * flag that is silently dropped looks exactly like one that is working; without
+ * this message the only evidence available is a child that eventually dies, which
+ * an uncapped child also does. The child cannot read its own heap limit from the
+ * model's scope (the script is evaluated in a `new Function` body, where `require`
+ * does not exist), so the child module reports it for itself.
+ */
+export const runCodeReadySchema = z.object({
+  type: z.literal('ready'),
+  /** The V8 heap limit actually in force for this process, in bytes. */
+  heapLimitBytes: z.number().int().positive(),
+});
+export type RunCodeReady = z.infer<typeof runCodeReadySchema>;
+
 /** Child -> main, once, at the end. */
 export const runCodeDoneSchema = z.object({
   type: z.literal('done'),
@@ -57,6 +74,7 @@ export type RunCodeResponse = z.infer<typeof runCodeResponseSchema>;
 
 export const runCodeChildMessageSchema = z.union([
   runCodeRequestSchema,
+  runCodeReadySchema,
   runCodeDoneSchema,
   runCodeErrorSchema,
 ]);
@@ -112,7 +130,11 @@ export interface RunCodeLimits {
   maxToolCalls: number;
   /** Cap on a single tool result handed back to the child. */
   maxToolResultChars: number;
-  /** Address-space cap for the child, in bytes. Passed to the OS. */
+  /**
+   * V8 old-space cap for the child, in bytes, passed to the child as
+   * --max-old-space-size. This bounds runaway JS allocation; it is NOT an RSS
+   * cap, so native allocations can still exceed it. The timeout bounds those.
+   */
   maxMemoryBytes: number;
 }
 

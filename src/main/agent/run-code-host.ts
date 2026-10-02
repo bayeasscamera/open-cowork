@@ -26,6 +26,7 @@ import {
   buildChildEnv,
   parseChildMessage,
   resolveRunCodeLimits,
+  DEFAULT_RUN_CODE_LIMITS,
   type RunCodeLimits,
   type RunCodeResponse,
 } from './run-code-protocol';
@@ -74,6 +75,12 @@ export interface RunCodeResult {
   error?: string;
   toolCalls: number;
   durationMs: number;
+  /**
+   * The V8 heap limit the child reported at startup, in bytes. Present only if
+   * the child managed to send its `ready` message. A caller that cares whether
+   * the memory cap was really applied reads this, not the request.
+   */
+  heapLimitBytes?: number;
 }
 
 /**
@@ -98,6 +105,24 @@ function killProcessGroup(child: ChildProcess): void {
       // Nothing left to kill.
     }
   }
+}
+
+/**
+ * Convert the byte budget into a V8 old-space cap in MiB.
+ *
+ * Clamped on both sides. The floor keeps the child from being started with a cap
+ * so small that it cannot even boot Node; the ceiling stops a caller from
+ * passing a huge value and quietly disabling the limit. `--max-old-space-size`
+ * takes MiB, so anything under 1 MiB would round to zero and be ignored, which
+ * would leave the child uncapped while appearing configured.
+ */
+export function heapLimitMb(maxMemoryBytes: number): number {
+  const MIB = 1024 * 1024;
+  if (!Number.isFinite(maxMemoryBytes) || maxMemoryBytes <= 0) {
+    return Math.floor(DEFAULT_RUN_CODE_LIMITS.maxMemoryBytes / MIB);
+  }
+  const mb = Math.floor(maxMemoryBytes / MIB);
+  return Math.min(Math.max(mb, 64), 4096);
 }
 
 /**
@@ -150,13 +175,22 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
   let outputBytes = 0;
   let stdout = '';
   let failure: { status: RunCodeStatus; error: string } | null = null;
+  let observedHeapLimitBytes: number | undefined;
 
   return await new Promise<RunCodeResult>((resolve) => {
     let child: ChildProcess;
     try {
       child = spawn(
         request.execPath ?? process.execPath,
-        [childScript],
+        // V8 flags go in the argument list, before the script path — NOT in
+        // `execArgv`, which `fork()` accepts but `spawn()` does not. The memory
+        // cap is only real if the child is actually started with it.
+        //
+        // What this does and does not bound: --max-old-space-size caps the V8
+        // OLD SPACE, which is where runaway JS allocation lands. It is not an
+        // RSS cap, so a native allocation or a Buffer outside the heap can
+        // still exceed it; the timeout is what bounds that case.
+        [`--max-old-space-size=${heapLimitMb(limits.maxMemoryBytes)}`, childScript],
         {
           cwd: request.cwd,
           // Own process group, so the timeout can kill the whole tree.
@@ -187,7 +221,14 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
       } catch {
         /* already closed */
       }
-      resolve({ ...result, toolCalls, durationMs: Date.now() - started });
+      resolve({
+        ...result,
+        toolCalls,
+        durationMs: Date.now() - started,
+        ...(observedHeapLimitBytes === undefined
+          ? {}
+          : { heapLimitBytes: observedHeapLimitBytes }),
+      });
     };
 
     const timer = setTimeout(() => {
@@ -256,6 +297,13 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
               error: `Tool '${message.tool}' failed: ${error instanceof Error ? error.message : String(error)}`,
             });
           });
+        return;
+      }
+
+      if (message.type === 'ready') {
+        // The cap is only real if the child agrees it is. Recording it makes
+        // that checkable instead of assumed.
+        observedHeapLimitBytes = message.heapLimitBytes;
         return;
       }
 

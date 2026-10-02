@@ -169,7 +169,7 @@ Enforced by the host (`src/main/agent/run-code-host.ts`):
 | tool calls | 50 per execution |
 | protocol output | 1 MB |
 | single tool result | 64 000 chars |
-| child memory | 512 MB |
+| child memory | 512 MB (V8 old space, enforced via `--max-old-space-size`) |
 | environment | secrets stripped by pattern, not by an allow-list of names |
 
 Approvals are the **session's**; `detachedAutoApprove` is deliberately never

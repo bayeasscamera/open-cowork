@@ -14,6 +14,8 @@
  */
 
 import { createInterface } from 'readline';
+import * as v8 from 'node:v8';
+
 import { runCodeChild } from './run-code-child';
 
 /**
@@ -99,6 +101,7 @@ async function main(): Promise<void> {
       });
     },
     maxToolCalls,
+    heapLimitBytes: () => v8.getHeapStatistics().heap_size_limit,
   });
 }
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 
-import { runCode } from '../src/main/agent/run-code-host';
+import { runCode, heapLimitMb } from '../src/main/agent/run-code-host';
 import { DEFAULT_RUN_CODE_LIMITS, buildChildEnv, isSecretEnvName, parseChildMessage, resolveRunCodeLimits } from '../src/main/agent/run-code-protocol';
 import { ToolRegistry, type ToolDefinition } from '../src/main/tools/registry';
 import { STANDARD_PRESET } from '../src/main/presets/builtin-presets';
@@ -288,6 +288,41 @@ describe('a child that crashes does not take the app with it', () => {
     expect(result.error).toContain('unexpectedly');
   }, 30_000);
 
+  it('the child actually starts with the requested heap cap', async () => {
+    // The previous OOM test only proved the HOST survives the child dying. That
+    // is containment, not enforcement: an uncapped child also dies eventually.
+    // The child reports its real heap limit at startup, so a silently dropped
+    // flag fails here instead of in production.
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `return 1;`,
+      limits: { timeoutMs: 15_000, maxMemoryBytes: 256 * 1024 * 1024 },
+    });
+    expect(result.status).toBe('completed');
+    expect(result.heapLimitBytes).toBeGreaterThan(200 * 1024 * 1024);
+    expect(result.heapLimitBytes).toBeLessThan(320 * 1024 * 1024);
+  });
+
+  it('a different cap produces a different child limit, proving the flag is wired', async () => {
+    const { registry, base } = harness([], []);
+    const readLimit = async (bytes: number): Promise<number> => {
+      const result = await runCode({
+        ...base,
+        registry,
+        source: `return 1;`,
+        limits: { timeoutMs: 15_000, maxMemoryBytes: bytes },
+      });
+      expect(result.status).toBe('completed');
+      expect(result.heapLimitBytes).toBeTypeOf('number');
+      return result.heapLimitBytes as number;
+    };
+    const small = await readLimit(128 * 1024 * 1024);
+    const large = await readLimit(768 * 1024 * 1024);
+    expect(large).toBeGreaterThan(small);
+  });
+
   it('an out-of-memory allocation is contained by the child boundary', async () => {
     const { registry, base } = harness([], []);
     const result = await runCode({
@@ -304,6 +339,31 @@ describe('a child that crashes does not take the app with it', () => {
     // The test process is still alive to make this assertion.
     expect(true).toBe(true);
   }, 40_000);
+});
+
+describe('the heap cap is clamped into a range Node will actually honour', () => {
+  it('converts bytes to whole MiB', () => {
+    expect(heapLimitMb(512 * 1024 * 1024)).toBe(512);
+    expect(heapLimitMb(300 * 1024 * 1024)).toBe(300);
+  });
+
+  it('never rounds a tiny budget down to zero, which Node would ignore', () => {
+    // `--max-old-space-size=0` is not "unlimited" in a useful sense and a
+    // sub-MiB value would leave the child effectively uncapped while the config
+    // claimed otherwise.
+    expect(heapLimitMb(1024)).toBe(64);
+    expect(heapLimitMb(1)).toBe(64);
+  });
+
+  it('clamps a huge request so the cap cannot be disabled by override', () => {
+    expect(heapLimitMb(64 * 1024 * 1024 * 1024)).toBe(4096);
+  });
+
+  it('falls back to the default for a nonsensical value', () => {
+    expect(heapLimitMb(0)).toBe(512);
+    expect(heapLimitMb(-1)).toBe(512);
+    expect(heapLimitMb(Number.NaN)).toBe(512);
+  });
 });
 
 describe('protocol and environment helpers', () => {
