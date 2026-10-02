@@ -23,7 +23,12 @@ export interface UntrustedSource {
   label: string;
 }
 
-/** Control characters and zero-width markers used to hide instructions. */
+/**
+ * Control characters and zero-width markers used to hide instructions.
+ * Built from escapes rather than a literal range so the intent survives
+ * copy/paste and the lint rule for control characters in regexes.
+ */
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 const ZERO_WIDTH = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
 
