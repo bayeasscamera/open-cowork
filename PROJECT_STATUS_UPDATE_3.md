@@ -262,6 +262,34 @@ every script fails to compile, with no error that points at the sandbox.
 On Linux the jail is structural: bubblewrap never mounts the home directory, so
 there is nothing to allow.
 
+### The four remaining points, closed
+
+**1. Ordinary files outside `$HOME` are now unreadable too.** System locations
+(`/etc`, `/tmp`, `/Library`, `/Applications`, `/bin`, `/sbin`, `/opt`, …) are
+denied by default. Two Seatbelt semantics made this possible and both were
+verified: umbrella `file-read*` denies do NOT override a specific-op
+`file-read-data` allow, so every deny names the operation; and every deny was
+checked individually, because `/var` breaks node at startup (`/var/folders`
+holds the temp dir and getcwd). What stays readable is small and named:
+`/System`, `/usr`, `/private`, `/dev`, node, esbuild, the child script, the
+workspace. Metadata (existence, size) is still visible; contents are not.
+
+**2. CPU and native memory are now enforced.** A host-side watchdog samples RSS
+and cumulative CPU every 250 ms and kills the process group past budget, with a
+distinct `resource_limit` status. `ulimit -t` was measured working on macOS but
+would need spawning through a shell (widening process-exec); `ulimit -v` is
+refused by Darwin outright. Sampling has inertia — observed 1.2 GB against a 300
+MB cap — so the message says it is a backstop, not a precise limit.
+
+**3. MCP schemas are guarded before AJV compiles them.** Size, depth, node caps
+plus patterns that must compile and fit 200 chars; refusals drop the tool with a
+logged reason. Backtracking detection is undecidable so nothing claims it; the
+cap turns an unbounded hang into a bounded refusal.
+
+**4. Windows is refused and the refusal is tested.** The platform is injectable,
+so forcing `win32` exercises the whole host path with no spawn. No per-process
+confinement exists there from a user process; failing closed manufactures no trust.
+
 ### Still true, and unchanged by this pass
 
 - **The sandbox is not a jail against everything.** The home directory is closed,
