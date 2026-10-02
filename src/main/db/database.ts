@@ -282,7 +282,9 @@ function getDatabasePath(): string {
  */
 function initializeSchema(database: Database.Database): void {
   try {
-    // Enable WAL mode for better performance & concurrent writes
+    // Enable WAL mode for better performance & concurrent writes.
+    // These pragmas MUST run outside a transaction (journal_mode cannot be
+    // changed while one is open), so they are kept apart from the DDL block.
     database.pragma('journal_mode = WAL');
     database.pragma('synchronous = NORMAL');
     database.pragma('cache_size = -64000'); // 64MB cache
@@ -295,7 +297,54 @@ function initializeSchema(database: Database.Database): void {
     // `new Database(path, { timeout })` cannot silently drop the guarantee.
     database.pragma('busy_timeout = 5000');
 
-    // Create sessions table
+    // Serialize the entire DDL block against a concurrent migrator. Taking the
+    // write lock UP FRONT (BEGIN IMMEDIATE, not the default deferred BEGIN)
+    // is what makes the check-then-act in `ensureColumn` safe: a second
+    // process cannot interleave its own PRAGMA/ALTER pair inside ours, so the
+    // loser's ALTER is the only failure mode left — and that one is already
+    // handled idempotently. `runWithWriteLockRetry` covers the case where the
+    // other process still holds the lock when we ask for it.
+    runSchemaMigrations(database);
+
+    log('[Database] Schema initialized');
+  } catch (error) {
+    logError('[Database] Schema initialization failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Run the whole schema migration inside one `BEGIN IMMEDIATE` transaction,
+ * retrying write-lock contention.
+ *
+ * Exported (unlike the rest of this module's internals) because it is the one
+ * seam a test needs to drive the real migration path against a real database
+ * without booting the app.
+ */
+export function runSchemaMigrations(database: Database.Database): void {
+  runWithWriteLockRetry('schema migration', () => {
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      applySchema(database);
+      database.exec('COMMIT');
+    } catch (error) {
+      try {
+        database.exec('ROLLBACK');
+      } catch (rollbackError) {
+        logError('[Database] Schema migration rollback failed:', rollbackError);
+      }
+      throw error;
+    }
+  });
+}
+
+/**
+ * The full schema: table creation plus every incremental `ensureColumn`
+ * migration. Runs inside the caller's `BEGIN IMMEDIATE` transaction, so it
+ * must contain no statement that cannot participate in one.
+ */
+function applySchema(database: Database.Database): void {
+  {
     database.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -490,11 +539,6 @@ function initializeSchema(database: Database.Database): void {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
   `);
-
-    log('[Database] Schema initialized');
-  } catch (error) {
-    logError('[Database] Schema initialization failed:', error);
-    throw error;
   }
 }
 
@@ -514,7 +558,31 @@ const ALLOWED_COLUMN_TYPES = [
   'BLOB',
 ] as const;
 
-function ensureColumn(
+/**
+ * True when the error is SQLite's "column already exists" rejection.
+ *
+ * `initializeSchema` runs BEFORE `createLockResilientDatabase`, so its DDL has
+ * no retry wrapper: two processes starting together (GUI + headless
+ * delegation) can both read `PRAGMA table_info`, both see the column missing,
+ * and the loser's `ALTER TABLE ADD COLUMN` fails with `duplicate column
+ * name`. That failure is benign — the column the migration wanted IS there.
+ */
+function isDuplicateColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /duplicate column name/i.test(message);
+}
+
+/** Does the column already exist? Re-reads the schema (never cached). */
+function columnExists(
+  database: Database.Database,
+  table: string,
+  column: string
+): boolean {
+  const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === column);
+}
+
+export function ensureColumn(
   database: Database.Database,
   table: string,
   column: string,
@@ -542,12 +610,31 @@ function ensureColumn(
   const originalSuffix = definition.slice(prefix.length).trim();
   const safeDefinition = `${column} ${originalSuffix}`;
 
-  const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  const exists = rows.some((row) => row.name === column);
-  if (exists) {
+  if (columnExists(database, table, column)) {
     return;
   }
-  database.exec(`ALTER TABLE ${table} ADD COLUMN ${safeDefinition}`);
+
+  try {
+    // Serialize DDL against a concurrent migrator: WAL admits one writer, so
+    // losing the race surfaces as SQLITE_BUSY and is retried instead of
+    // aborting startup.
+    runWithWriteLockRetry(`ALTER TABLE ${table} ADD COLUMN ${column}`, () =>
+      database.exec(`ALTER TABLE ${table} ADD COLUMN ${safeDefinition}`)
+    );
+  } catch (error) {
+    // Lost a check-then-act race with a second process that added the same
+    // column first. Treat it as success, but only after confirming the column
+    // really is there — a genuine failure must never be swallowed.
+    if (!isDuplicateColumnError(error)) throw error;
+    if (!columnExists(database, table, column)) {
+      throw new Error(
+        `Migration of ${table}.${column} failed with a duplicate-column error but the column is absent: ${String(error)}`
+      );
+    }
+    log(
+      `[Database] ${table}.${column} was added concurrently by another process — migration satisfied`
+    );
+  }
 }
 
 /**

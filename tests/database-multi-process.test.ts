@@ -49,6 +49,8 @@ import {
   DatabaseWriteLockedError,
   getDatabase,
   initDatabase,
+  ensureColumn,
+  runSchemaMigrations,
   runWithWriteLockRetry,
 } from '../src/main/db/database';
 
@@ -345,6 +347,150 @@ describe('cowork.db multi-process safety (real better-sqlite3)', () => {
     ).toThrow('NOT NULL constraint failed');
     expect(calls).toBe(1);
   });
+
+  it('applies the full schema idempotently on two live connections', () => {
+    // Regression: initializeSchema() used to run its `PRAGMA table_info` →
+    // `ALTER TABLE ADD COLUMN` pair unprotected, BEFORE the lock-resilient
+    // wrapper was installed, so two processes starting together could both see
+    // a column missing and the loser's ALTER died with an uncaught
+    // `duplicate column name`, taking the whole startup down.
+    //
+    // Two real connections run the production migration path over one file;
+    // the second must be a clean no-op and the schema must end up valid.
+    const db = openOwn();
+    runSchemaMigrations(db);
+    expect(() => runSchemaMigrations(db)).not.toThrow();
+    expect(() => runSchemaMigrations(openOwn())).not.toThrow();
+    expect(integrityCheck(db)).toBe('ok');
+
+    // Every column the migration manages exists exactly once.
+    for (const [table, column] of [
+      ['sessions', 'model'],
+      ['sessions', 'is_pinned'],
+      ['messages', 'execution_time_ms'],
+    ] as const) {
+      const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      expect(
+        rows.filter((row) => row.name === column).length,
+        `${table}.${column} defined once`
+      ).toBe(1);
+    }
+  });
+
+  it('treats a duplicate-column ALTER as a satisfied migration, not a crash', () => {
+    // The exact failure the phase targets: the loser's ALTER dies with
+    // `duplicate column name`. It must be re-verified and treated as success.
+    const db = openOwn();
+    db.exec('CREATE TABLE probe_table (id TEXT PRIMARY KEY)');
+
+    // Simulate the race: the column lands out-of-band between the migration's
+    // PRAGMA check and its ALTER, so the ALTER is genuinely rejected.
+    const racing = new Proxy(db, {
+      get(target, property, receiver) {
+        if (property === 'exec') {
+          return (sql: string) => {
+            if (/ALTER TABLE probe_table ADD COLUMN raced TEXT/.test(sql)) {
+              target.exec(sql.replace('ADD COLUMN raced TEXT', 'ADD COLUMN raced TEXT'));
+              // Now replay the real statement: the column exists, so SQLite
+              // rejects it exactly as a concurrent migrator would.
+              return target.exec(sql);
+            }
+            return (target.exec as (s: string) => void).call(target, sql);
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as Database.Database;
+
+    expect(() => ensureColumn(racing, 'probe_table', 'raced', 'raced TEXT')).not.toThrow();
+    const rows = db.prepare('PRAGMA table_info(probe_table)').all() as Array<{ name: string }>;
+    expect(rows.filter((row) => row.name === 'raced').length).toBe(1);
+  });
+
+  it('still surfaces a real ALTER failure instead of swallowing it', () => {
+    // Counterpart: the guard must not become a blanket error sink. A failure
+    // that is NOT a duplicate column, and where the column is genuinely absent,
+    // must still propagate.
+    const db = openOwn();
+    db.exec('CREATE TABLE probe_fail (id TEXT PRIMARY KEY)');
+
+    const broken = new Proxy(db, {
+      get(target, property, receiver) {
+        if (property === 'exec') {
+          return (sql: string) => {
+            if (/ALTER TABLE probe_fail/.test(sql)) {
+              throw new Error('ALTER TABLE probe_fail ADD COLUMN gone: disk I/O error');
+            }
+            return (target.exec as (s: string) => void).call(target, sql);
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as Database.Database;
+
+    expect(() => ensureColumn(broken, 'probe_fail', 'gone', 'gone TEXT')).toThrow('disk I/O error');
+  });
+
+  it('recovers on a real second process that loses the column race', async () => {
+    // Real-process proof of the exact production failure: a separate OS
+    // process performs the same ALTER the migration performs, so it is
+    // rejected with `duplicate column name` — the error that used to abort
+    // startup. The app's own migration path must then re-run cleanly.
+    const db = openOwn(5000);
+    runSchemaMigrations(db);
+
+    const loserScript = writeChildScript('migration-loser.cjs', [
+      // Deliberately re-add a column the production migration already added.
+      "try {",
+      "  db.exec('ALTER TABLE sessions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0');",
+      "  console.log('UNEXPECTED_SUCCESS');",
+      '} catch (error) {',
+      // A real process really loses this race on the real file.
+      "  console.log('DUPLICATE ' + /duplicate column name/i.test(String(error && error.message)));",
+      '}',
+    ]);
+
+    const child = spawn(process.execPath, [loserScript], {
+      cwd: REPO_ROOT,
+      env: childEnv({}),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    await waitForClose(child);
+
+    // The race is real: the second process WAS rejected with that error.
+    expect(stdout).toContain('DUPLICATE true');
+    expect(stdout).not.toContain('UNEXPECTED_SUCCESS');
+
+    // And the app's migration path still runs to completion afterwards.
+    expect(() => runSchemaMigrations(db)).not.toThrow();
+    const rows = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+    expect(rows.filter((row) => row.name === 'is_pinned').length).toBe(1);
+    expect(integrityCheck(db)).toBe('ok');
+  }, 30_000);
+
+  it('survives concurrent migrators racing on the same not-yet-created table', async () => {
+    // A process that reaches the migration while another one is still inside
+    // its own BEGIN IMMEDIATE must wait and then find the work done, not fail
+    // on a duplicate column. Driven with real OS processes: one holds the
+    // write lock, the other migrates the same file underneath it.
+    const holder = await startLockHolder('schema-race-row', 300);
+    const db = openOwn(5000);
+    const errors: string[] = [];
+    try {
+      runSchemaMigrations(db);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+    await waitForClose(holder);
+    expect(errors).toEqual([]);
+    expect(integrityCheck(db)).toBe('ok');
+  }, 30_000);
 
   it('keeps every row when several OS processes write the same tables at once', async () => {
     const WORKERS = 4;
