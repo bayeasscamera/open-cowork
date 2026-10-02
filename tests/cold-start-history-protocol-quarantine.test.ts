@@ -101,14 +101,15 @@ describe('buildColdStartHistoryPreamble — structural hardening', () => {
   });
 
   it('caps the history budget for huge context windows', () => {
-    // 30% of 1M tokens would be 300k; the cap holds it at 64k tokens (×4
-    // chars/token for English = 256k chars).
+    // 30% of 1M tokens would be 300k; the cap holds it at 32k tokens (×4
+    // chars/token for English = 128k chars) so the replay alone can never
+    // eat a significant share of a real 200k relay window (2026-10 audit).
     const preamble = buildColdStartHistoryPreamble({
       prompt: 'next',
       contextWindow: 1_000_000,
       messages: [message('assistant', [{ type: 'text', text: 'hello' }])],
     });
-    expect(preamble?.charBudget).toBe(256_000);
+    expect(preamble?.charBudget).toBe(128_000);
   });
 
   it('keeps the proportional budget for small windows (regression)', () => {

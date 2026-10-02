@@ -287,6 +287,27 @@ describe('pi model resolution helpers', () => {
     expect(llama.reasoning).toBe(false);
   });
 
+  it('uses the conservative 200k spec for opencode-go/space-bunny relay models', () => {
+    const bunny = buildSyntheticPiModel(
+      'opencode-go/space-bunny-free',
+      'custom',
+      'openai',
+      'https://relay.example.test/v1'
+    );
+    expect(bunny.contextWindow).toBe(200000);
+    expect(bunny.contextWindow).toBeLessThanOrEqual(200000);
+
+    const unknown = buildSyntheticPiModel(
+      'some-unknown-relay-model',
+      'custom',
+      'openai',
+      'https://relay.example.test/v1'
+    );
+    // Unknown relays must not inherit a fictive 1M window (2026-10 audit:
+    // 1M default pushed compaction to 800k and 400-overflowed a 200k upstream).
+    expect(unknown.contextWindow).toBe(200000);
+  });
+
   it('allows explicit reasoning override in buildSyntheticPiModel', () => {
     // Force reasoning=true on a model that wouldn't auto-detect
     const forced = buildSyntheticPiModel('custom-model', 'custom', 'openai', '', undefined, true);

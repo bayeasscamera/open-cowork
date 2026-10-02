@@ -383,7 +383,28 @@ function panelMenuItem(panel: WorkspacePanelDescriptor): Electron.MenuItemConstr
 }
 
 function buildMacMenu() {
-  if (process.platform !== 'darwin') return;
+  if (process.platform !== 'darwin') {
+    // Windows/Linux: no macOS menu — but without an Edit menu with native
+    // roles, Ctrl+C / Ctrl+V / Ctrl+X / Ctrl+A are dead in every input.
+    const labels = appMenuState?.labels;
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: labels?.edit ?? 'Edit',
+          submenu: [
+            { role: 'undo' },
+            { role: 'redo' },
+            { type: 'separator' },
+            { role: 'cut' },
+            { role: 'copy' },
+            { role: 'paste' },
+            { role: 'selectAll' },
+          ],
+        },
+      ])
+    );
+    return;
+  }
 
   // Localized labels pushed by the renderer (`appMenu.sync`); English until
   // the renderer has synced.
@@ -649,9 +670,23 @@ function createWindow() {
     backgroundColor: THEME.background,
     icon: (() => {
       const windowIconName = isMac ? 'icon.icns' : isWindows ? 'icon.ico' : 'icon.png';
-      return app.isPackaged
-        ? join(process.resourcesPath, windowIconName)
-        : join(__dirname, `../../resources/${windowIconName}`);
+      // In packaged builds electron-builder does NOT copy icon.* to the
+      // Resources root (only tray icons go through extraResources) — pointing
+      // at a missing file leaves Windows/Linux with no taskbar icon.
+      const candidates = app.isPackaged
+        ? [
+            join(process.resourcesPath, windowIconName),
+            join(process.resourcesPath, 'resources', windowIconName),
+          ]
+        : [join(__dirname, `../../resources/${windowIconName}`)];
+      for (const candidate of candidates) {
+        try {
+          if (fs.existsSync(candidate)) return candidate;
+        } catch {
+          // Ignore FS errors — fall through to no explicit icon.
+        }
+      }
+      return undefined;
     })(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -697,6 +732,26 @@ function createWindow() {
       return { action: 'deny' };
     }
     return { action: 'allow' };
+  });
+
+  // Right-click clipboard menu — without this, copy/paste via mouse is
+  // dead on every platform (no webContents context-menu handler existed).
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    try {
+      const template: Electron.MenuItemConstructorOptions[] =
+        params.isEditable || params.selectionText
+          ? [
+              { role: 'cut', enabled: params.isEditable && params.editFlags.canCut },
+              { role: 'copy', enabled: params.editFlags.canCopy },
+              { role: 'paste', enabled: params.isEditable && params.editFlags.canPaste },
+              { role: 'selectAll' },
+            ]
+          : [{ role: 'copy', enabled: params.editFlags.canCopy }];
+      const menu = Menu.buildFromTemplate(template);
+      menu.popup({ window: mainWindow ?? undefined });
+    } catch (error) {
+      logError('[App] Failed to show context menu:', error);
+    }
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {

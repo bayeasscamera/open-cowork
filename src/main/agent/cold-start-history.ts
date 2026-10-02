@@ -21,8 +21,10 @@ import { quarantineRawProtocolMarkup } from '../../shared/raw-protocol-markup';
  * windows (e.g. 1M-token GLM relays) it injects up to 300k tokens of replayed
  * history, which both wastes cache and pushes the model far into its window
  * where output format degradation was observed (2026-09 session audit).
+ * Capped at 32k: 64k alone is 32% of a real 200k relay window and was a
+ * co-driver of the 201k-token 400 overflow (2026-10 audit).
  */
-const MAX_COLD_START_HISTORY_TOKENS = 64_000;
+const MAX_COLD_START_HISTORY_TOKENS = 32_000;
 
 /**
  * One-line instruction inside the history envelope. The serializer itself

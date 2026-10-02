@@ -418,7 +418,8 @@ describe('buildColdStartHistoryPreamble', () => {
       messages: [message('assistant', text('hello'))],
     });
 
-    expect(preamble?.charBudget).toBe(153600);
+    // 30% of 128k = 38.4k tokens, capped at 32k tokens (×4 chars = 128k).
+    expect(preamble?.charBudget).toBe(128000);
   });
 
   it('skips turns whose blocks serialize to nothing when building the preamble', () => {

@@ -123,6 +123,11 @@ const KNOWN_MODEL_SPECS: Record<string, { contextWindow: number; maxTokens: numb
   phi4: { contextWindow: 16384, maxTokens: 4096 },
   mistral: { contextWindow: 32768, maxTokens: 4096 },
   mixtral: { contextWindow: 32768, maxTokens: 4096 },
+  // OpenAI-compatible relay models (e.g. opencode-go/space-bunny-free):
+  // the real upstream window is 200k — without an entry these fall back to
+  // the synthetic default and every guard reasons on a fictive 1M window.
+  'space-bunny': { contextWindow: 200000, maxTokens: 16384 },
+  'opencode-go': { contextWindow: 200000, maxTokens: 16384 },
   codellama: { contextWindow: 16384, maxTokens: 4096 },
   'command-r': { contextWindow: 131072, maxTokens: 4096 },
 };
@@ -162,8 +167,12 @@ export function buildSyntheticPiModel(
     reasoning: autoReasoning,
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 1_000_000,
-    maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 384000,
+    // Conservative default for unknown relay models: 200k, not 1M. A fictive
+    // 1M window pushes the 80% compaction trigger to 800k and the cold-start
+    // replay budget to 64k — a real 200k upstream then 400s before any guard
+    // fires. Explicit user config still wins via applyPiModelRuntimeOverrides.
+    contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 200_000,
+    maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 32_768,
   } as Model<Api>;
 }
 
