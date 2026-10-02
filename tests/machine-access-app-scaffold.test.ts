@@ -52,7 +52,8 @@ describe('app scaffolding', () => {
       io.mkdir
     );
     expect(res.ok).toBe(false);
-    expect(res.error).toMatch(/refused/i);
+    // Rejected either by name validation or by path confinement.
+    expect(res.error).toMatch(/invalid|refused/i);
     expect(fs.existsSync(path.join(path.dirname(granted), 'escape'))).toBe(false);
   });
 
