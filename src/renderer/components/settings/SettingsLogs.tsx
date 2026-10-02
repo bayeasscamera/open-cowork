@@ -10,6 +10,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { formatAppDateTime } from '../../utils/i18n-format';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import { SettingsContentSection } from './shared';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -252,7 +253,13 @@ export function SettingsLogs({ isActive }: { isActive: boolean }) {
               </button>
               <button
                 className="shrink-0 p-1 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
-                onClick={() => navigator.clipboard.writeText(logsDirectory)}
+                onClick={() =>
+                  void copyTextToClipboard(logsDirectory).then((ok) => {
+                    // Previously fire-and-forget: a rejected copy left the user
+                    // believing the path was copied. Surface the failure.
+                    if (!ok) setError(t('common.copyFailed'));
+                  })
+                }
                 title={t('common.copy')}
               >
                 <Copy className="w-3 h-3" />

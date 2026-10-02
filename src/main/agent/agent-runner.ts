@@ -122,6 +122,13 @@ import {
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
 import { shouldFallbackToProvider } from './provider-fallback';
+import {
+  estimateTextTokens,
+  parseUpstreamContextLimit,
+  recordLearnedContextLimit,
+  resolveEffectiveContextWindow,
+  shouldRefusePromptPreflight,
+} from './learned-context-limits';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
 import { buildAbortUserMessage } from './agent-runner-loop-guard';
 import { createLoopGuardController } from './loop-guard-controller';
@@ -134,6 +141,27 @@ import { ActivePreferenceLearner } from '../memory/active-preference-learner';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
+
+/**
+ * Learn the real upstream context window from an overflow error message.
+ * Upstream 400s usually carry the true limit ("limit 200000"); persisting it
+ * per model id turns the first overflow into ground truth for pre-flight
+ * guards and overflow routing instead of a repeated raw 400. Never throws.
+ */
+function learnUpstreamLimitFromError(
+  modelId: string | undefined,
+  errorText: string | undefined
+): void {
+  try {
+    if (!errorText) return;
+    const limit = parseUpstreamContextLimit(errorText);
+    if (limit !== undefined) {
+      recordLearnedContextLimit(modelId, limit);
+    }
+  } catch {
+    // Learning must never break the run.
+  }
+}
 
 /**
  * Resolve the project context of a session (instructions, reference files,
@@ -1159,10 +1187,20 @@ export class CoworkAgentRunner {
         cachedSession = undefined;
       }
 
+      // Effective window: the smallest credible number wins — an explicit
+      // user setting is a cap, a learned upstream limit (from a previous 400)
+      // is ground truth. The cold-start replay budget and compaction trigger
+      // downstream reason on this instead of the synthetic default.
+      const effectiveContextWindow = resolveEffectiveContextWindow({
+        modelId: modelString,
+        configuredWindow: piModel.contextWindow,
+        fallbackWindow: 128000,
+      });
+
       const contextualPrompt = await assembleContextualPrompt({
         prompt,
         existingMessages,
-        contextWindow: piModel.contextWindow || 128000,
+        contextWindow: effectiveContextWindow,
         provider,
         sessionId: session.id,
         isColdStart: !cachedSession,
@@ -1388,6 +1426,11 @@ export class CoworkAgentRunner {
       const emitTerminalError = (errorText: string, options: { abort?: boolean } = {}): void => {
         terminalErrorText = errorText;
 
+        // Learn the real upstream window from overflow 400s (e.g. "limit
+        // 200000") so the next turn reasons on ground truth, not the
+        // synthetic default.
+        learnUpstreamLimitFromError(usedModelString, errorText);
+
         // Causal memory: record the terminal failure pattern so future
         // sessions with a matching problem receive it as known-error context.
         try {
@@ -1558,11 +1601,45 @@ export class CoworkAgentRunner {
             })
           );
         }
-        const promptResult = await piSession.prompt(contextualPrompt);
-        log(
-          '[CoworkAgentRunner] prompt() returned:',
-          JSON.stringify(promptResult ?? 'void').substring(0, 1000)
-        );
+        // Pre-flight guard: when the prompt ALONE already exceeds the
+        // effective window, upstream would reject the request (400) — refuse
+        // with an explicit message instead of burning the turn on a certain
+        // failure. The refusal classifies as upstream_400 and matches the
+        // overflow patterns, so session-manager overflow routing can recover
+        // it on a larger-window ConfigSet. Near-misses only warn: warm-session
+        // history living inside the SDK is invisible to this estimate.
+        const estimatedPromptTokens = estimateTextTokens(contextualPrompt);
+        if (
+          shouldRefusePromptPreflight({
+            estimatedTokens: estimatedPromptTokens,
+            effectiveWindow: effectiveContextWindow,
+          })
+        ) {
+          logCtxWarn(
+            '[CoworkAgentRunner] Pre-flight refusal: prompt is ~' +
+              `${estimatedPromptTokens} tokens for an effective context window of ` +
+              `${effectiveContextWindow} tokens (${modelString}) — skipping upstream call`
+          );
+          emitTerminalError(
+            `Pre-flight check refused the request (400): the prompt is ~${estimatedPromptTokens} ` +
+              `tokens but the effective context window for "${modelString}" is ${effectiveContextWindow} ` +
+              `tokens — upstream would reject it for exceeding the context window. ` +
+              `Compact the session or switch to a larger-window model.`
+          );
+        } else {
+          if (estimatedPromptTokens > effectiveContextWindow * 0.8) {
+            logCtxWarn(
+              '[CoworkAgentRunner] Pre-flight warning: prompt is ~' +
+                `${estimatedPromptTokens} tokens for an effective context window of ` +
+                `${effectiveContextWindow} tokens (${modelString})`
+            );
+          }
+          const promptResult = await piSession.prompt(contextualPrompt);
+          log(
+            '[CoworkAgentRunner] prompt() returned:',
+            JSON.stringify(promptResult ?? 'void').substring(0, 1000)
+          );
+        }
       } finally {
         try {
           unsubscribe();
@@ -1881,6 +1958,9 @@ export class CoworkAgentRunner {
         // already ran tools), so behaviour for those paths is unchanged.
         const thrownText = toErrorText(error);
         const thrownCode = classifyTerminalError(thrownText);
+        // Same learning as the stream path: a thrown 400 carries the true
+        // upstream limit for this model id.
+        learnUpstreamLimitFromError(usedModelString, thrownText);
         const retryableThrown = shouldFallbackToProvider({
           errorCode: thrownCode,
           toolExecutions: startedToolExecutions,

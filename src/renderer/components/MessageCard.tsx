@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Copy, Check, Clock, XCircle, Pencil, RefreshCw, AlertOctagon } from 'lucide-react';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '../types';
 import { ContentBlockView } from './message/ContentBlockView';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface MessageCardProps {
   message: Message;
@@ -60,14 +61,9 @@ export const MessageCard = memo(function MessageCard({
 
   const handleCopy = async () => {
     const text = getTextContent();
-    if (text) {
-      try {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch {
-        // Clipboard unavailable
-      }
+    if (text && (await copyTextToClipboard(text))) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 

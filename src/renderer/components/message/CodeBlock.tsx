@@ -2,6 +2,7 @@
 import { useState, useMemo, memo } from 'react';
 import { Copy, Check } from 'lucide-react';
 import hljs from 'highlight.js';
+import { copyTextToClipboard } from '../../utils/clipboard';
 
 // Sanitize highlight.js output - only allow highlight span tags
 const sanitizeHighlight = (html: string): string =>
@@ -33,12 +34,11 @@ export const CodeBlock = memo(function CodeBlock({ language, children }: CodeBlo
   }, [children, language]);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(children);
+    // copyTextToClipboard falls back to execCommand under file:// + sandbox;
+    // only show the checkmark when the copy really landed.
+    if (await copyTextToClipboard(children)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard write can fail if focus is lost or permission denied
     }
   };
 

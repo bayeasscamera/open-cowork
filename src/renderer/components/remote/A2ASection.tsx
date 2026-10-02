@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Bot, Copy, Check, RefreshCw, Loader2 } from 'lucide-react';
 import type { A2AStatus } from '../../../shared/types';
+import { copyTextToClipboard } from '../../utils/clipboard';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -78,10 +79,9 @@ export function A2ASection() {
 
   const copyToken = async () => {
     if (!freshToken) return;
-    try {
-      await navigator.clipboard.writeText(freshToken);
+    if (await copyTextToClipboard(freshToken)) {
       setCopied(true);
-    } catch {
+    } else {
       setError(t('a2a.copyFailed'));
     }
   };

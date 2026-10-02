@@ -104,6 +104,7 @@
     "success": "Succès",
     "saving": "Enregistrement...",
     "saved": "Enregistré avec succès !",
+    "copyFailed": "Impossible de copier dans le presse-papiers.",
     "sure": "Êtes-vous sûr ?",
     "yes": "Oui",
     "no": "Non",
@@ -1396,7 +1397,8 @@
     "expiresIn": "Expires in {{time}}",
     "userRemoved": "User removed",
     "revokeFailed": "Failed to remove user",
-    "copied": "Copied"
+    "copied": "Copied",
+    "copyFailed": "Impossible de copier dans le presse-papiers."
   },
   "personalization": {
     "memorySectionTitle": "Mémoire",

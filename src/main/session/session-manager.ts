@@ -79,7 +79,11 @@ import {
   normalizeGeneratedTitle,
 } from './session-title-utils';
 import { generateTitleWithSdk } from '../agent/sdk-one-shot';
-import { buildFallbackCandidates } from '../agent/provider-fallback';
+import { buildFallbackCandidates, selectOverflowFallback } from '../agent/provider-fallback';
+import { isContextOverflowError } from '../agent/context-overflow';
+import {
+  resolveEffectiveContextWindow,
+} from '../agent/learned-context-limits';
 import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
 import { buildAttachmentPromptHints } from './attachment-hints';
 
@@ -96,6 +100,10 @@ interface AgentRunAttempt {
   /** True when the failure may be replayed on another provider. */
   retryable: boolean;
   errorCode?: string;
+  /** Raw error text as classified — drives overflow detection. */
+  errorText?: string;
+  /** Tool calls started during the attempt; non-zero blocks any replay. */
+  toolExecutions?: number;
   /** Publishes the error the runner held back while a retry was possible. */
   flushError?(): void;
 }
@@ -1047,11 +1055,25 @@ export class SessionManager {
   ): Promise<void> {
     const first = await this.agentRunner.run(session, prompt, existingMessages);
     if (!first?.retryable) {
-      // Either the turn succeeded, or it failed in a way another provider would
-      // hit too (auth, bad request) or that already produced side effects. In
-      // every one of those cases the held-back error is the final answer.
-      // Optional call: legacy runners/mocks predate the retry contract.
-      first?.flushError?.();
+      // A context-window overflow is not retryable by the generic policy (the
+      // same prompt would fail identically elsewhere) — unless another
+      // configured ConfigSet has a strictly larger effective window. That one
+      // replay can genuinely succeed, so it gets the single retry instead of
+      // the raw 400.
+      const recovered = await this.retryOverflowOnLargerWindow(
+        session,
+        prompt,
+        existingMessages,
+        first
+      );
+      if (!recovered) {
+        // Either the turn succeeded, or it failed in a way another provider
+        // would hit too (auth, bad request) or that already produced side
+        // effects. In every one of those cases the held-back error is the
+        // final answer.
+        // Optional call: legacy runners/mocks predate the retry contract.
+        first?.flushError?.();
+      }
       return;
     }
 
@@ -1096,6 +1118,85 @@ export class SessionManager {
     // No second fallback: a further failure is a real problem with the setup,
     // and looping would multiply the user's bill. Surface whatever it produced.
     second?.flushError?.();
+  }
+
+  /**
+   * Replay an overflowed turn on the first ConfigSet with a strictly larger
+   * effective window. Same safety contract as the provider fallback — zero
+   * tool side effects, exactly one retry — plus a window comparison, because a
+   * same-window replay would overflow identically and only double-bill.
+   * Returns true when a recovery retry ran (its own error is then final).
+   */
+  private async retryOverflowOnLargerWindow(
+    session: Session,
+    prompt: string,
+    existingMessages: Message[],
+    first: AgentRunAttempt | void
+  ): Promise<boolean> {
+    if (
+      !first ||
+      first.ok ||
+      first.errorCode !== 'upstream_400' ||
+      (first.toolExecutions ?? 0) !== 0 ||
+      !first.errorText ||
+      !isContextOverflowError(first.errorText)
+    ) {
+      return false;
+    }
+
+    const config = configStore.getAll();
+    const candidates = buildFallbackCandidates({
+      configSets: config.configSets,
+      failedConfigSetId: config.activeConfigSetId,
+      projectSet: (setId) => configStore.getConfigSetProjectedConfig(setId),
+      hasUsableCredentials: (candidate) =>
+        configStore.hasUsableCredentialsForActiveSet(candidate),
+    });
+    if (candidates.length === 0) return false;
+
+    const failedConfig = configStore.getConfigSetProjectedConfig(config.activeConfigSetId);
+    const failedWindow = resolveEffectiveContextWindow({
+      modelId: failedConfig?.model,
+      configuredWindow: failedConfig?.contextWindow,
+      fallbackWindow: 200_000,
+    });
+    const pick = selectOverflowFallback({
+      failedWindow,
+      candidates: candidates.map((candidate) => ({
+        configSetId: candidate.configSetId,
+        window: resolveEffectiveContextWindow({
+          modelId: candidate.config.model,
+          configuredWindow: candidate.config.contextWindow,
+          fallbackWindow: 200_000,
+        }),
+      })),
+    });
+    if (!pick) return false;
+
+    const target = candidates.find((candidate) => candidate.configSetId === pick.configSetId);
+    if (!target) return false;
+
+    logCtx(
+      '[SessionManager] Context overflow on the active set — retrying the turn on larger-window set',
+      target.label
+    );
+    // Persist the switch so the retry — and every later turn of the session —
+    // uses the window that can actually hold the conversation.
+    configStore.switchSet({ id: target.configSetId });
+    this.sendToRenderer({
+      type: 'session.update',
+      payload: {
+        sessionId: session.id,
+        updates: { model: target.config.model },
+      },
+    });
+    session.model = target.config.model;
+    this.db.sessions.update(session.id, { model: target.config.model });
+
+    const second = await this.agentRunner.run(session, prompt, existingMessages);
+    // No second fallback: same single-retry budget as the provider path.
+    second?.flushError?.();
+    return true;
   }
 
   private async runSessionTitleGeneration(

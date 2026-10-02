@@ -104,6 +104,7 @@
     "success": "成功",
     "saving": "保存中...",
     "saved": "保存成功！",
+    "copyFailed": "无法复制到剪贴板。",
     "sure": "确定吗？",
     "yes": "是",
     "no": "否",
@@ -1352,7 +1353,8 @@
     "expiresIn": "{{time}}后过期",
     "userRemoved": "用户已移除",
     "revokeFailed": "移除失败",
-    "copied": "已复制"
+    "copied": "已复制",
+    "copyFailed": "无法复制到剪贴板。"
   },
   "time": {
     "now": "刚刚"

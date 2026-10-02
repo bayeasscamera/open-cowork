@@ -16,6 +16,7 @@ import { AdvancedConfigStep } from './remote/AdvancedConfigStep';
 import { AuthorizedUsersSection } from './remote/AuthorizedUsersSection';
 import { QuickStartGuide } from './remote/QuickStartGuide';
 import { A2ASection } from './remote/A2ASection';
+import { copyTextToClipboard } from '../utils/clipboard';
 import type {
   GatewayStatus,
   PairedUser,
@@ -228,10 +229,15 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
     }
   }
 
-  function copyToClipboard(text: string) {
-    navigator.clipboard.writeText(text);
-    setSuccess({ key: 'remote.copied' });
-    setTimeout(() => setSuccess(null), 2000);
+  async function copyToClipboard(text: string) {
+    // Awaited + fallback: the previous fire-and-forget writeText showed
+    // "Copied" even when the copy was rejected (focus lost, file:// sandbox).
+    if (await copyTextToClipboard(text)) {
+      setSuccess({ key: 'remote.copied' });
+      setTimeout(() => setSuccess(null), 2000);
+    } else {
+      setError({ key: 'remote.copyFailed' });
+    }
   }
 
   const isFeishuConfigured = !!(feishuAppId && feishuAppSecret);

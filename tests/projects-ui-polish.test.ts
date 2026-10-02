@@ -109,7 +109,9 @@ describe('ProjectsPages — detail view enhancements', () => {
   });
 
   it('lets the user copy the workspace path from the hero', () => {
-    expect(pages).toContain('navigator.clipboard.writeText(project.workdir)');
+    // Hardened copy: shared helper with execCommand fallback under file:// +
+    // sandbox; the checkmark only shows when the copy really landed.
+    expect(pages).toContain('copyTextToClipboard(project.workdir)');
     expect(pages).toContain("t('projects.pathCopied')");
   });
 });

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Copy, Check, ExternalLink, FileText, Code, Eye } from 'lucide-react';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface ArtifactModalProps {
   filePath: string;
@@ -55,12 +56,9 @@ export function ArtifactModal({ filePath, onClose, onRevealInFolder }: ArtifactM
   }, [filePath]);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(content);
+    if (await copyTextToClipboard(content)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* ignore */
     }
   };
 

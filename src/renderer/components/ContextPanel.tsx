@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { resolveArtifactPath } from '../utils/artifact-path';
+import { copyTextToClipboard } from '../utils/clipboard';
 import { isWindows as isWindowsPlatform } from '../utils/platform';
 import {
   extractFilePathFromToolInput,
@@ -79,7 +80,9 @@ export function ContextPanel() {
         const isWindows = isWindowsPlatform();
         shellPath = isWindows ? `"${path}"` : path.replace(/ /g, '\\ ');
       }
-      await navigator.clipboard.writeText(shellPath);
+      if (!(await copyTextToClipboard(shellPath))) {
+        throw new Error('clipboard copy failed (async API + execCommand fallback)');
+      }
       setCopiedPath(true);
       setTimeout(() => setCopiedPath(false), 2000);
     } catch (err) {

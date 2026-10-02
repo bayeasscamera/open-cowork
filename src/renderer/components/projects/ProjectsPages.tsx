@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { useIPC } from '../../hooks/useIPC';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import type { Project, ProjectContextUsage, Session } from '../../types';
 
 /**
@@ -1067,12 +1068,11 @@ function ProjectDetailView({ projectId }: { projectId: string }) {
   };
 
   const copyWorkdir = async () => {
-    try {
-      await navigator.clipboard.writeText(project.workdir);
+    // copyTextToClipboard falls back to execCommand under file:// + sandbox;
+    // the checkmark only shows when the copy really landed.
+    if (await copyTextToClipboard(project.workdir)) {
       setCopiedPath(true);
       window.setTimeout(() => setCopiedPath(false), 1500);
-    } catch {
-      // Clipboard may be unavailable — the path stays visible as a tooltip.
     }
   };
 

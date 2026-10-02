@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildFallbackCandidates,
   classifyForFallback,
+  selectOverflowFallback,
   shouldFallbackToProvider,
 } from '../src/main/agent/provider-fallback';
 import type { AppConfig } from '../src/main/config/config-store';
@@ -146,5 +147,42 @@ describe('buildFallbackCandidates', () => {
       hasUsableCredentials: () => true,
     });
     expect(candidates).toEqual([]);
+  });
+});
+
+describe('selectOverflowFallback', () => {
+  it('picks the first candidate with a strictly larger window', () => {
+    expect(
+      selectOverflowFallback({
+        failedWindow: 200_000,
+        candidates: [
+          { configSetId: 'same', window: 200_000 },
+          { configSetId: 'small', window: 32_000 },
+          { configSetId: 'big', window: 1_000_000 },
+        ],
+      })
+    ).toEqual({ configSetId: 'big', window: 1_000_000 });
+  });
+
+  it('returns undefined when no candidate is larger (no double-bill)', () => {
+    expect(
+      selectOverflowFallback({
+        failedWindow: 200_000,
+        candidates: [
+          { configSetId: 'same', window: 200_000 },
+          { configSetId: 'small', window: 32_000 },
+        ],
+      })
+    ).toBeUndefined();
+    expect(selectOverflowFallback({ failedWindow: 200_000, candidates: [] })).toBeUndefined();
+  });
+
+  it('returns undefined for a degenerate failed window', () => {
+    expect(
+      selectOverflowFallback({
+        failedWindow: 0,
+        candidates: [{ configSetId: 'big', window: 1_000_000 }],
+      })
+    ).toBeUndefined();
   });
 });

@@ -123,3 +123,38 @@ export function shouldFallbackToProvider(input: ShouldFallbackInput): boolean {
 export function classifyForFallback(errorText: string): TerminalErrorCode {
   return classifyTerminalError(errorText);
 }
+
+export interface OverflowFallbackCandidate {
+  /** Id of the ConfigSet this candidate would route to. */
+  configSetId: string;
+  /** Effective context window of the candidate (resolved with learned limits). */
+  window: number;
+}
+
+export interface SelectOverflowFallbackInput {
+  /** Effective window of the ConfigSet that just overflowed. */
+  failedWindow: number;
+  /** Candidates in declaration order — the first larger window wins. */
+  candidates: readonly OverflowFallbackCandidate[];
+}
+
+/**
+ * Pick the ConfigSet to replay an overflowed turn on: the first candidate
+ * whose window is STRICTLY larger than the one that failed. Same-window or
+ * smaller replays overflow identically (the task re-reads the same files), so
+ * they are never worth the second bill. Returns undefined when no candidate
+ * can genuinely recover the turn.
+ */
+export function selectOverflowFallback(
+  input: SelectOverflowFallbackInput
+): OverflowFallbackCandidate | undefined {
+  if (!Number.isFinite(input.failedWindow) || input.failedWindow <= 0) {
+    return undefined;
+  }
+  for (const candidate of input.candidates) {
+    if (Number.isFinite(candidate.window) && candidate.window > input.failedWindow) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
