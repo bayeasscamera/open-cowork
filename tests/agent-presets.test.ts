@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -320,5 +320,33 @@ describe('regression: the default is off', () => {
     // run_code is absent from the standard allow-list, so it is filtered out
     // of the catalog entirely rather than merely presented directly.
     expect(STANDARD_PRESET.tools.allow).not.toContain(RUN_CODE_TOOL_NAME);
+  });
+});
+
+describe('the shipped example preset is real, loadable data', () => {
+  it('validates against the same strict schema the loader uses', () => {
+    // Guards the example against rot: a commented-out or renamed field would
+    // otherwise ship as documentation that silently fails to load.
+    const raw = readFileSync('examples/presets/reviewer/preset.json', 'utf-8');
+    const parsed = JSON.parse(raw) as unknown;
+    const result = validateAgentPreset(parsed, {
+      knownTools: ['read', 'grep', 'glob', 'ls'],
+    });
+    expect(result.ok, result.ok ? '' : result.errors.join('; ')).toBe(true);
+  });
+
+  it('declares an id matching its directory, as the loader requires', () => {
+    const parsed = JSON.parse(
+      readFileSync('examples/presets/reviewer/preset.json', 'utf-8')
+    ) as { id: string };
+    expect(parsed.id).toBe('reviewer');
+  });
+
+  it('the example stays opt-in: no code mode, no fork', () => {
+    const parsed = JSON.parse(
+      readFileSync('examples/presets/reviewer/preset.json', 'utf-8')
+    ) as { presentation: string; delegation: { allowFork: boolean } };
+    expect(parsed.presentation).toBe('direct');
+    expect(parsed.delegation.allowFork).toBe(false);
   });
 });

@@ -1,0 +1,22 @@
+{
+  "id": "reviewer",
+  "label": "Reviewer",
+  "description": "Read-only agent: inspects code and reports findings, cannot change files.",
+  "tools": {
+    "allow": ["read", "grep", "glob", "ls"]
+  },
+  "presentation": "direct",
+  "pruner": {
+    "thresholdChars": 16384,
+    "headChars": 12288,
+    "tailChars": 2048
+  },
+  "delegation": {
+    "maxDepth": 1,
+    "allowFork": false,
+    "maxRounds": 16
+  },
+  "skills": {
+    "extraDirs": ["skills"]
+  }
+}

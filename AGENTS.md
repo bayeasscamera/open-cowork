@@ -97,6 +97,91 @@ Only after the commit is done:
 
 ---
 
+## Three-layer architecture (agent presets)
+
+Three layers, and the boundaries are load-bearing — do not blur them.
+
+| Layer | What it is | Where |
+|---|---|---|
+| **Core** | Tool registry, permissions, path guard, mods, database, sandbox. **Protected — never bypassed.** | `src/main/tools/`, `src/main/sandbox/`, `src/main/mods/`, `src/main/db/` |
+| **Preset** | What an agent gets: allowed tools, persona, pruning and delegation limits, skill dirs, presentation mode. **Data, never code.** | `src/main/presets/` |
+| **Presentation** | How the model sees the tools: one-by-one, or as a generated SDK driven by `run_code`. | `src/main/presets/tool-presenter.ts` |
+
+### One execution funnel
+
+`invokeTool()` (`src/main/tools/invoke.ts`) is the single entry point for
+executing a tool, and it always runs the same gate in the same order:
+
+```
+validate args → preset allow-list → permissions → path-guard → mods pre
+  → execute → mods post (secret redaction) → preset truncation
+```
+
+Two callers reach it: `invokeTool()` for calls the app executes itself
+(sub-agents, the `run_code` bridge), and the pi SDK's `beforeToolCall` hook
+(`src/main/agent/agent-hooks.ts`) for calls the SDK dispatches. **Both run the
+same pipeline** (`src/main/tools/pipeline.ts`) — that shared implementation is
+what makes "permissions and path confinement apply everywhere" structural
+rather than a convention. If you add a check, add it to `runToolGate()`; do not
+re-implement it in a caller.
+
+The SDK's own built-in tools are executed by the SDK and cannot be routed
+through `invokeTool()`; they reach the same gate through the hook. The
+`.execute()` calls in `swarm-runner.ts` and the memory dispatchers are SDK-shaped
+wrappers, not a bypass — do not "clean them up" without understanding why.
+
+### Preset resolution order (the only order)
+
+- **Sub-agent:** `criticality` → `perRole` → **preset** → sub-agent ConfigSet → inherited active profile.
+- **Direct session:** project pin (`projects.preset_id`) → session override → `standard`.
+
+Documented once, in `src/main/presets/preset-resolver.ts`. `NULL` in the
+database means `standard`, so every pre-preset project keeps its exact previous
+behaviour.
+
+### Writing a preset
+
+A preset is **pure data**. It is validated by a strict Zod schema
+(`preset-schema.ts`) that **rejects unknown keys** — a typo fails loudly instead
+of silently leaving a field at its default. See
+`examples/presets/reviewer/` for a commented, loadable example and the full
+field reference.
+
+Rules that are enforced, not conventions: no `'*'` in `tools.allow`; every named
+tool must exist in the registry; `headChars + tailChars < thresholdChars`;
+`maxDepth ≤ 2`; `maxRounds ≤ 64`; `extraDirs` can never leave the preset
+directory (checked lexically *and* through `realpath`, so a symlink cannot
+escape). A user preset can never shadow a built-in id.
+
+### `run_code` limits (mode code)
+
+Model-written code **never runs in the main process**. It is transpiled and run
+in a child `node` process that has no tool implementation, no credentials and no
+authority: every `tools.*()` call is a JSONL request that the main process
+answers through `invokeTool()`, so code can never obtain a capability a direct
+call could not.
+
+Enforced by the host (`src/main/agent/run-code-host.ts`):
+
+| Limit | Default |
+|---|---|
+| wall clock | 60 s (kills the whole **process group**) |
+| tool calls | 50 per execution |
+| protocol output | 1 MB |
+| single tool result | 64 000 chars |
+| child memory | 512 MB |
+| environment | secrets stripped by pattern, not by an allow-list of names |
+
+Approvals are the **session's**; `detachedAutoApprove` is deliberately never
+inherited. **Off by default**: the shipped `standard` preset does not list
+`run_code`, so the whole path is unreachable until a user picks code mode.
+
+An agent may `propose_preset` but never load one. Proposals are data, live in a
+directory the loader never reads, and need explicit human approval — with an
+extra consent gate for `presentation: 'code'` and `allowFork: true`.
+
+---
+
 ## Project Brain — Architecture Map
 
 ### Electron Main Process (`src/main/`)
