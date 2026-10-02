@@ -171,6 +171,26 @@ Enforced by the host (`src/main/agent/run-code-host.ts`):
 | single tool result | 64 000 chars |
 | child memory | 512 MB (V8 old space, enforced via `--max-old-space-size`) |
 | environment | secrets stripped by pattern, not by an allow-list of names |
+| **writes** | confined to the workspace by the OS; verified |
+| **network** | refused at the socket layer, including localhost; verified |
+| **subprocesses** | refused; verified |
+| **reads** | refused for credential directories (`~/.ssh`, `~/.aws`, keychains, app data); ordinary files outside the workspace are still readable — see below |
+
+**What the sandbox is not.** `run_code-sandbox.ts` confines the child with
+Seatbelt on macOS and bubblewrap on Linux, and refuses to run at all where
+neither exists (Windows) rather than falling back to an unsandboxed child.
+
+Reads are denied by path, not allowed by path. An allow-list of readable
+subtrees was built and measured and node cannot boot under one: macOS resolves
+runtime paths through firmlinks that land outside any top-level directory, so no
+such list is complete, and an incomplete allow-list fails in the worst direction
+— it looks configured while breaking the runtime. The trade is a deny-list of
+the places that actually hold credentials. A confined child can still read
+ordinary files outside the workspace. Treat `run_code` as *not* a place to put
+secrets you have not already protected, and do not describe it as a jail.
+
+Two things this does not bound: CPU (the timeout does), and native memory
+outside the V8 heap (also the timeout, eventually).
 
 Approvals are the **session's**; `detachedAutoApprove` is deliberately never
 inherited. **Off by default**: the shipped `standard` preset does not list

@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
@@ -8,6 +9,7 @@ import { runCode, heapLimitMb } from '../src/main/agent/run-code-host';
 import { DEFAULT_RUN_CODE_LIMITS, buildChildEnv, isSecretEnvName, parseChildMessage, resolveRunCodeLimits } from '../src/main/agent/run-code-protocol';
 import { ToolRegistry, type ToolDefinition } from '../src/main/tools/registry';
 import { STANDARD_PRESET } from '../src/main/presets/builtin-presets';
+import { sensitiveReadPaths } from '../src/main/agent/run-code-sandbox';
 
 /**
  * run_code is the capability with the largest blast radius, so these tests use
@@ -19,6 +21,17 @@ import { STANDARD_PRESET } from '../src/main/presets/builtin-presets';
 
 let workdir = '';
 let childScript = '';
+let esbuildBinary = '';
+
+/**
+ * The esbuild platform binary. The child spawns it to transpile, so the sandbox
+ * must be told it may exec that exact path - and only that path.
+ */
+function esbuildBinaryPath(): string {
+  const pkg = createRequire(import.meta.url)('esbuild/package.json') as { version: string };
+  const platform = `${process.platform === 'darwin' ? 'darwin' : process.platform}-${process.arch}`;
+  return join(process.cwd(), 'node_modules', '@esbuild', platform, 'bin', 'esbuild');
+}
 
 /** Compile the real child entry (and everything it imports) to one JS file. */
 beforeAll(async () => {
@@ -28,6 +41,7 @@ beforeAll(async () => {
   // how the packaged app resolves it from dist-electron. esbuild stays
   // external: inlining its CJS internals into an ESM bundle breaks at runtime.
   childScript = join(process.cwd(), 'node_modules', '.cache', 'cowork-run-code-child.mjs');
+  esbuildBinary = realpathSync(esbuildBinaryPath());
   await build({
     entryPoints: ['src/main/agent/run-code-child-main.ts'],
     outfile: childScript,
@@ -71,6 +85,7 @@ function harness(tools: ToolDefinition[], allowedTools: string[]) {
       allowedTools,
       gate: { decidePermission: () => ({ allowed: true }) },
       childScript,
+      allowedExecPaths: [esbuildBinary],
     },
   };
 }
@@ -162,11 +177,14 @@ describe('limits are enforced against a real process', () => {
     expect(elapsed).toBeLessThan(15_000);
   }, 30_000);
 
-  it('kills the whole process group, so a spawned child cannot outlive it', async () => {
+  it('nothing outlives the time limit, even when the script tries to persist', async () => {
     const { registry, base } = harness([], []);
     const marker = join(workdir, 'grandchild-survived.txt');
-    // The script spawns a grandchild that writes the marker well after the
-    // limit. If only the direct child were killed, the marker would appear.
+    // The script tries to leave something behind after the limit expires. Note
+    // that under the sandbox the spawn itself is refused, so this now tests two
+    // things at once: the sandbox refuses the exec, and the host's timeout still
+    // reaps the child. Both must hold; either alone would leave a way for work
+    // to continue past the limit.
     const grandchild = `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(
       marker
     )}, 'survived'), 3000)`;
@@ -175,18 +193,43 @@ describe('limits are enforced against a real process', () => {
       registry,
       source: [
         "const { spawn } = await import('node:child_process');",
-        `spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' });`,
+        'try {',
+        `  spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' });`,
+        '} catch { /* the sandbox refuses this; the loop below is what we test */ }',
         'while (true) {}',
       ].join('\n'),
       limits: { timeoutMs: 1200 },
     });
 
     expect(result.status).toBe('timeout');
-    // Wait past the grandchild's own delay: if only the direct child had been
-    // killed, the marker would exist by now.
+    // Wait past the grandchild's own delay: if anything had survived, or the
+    // child had kept running, the marker would exist by now.
     await new Promise((resolve) => setTimeout(resolve, 4000));
     expect(existsSync(marker)).toBe(false);
   }, 30_000);
+
+  it('the sandbox refuses a subprocess the script tries to spawn', async () => {
+    // Stated separately from the timeout above because it is a property of the
+    // sandbox, not of the host: model-written code cannot fork off work that the
+    // time limit would then fail to reap.
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `
+        const { spawn } = await import('node:child_process');
+        try {
+          spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], { stdio: 'ignore' });
+          return 'SPAWNED';
+        } catch (error) {
+          return 'REFUSED: ' + String(error);
+        }
+      `,
+      limits: { timeoutMs: 15_000 },
+    });
+    expect(result.output).toContain('REFUSED');
+    expect(result.output).not.toContain('SPAWNED');
+  });
 
   it('refuses more tool calls than the quota allows', async () => {
     const { registry, base } = harness([makeTool('echo', 'E:')], ['echo']);
@@ -402,6 +445,7 @@ describe('a tool called from code is gated by the session, in code', () => {
       registry,
       childScript,
       gate: { decidePermission: () => ({ allowed: false, reason: 'denied by policy' }) },
+      allowedExecPaths: [esbuildBinary],
       source: `
         try { return await tools.echo({ value: 'x' }); }
         catch (error) { return 'saw: ' + String(error); }
@@ -440,6 +484,112 @@ describe('a tool called from code is gated by the session, in code', () => {
       gate: { decidePermission: () => ({ allowed: false, reason: 'blocked by engine' }) },
     });
     expect(result.error).toContain('blocked by engine');
+  });
+});
+
+describe('run_code really routes the child through the OS sandbox', () => {
+  // The policy is unit-tested in run-code-sandbox.test.ts. What that cannot see
+  // is whether runCode actually USES it, so these go through the whole path: a
+  // real child, launched by the host, attempting real escapes. Bypassing the
+  // sandbox in the host must fail these.
+
+  it('a script cannot write outside the workspace', async () => {
+    const { registry, base } = harness([], []);
+    const outside = mkdtempSync(join(tmpdir(), 'cowork-outside-'));
+    const target = join(outside, 'escaped.txt');
+    try {
+      const result = await runCode({
+        ...base,
+        registry,
+        source: `
+          const fs = await import('node:fs');
+          try {
+            fs.writeFileSync(${JSON.stringify(target)}, 'x');
+            return 'WROTE_OUTSIDE';
+          } catch (error) {
+            return 'REFUSED: ' + String(error);
+          }
+        `,
+        limits: { timeoutMs: 15_000 },
+      });
+      expect(result.output).toContain('REFUSED');
+      expect(result.output).not.toContain('WROTE_OUTSIDE');
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('a script cannot open a socket', async () => {
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      // connect() is asynchronous: it returns before the kernel refuses, so the
+      // script has to await the outcome. An earlier version returned
+      // NETWORK_ALLOWED immediately and passed whether or not a sandbox existed.
+      source: `
+        const net = await import('node:net');
+        return await new Promise((resolve) => {
+          const socket = net.connect(80, '1.1.1.1');
+          const done = (label) => { try { socket.destroy(); } catch {} resolve(label); };
+          socket.on('error', (error) => done('NETWORK_REFUSED: ' + error.code));
+          socket.on('connect', () => done('NETWORK_ALLOWED'));
+          setTimeout(() => done('NETWORK_TIMEOUT_UNRESOLVED'), 2500);
+        });
+      `,
+      limits: { timeoutMs: 20_000 },
+    });
+    expect(result.output).toContain('NETWORK_REFUSED');
+    expect(result.output).not.toContain('NETWORK_ALLOWED');
+  }, 30_000);
+
+  it('a script cannot read a denied credential directory', async () => {
+    const { registry, base } = harness([], []);
+    const fakeHome = mkdtempSync(join(tmpdir(), 'cowork-home-'));
+    mkdirSync(join(fakeHome, '.ssh'), { recursive: true });
+    writeFileSync(join(fakeHome, '.ssh', 'id_rsa'), 'PRIVATE KEY');
+    try {
+      const result = await runCode({
+        ...base,
+        registry,
+        // Point the denied set at the fake home, as production derives it from
+        // the real home directory.
+        deniedReadPaths: sensitiveReadPaths(fakeHome),
+        source: `
+          const fs = await import('node:fs');
+          try {
+            return 'READ_SECRET: ' + fs.readFileSync(${JSON.stringify(
+              join(fakeHome, '.ssh', 'id_rsa')
+            )}, 'utf8');
+          } catch (error) {
+            return 'SECRET_REFUSED: ' + String(error);
+          }
+        `,
+        limits: { timeoutMs: 15_000 },
+      });
+      expect(result.output).toContain('SECRET_REFUSED');
+      expect(result.output).not.toContain('READ_SECRET');
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('a normal script still works, so the sandbox is not simply refusing everything', async () => {
+    // Without this, a policy that denies everything would pass every test above.
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `
+        const fs = await import('node:fs');
+        fs.writeFileSync('inside.txt', 'ok');
+        return fs.readFileSync('inside.txt', 'utf8');
+      `,
+      limits: { timeoutMs: 15_000 },
+    });
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('ok');
   });
 });
 

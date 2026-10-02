@@ -20,6 +20,8 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { existsSync } from 'node:fs';
+import * as os from 'node:os';
 import * as readline from 'readline';
 
 import {
@@ -33,6 +35,7 @@ import {
 import { invokeTool, type PrunerSettings } from '../tools/invoke';
 import type { ToolContext, ToolRegistry } from '../tools/registry';
 import type { ToolGateDeps } from '../tools/pipeline';
+import { findSandboxLauncher, planSandbox, sensitiveReadPaths } from './run-code-sandbox';
 import { logWarn } from '../utils/logger';
 
 export interface RunCodeRequest {
@@ -52,6 +55,20 @@ export interface RunCodeRequest {
   execPath?: string;
   /** Entry script of the child. Overridable for tests. */
   childScript?: string;
+  /**
+   * Directories the child must not read: credentials, keychains, app data.
+   * Defaults to the standard set derived from the home directory. Narrowing this
+   * widens what model-written code can read, so it is opt-in for additions only.
+   */
+  deniedReadPaths?: readonly string[];
+  /** The app's userData directory, denied to the child: it holds API keys. */
+  appDataPath?: string;
+  /**
+   * Native binaries the child may exec. The child must transpile, and esbuild
+   * ships as a native binary it spawns, so this is granted explicitly rather
+   * than by widening process-exec.
+   */
+  allowedExecPaths?: readonly string[];
   /** Approval handler for tools the session must ask about. */
   requestPermission?: (
     sessionId: string,
@@ -235,20 +252,42 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
   let failure: { status: RunCodeStatus; error: string } | null = null;
   let observedHeapLimitBytes: number | undefined;
 
+  // The OS draws the boundary. Without this the child is a plain node process:
+  // it can `import('node:fs')` and read anything the user can read, which the
+  // tool gate does not govern because no `tools.*()` call is involved.
+  const execPath = request.execPath ?? process.execPath;
+  const plan = planSandbox({
+    platform: process.platform,
+    execPath,
+    nodeArgs: [`--max-old-space-size=${heapLimitMb(limits.maxMemoryBytes)}`, childScript],
+    workspace: request.cwd,
+    deniedReadPaths:
+      request.deniedReadPaths ?? sensitiveReadPaths(os.homedir(), request.appDataPath),
+    allowedExecPaths: request.allowedExecPaths ?? [],
+    launcherPath: findSandboxLauncher(process.platform, existsSync),
+  });
+  if (!plan.supported) {
+    // Fail closed. Running unsandboxed would let model-written code read any file
+    // the user can read while appearing to be confined, which is worse than
+    // refusing: it manufactures trust that does not exist.
+    return {
+      status: 'failed',
+      output: '',
+      error: plan.reason ?? 'run_code has no OS confinement available and was refused.',
+      toolCalls: 0,
+      durationMs: 0,
+    };
+  }
+
   return await new Promise<RunCodeResult>((resolve) => {
     let child: ChildProcess;
     try {
       child = spawn(
-        request.execPath ?? process.execPath,
-        // V8 flags go in the argument list, before the script path — NOT in
-        // `execArgv`, which `fork()` accepts but `spawn()` does not. The memory
-        // cap is only real if the child is actually started with it.
-        //
-        // What this does and does not bound: --max-old-space-size caps the V8
-        // OLD SPACE, which is where runaway JS allocation lands. It is not an
-        // RSS cap, so a native allocation or a Buffer outside the heap can
-        // still exceed it; the timeout is what bounds that case.
-        [`--max-old-space-size=${heapLimitMb(limits.maxMemoryBytes)}`, childScript],
+        plan.command,
+        // The V8 flag and the script path are already inside plan.args, after
+        // the sandbox launcher. execArgv is not used: `fork()` accepts it,
+        // `spawn()` does not.
+        plan.args,
         {
           cwd: request.cwd,
           // Own process group, so the timeout can kill the whole tree.

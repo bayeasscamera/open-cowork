@@ -1,0 +1,357 @@
+import { describe, expect, it } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync, symlinkSync, realpathSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  buildBubblewrapArgs,
+  buildSeatbeltPolicy,
+  findSandboxLauncher,
+  planSandbox,
+  resolvePolicyPath,
+  sensitiveReadPaths,
+} from '../src/main/agent/run-code-sandbox';
+
+/**
+ * The run_code sandbox.
+ *
+ * The policy strings are pure functions and are asserted as text, but that alone
+ * proves nothing about confinement: a profile can be perfectly written and still
+ * not deny anything. So on macOS these tests also run a REAL node process under
+ * a REAL sandbox and assert on what it could and could not do. Those cases are
+ * the ones worth having.
+ */
+
+const NODE = process.execPath;
+const isDarwin = process.platform === 'darwin';
+const hasSeatbelt = existsSync('/usr/bin/sandbox-exec');
+
+function runInSandbox(policy: string, script: string): { out: string } {
+  const result = spawnSync(
+    '/usr/bin/sandbox-exec',
+    ['-p', policy, NODE, '-e', script],
+    { encoding: 'utf8' }
+  );
+  return { out: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() };
+}
+
+function baseRequest(workspace: string) {
+  return {
+    platform: 'darwin' as NodeJS.Platform,
+    execPath: NODE,
+    nodeArgs: ['-e', 'x'],
+    workspace,
+    deniedReadPaths: sensitiveReadPaths('/nonexistent-home-for-tests'),
+  };
+}
+
+describe('the macOS policy denies by default', () => {
+  it('starts from deny default rather than allow default', () => {
+    const policy = buildSeatbeltPolicy(baseRequest('/tmp/ws'));
+    expect(policy).toContain('(deny default)');
+    expect(policy).not.toContain('(allow default)');
+  });
+
+  it('allows writes only inside the workspace', () => {
+    const policy = buildSeatbeltPolicy(baseRequest('/tmp/ws'));
+    const writeRules = policy.match(/\(allow file-write\*[^\n]*/g) ?? [];
+    expect(writeRules).toHaveLength(1);
+    expect(writeRules[0]).toContain('/tmp/ws');
+  });
+
+  it('never allows network, so there is no rule to leak out through', () => {
+    const policy = buildSeatbeltPolicy(baseRequest('/tmp/ws'));
+    expect(policy).not.toMatch(/allow network/);
+    expect(policy).not.toMatch(/allow socket/);
+  });
+
+  it('allows exec of node and nothing else', () => {
+    const policy = buildSeatbeltPolicy(baseRequest('/tmp/ws'));
+    expect(policy).toContain('(allow process-exec (literal ');
+    // Not the wildcard form.
+    expect(policy).not.toContain('(allow process-exec*)');
+  });
+
+  it('denies reads of every credential-bearing path', () => {
+    const paths = sensitiveReadPaths('/home/u', '/home/u/Library/Application Support/App');
+    const policy = buildSeatbeltPolicy({ ...baseRequest('/tmp/ws'), deniedReadPaths: paths });
+    for (const path of paths) {
+      // Compared resolved: /etc is a symlink to /private/etc on macOS, and the
+      // policy carries the real path precisely so the rule can match.
+      const resolved = resolvePolicyPath(path);
+      expect(policy).toContain(`(deny file-read* (subpath "${resolved.replace(/\\/g, '\\\\')}"))`);
+    }
+  });
+
+  it('includes the obvious credential locations for a given home', () => {
+    const paths = sensitiveReadPaths('/home/u');
+    expect(paths).toContain('/home/u/.ssh');
+    expect(paths).toContain('/home/u/.aws');
+    expect(paths).toContain('/home/u/.gnupg');
+    expect(paths).toContain('/home/u/Library/Keychains');
+  });
+
+  it('escapes a quote in a path so it cannot inject a rule', () => {
+    // The payload would grant a global write if it escaped the literal. It must
+    // survive as inert text, so the assertion is that the injected rule text
+    // never appears as a rule of its own.
+    const payload = 'ws") (allow file-write*) (subpath "/';
+    const policy = buildSeatbeltPolicy(baseRequest(payload));
+    // The payload text is present but escaped, inside the quoted literal, so it
+    // sits mid-line and never becomes a rule. Counting only rules that START a
+    // line is what makes this a real check: a naive substring search would match
+    // the inert text inside the literal and pass an actual injection.
+    const writeRules = policy.match(/^\(allow file-write\*/gm) ?? [];
+    expect(writeRules).toHaveLength(1);
+    expect(policy).toContain('\\"');
+  });
+
+  it('resolves a symlinked path, because Seatbelt compares the real path', () => {
+    // A rule written for the symlink would match nothing: the workspace write
+    // would be denied and a deny rule would leak.
+    const real = mkdtempSync(join(tmpdir(), 'cowork-real-'));
+    const link = join(tmpdir(), `cowork-link-${Date.now()}`);
+    try {
+      symlinkSync(real, link);
+      const policy = buildSeatbeltPolicy(baseRequest(link));
+      expect(policy).toContain(realpathSync(real));
+    } finally {
+      rmSync(real, { recursive: true, force: true });
+      rmSync(link, { force: true });
+    }
+  });
+
+});
+
+describe('a real sandboxed process is actually confined', () => {
+  // Skipped rather than faked on other platforms: bubblewrap needs a container,
+  // and asserting confinement that was never exercised would be worse than
+  // asserting nothing.
+  it.skipIf(!isDarwin || !hasSeatbelt)('can read and write the workspace', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
+    try {
+      writeFileSync(join(workspace, 'seed.txt'), 'seed');
+      const policy = buildSeatbeltPolicy(baseRequest(workspace));
+      const { out } = runInSandbox(
+        policy,
+        `const fs=require('fs');
+         fs.writeFileSync('${workspace}/written.txt','hello');
+         console.log(fs.readFileSync('${workspace}/seed.txt','utf8')+'|'+fs.readFileSync('${workspace}/written.txt','utf8'));`
+      );
+      expect(out).toContain('seed|hello');
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!isDarwin || !hasSeatbelt)('cannot write outside the workspace', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
+    const outside = mkdtempSync(join(tmpdir(), 'cowork-outside-'));
+    try {
+      const target = join(outside, 'escaped.txt');
+      const policy = buildSeatbeltPolicy(baseRequest(workspace));
+      const { out } = runInSandbox(
+        policy,
+        `try{require('fs').writeFileSync(${JSON.stringify(target)},'x');console.log('WROTE_OUTSIDE')}
+         catch(e){console.log('BLOCKED:'+e.code)}`
+      );
+      expect(out).toContain('BLOCKED');
+      expect(out).not.toContain('WROTE_OUTSIDE');
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!isDarwin || !hasSeatbelt)('cannot open a network socket', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
+    try {
+      const policy = buildSeatbeltPolicy(baseRequest(workspace));
+      const { out } = runInSandbox(
+        policy,
+        `try{const net=require('net');
+          const s=net.connect(80,'1.1.1.1');
+          s.on('error',e=>console.log('NET_BLOCKED:'+e.code));
+          s.on('connect',()=>console.log('NET_ALLOWED'));
+          setTimeout(()=>process.exit(0),800);}
+         catch(e){console.log('NET_BLOCKED:'+e.code)}`
+      );
+      expect(out).toContain('NET_BLOCKED');
+      expect(out).not.toContain('NET_ALLOWED');
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!isDarwin || !hasSeatbelt)('cannot exec another binary', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
+    try {
+      const policy = buildSeatbeltPolicy(baseRequest(workspace));
+      const { out } = runInSandbox(
+        policy,
+        `try{require('child_process').execSync('/bin/echo pwned',{stdio:'pipe'});console.log('EXEC_ALLOWED')}
+         catch(e){console.log('EXEC_BLOCKED')}`
+      );
+      expect(out).toContain('EXEC_BLOCKED');
+      expect(out).not.toContain('EXEC_ALLOWED');
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!isDarwin || !hasSeatbelt)('cannot read a denied credential directory', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
+    const fakeHome = mkdtempSync(join(tmpdir(), 'cowork-home-'));
+    try {
+      mkdirSync(join(fakeHome, '.ssh'), { recursive: true });
+      writeFileSync(join(fakeHome, '.ssh', 'id_rsa'), 'PRIVATE KEY');
+      const policy = buildSeatbeltPolicy({
+        ...baseRequest(workspace),
+        deniedReadPaths: sensitiveReadPaths(fakeHome),
+      });
+      const { out } = runInSandbox(
+        policy,
+        `try{require('fs').readFileSync(${JSON.stringify(join(fakeHome, '.ssh', 'id_rsa'))},'utf8');console.log('READ_SECRET')}
+         catch(e){console.log('SECRET_BLOCKED:'+e.code)}`
+      );
+      expect(out).toContain('SECRET_BLOCKED');
+      expect(out).not.toContain('READ_SECRET');
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!isDarwin || !hasSeatbelt)('cannot escape through a symlink out of the workspace', () => {
+    // The workspace is writable, so a symlink planted in it must not become a
+    // way to write somewhere else. This is the escape that a naive
+    // "allow write to workspace" rule gets wrong.
+    const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
+    const outside = mkdtempSync(join(tmpdir(), 'cowork-outside-'));
+    try {
+      symlinkSync(outside, join(workspace, 'link'));
+      const policy = buildSeatbeltPolicy(baseRequest(workspace));
+      const { out } = runInSandbox(
+        policy,
+        `try{require('fs').writeFileSync(${JSON.stringify(join(workspace, 'link', 'escaped.txt'))},'x');console.log('SYMLINK_ESCAPE')}
+         catch(e){console.log('LINK_BLOCKED:'+e.code)}`
+      );
+      expect(out).not.toContain('SYMLINK_ESCAPE');
+      expect(existsSync(join(outside, 'escaped.txt'))).toBe(false);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the plan fails closed when no confinement exists', () => {
+  it('refuses on a platform with no sandbox', () => {
+    for (const platform of ['win32', 'freebsd'] as NodeJS.Platform[]) {
+      const plan = planSandbox({
+        platform,
+        execPath: NODE,
+        nodeArgs: ['x.js'],
+        workspace: '/tmp/ws',
+      });
+      expect(plan.supported).toBe(false);
+      expect(plan.kind).toBe('unsupported');
+      expect(plan.reason).toMatch(/refused/i);
+    }
+  });
+
+  it('refuses on Linux when bubblewrap is missing', () => {
+    const plan = planSandbox({
+      platform: 'linux',
+      execPath: NODE,
+      nodeArgs: ['x.js'],
+      workspace: '/tmp/ws',
+    });
+    expect(plan.supported).toBe(false);
+    expect(plan.reason).toMatch(/bubblewrap|bwrap/);
+  });
+
+  it('never returns a plan that would run node directly on an unsupported platform', () => {
+    const plan = planSandbox({
+      platform: 'win32',
+      execPath: NODE,
+      nodeArgs: ['x.js'],
+      workspace: '/tmp/ws',
+    });
+    // The command may still be node, but `supported` is false so the caller
+    // refuses. Asserted explicitly because a future edit that drops the
+    // `supported` check would otherwise run unsandboxed code.
+    expect(plan.supported).toBe(false);
+    expect(plan.args).toEqual(['x.js']);
+  });
+
+  it('uses the launcher on a supported platform', () => {
+    const plan = planSandbox({ ...baseRequest('/tmp/ws'), launcherPath: '/usr/bin/sandbox-exec' });
+    expect(plan.supported).toBe(true);
+    expect(plan.kind).toBe('seatbelt');
+    expect(plan.command).toBe('/usr/bin/sandbox-exec');
+    expect(plan.args[0]).toBe('-p');
+  });
+});
+
+describe('linux confinement', () => {
+  it('unshares the network so there is no interface to use', () => {
+    const args = buildBubblewrapArgs({
+      platform: 'linux',
+      execPath: NODE,
+      nodeArgs: ['child.js'],
+      workspace: '/ws',
+    });
+    expect(args).toContain('--unshare-net');
+  });
+
+  it('binds the workspace writable and everything else read-only', () => {
+    const args = buildBubblewrapArgs({
+      platform: 'linux',
+      execPath: NODE,
+      nodeArgs: ['child.js'],
+      workspace: '/ws',
+    });
+    const index = args.indexOf('--bind');
+    expect(args[index + 1]).toBe('/ws');
+    expect(args[index + 2]).toBe('/ws');
+    expect(args).toContain('--ro-bind');
+  });
+
+  it('execs node last, after the namespace flags', () => {
+    const args = buildBubblewrapArgs({
+      platform: 'linux',
+      execPath: '/usr/bin/node',
+      nodeArgs: ['child.js'],
+      workspace: '/ws',
+    });
+    expect(args[args.indexOf('--') + 1]).toBe('/usr/bin/node');
+    expect(args[args.length - 1]).toBe('child.js');
+  });
+
+  it('kills the namespace when the parent dies, so it cannot outlive the run', () => {
+    const args = buildBubblewrapArgs({
+      platform: 'linux',
+      execPath: NODE,
+      nodeArgs: ['child.js'],
+      workspace: '/ws',
+    });
+    expect(args).toContain('--die-with-parent');
+  });
+});
+
+describe('launcher discovery', () => {
+  it('returns the seatbelt path on macOS when it exists', () => {
+    expect(findSandboxLauncher('darwin', () => true)).toBe('/usr/bin/sandbox-exec');
+  });
+
+  it('returns nothing when the launcher is absent, so the caller can refuse', () => {
+    expect(findSandboxLauncher('darwin', () => false)).toBeUndefined();
+  });
+
+  it('looks for bwrap on linux', () => {
+    expect(findSandboxLauncher('linux', () => true)).toBe('bwrap');
+  });
+});
