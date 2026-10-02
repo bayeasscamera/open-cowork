@@ -10,9 +10,19 @@
  * `tools.x()` becomes a JSONL request and blocks for the main process's
  * answer, so authority stays in the main process at every step.
  *
- * Runs as a plain Node script — no `vm`, no `new Function`, nothing that would
- * make this a "sandbox" in name only. The isolation is the process boundary
- * plus the OS limits the parent applies.
+ * The compiled module is evaluated with `new Function` HERE, in the child. That
+ * is deliberate and it is the only eval in the codebase. It is acceptable here
+ * and nowhere else for two reasons: the child already holds no authority (no
+ * tool implementation, no credential, confined by the process boundary and the
+ * OS limits the parent applies), and a `vm` context would add the *appearance* of
+ * isolation while still sharing the child's authority — which is worse, because
+ * it invites trusting code that is not confined.
+ *
+ * This module must therefore stay out of the main process's import graph. It is
+ * reachable only from `run-code-child-main.ts`, which nothing in `src` imports;
+ * it is bundled as a separate entry point. If you ever add an import of this
+ * file from the main process, the main bundle grows an eval path and the
+ * "never evaluates model code in main" guarantee is gone.
  */
 
 import { parseHostMessage, type RunCodeResponse } from './run-code-protocol';

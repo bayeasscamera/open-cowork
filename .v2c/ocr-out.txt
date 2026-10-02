@@ -1,0 +1,102 @@
+@ xi
+© Ar
+
+PARAMETRES
+
+Open Cowork
+
+Compétences (Skills)
+
+Gérer les compétences pers...
+
+Al PERSONNALISATION
+
+@) fer}
+
+q@ Té Obtenez des réponses et rec...
+Re P P
+® 6 Mémoire
+wu Xi Gérer la mémoire a long ter...
+wo Fr
+AUTOMATISATION
+© Planifications
+Développer Automatisation de prompts p...
+pour voir
+les taches .
+=  Contréle a distance
+. Utiliser Open Cowork depuis...
+SYSTEME
+
+| &
+
+Intelligence personnaii...
+
+Diagnostics
+
+Vérifier identifiants, espace ...
+
+Journaux (Logs)
+
+Consulter et exporter les jou...
+
+Général
+
+Apparence, langue et préfeér...
+
+Fermer
+
+v3.5.0
+
+Paramétres » Systeme
+
+Diagnostics
+
+Vérifier identifiants, espace de travail, bac a sable et stockage
+
+Qs Utilisable, avec des avertissements
+Identifiants, espace de travail, bac a sable et stockage des réglages effectifs
+
+(3) Identifiants du fournisseur
+Le ConfigSet effectif peut joindre son fournisseur
+
+© Modéle sélectionné
+Un modéle est épinglé quelque part dans I'échelle
+
+Z\_ Espace de travail de la session
+Le dossier dans lequel la session s'exécute
+
+Resélectionnez un dossier existant pour cette session.
+
+© _|solation du bac a sable
+La ol les outils sont exécutés
+
+© Stockage de I'application
+Répertoire de configuration et de base de données
+
+Z\ Outils natifs
+git alimente l'isolation par worktree
+
+git est introuvable dans le PATH : l'isolation par worktree est indisponible.
+
+Réglages effectifs
+JAN - custom + @cf/zai-org/glm-5.3
+
+ConfigSet décidé au niveau Global, modéle au niveau Global
+
+Actions
+
+Qs Tester la connexion & Exporter le paquet de diagnostic
+
+x
+x
+& Relancer les vérifications
+JAN
+@cf/zai-org/glm-5.3
+/Users/bayeasssene/Library/Applicatio..
+1
+ty
+
+© Ouvrir le dossier des journaux
+
+ps Pr &)
+

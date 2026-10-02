@@ -1,0 +1,110 @@
+we ie
+
+*
++ Nou
+ZTE
+@ xi
+© Ar
+6 Al gy Sou
+
+@) G Projets
+
+@wré > SBa
+
+rev) Re > B AB
+
+@ xi Hier
+
+@ ay Cache qu
+7 dernie
+demarre
+genere u
+genere u
+trouve m
+délégue |
+Plus an
+https://gi
+Retiens
+Enregistr
+Retiens
+
+Para
+SB
+
+API
+
+eee ®@<« >
+
+(4) Nouvelle tache
+
+Q Rechercher
+
+fS Automatisations
+
+aS Boutique de plugins
+
+x“
+
++ Groupées (© /Parprojet
+
+{5 Cowork
+
+>< Balises tool-calling br a !'instant
+
+Tu es en mode audit factue!
+Mise a jour majeure des set
+Génération de PROJECT_S|
+
+ajoute ce fonctionnalite (Int:
+
+ openfox
+Explorer le projet
+explore le projet
+explore ce projet
+
+mene une cherche sur git!
+
+{5 retouche-ia
+Reprends I|'exécution du pla
+# Rapport d'avancement —
+analyse ces images et adop
+
+Surveillance bot retouche-ie
+
+@) byas Sene O
+
+8h
+14h
+18h
+
+22h
+
+8
+
+Balises tool-calling brutes affichées dans le chat -:- i} oe 8 fw »
+
+Fichier valide pourtant (le Read tool I'a lu). Probleme d'accés — je vérifie la lisibilité > App lancée (PID 80016) — capture d'écr...
+
+L'app tourne avec le nouveau build (UI en frangais), mais la capture montre les Paramétres ouverts — pas la session
+
+corrompue. J'essaie de fermer les paramétres via AppleScript pour accéder au chat :
+
+Frappes clavier bloquées (pas de permission Accessibility). Je passe par I'état persisté de I'Ul — d'abord je repére ot «
+
+paramétres ouverts » est stocké :
+
+config.json est chiffré/obfusqué. Je regarde le leveldb du localStorage (état persisté du store renderer) :
+
+Le leveldb est binaire illisible. Le Settings ouvert peut étre I'état de l'utilisateur actif (machine partagée). Nouvelle capture
+al'instant + OCR:
+
+En cours
+
+»cument
++ © Accés complet v )  cloudfare/@cf/zai-org/gim-5.3- @Maxvy
+
+——
+
+Za : _ = = — — _ |
+68000080008: 258"878 808000097 70°25 268 w
+
