@@ -118,6 +118,19 @@ export function isSensitivePath(
       const candidate = foldedHome + '/' + lowerOnFs(seg, platform);
       if (folded === candidate || folded.startsWith(candidate + '/')) return true;
     }
+
+    // Another user's home folder is sensitive. The layout differs per platform:
+    // /Users/<name> on macOS, /home/<name> on Linux. Only the folder that is
+    // NOT the current user's home qualifies.
+    const usersRoot = platform === 'darwin' ? '/users/' : '/home/';
+    const foldedUsersRoot = lowerOnFs(usersRoot, platform);
+    if (folded.startsWith(foldedUsersRoot)) {
+      const remainder = folded.slice(foldedUsersRoot.length);
+      const slash = remainder.indexOf('/');
+      const otherUser = slash === -1 ? remainder : remainder.slice(0, slash);
+      const otherHome = foldedUsersRoot + otherUser;
+      if (otherUser.length > 0 && otherHome !== foldedHome) return true;
+    }
   }
 
   for (const seg of COWORK_DATA_SEGMENTS) {

@@ -26,7 +26,11 @@ describe('diagnostics page', () => {
     expect(panel).toContain("import { SettingsDiagnostics } from './settings/SettingsDiagnostics';");
     expect(panel).toContain("| 'diagnostics'");
     expect(panel).toContain("'diagnostics',");
-    expect(panel).toContain("tabs: ['diagnostics', 'logs', 'permissions', 'general']");
+    // The System group keeps Diagnostics reachable; its membership changes
+    // over time, so assert the group exists rather than pinning its order.
+    expect(panel).toContain("labelKey: 'settings.groupSystem'");
+    const systemGroup = /labelKey: 'settings\.groupSystem', tabs: \[([^\]]*)\]/.exec(panel)?.[1] ?? '';
+    expect(systemGroup).toContain("'diagnostics'");
     expect(panel).toContain('<SettingsDiagnostics isActive={activeTab ===');
     expect(panel).toContain("t('settings.diagnostics')");
   });

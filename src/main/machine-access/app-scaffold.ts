@@ -11,6 +11,7 @@
  */
 
 import * as net from 'net';
+import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import { resolveSafePath } from './safe-path';
 import type { FolderGrant } from './types';
@@ -97,6 +98,19 @@ export function scaffoldApp(request: ScaffoldRequest, writeFile: (p: string, c: 
     name = validateAppName(request.name);
   } catch (error) {
     return { ok: false, files: [], error: error instanceof Error ? error.message : String(error) };
+  }
+  // The granted root must be a real directory: path containment is lexical for
+  // a missing root, so it would otherwise "contain" anything underneath it.
+  try {
+    if (!fs.statSync(request.grantedRoot).isDirectory()) {
+      return { ok: false, files: [], error: 'The granted root is not a directory.' };
+    }
+  } catch {
+    return {
+      ok: false,
+      files: [],
+      error: `The granted root does not exist: '${request.grantedRoot}'.`,
+    };
   }
   // Autonomy is deliberately NOT forwarded: 'allow-all' relaxes the ordinary
   // grant check, but a scaffold destination must ALWAYS stay inside a granted
