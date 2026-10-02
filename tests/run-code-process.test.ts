@@ -341,6 +341,108 @@ describe('a child that crashes does not take the app with it', () => {
   }, 40_000);
 });
 
+describe('a tool called from code is gated by the session, in code', () => {
+  // These cover the case where run_code was supposed to ask the user and did
+  // not: the handler was typed, documented and then never called, so supplying
+  // one DISABLED gating instead of applying it.
+
+  it('consults the session handler for a call the static rules allow', async () => {
+    const { registry, base } = harness([makeTool('echo', 'E:')], ['echo']);
+    const asked: string[] = [];
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `return await tools.echo({ value: 'x' });`,
+      requestPermission: async (_s, _id, toolName) => {
+        asked.push(toolName);
+        return 'allow';
+      },
+    });
+    expect(asked).toEqual(['echo']);
+    expect(result.status).toBe('completed');
+  });
+
+  it('refuses the call when the handler denies it, and the script can adapt', async () => {
+    {
+      const { registry, base } = harness([makeTool('echo', 'E:')], ['echo']);
+      const result = await runCode({
+        ...base,
+        registry,
+        source: `
+          try { return await tools.echo({ value: 'x' }); }
+          catch (error) { return 'adapted: ' + String(error); }
+        `,
+        requestPermission: async () => 'deny',
+      });
+      expect(result.status).toBe('completed');
+      expect(result.output).toContain('adapted:');
+    }
+
+    const { registry, base } = harness([makeTool('echo', 'E:')], ['echo']);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `return await tools.echo({ value: 'x' });`,
+      requestPermission: async () => 'deny',
+    });
+    // The script did not catch the rejection, so the reason surfaces as the
+    // execution error. A script that DID catch it would adapt instead.
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('denied by the parent session');
+  });
+
+  it('never prompts when the session rules already refused the call', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('echo', 'E:'));
+    let asked = 0;
+    const result = await runCode({
+      sessionId: 'session-1',
+      cwd: workdir,
+      allowedTools: ['echo'],
+      registry,
+      childScript,
+      gate: { decidePermission: () => ({ allowed: false, reason: 'denied by policy' }) },
+      source: `
+        try { return await tools.echo({ value: 'x' }); }
+        catch (error) { return 'saw: ' + String(error); }
+      `,
+      requestPermission: async () => {
+        asked += 1;
+        return 'allow';
+      },
+    });
+    expect(asked).toBe(0);
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('denied by policy');
+  });
+
+  it('fails closed when the handler throws, rather than allowing by accident', async () => {
+    const { registry, base } = harness([makeTool('echo', 'E:')], ['echo']);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `return await tools.echo({ value: 'x' });`,
+      requestPermission: async () => {
+        throw new Error('renderer is gone');
+      },
+    });
+    expect(result.error).toContain('renderer is gone');
+    // The tool itself never ran: its content would have been "E:x".
+    expect(result.output).not.toContain('E:x');
+  });
+
+  it('falls back to the real permission engine when no handler is supplied', async () => {
+    const { registry, base } = harness([makeTool('echo', 'E:')], ['echo']);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `return await tools.echo({ value: 'x' });`,
+      gate: { decidePermission: () => ({ allowed: false, reason: 'blocked by engine' }) },
+    });
+    expect(result.error).toContain('blocked by engine');
+  });
+});
+
 describe('the heap cap is clamped into a range Node will actually honour', () => {
   it('converts bytes to whole MiB', () => {
     expect(heapLimitMb(512 * 1024 * 1024)).toBe(512);

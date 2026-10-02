@@ -108,6 +108,25 @@ function killProcessGroup(child: ChildProcess): void {
 }
 
 /**
+ * Stable identity for one tool call from code, used to label the permission
+ * prompt. Derived from the tool and its arguments, so two identical calls share
+ * an id and a pipelined call is never labelled with another call's identity.
+ */
+function toolUseIdFor(toolName: string, args: Record<string, unknown>): string {
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(args ?? {});
+  } catch {
+    serialized = '<unserialisable>';
+  }
+  let hash = 0;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash = (hash * 31 + serialized.charCodeAt(index)) | 0;
+  }
+  return `run_code:${toolName}:${(hash >>> 0).toString(36)}`;
+}
+
+/**
  * Convert the byte budget into a V8 old-space cap in MiB.
  *
  * Clamped on both sides. The floor keeps the child from being started with a cap
@@ -161,12 +180,51 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
       args: Record<string, unknown>;
     }) => {
       const { sessionId, toolName, args } = input;
-      if (!request.requestPermission) {
-        return request.gate.decidePermission({ sessionId, toolName, args });
-      }
+
+      // The session's own rules decide first, and a refusal there is FINAL: it
+      // would be wrong to ask the user to approve something the session
+      // forbids, and answering 'allow' must not be able to override it.
       const base = await request.gate.decidePermission({ sessionId, toolName, args });
       if (!base.allowed) return base;
-      return { allowed: true };
+
+      // No handler means nobody to ask. `base` is still the real permission
+      // engine, including its own 'ask' round-trip to the renderer, so this is
+      // not an ungated path.
+      if (!request.requestPermission) return base;
+
+      // Model-written code calling a tool is exactly the case where a human
+      // should see the prompt, so the session's handler is consulted as well.
+      //
+      // The tool-use id is derived from the call itself rather than a counter:
+      // the child may pipeline several calls, and a counter read from shared
+      // state could label one call with another's identity in the prompt the
+      // user answers. Deriving it keeps the prompt honest under concurrency.
+      try {
+        const decision = await request.requestPermission(
+          sessionId,
+          toolUseIdFor(toolName, args),
+          toolName,
+          args
+        );
+        if (decision === 'deny') {
+          return {
+            allowed: false,
+            reason:
+              'Permission denied by the parent session for this run_code tool call. ' +
+              'Do not retry it; ask the user instead.',
+          };
+        }
+        return { allowed: true };
+      } catch (error) {
+        // Fail CLOSED. A permission handler that throws must not become an
+        // accidental allow.
+        return {
+          allowed: false,
+          reason: `The permission request failed, so the call was refused: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
     },
   };
 
