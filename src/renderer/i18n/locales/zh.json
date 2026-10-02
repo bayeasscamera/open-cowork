@@ -2110,5 +2110,14 @@
     "errorTitle": "此预设无法加载",
     "loadFailed": "无法加载预设。",
     "tab": "预设"
+  },
+  "machineAccess": {
+    "title": "机器访问",
+    "approveOnce": "批准一次",
+    "refuse": "拒绝",
+    "dangerous": "危险操作",
+    "suspect": "可疑操作",
+    "undo": "撤销",
+    "emergencyStop": "紧急停止"
   }
 }

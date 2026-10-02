@@ -2110,5 +2110,14 @@
     "errorTitle": "This preset could not be loaded",
     "loadFailed": "Could not load the presets.",
     "tab": "Presets"
+  },
+  "machineAccess": {
+    "title": "Machine access",
+    "approveOnce": "Approve once",
+    "refuse": "Refuse",
+    "dangerous": "Dangerous action",
+    "suspect": "Suspicious action",
+    "undo": "Undo",
+    "emergencyStop": "Emergency stop"
   }
 }

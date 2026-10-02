@@ -2109,5 +2109,14 @@
     "errorTitle": "Ce préréglage n'a pas pu être chargé",
     "loadFailed": "Impossible de charger les préréglages.",
     "tab": "Préréglages"
+  },
+  "machineAccess": {
+    "title": "Accès à la machine",
+    "approveOnce": "Approuver une fois",
+    "refuse": "Refuser",
+    "dangerous": "Action dangereuse",
+    "suspect": "Action suspecte",
+    "undo": "Annuler",
+    "emergencyStop": "Arrêt d’urgence"
   }
 }
