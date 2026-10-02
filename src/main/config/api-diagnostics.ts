@@ -38,6 +38,25 @@ import { getCapabilityCache, CAPABILITY_CACHE_TTL_MS } from './capability-cache'
 /** Disk-cache key for the last local-Ollama discovery (endpoints move rarely). */
 const OLLAMA_DISCOVERY_CACHE_KEY = 'ollama-discovery';
 
+/**
+ * The in-flight Ollama background revalidation, if any.
+ *
+ * Deliberately not awaited by the discovery path — serving a stale entry
+ * immediately is the entire point — but exposed so the moment the corrected
+ * entry lands is observable instead of inferred.
+ */
+let lastOllamaRevalidation: Promise<unknown> | undefined;
+
+/** Resolves when the most recent background revalidation settles, if one started. */
+export function whenOllamaRevalidationSettled(): Promise<void> {
+  return lastOllamaRevalidation
+    ? lastOllamaRevalidation.then(
+        () => undefined,
+        () => undefined
+      )
+    : Promise.resolve();
+}
+
 const STEP_NAMES: DiagnosticStepName[] = ['dns', 'tcp', 'tls', 'auth', 'model'];
 const TCP_TIMEOUT_MS = 5000;
 const TLS_TIMEOUT_MS = 5000;
@@ -724,7 +743,13 @@ export async function discoverLocalOllama(input?: {
     CAPABILITY_CACHE_TTL_MS
   );
   if (cached && cached.baseUrl === baseUrl) {
-    void fetchOllamaModelIndex({ baseUrl })
+    // Kept as a handle on the in-flight revalidation rather than `void`-ed and
+    // forgotten. Production never awaits it — the point of stale-while-revalidate
+    // is that the Settings path answers instantly — but a caller (and the test)
+    // that needs to observe the corrected entry has no other way to know when
+    // it lands. Without a handle the only option is polling with a timeout, which
+    // is a flake wearing a test's clothes.
+    lastOllamaRevalidation = fetchOllamaModelIndex({ baseUrl })
       .then((result) => {
         const models = result.models.map((item) => item.id);
         cache.set(OLLAMA_DISCOVERY_CACHE_KEY, {

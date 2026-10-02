@@ -382,7 +382,7 @@ function loadSettings(): void {
 function persist(): void {
   const file = resolveStorageFile();
   try {
-    const trimmed = Array.from(delegations.values()).sort((a, b) => b.startedAt - a.startedAt).slice(0, MAX_TRACKED_TASKS);
+    const trimmed = Array.from(delegations.values()).sort(byRecencyDesc).slice(0, MAX_TRACKED_TASKS);
     const serialized = trimmed.map((d) => ({
       ...d,
       rawResult: d.rawResult?.slice(0, MAX_PERSISTED_RESULT_CHARS),
@@ -470,6 +470,34 @@ function pushLog(delegation: BackgroundDelegation, kind: DelegationLogEntry['kin
  * Called after each insertion, so the map cannot outgrow the cap no matter how
  * many delegations a session runs.
  */
+/**
+ * Total order over delegations by recency.
+ *
+ * `startedAt` is a millisecond timestamp, so two delegations started in the same
+ * tick are common — a burst of tasks, or a fast test. Sorting on it alone leaves
+ * those pairs in whatever order the sort happens to produce, which made
+ * "evicts the oldest first" and "newest first" both undefined for them. That is
+ * a latent flake rather than a visible bug: it only shows up when the timing
+ * lands, and then it looks like the history order is wrong.
+ *
+ * `id` breaks the tie. It is unique, so the order is total and the same inputs
+ * always produce the same result. `id` is deliberately not tried first: the
+ * timestamp is the meaningful ordering, and the tiebreak only decides pairs the
+ * timestamp genuinely cannot distinguish.
+ */
+function compareDelegationsByRecency(
+  a: { startedAt: number; id: string },
+  b: { startedAt: number; id: string }
+): number {
+  if (a.startedAt !== b.startedAt) return a.startedAt - b.startedAt;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** Newest first. */
+function byRecencyDesc(a: { startedAt: number; id: string }, b: { startedAt: number; id: string }): number {
+  return compareDelegationsByRecency(b, a);
+}
+
 function evictOverflowingDelegations(): void {
   if (delegations.size <= MAX_TRACKED_TASKS) return;
   const covered = new Set<string>();
@@ -489,7 +517,7 @@ function evictOverflowingDelegations(): void {
         !covered.has(d.id) &&
         !d.resumedBy
     )
-    .sort((a, b) => a.startedAt - b.startedAt);
+    .sort(compareDelegationsByRecency);
 
   let excess = delegations.size - MAX_TRACKED_TASKS;
   for (const delegation of evictable) {
@@ -1155,7 +1183,7 @@ export function resumeInterruptedDelegations(
         !d.resumedBy &&
         (d.resumeAttempts ?? 0) < MAX_DELEGATION_RESUME_ATTEMPTS
     )
-    .sort((a, b) => a.startedAt - b.startedAt);
+    .sort(compareDelegationsByRecency);
 
   const start = options.start ?? startDelegation;
 
@@ -1473,7 +1501,7 @@ export function listDelegations(sessionId?: string): BackgroundDelegation[] {
   ensureLoaded();
   return Array.from(delegations.values())
     .filter((d) => !sessionId || d.sessionId === sessionId)
-    .sort((a, b) => b.startedAt - a.startedAt);
+    .sort(byRecencyDesc);
 }
 
 export function getDelegation(taskId: string): BackgroundDelegation | undefined {

@@ -34,7 +34,10 @@ vi.mock('../src/main/utils/retry.ts', () => ({
   ),
 }));
 
-import { discoverLocalOllama } from '../src/main/config/api-diagnostics';
+import {
+  discoverLocalOllama,
+  whenOllamaRevalidationSettled,
+} from '../src/main/config/api-diagnostics';
 import { resetOllamaModelIndexCache } from '../src/main/config/ollama-api';
 import { getCapabilityCache } from '../src/main/config/capability-cache';
 
@@ -146,10 +149,14 @@ describe('discoverLocalOllama', () => {
     expect(second.available).toBe(true);
     expect(second.models).toEqual(['cached-model']);
     // …while the background refresh corrects the entry for the next call.
-    await vi.waitFor(() => {
-      expect(getCapabilityCache().getStale('ollama-discovery')).toMatchObject({
-        available: false,
-      });
+    //
+    // Awaited through the exposed handle rather than polled with vi.waitFor.
+    // Polling against a default 1s timeout was the flake: the refresh is real
+    // async work, and under parallel test load it sometimes lands later. Waiting
+    // on the actual promise makes this deterministic instead of merely generous.
+    await whenOllamaRevalidationSettled();
+    expect(getCapabilityCache().getStale('ollama-discovery')).toMatchObject({
+      available: false,
     });
   });
 });

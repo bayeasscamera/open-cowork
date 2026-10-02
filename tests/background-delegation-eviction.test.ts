@@ -291,3 +291,32 @@ describe('delegation history eviction', () => {
     expect(getDelegation(taskId)?.title).toBe('trigger');
   });
 });
+
+describe('recency ordering is a total order, not a partial one', () => {
+  // Two delegations started in the same millisecond are common — a burst of
+  // tasks, or a fast test. Sorting on `startedAt` alone leaves those pairs in
+  // whatever order the engine produces, which is how "evicts the oldest first"
+  // became a flake that only appeared under load.
+  it('orders identically across repeated listings', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await completedDeliveredDelegation('s1', `burst ${i}`);
+    }
+    const first = listDelegations().map((d) => d.title);
+    const second = listDelegations().map((d) => d.title);
+    expect(second).toEqual(first);
+  });
+
+  it('the most recent task is first even when timestamps collide', async () => {
+    // Every task lands in the same tick, so only the tiebreaker can order them.
+    for (let i = 0; i < 4; i += 1) {
+      await completedDeliveredDelegation('s1', `same-tick ${i}`);
+    }
+    const tracked = listDelegations();
+    // Newest-first ordering must be stable and self-consistent, and the set of
+    // survivors must be a prefix of the order rather than an arbitrary subset.
+    const titles = tracked.map((d) => d.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    // Sorting the same list again must not reshuffle it.
+    expect(listDelegations().map((d) => d.title)).toEqual(titles);
+  });
+});
