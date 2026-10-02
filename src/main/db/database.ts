@@ -159,6 +159,8 @@ export interface ProjectRow {
   refine_config_set_id: string | null;
   /** Model pinned inside the refine ConfigSet (NULL = the set's active model). */
   refine_config_model_id: string | null;
+  /** Agent preset pinned on the project (NULL = 'standard'). */
+  preset_id: string | null;
   /** Persistent project instructions injected into every linked session. */
   instructions: string | null;
   /** 0 = active, 1 = archived (no destructive delete without confirmation). */
@@ -499,6 +501,7 @@ function applySchema(database: Database.Database): void {
       draft_config_model_id TEXT,
       refine_config_set_id TEXT,
       refine_config_model_id TEXT,
+      preset_id TEXT,
       instructions TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
@@ -507,6 +510,10 @@ function applySchema(database: Database.Database): void {
   `);
     // Legacy projects predate the model pin: NULL = the ConfigSet's active model.
     ensureColumn(database, 'projects', 'config_model_id', 'config_model_id TEXT');
+    // Agent preset pin. NULL means "standard", so every pre-preset project
+    // keeps its exact previous behaviour. Added through the same hardened
+    // ensureColumn path as the columns above.
+    ensureColumn(database, 'projects', 'preset_id', 'preset_id TEXT');
     // Two-stage pipeline columns — added after the first release, so existing
     // databases need the same ALTER TABLE path as the model pin above.
     ensureColumn(database, 'projects', 'pipeline_mode', 'pipeline_mode TEXT');
@@ -866,9 +873,9 @@ export function initDatabase(): DatabaseInstance {
       id, name, description, workdir, config_set_id, config_model_id,
       pipeline_mode, draft_config_set_id, draft_config_model_id,
       refine_config_set_id, refine_config_model_id,
-      instructions, archived, created_at, updated_at
+      preset_id, instructions, archived, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getProjectStmt = rawDb.prepare(`
@@ -1132,6 +1139,7 @@ export function initDatabase(): DatabaseInstance {
           project.draft_config_model_id,
           project.refine_config_set_id,
           project.refine_config_model_id,
+          project.preset_id,
           project.instructions,
           project.archived,
           project.created_at,

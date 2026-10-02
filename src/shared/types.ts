@@ -62,6 +62,8 @@ export interface Project {
   /** Model pinned inside the refine ConfigSet (null = the set's active model). */
   refineModelId: string | null;
   instructions: string | null;
+  /** Agent preset pinned on the project (null = 'standard'). */
+  presetId: string | null;
   archived: boolean;
   /** Absolute paths of attached reference files (read-only context at session start). */
   referenceFiles: string[];
@@ -721,6 +723,8 @@ export type ClientEvent =
         refineConfigSetId?: string;
         refineModelId?: string;
         instructions?: string;
+        /** Agent preset pinned on the project (absent = 'standard'). */
+        presetId?: string;
       };
     }
   | { type: 'projects.list'; payload: { includeArchived?: boolean } }

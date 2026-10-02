@@ -36,6 +36,8 @@ interface CreateProjectInput {
   refineConfigSetId?: string;
   refineModelId?: string;
   instructions?: string;
+  /** Agent preset pinned on the project (absent = 'standard'). */
+  presetId?: string;
 }
 
 interface UpdateProjectInput {
@@ -50,6 +52,8 @@ interface UpdateProjectInput {
   refineConfigSetId?: string | null;
   refineModelId?: string | null;
   instructions?: string | null;
+  /** Agent preset pinned on the project; null = 'standard'. */
+  presetId?: string | null;
   archived?: boolean;
 }
 
@@ -77,6 +81,7 @@ function rowToProject(
     refineConfigSetId: row.refine_config_set_id ?? null,
     refineModelId: row.refine_config_model_id ?? null,
     instructions: row.instructions,
+    presetId: row.preset_id ?? null,
     archived: row.archived === 1,
     referenceFiles,
     createdAt: row.created_at,
@@ -158,6 +163,7 @@ export class ProjectStore {
       refine_config_set_id: input.refineConfigSetId?.trim() || null,
       refine_config_model_id: input.refineModelId?.trim() || null,
       instructions: input.instructions?.trim() || null,
+      preset_id: input.presetId?.trim() || null,
       archived: 0,
       created_at: now,
       updated_at: now,
@@ -176,6 +182,7 @@ export class ProjectStore {
     if (input.workdir !== undefined) updates.workdir = validateWorkdir(input.workdir);
     if (input.description !== undefined) updates.description = input.description?.trim() || null;
     if (input.configSetId !== undefined) updates.config_set_id = input.configSetId?.trim() || null;
+    if (input.presetId !== undefined) updates.preset_id = input.presetId?.trim() || null;
     if (input.modelId !== undefined) updates.config_model_id = input.modelId?.trim() || null;
     if (input.pipelineMode !== undefined) {
       updates.pipeline_mode = normalizePipelineMode(input.pipelineMode);

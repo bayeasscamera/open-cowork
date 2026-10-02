@@ -356,6 +356,7 @@ export async function handleClientEvent(
           refineConfigSetId: event.payload.refineConfigSetId,
           refineModelId: event.payload.refineModelId,
           instructions: event.payload.instructions,
+          presetId: event.payload.presetId,
         });
         return { success: true, project };
       } catch (error) {
