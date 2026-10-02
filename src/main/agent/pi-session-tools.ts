@@ -64,6 +64,14 @@ export interface BuildPiSessionToolsDeps {
    * Omitted in tests that do not care about presets; defaults to direct.
    */
   preset?: AgentPreset;
+  /**
+   * The shared gate, used to give `run_code` its real executor.
+   *
+   * Supplied by the caller rather than constructed here so the code path runs the
+   * SAME policy as every other tool call. Constructing a second, near-identical
+   * gate is precisely how a code path ends up obeying different rules.
+   */
+  gateForCode?: ToolGateDeps;
 }
 
 export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
@@ -122,8 +130,33 @@ export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
 
   // Catalog every tool this session can reach, so the agent preset, the tool
   // presenter and the run_code bridge validate against the real tool set.
-  const catalog = [...codingTools, ...customTools];
+  // `run_code` is built here rather than coming from the SDK: it is the one tool
+  // whose implementation lives in this process, and the SDK has no equivalent to
+  // contribute. It has to be in the catalog BEFORE presentation, or the presenter
+  // filters out a tool the preset allows and the model is never offered it.
+  const runCodeDefinition = deps.gateForCode
+    ? buildRunCodeTool({
+        registry: toolRegistry,
+        gate: deps.gateForCode,
+        allowedTools: deps.preset?.tools.allow ?? [],
+        ...(deps.preset ? { pruner: deps.preset.pruner } : {}),
+      })
+    : null;
+
+  const catalog = [...codingTools, ...customTools, ...(runCodeDefinition ? [runCodeDefinition] : [])];
   syncToolRegistry(catalog);
+
+  // Register the real executor as well as cataloguing it. The catalog stub
+  // refuses on purpose, so without this the tool would be offered and then fail
+  // every call.
+  if (runCodeDefinition) {
+    registerRunCodeExecutor({
+      registry: toolRegistry,
+      gate: deps.gateForCode as ToolGateDeps,
+      allowedTools: deps.preset?.tools.allow ?? [],
+      ...(deps.preset ? { pruner: deps.preset.pruner } : {}),
+    });
+  }
 
 
   // Presentation. This is where the preset stops being configuration and starts

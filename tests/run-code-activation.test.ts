@@ -6,6 +6,7 @@ import { runToolGate, type ToolGateDeps } from '../src/main/tools/pipeline';
 import type { ToolDefinition } from '../src/main/tools/registry';
 import { RUN_CODE_TOOL_NAME, buildRunCodeTool } from '../src/main/tools/run-code-tool';
 import { inferToolRisk } from '../src/main/agent/pi-session-tools';
+import { presenterFor } from '../src/main/presets/tool-presenter';
 
 /**
  * The invariants that make code mode safe to have switched on.
@@ -128,6 +129,56 @@ describe('a tool called from code is confined to the same allow-list', () => {
   it('and fails closed when that handler throws', () => {
     const host = read('src/main/agent/run-code-host.ts');
     expect(host).toContain('Fail CLOSED');
+  });
+});
+
+describe('code mode actually reaches the model', () => {
+  // The gaps this guards: run_code was in the preset allow-list but never in the
+  // session catalog, so the presenter filtered out a tool the preset permitted
+  // and the model was never offered it. And the generated SDK was returned but
+  // never appended, so even once offered the model had no idea what `tools` is.
+  // Both are silent: nothing throws, the preset simply looks enabled.
+
+  it('run_code is added to the catalog before presentation, not after', () => {
+    const source = read('src/main/agent/pi-session-tools.ts');
+    const catalogAt = source.indexOf('const catalog = [...codingTools');
+    const presentAt = source.indexOf('presentToolsForPreset(');
+    expect(catalogAt).toBeGreaterThan(-1);
+    expect(presentAt).toBeGreaterThan(catalogAt);
+    // The definition is built and included in the catalog.
+    expect(source).toMatch(/const catalog = \[\.\.\.codingTools, \.\.\.customTools, \.\.\.\(runCodeDefinition/);
+  });
+
+  it('its real executor is registered, not just catalogued', () => {
+    const source = read('src/main/agent/pi-session-tools.ts');
+    expect(source).toContain('registerRunCodeExecutor({');
+  });
+
+  it('the runner supplies the gate, so the tool has a policy', () => {
+    const source = read('src/main/agent/agent-runner.ts');
+    expect(source).toContain('gateForCode: createSessionGate({');
+    expect(source).toContain('allowedTools: activePreset.preset.tools.allow');
+  });
+
+  it('the generated SDK is appended to the prompt', () => {
+    const source = read('src/main/agent/agent-runner.ts');
+    expect(source).toContain('coworkAppendPrompt: coworkAppendPrompt + codePresentationPrompt');
+  });
+
+  it('the prompt section is produced from the presented catalog', () => {
+    const source = read('src/main/agent/pi-session-tools.ts');
+    expect(source).toContain('promptSection: deps.preset ? presenterFor(deps.preset).promptSection(catalogTools)');
+  });
+
+  it('a code-mode preset yields a non-empty SDK section mentioning the tools proxy', () => {
+    const tools: ToolDefinition[] = [
+      { ...bashTool, name: 'read' },
+      { ...bashTool, name: 'write' },
+    ];
+    const section = presenterFor(CODE_MODE_PRESET).promptSection(tools);
+    expect(section.length).toBeGreaterThan(0);
+    expect(section).toContain('run_code');
+    expect(section).toContain('tools.');
   });
 });
 

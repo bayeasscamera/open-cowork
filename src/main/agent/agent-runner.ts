@@ -95,6 +95,7 @@ import {
   copyDirectorySync as copyDirectoryTree,
 } from './skills-paths';
 import {
+  createSessionGate,
   installPermissionHook as installPermissionHookImpl,
   installModsHooks as installModsHooksImpl,
 } from './agent-hooks';
@@ -1298,7 +1299,11 @@ export class CoworkAgentRunner {
       // Bridge MCP tools and the agent meta-tools (skill proposals, eval
       // harness, AST helpers…) into the agent SDK. No dynamic tool loading:
       // the registry that evaluated agent-written code was removed.
-      const { customTools, wrappedTools } = await buildPiSessionTools({
+      const {
+        customTools,
+        wrappedTools,
+        promptSection: codePresentationPrompt,
+      } = await buildPiSessionTools({
         mcpManager: this.mcpManager,
         sessionId: session.id,
         cwd: effectiveCwd,
@@ -1309,6 +1314,15 @@ export class CoworkAgentRunner {
         enrichProcessPath: enrichProcessPathForBuild,
         // The preset decides which tools are offered and how they are presented.
         preset: activePreset.preset,
+        // The SAME gate the SDK hook is installed with, built once here and
+        // shared, so a tool called from code and a tool called directly cannot
+        // end up obeying different rules.
+        gateForCode: createSessionGate({
+          allowedTools: activePreset.preset.tools.allow,
+          requestPermission: this.requestPermission,
+          getToolDisplayName: (name) => this.getToolDisplayName(name),
+          checkPath: (path, ctx) => PathGuard.isPathAllowed(path, ctx.sessionId),
+        }),
       });
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
@@ -1338,7 +1352,10 @@ export class CoworkAgentRunner {
           authStorage,
           cwd: effectiveCwd,
           skillPaths,
-          coworkAppendPrompt,
+          // In code mode the presenter produces the SDK the model is expected to
+          // drive. Without appending it the model would get a bare `run_code` and
+          // no idea what `tools` looks like.
+          coworkAppendPrompt: coworkAppendPrompt + codePresentationPrompt,
           provider,
           customProtocol: runtimeConfig.customProtocol,
           effectiveBaseUrl,
