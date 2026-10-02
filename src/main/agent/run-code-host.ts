@@ -93,6 +93,13 @@ export interface RunCodeRequest {
    */
   extraReadablePaths?: readonly string[];
   /**
+   * Pretend to run on another platform. Production never sets this; it exists so
+   * the Windows refusal — the only correct behaviour there — is exercised
+   * end to end rather than asserted from the plan function alone. A refusal path
+   * that is never executed is a comment, not a guarantee.
+   */
+  sandboxPlatform?: NodeJS.Platform;
+  /**
    * Native binaries the child may exec. The child must transpile, and esbuild
    * ships as a native binary it spawns, so this is granted explicitly rather
    * than by widening process-exec.
@@ -328,8 +335,9 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
     ...resolveEsbuildRuntimeDirs(),
   ].filter((candidate, index, all) => all.indexOf(candidate) === index);
 
+  const platform = request.sandboxPlatform ?? process.platform;
   const plan = planSandbox({
-    platform: process.platform,
+    platform,
     execPath,
     nodeArgs: [`--max-old-space-size=${heapLimitMb(limits.maxMemoryBytes)}`, childScript],
     workspace: request.cwd,
@@ -348,7 +356,7 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
     allowedExecPaths: request.allowedExecPaths ?? [resolveEsbuildBinary()].filter(
       (candidate): candidate is string => candidate !== null
     ),
-    launcherPath: findSandboxLauncher(process.platform, existsSync),
+    launcherPath: findSandboxLauncher(platform, existsSync),
   });
   if (!plan.supported) {
     // Fail closed. Running unsandboxed would let model-written code read any file

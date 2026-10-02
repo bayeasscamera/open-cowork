@@ -745,6 +745,44 @@ describe('run_code really routes the child through the OS sandbox', () => {
   });
 });
 
+describe('on a platform with no confinement the run is refused, not executed', () => {
+  // Windows has no sandbox facility a user process can use, so the only correct
+  // behaviour is refusal. Forcing the platform exercises the WHOLE path —
+  // resolution, plan, refusal — rather than asserting on planSandbox alone,
+  // which would leave the wiring between the host and the plan untested.
+  it.each(['win32', 'freebsd', 'sunos', 'aix'] as const)(
+    'refuses on %s without spawning anything',
+    async (platform) => {
+      const { registry, base } = harness([], []);
+      const startedAt = Date.now();
+      const result = await runCode({
+        ...base,
+        registry,
+        sandboxPlatform: platform,
+        // Even a trivial script must not run: the refusal is about the absence
+        // of a boundary, not about what the script does.
+        source: 'return 1;',
+      });
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/refus/i);
+      // Refused fast, before any child could have started and done work.
+      expect(Date.now() - startedAt).toBeLessThan(5000);
+      expect(result.toolCalls).toBe(0);
+    }
+  );
+
+  it('the refusal names the platform and the reason', async () => {
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      sandboxPlatform: 'win32',
+      source: 'return 1;',
+    });
+    expect(result.error).toContain('win32');
+  });
+});
+
 describe('native memory outside the V8 heap is killed, not just observed', () => {
   // --max-old-space-size does not cover Buffers or ArrayBuffer backing stores,
   // which live in native memory. Without the watchdog a script allocates
