@@ -33,7 +33,14 @@ import { runCodeChild } from './run-code-child';
  * `module.exports` after a plain function evaluation.
  */
 async function transpileWithEsbuild(source: string): Promise<string> {
-  const { transform } = await import('esbuild');
+  // Absolute path, never a bare specifier. The child runs under a sandbox where
+  // module resolution cannot walk up past unreadable directories: a bare
+  // `import('esbuild')` climbs looking for package.json files and dies with
+  // EPERM on the first unreadable one, which surfaces misleadingly as a
+  // compilation failure. The host passes the exact file.
+  const esbuildMain =
+    process.env.COWORK_ESBUILD_MAIN ?? 'esbuild';
+  const { transform } = await import(esbuildMain);
   const wrapped = [
     'export default async function __cowork_run_code(tools) {',
     source,

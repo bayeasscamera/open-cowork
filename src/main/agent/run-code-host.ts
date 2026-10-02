@@ -36,9 +36,15 @@ import {
 import { invokeTool, type PrunerSettings } from '../tools/invoke';
 import type { ToolContext, ToolRegistry } from '../tools/registry';
 import type { ToolGateDeps } from '../tools/pipeline';
-import { findSandboxLauncher, planSandbox, sensitiveReadPaths } from './run-code-sandbox';
+import {
+  findSandboxLauncher,
+  planSandbox,
+  sensitiveReadPaths,
+  systemWideDeniedReadPaths,
+} from './run-code-sandbox';
 import {
   resolveEsbuildBinary,
+  resolveEsbuildMain,
   resolveEsbuildRuntimeDirs,
   resolveRunCodeChildScript,
 } from './run-code-runtime';
@@ -78,6 +84,13 @@ export interface RunCodeRequest {
    * directory instead of the developer's actual files.
    */
   homeDir?: string;
+  /**
+   * Additional directories the child may read, on top of what the host already
+   * reopens (node, the child script, esbuild). Occasionally a toolchain needs
+   * one more place; this is how it is granted, explicitly, rather than by
+   * widening the jail.
+   */
+  extraReadablePaths?: readonly string[];
   /**
    * Native binaries the child may exec. The child must transpile, and esbuild
    * ships as a native binary it spawns, so this is granted explicitly rather
@@ -277,6 +290,10 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
   // it can `import('node:fs')` and read anything the user can read, which the
   // tool gate does not govern because no `tools.*()` call is involved.
   const execPath = request.execPath ?? process.execPath;
+  // The exact esbuild entry the child imports. Resolved once here so the child
+  // never depends on module-resolution search under the sandbox.
+  const esbuildMainPath = resolveEsbuildMain();
+
   // Everything the child must still read once the home directory is closed off:
   // node's own installation and the esbuild binary it spawns. Both can live inside
   // the home directory in development, so they are reopened explicitly rather
@@ -298,12 +315,16 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
     execPath,
     nodeArgs: [`--max-old-space-size=${heapLimitMb(limits.maxMemoryBytes)}`, childScript],
     workspace: request.cwd,
-    deniedReadPaths:
-      request.deniedReadPaths ?? sensitiveReadPaths(os.homedir(), request.appDataPath),
+    deniedReadPaths: [
+      // The whole system surface first, then the credential paths. Both were
+      // verified bootable; either alone leaves real material readable.
+      ...systemWideDeniedReadPaths(),
+      ...(request.deniedReadPaths ?? sensitiveReadPaths(os.homedir(), request.appDataPath)),
+    ],
     // The home directory is closed off wholesale. sensitiveReadPaths still covers
     // material OUTSIDE it.
     homeDir: request.homeDir ?? os.homedir(),
-    readableRuntimePaths: runtimePaths,
+    readableRuntimePaths: [...runtimePaths, ...(request.extraReadablePaths ?? [])],
     // The child must transpile, and esbuild is a native binary it spawns, so
     // that exact path is granted. It is the only binary beyond node.
     allowedExecPaths: request.allowedExecPaths ?? [resolveEsbuildBinary()].filter(
@@ -339,7 +360,13 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
           detached: true,
           // Never inherit stdio: the pipe IS the protocol.
           stdio: ['pipe', 'pipe', 'pipe'],
-          env: buildChildEnv(process.env, { COWORK_RUN_CODE_SESSION: request.sessionId }),
+          env: buildChildEnv(process.env, {
+            COWORK_RUN_CODE_SESSION: request.sessionId,
+            // The child imports this exact file (see transpileWithEsbuild): a bare
+            // specifier would make module resolution climb into unreadable
+            // directories and fail with a misleading EPERM.
+            ...(esbuildMainPath ? { COWORK_ESBUILD_MAIN: esbuildMainPath } : {}),
+          }),
         }
       );
     } catch (error) {

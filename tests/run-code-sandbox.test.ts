@@ -11,6 +11,7 @@ import {
   planSandbox,
   resolvePolicyPath,
   sensitiveReadPaths,
+  systemWideDeniedReadPaths,
 } from '../src/main/agent/run-code-sandbox';
 
 /**
@@ -80,7 +81,7 @@ describe('the macOS policy denies by default', () => {
       // Compared resolved: /etc is a symlink to /private/etc on macOS, and the
       // policy carries the real path precisely so the rule can match.
       const resolved = resolvePolicyPath(path);
-      expect(policy).toContain(`(deny file-read* (subpath "${resolved.replace(/\\/g, '\\\\')}"))`);
+      expect(policy).toContain(`(deny file-read-data (subpath "${resolved.replace(/\\/g, '\\\\')}"))`);
     }
   });
 
@@ -165,13 +166,26 @@ describe('the home directory is jailed, by directory rather than by list', () =>
     expect(policy).toContain('(allow file-read-data)');
   });
 
+  it('denies the whole system surface the child boots without, except /var', () => {
+    // /var cannot be denied: node itself needs it at startup (temporary
+    // directory and getcwd live under /var/folders). Denying it breaks the
+    // child before any of our code runs - verified, not assumed.
+    expect(systemWideDeniedReadPaths()).not.toContain('/var');
+    // Each of these is load-bearing as documentation, not padding: it asserts
+    // the default that a future edit might narrow without noticing the cost.
+    const expected = ['/etc', '/tmp', '/Library', '/Applications', '/bin', '/sbin', '/opt'];
+    for (const path of expected) {
+      expect(systemWideDeniedReadPaths()).toContain(path);
+    }
+  });
+
   it('still denies the individual paths outside the home directory', () => {
     const policy = buildSeatbeltPolicy({
       ...baseRequest('/tmp/ws'),
       homeDir: '/home/u',
       deniedReadPaths: ['/etc/ssh'],
     });
-    expect(policy).toContain(`(deny file-read* (subpath "${resolvePolicyPath('/etc/ssh')}"))`);
+    expect(policy).toContain(`(deny file-read-data (subpath "${resolvePolicyPath('/etc/ssh')}"))`);
   });
 });
 

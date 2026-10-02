@@ -132,6 +132,27 @@ export function resolveEsbuildRuntimeDirs(appRoots: readonly string[] = defaultA
 }
 
 /**
+ * The esbuild entry file the child imports.
+ *
+ * A bare `import('esbuild')` is unusable under the sandbox: resolution climbs
+ * past unreadable directories and dies with EPERM. The absolute path keeps the
+ * scope lookup inside the explicitly reopened package directory.
+ */
+export function resolveEsbuildMain(
+  appRoots: readonly string[] = defaultAppRoots()
+): string | null {
+  for (const root of appRoots) {
+    const candidate = path.join(root, 'node_modules', 'esbuild', 'lib', 'main.js');
+    try {
+      if (fs.existsSync(candidate)) return fs.realpathSync(candidate);
+    } catch {
+      // Keep looking.
+    }
+  }
+  return null;
+}
+
+/**
  * Roots to search for bundled node_modules.
  *
  * `__dirname` is `src/main/agent` in dev and `dist-electron/main` once built, so

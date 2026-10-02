@@ -134,12 +134,43 @@ function seatbeltLiteral(value: string): string {
 }
 
 /**
+ * System locations a confined child has no legitimate need to read.
+ *
+ * Each of these was verified rather than assumed: the child boots, transpiles
+ * TypeScript and performs tool calls with all of them denied. Adding a system
+ * path here is cheap; removing one needs the same experiment, because a read
+ * the child boots without today may become load-bearing tomorrow.
+ */
+export function systemWideDeniedReadPaths(): readonly string[] {
+  // NOTE: /var is deliberately absent. Denying it breaks node itself at startup
+  // (before any of our code runs), because the temporary directory and the
+  // getcwd resolution live under /var/folders. Verified: every other entry here
+  // was denied individually with boot, transpile and tool calls intact; /var was
+  // the single exception.
+  return [
+    '/etc',
+    '/tmp',
+    '/Library',
+    '/Applications',
+    '/bin',
+    '/sbin',
+    '/opt',
+    '/private/etc/ssh',
+    '/etc/sudoers.d',
+    '/Network',
+    '/Volumes',
+    '/cores',
+    '/home',
+  ];
+}
+
+/**
  * Paths a confined child must not read, relative to a home directory.
  *
- * The macOS profile denies reads of these explicitly. This is a DENY list, not
- * an allow list, and the difference is not cosmetic: a read allow-list could not
- * be made bootable (see the note on readPolicy below), so the honest trade is a
- * list of the places that actually hold credentials.
+ * The home directory itself is now jailed by `buildSeatbeltPolicy` (a deny on the
+ * directory, with ordered exceptions), so this list is for the credential
+ * locations worth naming explicitly and for everything that lives OUTSIDE the
+ * home directory. Both lists are applied; see `sensitiveReadPaths`.
  */
 export function sensitiveReadPaths(home: string, appData?: string): string[] {
   const paths = [
@@ -159,52 +190,11 @@ export function sensitiveReadPaths(home: string, appData?: string): string[] {
     `${home}/Library/Application Support/Firefox`,
     `${home}/Library/Safari`,
     `${home}/Library/Preferences/com.apple.TCC`,
-    '/etc/sudoers.d',
-    '/private/etc/ssh',
   ];
   if (appData) paths.push(appData);
   return paths;
 }
 
-/**
- * Build the macOS Seatbelt profile.
- *
- * SHAPE, and the reasoning is the interesting part.
- *
- * A read ALLOW-list is not available on macOS, and this was measured rather than
- * assumed. `(allow file-read-data (subpath ...))` over an enumerated set - node's
- * install, /System, /usr, /private, /dev, /etc, /var and the workspace - leaves
- * node unable to start at all: dyld resolves library and shared-cache paths
- * through firmlinks that do not reduce to any enumerable subtree, and Seatbelt has
- * no way to express "allow this read only for dyld". An allow-list that does not
- * boot is worse than no allow-list, because it looks configured.
- *
- * So the confinement is a DIRECTORY JAIL instead, which is possible because
- * Seatbelt is last-rule-wins:
- *
- *     (allow file-read-data)                                  ; general
- *     (deny  file-read-data (subpath "<home>"))               ; close the home dir
- *     (allow file-read-data (subpath "<workspace>"))          ; reopen the workspace
- *     (allow file-read-data (subpath "<node install>"))       ; reopen the runtime
- *
- * The general allow stays so dyld keeps working; the deny then closes the single
- * directory that actually matters, and the exceptions are ordered after it. A
- * workspace inside the home directory still works, because the exception comes
- * later.
- *
- * This is verified against a real sandboxed process, not asserted from the text:
- * reading the workspace succeeds while ~/.bashrc, ~/.ssh/config, a directory
- * listing of the home directory, and a symlink planted in the workspace that
- * points back into the home directory are all refused.
- *
- * The home directory is jailed rather than each credential path denied one by one
- * because a deny-list is an argument from ignorance: it can only cover the
- * locations someone thought of. Everything under the home directory is refused, so
- * a credential file nobody anticipated is refused too.
- *
- * The list of individually denied paths below is still applied, and still matters,
- * for material OUTSIDE the home directory (system ssh, for instance).
- */
 export function buildSeatbeltPolicy(request: SandboxRequest): string {
   const execPath = resolvePolicyPath(request.execPath);
   const workspace = resolvePolicyPath(request.workspace);
@@ -264,8 +254,12 @@ export function buildSeatbeltPolicy(request: SandboxRequest): string {
       ';; Individually denied locations, which matters for anything OUTSIDE the home',
       ';; directory - the system ssh directory, for instance.'
     );
+    // Same operation as the allow, and that is not a stylistic choice. Seatbelt
+    // resolves overlapping rules per operation: umbrella `file-read*` does NOT
+    // override an allow on the specific `file-read-data` op (verified: the read
+    // goes through). A deny has to name the operation it means to block.
     for (const path of denied) {
-      lines.push(`(deny file-read* (subpath ${seatbeltLiteral(path)}))`);
+      lines.push(`(deny file-read-data (subpath ${seatbeltLiteral(path)}))`);
     }
   }
 

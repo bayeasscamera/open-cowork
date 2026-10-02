@@ -599,6 +599,43 @@ describe('a real sandboxed child cannot read the home directory', () => {
   }, 40_000);
 });
 
+describe('system locations are unreadable, with the default host policy', () => {
+  // The default is verified separately from the unit level: the host passes the
+  // system-wide denies unless the caller overrides them, so these go through the
+  // real runCode without injecting anything.
+  it('cannot read /etc/hosts', async () => {
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `
+        const fs = await import('node:fs');
+        try { return 'READ_HOSTS: ' + fs.readFileSync('/etc/hosts', 'utf8'); }
+        catch (error) { return 'BLOCKED: ' + String(error); }
+      `,
+      limits: { timeoutMs: 20_000 },
+    });
+    expect(result.output).toContain('BLOCKED');
+    expect(result.output).not.toContain('READ_HOSTS');
+  }, 40_000);
+
+  it('cannot list /Applications', async () => {
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `
+        const fs = await import('node:fs');
+        try { return 'LISTED: ' + fs.readdirSync('/Applications').length; }
+        catch (error) { return 'BLOCKED'; }
+      `,
+      limits: { timeoutMs: 20_000 },
+    });
+    expect(result.output).toContain('BLOCKED');
+    expect(result.output).not.toContain('LISTED');
+  }, 40_000);
+});
+
 describe('run_code really routes the child through the OS sandbox', () => {
   // The policy is unit-tested in run-code-sandbox.test.ts. What that cannot see
   // is whether runCode actually USES it, so these go through the whole path: a
