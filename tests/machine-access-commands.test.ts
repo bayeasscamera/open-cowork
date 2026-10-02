@@ -90,7 +90,7 @@ describe('command runner', () => {
 
   it('runs an ordinary command and caps output', async () => {
     const outcome = assessCommand({ ...base(), command: 'echo ok' }, { kind: 'user-message' });
-    const res = await runCommand({ ...base(), command: 'echo ok' }, { kind: 'user-message' }, outcome);
+    const res = await runCommand({ ...base(), command: 'echo ok' }, outcome);
     expect(res.stdout).toContain('ok');
     expect(res.exitCode).toBe(0);
 
@@ -98,7 +98,6 @@ describe('command runner', () => {
     const bigOutcome = assessCommand({ ...base(), command: big }, { kind: 'user-message' });
     const capped = await runCommand(
       { ...base(), command: big, limits: { maxOutputBytes: 2048 } },
-      { kind: 'user-message' },
       bigOutcome
     );
     expect(capped.truncated).toBe(true);
@@ -110,7 +109,6 @@ describe('command runner', () => {
     const outcome = assessCommand({ ...base(), command }, { kind: 'user-message' });
     const res = await runCommand(
       { ...base(), command, limits: { timeoutMs: 300 } },
-      { kind: 'user-message' },
       outcome
     );
     expect(res.timedOut).toBe(true);

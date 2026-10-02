@@ -162,7 +162,7 @@ export interface ExecResult {
  * `assessCommand(...).approvalRequired` is true — this function does not
  * decide that, it only guarantees the execution bounds.
  */
-export function runCommand(request: CommandRequest, origin: CommandOrigin, outcome: CommandOutcome): Promise<ExecResult> {
+export function runCommand(request: CommandRequest, outcome: CommandOutcome): Promise<ExecResult> {
   const limits = { ...DEFAULT_COMMAND_LIMITS, ...request.limits };
   const cwd = outcome.cwd ?? request.workspaceRoot;
   const start = Date.now();
