@@ -163,32 +163,42 @@ export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
   // changing behaviour: in `direct` mode the model sees each tool as a tool, and
   // in `code` mode it sees a generated SDK driven through run_code instead.
   //
-  // The presenter FILTERS by the preset allow-list as well as choosing a mode,
-  // which is the point: a tool the preset does not allow is not offered at all,
-  // so the model cannot waste a turn discovering it is refused. The gate still
-  // enforces the same list independently - this is defence in depth, not the
-  // enforcement.
-  // With no preset (tests, headless paths) nothing is filtered: the gate remains
-  // the enforcement, and an absent preset must not silently strip tools.
-  const catalogTools = wrappedTools.map(toRegistryToolDefinition);
+  // The presenter filters by the preset allow-list as well as choosing a mode,
+  // so a tool the preset forbids is not offered at all and the model cannot waste
+  // a turn discovering it is refused. The gate still enforces the same list
+  // independently - defence in depth, not the enforcement.
+  //
+  // SCOPE, and it is deliberate: presentation governs the tools the preset is
+  // about - the SDK's coding tools plus run_code. MCP, meta, web and image tools
+  // are passed through untouched, because they were never preset-governed and
+  // filtering them here would silently remove capabilities nobody asked to
+  // remove. They are still in `catalog`, so the registry and the gate see
+  // everything regardless.
+  // The WRAPPED tools, not the raw coding tools: the wrapper layers are what the
+  // SDK receives, and matching on their names keeps the filter aligned with what
+  // is actually handed over. run_code joins them because it is the one tool the
+  // SDK cannot contribute, and in code mode every other tool is hidden behind it
+  // - omitting it from the presentation input emptied the model's catalog.
+  const presentable = [...wrappedTools, ...(runCodeDefinition ? [runCodeDefinition] : [])];
+  const presentableTools = presentable.map(toRegistryToolDefinition);
   const presented = deps.preset
-    ? presentToolsForPreset(catalogTools, deps.preset)
-    : {
-        direct: catalogTools,
-        viaCode: [] as string[],
-        sdkSource: '',
-      };
+    ? presentToolsForPreset(presentableTools, deps.preset)
+    : { direct: presentableTools, viaCode: [] as string[], sdkSource: '' };
+
+  const sdkToolNames = new Set(wrappedTools.map((tool) => tool.name));
+  const selected = new Set(presented.direct.map((tool) => tool.name));
 
   return {
-    customTools,
-    // Names are what the SDK consumes, so the presented subset maps back by
-    // name rather than by identity.
-    wrappedTools: presented.direct.map(
-      (tool) => wrappedTools.find((candidate) => candidate.name === tool.name)!
-    ) as typeof wrappedTools,
+    // The SDK's share of the presented catalog. run_code is presented too but is
+    // not an SDK tool, so it travels as a custom tool rather than being dropped.
+    customTools: [
+      ...customTools,
+      ...(presented.direct.filter((tool) => !sdkToolNames.has(tool.name)) as unknown as typeof customTools),
+    ],
+    wrappedTools: wrappedTools.filter((tool) => selected.has(tool.name)) as typeof wrappedTools,
     // The generated SDK, when code mode is active. Empty in direct mode.
     codeSdkSource: presented.sdkSource,
-    promptSection: deps.preset ? presenterFor(deps.preset).promptSection(catalogTools) : '',
+    promptSection: deps.preset ? presenterFor(deps.preset).promptSection(presentableTools) : '',
   };
 }
 

@@ -167,7 +167,21 @@ describe('code mode actually reaches the model', () => {
 
   it('the prompt section is produced from the presented catalog', () => {
     const source = read('src/main/agent/pi-session-tools.ts');
-    expect(source).toContain('promptSection: deps.preset ? presenterFor(deps.preset).promptSection(catalogTools)');
+    // The prompt is generated from the SAME tools that were presented, so the
+    // SDK the model is shown cannot describe tools it was not given.
+    expect(source).toContain(
+      'promptSection: deps.preset ? presenterFor(deps.preset).promptSection(presentableTools)'
+    );
+  });
+
+  it('the presentation input includes run_code, or code mode shows nothing', () => {
+    // The third silent failure in this chain: presenting only the SDK's tools
+    // left a code-mode session with an empty catalog, because in code mode every
+    // tool is hidden behind run_code - the one tool the SDK does not provide.
+    const source = read('src/main/agent/pi-session-tools.ts');
+    expect(source).toMatch(
+      /const presentable = \[\.\.\.wrappedTools, \.\.\.\(runCodeDefinition \? \[runCodeDefinition\] : \[\]\)\]/
+    );
   });
 
   it('a code-mode preset yields a non-empty SDK section mentioning the tools proxy', () => {
