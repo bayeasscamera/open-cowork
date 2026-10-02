@@ -59,7 +59,16 @@ export const CODE_MODE_PRESET: AgentPreset = freezePreset({
   label: 'Code mode',
   description:
     'Tools are driven through a generated TypeScript SDK inside run_code. Opt-in: adds a code-execution step to every tool-using turn.',
-  tools: { allow: [...DEFAULT_TOOL_ALLOW] },
+  // `run_code` is the ONE difference from the standard preset, and it is the
+  // only tool in the codebase that evaluates model-written code. It is listed
+  // here and nowhere else: `standard` deliberately omits it, so the entire code
+  // path is unreachable unless a user explicitly pins this preset.
+  //
+  // Enabling it was the last step on purpose. It was only safe once the SDK
+  // hook actually received the allow-list and the path-guard — the pipeline
+  // skips a stage whose deps are undefined, so before that fix a call made from
+  // code would have been preset-gated while a direct call was not.
+  tools: { allow: [...DEFAULT_TOOL_ALLOW, 'run_code'] },
   presentation: 'code',
   pruner: {
     thresholdChars: 8192,

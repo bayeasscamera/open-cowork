@@ -193,8 +193,22 @@ Two things this does not bound: CPU (the timeout does), and native memory
 outside the V8 heap (also the timeout, eventually).
 
 Approvals are the **session's**; `detachedAutoApprove` is deliberately never
-inherited. **Off by default**: the shipped `standard` preset does not list
-`run_code`, so the whole path is unreachable until a user picks code mode.
+inherited. The session's `requestPermission` handler is what a call from code
+must satisfy, and a handler that throws fails the call closed rather than
+allowing it by accident.
+
+**On by default? No.** `standard` does not list `run_code`, so the path stays
+unreachable until a user pins the `code-mode` preset — which is the only built-in
+that grants it, and the only one using `presentation: 'code'`.
+
+**Enabling it required a fix first.** `installPermissionHook` in `agent-runner`
+was passing neither `allowedTools` nor `checkPath` to the shared pipeline, and
+the pipeline *skips a stage whose deps are undefined* — so SDK-dispatched tool
+calls, which is how the model actually calls tools, ran permissions and mods but
+**not** the preset allow-list and **not** the path-guard. Turning on code mode
+before fixing that would have inverted the invariant: calls from code gated,
+direct calls ungated. Both paths now get the same gate, built once by
+`createSessionGate()`.
 
 An agent may `propose_preset` but never load one. Proposals are data, live in a
 directory the loader never reads, and need explicit human approval — with an

@@ -99,6 +99,7 @@ import {
   installModsHooks as installModsHooksImpl,
 } from './agent-hooks';
 import { getDefaultShell } from '../utils/shell-resolver';
+import PathGuard from '../sandbox/path-guard';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
 import { AgentRuntimeExtensionManager } from '../extensions/agent-runtime-extension-manager';
@@ -571,12 +572,31 @@ export class CoworkAgentRunner {
     }
   }
 
-  private installPermissionHook(piSession: PiAgentSession, sessionId: string): void {
+  /**
+   * Install the gate the SDK dispatches every tool call through.
+   *
+   * `cwd`, `allowedTools` and `checkPath` are all required, not optional. The
+   * shared pipeline SKIPS a stage whose dependencies are undefined, so leaving
+   * them out did not mean "no restriction" — it silently dropped the preset
+   * allow-list and the path-guard for the only tool calls the model actually
+   * makes. Verified against runToolGate: with allowedTools undefined, `bash` was
+   * allowed; with a list omitting it, the same call was refused.
+   */
+  private installPermissionHook(
+    piSession: PiAgentSession,
+    sessionId: string,
+    gateContext: { cwd: string; allowedTools: readonly string[] }
+  ): void {
     installPermissionHookImpl({
       piSession,
       sessionId,
       requestPermission: this.requestPermission,
       getToolDisplayName: (name) => this.getToolDisplayName(name),
+      cwd: gateContext.cwd,
+      allowedTools: gateContext.allowedTools,
+      // The same workspace confinement the tools themselves apply, so a call
+      // cannot reach outside the sandbox by arriving through the SDK.
+      checkPath: (path, ctx) => PathGuard.isPathAllowed(path, ctx.sessionId),
     });
   }
 
@@ -1330,7 +1350,11 @@ export class CoworkAgentRunner {
           sessions: this.piSessions,
           maxCachedSessions: CoworkAgentRunner.MAX_CACHED_SESSIONS,
           pruner: activePreset.preset.pruner,
-          installPermissionHook: (target) => this.installPermissionHook(target, session.id),
+          installPermissionHook: (target) =>
+            this.installPermissionHook(target, session.id, {
+              cwd: effectiveCwd,
+              allowedTools: activePreset.preset.tools.allow,
+            }),
           installModsHooks: (target) => this.installModsHooks(target, session.id),
           installPayloadHook: (target, options) =>
             this.installPayloadHook(target, session.id, options),
