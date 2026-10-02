@@ -194,22 +194,44 @@ validates — so the example cannot rot into something that fails to load.
 
 ---
 
-## Recommended next steps
+## Verification pass: what was checked against reality, and what that found
 
-The hardening list is done. What remains is what this work *surfaced*:
+Six claims about this work had never been exercised outside a unit test. Checking
+them found **four real bugs**, three of them in the feature itself. None would
+have failed a build, and none would have thrown at runtime — they produced a
+feature that looked enabled and did nothing.
 
-1. **Give the two flaky tests a real fix.** Both are order/timing assumptions
-   with no tiebreaker, described above. They will keep costing CI runs until
-   someone fixes them properly.
-2. **Decide what "confined" is allowed to mean for reads.** Today a confined
-   child can read ordinary files outside the workspace. If that is not acceptable
-   for some deployment, the options are a container per execution or
-   pre-registering the runtime paths — not a tighter Seatbelt allow-list, which
-   was tried and does not boot.
-3. **Watch the preset allow-list in production.** Enforcing it on the SDK path was
-   a real behaviour change. Presets that name a tool the session does not
-   actually offer will now be visible as refusals rather than silently ignored,
-   which is correct but may surface in bug reports.
-4. **Consider the validation dependency's `new Function`.** It evaluates that
-   library's own schema expressions, not model output, so it is not a code-execution
-   hole today. It is worth a deliberate decision rather than an accident.
+| Check | Method | Found |
+|---|---|---|
+| Packaged app | `electron-builder --dir --mac` → real 188 MB app | **2 bugs**: the child shipped *inside* the asar, which a plain `node` process cannot read; and `esbuild` was not shipped at all |
+| Linux sandbox | real `bwrap` in a container | **1 bug**: `--ro-bind /lib64` fails where `/lib64` does not exist (Debian bookworm, Alpine) |
+| Model-facing chain | the real chain, preset → assembly → presentation → `invokeTool` | **1 bug**: the presentation input excluded `run_code`, so a code-mode session was offered **no tools at all** |
+| Packaged app launches | launched the built app | boots in 442 ms, clean shutdown, no crash |
+| Test suite | full run, repeated | 2 pre-existing flakes, both now fixed at the cause |
+| Main-bundle eval | traced to source | AJV via pi-ai; model output is data, MCP schemas are compiled |
+
+### The pattern worth naming
+
+Three of the four bugs were the same shape: **a step produced the right thing and
+handed it to nobody.** `run_code` was allow-listed but never catalogued; the
+generated SDK was returned but never appended to the prompt; the presentation
+input was built from a list that did not contain the tool being presented. Each
+looked complete in review and in tests, because every unit passed. Only walking
+the actual chain — the one thing unit tests cannot do — surfaced them.
+
+The consequence is a change in how this area should be tested: for a capability
+that spans resolution, assembly, presentation and invocation, unit tests are not
+enough, and `tests/run-code-e2e-chain.test.ts` now walks the whole thing.
+
+### Still true, and unchanged by this pass
+
+- **The sandbox is not a jail.** Reads are denied by path, not allowed by path;
+  a confined child can still read ordinary files outside the workspace. A read
+  allow-list was built and node does not boot under one on macOS.
+- **CPU and native memory outside the V8 heap** are bounded by the timeout, not
+  by a limit.
+- **Windows is refused and untested** — no comparable confinement exists.
+- **MCP tool schemas reach AJV's code generator.** Model output does not, and
+  that is asserted; a malicious MCP server could, and that is documented rather
+  than mitigated here.
+
