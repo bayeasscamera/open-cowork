@@ -44,7 +44,7 @@
  * @module
  */
 
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 
 /**
  * Resolve a path to the one the OS will actually compare.
@@ -222,26 +222,36 @@ export function buildSeatbeltPolicy(request: SandboxRequest): string {
   return lines.join('\n');
 }
 
-/** Build the Linux command line. */
-export function buildBubblewrapArgs(request: SandboxRequest): string[] {
+/**
+ * Build the Linux command line.
+ *
+ * Every bind source is checked for existence first, and that is not defensive
+ * padding - it is a bug found by running this. `bwrap` fails outright with
+ * "Can't find source path" on a missing bind, and the paths a Linux distro
+ * provides are not fixed: Debian bookworm merged `/lib64` into `/lib`, and
+ * Alpine has no `/lib64` at all. A hard-coded `/lib64` made run_code fail
+ * entirely on those systems while working on the one it was written against.
+ *
+ * The predicate is injected so this stays testable without a real filesystem.
+ */
+export function buildBubblewrapArgs(
+  request: SandboxRequest,
+  exists: (candidate: string) => boolean = existsSync
+): string[] {
   // Same reason as the Seatbelt path: bind what the OS will resolve.
   const workspace = resolvePolicyPath(request.workspace);
-  return [
+  const args: string[] = [
     // No network namespace at all, so there is no interface to bring up.
     '--unshare-net',
     '--die-with-parent',
     '--new-session',
-    // Everything read-only by default...
-    '--ro-bind',
-    '/usr',
-    '--ro-bind',
-    '/lib',
-    '--ro-bind',
-    '/lib64',
-    '--ro-bind',
-    '/bin',
-    '--ro-bind',
-    '/etc',
+  ];
+
+  // Everything read-only by default...
+  for (const readOnly of ['/usr', '/lib', '/lib64', '/bin', '/sbin', '/etc']) {
+    if (exists(readOnly)) args.push('--ro-bind', readOnly, readOnly);
+  }
+  args.push(
     '--dev',
     '/dev',
     '--proc',
@@ -256,8 +266,9 @@ export function buildBubblewrapArgs(request: SandboxRequest): string[] {
     workspace,
     '--',
     request.execPath,
-    ...request.nodeArgs,
-  ];
+    ...request.nodeArgs
+  );
+  return args;
 }
 
 /**
@@ -298,7 +309,7 @@ export function planSandbox(request: SandboxRequest): SandboxPlan {
       kind: 'bubblewrap',
       supported: true,
       command: request.launcherPath,
-      args: buildBubblewrapArgs(request),
+      args: buildBubblewrapArgs(request, existsSync),
       policy: 'unshare-net + read-only root with a single writable workspace bind',
     };
   }

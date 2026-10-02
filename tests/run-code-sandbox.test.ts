@@ -296,6 +296,21 @@ describe('the plan fails closed when no confinement exists', () => {
   });
 });
 
+// VERIFIED ON A REAL LINUX (bubblewrap 0.8.0, node:20-bookworm, --privileged).
+// Running the generated command line produced exactly:
+//   BOOT_OK
+//   WS_WRITE_OK
+//   OUTSIDE_WRITE_BLOCKED
+//   NET_BLOCKED
+// and no file appeared outside the workspace.
+//
+// It is recorded as a comment rather than as tests on purpose: the behaviour
+// belongs to bubblewrap and the kernel, not to this file. A test that asserted
+// those strings would prove only that the string literals are non-empty, which
+// is worse than no test because it reads as verification. The unit tests below
+// check what THIS code controls - the argument construction - including the
+// missing-bind-source case that this run exposed.
+
 describe('linux confinement', () => {
   it('unshares the network so there is no interface to use', () => {
     const args = buildBubblewrapArgs({
@@ -318,6 +333,32 @@ describe('linux confinement', () => {
     expect(args[index + 1]).toBe('/ws');
     expect(args[index + 2]).toBe('/ws');
     expect(args).toContain('--ro-bind');
+  });
+
+  it('omits bind sources the system does not have', () => {
+    // Found by running this on a real Linux, not by reasoning: bwrap fails with
+    // "Can't find source path" on a missing bind, and the paths a distro provides
+    // are not fixed. Debian bookworm merged /lib64 into /lib; Alpine has no
+    // /lib64. A hard-coded /lib64 made run_code fail outright on both.
+    const debianBookworm = ['/usr', '/bin', '/sbin', '/etc', '/lib', '/dev'];
+    const args = buildBubblewrapArgs(
+      { platform: 'linux', execPath: NODE, nodeArgs: ['child.js'], workspace: '/ws' },
+      (candidate) => debianBookworm.includes(candidate)
+    );
+    expect(args.join(' ')).not.toContain('/lib64');
+    expect(args).toContain('/lib');
+  });
+
+  it('works on a distro with almost nothing in the usual places', () => {
+    const alpine = ['/usr', '/bin', '/sbin'];
+    const args = buildBubblewrapArgs(
+      { platform: 'linux', execPath: NODE, nodeArgs: ['child.js'], workspace: '/ws' },
+      (candidate) => alpine.includes(candidate)
+    );
+    // Still confined: the namespace flags and the workspace bind are not optional.
+    expect(args).toContain('--unshare-net');
+    expect(args).toContain('--die-with-parent');
+    expect(args[args.indexOf('--bind') + 1]).toBe('/ws');
   });
 
   it('execs node last, after the namespace flags', () => {
