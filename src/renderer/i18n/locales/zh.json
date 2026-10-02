@@ -181,7 +181,9 @@
     "groupAutomation": "自动化",
     "groupSystem": "系统",
     "presets": "预设",
-    "presetsDesc": "智能体被允许做什么。"
+    "presetsDesc": "智能体被允许做什么。",
+    "machineAccess": "机器访问",
+    "machineAccessDesc": "授权文件夹、自主级别、应用与紧急停止"
   },
   "personalization": {
     "memorySectionTitle": "记忆",
@@ -2118,6 +2120,66 @@
     "dangerous": "危险操作",
     "suspect": "可疑操作",
     "undo": "撤销",
-    "emergencyStop": "紧急停止"
+    "emergencyStop": "紧急停止",
+    "autonomyTitle": "自主级别",
+    "autonomyHint": "适用于本项目。危险或可疑操作在任何级别都需要确认。",
+    "autonomyWarning": "强烈警告",
+    "alwaysApprovalReminder": "没有任何级别会关闭：日志、回收站，或危险/可疑操作的审批。",
+    "autonomy": {
+      "ask-always": "始终询问",
+      "read-free": "自由读取",
+      "extended-trust": "扩展信任",
+      "allow-all": "全部允许"
+    },
+    "autonomyHint.ask-always": "任何写入、命令或应用操作都需要确认。",
+    "autonomyHint.read-free": "读取、列出和搜索无需确认。",
+    "autonomyHint.extended-trust": "普通且可逆的操作无需确认。",
+    "autonomyHint.allow-all": "普通操作可在整机执行，无需授权文件夹。",
+    "grantsTitle": "已授权文件夹",
+    "addFolder": "添加文件夹",
+    "noGrants": "尚未授权任何文件夹。Cowork 只能看到项目工作目录。",
+    "revoke": "撤销",
+    "expires": "到期",
+    "access": {
+      "read": "读取",
+      "read-write": "读取 + 写入"
+    },
+    "scope": {
+      "session": "本会话",
+      "project": "本项目",
+      "permanent": "永久"
+    },
+    "appsTitle": "已授权应用",
+    "addApp": "添加应用",
+    "noApps": "尚未授权任何应用。",
+    "remove": "移除",
+    "permissionsTitle": "系统权限",
+    "permission": {
+      "accessibility": "辅助功能",
+      "screen-recording": "屏幕录制",
+      "automation": "自动化"
+    },
+    "granted": "已授予",
+    "missing": "缺失",
+    "historyTitle": "操作历史",
+    "noHistory": "尚无文件操作记录。",
+    "batchSummary": "{{count}} 个操作 — {{type}}",
+    "stopTitle": "紧急停止",
+    "stopHint": "立即停止 GUI 操作、命令和后台任务，即使智能体已卡死。",
+    "risk": {
+      "ordinaire": "普通",
+      "dangereux": "危险",
+      "suspect": "可疑"
+    },
+    "card": {
+      "what": "具体做什么",
+      "why": "为何被标记",
+      "worstCase": "最坏情况",
+      "undo": "如何撤销",
+      "origin": "请求来源",
+      "reconfirmation": "此操作来自 {{source}} 的内容。",
+      "before": "之前",
+      "after": "之后"
+    }
   }
 }

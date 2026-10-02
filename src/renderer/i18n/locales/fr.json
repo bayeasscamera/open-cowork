@@ -355,7 +355,9 @@
     "groupAutomation": "Automatisation",
     "groupSystem": "Système",
     "presets": "Préréglages",
-    "presetsDesc": "Ce que l'agent a le droit de faire."
+    "presetsDesc": "Ce que l'agent a le droit de faire.",
+    "machineAccess": "Accès à la machine",
+    "machineAccessDesc": "Dossiers autorisés, autonomie, applications et arrêt d'urgence"
   },
   "welcome": {
     "title": "Comment puis-je vous aider aujourd’hui ?",
@@ -2117,6 +2119,66 @@
     "dangerous": "Action dangereuse",
     "suspect": "Action suspecte",
     "undo": "Annuler",
-    "emergencyStop": "Arrêt d’urgence"
+    "emergencyStop": "Arrêt d’urgence",
+    "autonomyTitle": "Niveau d'autonomie",
+    "autonomyHint": "Appliqué à ce projet. Les actions dangereuses ou suspectes demandent toujours, à tous les niveaux.",
+    "autonomyWarning": "Avertissement fort",
+    "alwaysApprovalReminder": "Aucun niveau ne désactive : le journal, la corbeille, ou l'approbation des actions dangereuses ou suspectes.",
+    "autonomy": {
+      "ask-always": "Demander toujours",
+      "read-free": "Lecture libre",
+      "extended-trust": "Confiance étendue",
+      "allow-all": "Tout autoriser"
+    },
+    "autonomyHint.ask-always": "Toute écriture, commande ou action sur une application demande une confirmation.",
+    "autonomyHint.read-free": "Lecture, listage et recherche sans confirmation.",
+    "autonomyHint.extended-trust": "Opérations ordinaires et réversibles sans confirmation.",
+    "autonomyHint.allow-all": "Actions ordinaires sur toute la machine, sans dossiers autorisés requis.",
+    "grantsTitle": "Dossiers autorisés",
+    "addFolder": "Ajouter un dossier",
+    "noGrants": "Aucun dossier autorisé. Cowork ne voit que le dossier de travail du projet.",
+    "revoke": "Révoquer",
+    "expires": "expire",
+    "access": {
+      "read": "lecture",
+      "read-write": "lecture + écriture"
+    },
+    "scope": {
+      "session": "cette session",
+      "project": "ce projet",
+      "permanent": "permanent"
+    },
+    "appsTitle": "Applications autorisées",
+    "addApp": "Ajouter une application",
+    "noApps": "Aucune application autorisée.",
+    "remove": "Retirer",
+    "permissionsTitle": "Permissions système",
+    "permission": {
+      "accessibility": "Accessibilité",
+      "screen-recording": "Enregistrement d'écran",
+      "automation": "Automatisation"
+    },
+    "granted": "accordée",
+    "missing": "manquante",
+    "historyTitle": "Historique des opérations",
+    "noHistory": "Aucune opération de fichier enregistrée.",
+    "batchSummary": "{{count}} opération(s) — {{type}}",
+    "stopTitle": "Arrêt d'urgence",
+    "stopHint": "Stoppe les actions GUI, les commandes et les tâches d'arrière-plan, même si l'agent est bloqué.",
+    "risk": {
+      "ordinaire": "ordinaire",
+      "dangereux": "dangereuse",
+      "suspect": "suspecte"
+    },
+    "card": {
+      "what": "Ce qu'elle fait",
+      "why": "Pourquoi elle est signalée",
+      "worstCase": "Ce qui peut arriver de pire",
+      "undo": "Comment l'annuler",
+      "origin": "Demandé par",
+      "reconfirmation": "Cette action vient du contenu de {{source}}.",
+      "before": "Avant",
+      "after": "Après"
+    }
   }
 }

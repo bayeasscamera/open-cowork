@@ -181,7 +181,9 @@
     "groupAutomation": "Automation",
     "groupSystem": "System",
     "presets": "Presets",
-    "presetsDesc": "What an agent may do."
+    "presetsDesc": "What an agent may do.",
+    "machineAccess": "Machine access",
+    "machineAccessDesc": "Allowed folders, autonomy, applications and emergency stop"
   },
   "general": {
     "appearance": "Appearance",
@@ -2118,6 +2120,66 @@
     "dangerous": "Dangerous action",
     "suspect": "Suspicious action",
     "undo": "Undo",
-    "emergencyStop": "Emergency stop"
+    "emergencyStop": "Emergency stop",
+    "autonomyTitle": "Autonomy level",
+    "autonomyHint": "Applies to this project. Dangerous or suspicious actions always ask, at every level.",
+    "autonomyWarning": "Strong warning",
+    "alwaysApprovalReminder": "No level disables: the journal, the trash, or approval for dangerous or suspicious actions.",
+    "autonomy": {
+      "ask-always": "Always ask",
+      "read-free": "Free reading",
+      "extended-trust": "Extended trust",
+      "allow-all": "Allow everything"
+    },
+    "autonomyHint.ask-always": "Every write, command or app action asks for confirmation.",
+    "autonomyHint.read-free": "Reading, listing and searching run without confirmation.",
+    "autonomyHint.extended-trust": "Ordinary, reversible operations run without confirmation.",
+    "autonomyHint.allow-all": "Ordinary actions run anywhere on the machine, with no folder grants required.",
+    "grantsTitle": "Allowed folders",
+    "addFolder": "Add folder",
+    "noGrants": "No folder allowed yet. Cowork only sees the project working folder.",
+    "revoke": "Revoke",
+    "expires": "expires",
+    "access": {
+      "read": "read",
+      "read-write": "read + write"
+    },
+    "scope": {
+      "session": "this session",
+      "project": "this project",
+      "permanent": "permanent"
+    },
+    "appsTitle": "Allowed applications",
+    "addApp": "Add application",
+    "noApps": "No application allowed yet.",
+    "remove": "Remove",
+    "permissionsTitle": "System permissions",
+    "permission": {
+      "accessibility": "Accessibility",
+      "screen-recording": "Screen recording",
+      "automation": "Automation"
+    },
+    "granted": "granted",
+    "missing": "missing",
+    "historyTitle": "Operation history",
+    "noHistory": "No file operation recorded yet.",
+    "batchSummary": "{{count}} operation(s) — {{type}}",
+    "stopTitle": "Emergency stop",
+    "stopHint": "Stops GUI actions, commands and background jobs at once, even if the agent is stuck.",
+    "risk": {
+      "ordinaire": "routine",
+      "dangereux": "dangerous",
+      "suspect": "suspicious"
+    },
+    "card": {
+      "what": "What it does",
+      "why": "Why it is flagged",
+      "worstCase": "Worst case",
+      "undo": "How to cancel it",
+      "origin": "Requested by",
+      "reconfirmation": "This action comes from the content of {{source}}.",
+      "before": "Before",
+      "after": "After"
+    }
   }
 }

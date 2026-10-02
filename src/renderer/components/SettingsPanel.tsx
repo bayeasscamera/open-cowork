@@ -15,6 +15,7 @@ import {
   Network,
   ExternalLink,
   Stethoscope,
+  FolderCog,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -33,6 +34,10 @@ import { SettingsPresets } from './settings/SettingsPresets';
 import { SettingsMemory } from './settings/SettingsMemory';
 import { SettingsPersonalization } from './settings/SettingsPersonalization';
 import { SettingsPermissions } from './settings/SettingsPermissions';
+import { SettingsMachineAccess } from './settings/SettingsMachineAccess';
+import type { FolderGrant, AutonomyLevel } from '@main/machine-access/types';
+import type { PermissionState } from '@main/machine-access/machine-control';
+import type { FsOperation } from '@main/machine-access/fs-journal';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -49,6 +54,7 @@ interface SettingsPanelProps {
     | 'logs'
     | 'diagnostics'
     | 'permissions'
+    | 'machineAccess'
     | 'general';
 }
 
@@ -66,6 +72,7 @@ type TabId =
   | 'logs'
   | 'diagnostics'
   | 'permissions'
+  | 'machineAccess'
   | 'general';
 
 const VALID_TABS = new Set<TabId>([
@@ -82,6 +89,7 @@ const VALID_TABS = new Set<TabId>([
   'logs',
   'diagnostics',
   'permissions',
+  'machineAccess',
   'general',
 ]);
 
@@ -95,7 +103,7 @@ const TAB_GROUPS: TabGroup[] = [
   { labelKey: 'settings.groupExtensions', tabs: ['connectors', 'skills'] },
   { labelKey: 'settings.groupPersonal', tabs: ['personalization', 'memory'] },
   { labelKey: 'settings.groupAutomation', tabs: ['schedule', 'remote'] },
-  { labelKey: 'settings.groupSystem', tabs: ['diagnostics', 'logs', 'permissions', 'general'] },
+  { labelKey: 'settings.groupSystem', tabs: ['diagnostics', 'logs', 'permissions', 'machineAccess', 'general'] },
 ];
 
 /**
@@ -121,7 +129,27 @@ function SubAgentsLinkPanel({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProps) {
+export interface MachineAccessPanelProps {
+  grants: FolderGrant[];
+  autonomy: AutonomyLevel;
+  allowedApps: string[];
+  permissions: PermissionState[];
+  history: FsOperation[];
+  onAddGrant: () => void;
+  onRevokeGrant: (id: string) => void;
+  onChangeAutonomy: (level: AutonomyLevel) => void;
+  onAddApp: () => void;
+  onRemoveApp: (name: string) => void;
+  onUndoBatch: (batchId: string) => void;
+  onEmergencyStop: () => void;
+  emergencyShortcut: string;
+}
+
+export function SettingsPanel({
+  onClose,
+  initialTab = 'api',
+  machineAccessProps,
+}: SettingsPanelProps & { machineAccessProps?: MachineAccessPanelProps }) {
   const { t } = useTranslation();
   const { width } = useWindowSize();
   const compactSidebar = width < 900;
@@ -255,6 +283,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.permissions'),
       icon: ShieldAlert,
       description: t('settings.permissionsDesc'),
+    },
+    {
+      id: 'machineAccess' as TabId,
+      label: t('settings.machineAccess'),
+      icon: FolderCog,
+      description: t('settings.machineAccessDesc'),
     },
   ];
   const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
@@ -448,6 +482,11 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
                 <div className={activeTab === 'permissions' ? '' : 'hidden'}>
                   {viewedTabs.has('permissions') && (
                     <SettingsPermissions isActive={activeTab === 'permissions'} />
+                  )}
+                </div>
+                <div className={activeTab === 'machineAccess' ? '' : 'hidden'}>
+                  {viewedTabs.has('machineAccess') && machineAccessProps && (
+                    <SettingsMachineAccess {...machineAccessProps} />
                   )}
                 </div>
               </div>
