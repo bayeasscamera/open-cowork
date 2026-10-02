@@ -30,6 +30,8 @@ import {
 } from '../tools/registry';
 import type { MCPManager } from '../mcp/mcp-manager';
 import type { AgentRuntimeCustomTool } from '../extensions/agent-runtime-extension';
+import { presentToolsForPreset, presenterFor } from '../presets/tool-presenter';
+import type { AgentPreset } from '../presets/preset-schema';
 
 export interface BuildPiSessionToolsDeps {
   mcpManager?: MCPManager;
@@ -46,6 +48,12 @@ export interface BuildPiSessionToolsDeps {
   ) => Promise<string | null>;
   /** Electron-bound PATH enrichment (no-op once already done). */
   enrichProcessPath: () => Promise<void>;
+  /**
+   * The active agent preset. It decides which tools are even offered, and how
+   * they are presented (one-by-one, or as a generated SDK driven by run_code).
+   * Omitted in tests that do not care about presets; defaults to direct.
+   */
+  preset?: AgentPreset;
 }
 
 export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
@@ -104,9 +112,64 @@ export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
 
   // Catalog every tool this session can reach, so the agent preset, the tool
   // presenter and the run_code bridge validate against the real tool set.
-  syncToolRegistry([...codingTools, ...customTools]);
+  const catalog = [...codingTools, ...customTools];
+  syncToolRegistry(catalog);
 
-  return { customTools, wrappedTools };
+  // Presentation. This is where the preset stops being configuration and starts
+  // changing behaviour: in `direct` mode the model sees each tool as a tool, and
+  // in `code` mode it sees a generated SDK driven through run_code instead.
+  //
+  // The presenter FILTERS by the preset allow-list as well as choosing a mode,
+  // which is the point: a tool the preset does not allow is not offered at all,
+  // so the model cannot waste a turn discovering it is refused. The gate still
+  // enforces the same list independently - this is defence in depth, not the
+  // enforcement.
+  // With no preset (tests, headless paths) nothing is filtered: the gate remains
+  // the enforcement, and an absent preset must not silently strip tools.
+  const catalogTools = wrappedTools.map(toRegistryToolDefinition);
+  const presented = deps.preset
+    ? presentToolsForPreset(catalogTools, deps.preset)
+    : {
+        direct: catalogTools,
+        viaCode: [] as string[],
+        sdkSource: '',
+      };
+
+  return {
+    customTools,
+    // Names are what the SDK consumes, so the presented subset maps back by
+    // name rather than by identity.
+    wrappedTools: presented.direct.map(
+      (tool) => wrappedTools.find((candidate) => candidate.name === tool.name)!
+    ) as typeof wrappedTools,
+    // The generated SDK, when code mode is active. Empty in direct mode.
+    codeSdkSource: presented.sdkSource,
+    promptSection: deps.preset ? presenterFor(deps.preset).promptSection(catalogTools) : '',
+  };
+}
+
+/**
+ * Adapt an SDK tool to the registry's ToolDefinition shape.
+ *
+ * The SDK's tools carry `parameters` and no risk metadata; the registry's
+ * definition requires `inputSchema` and `risk`. The risk comes from
+ * inferToolRisk so both paths classify a tool identically — the presenter and
+ * the gate must not disagree about what a tool is.
+ */
+function toRegistryToolDefinition(tool: {
+  name: string;
+  description?: string;
+  parameters?: unknown;
+}): CoworkToolDefinition {
+  return {
+    name: tool.name,
+    description: tool.description ?? '',
+    inputSchema: (tool.parameters ?? {
+      type: 'object',
+      properties: {},
+    }) as CoworkToolDefinition['inputSchema'],
+    risk: inferToolRisk(tool.name),
+  } as unknown as CoworkToolDefinition;
 }
 
 /**

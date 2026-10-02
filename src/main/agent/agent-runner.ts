@@ -1287,6 +1287,8 @@ export class CoworkAgentRunner {
         braveApiKey: runtimeConfig.braveApiKey || process.env.BRAVE_API_KEY || '',
         requestSudoPassword: this.requestSudoPassword,
         enrichProcessPath: enrichProcessPathForBuild,
+        // The preset decides which tools are offered and how they are presented.
+        preset: activePreset.preset,
       });
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)

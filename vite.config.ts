@@ -93,6 +93,33 @@ export default defineConfig({
         },
       },
       {
+        // The run_code child, built as its OWN bundle.
+        //
+        // This must not be merged into the main bundle. The child contains the
+        // only `new Function` in the codebase, and a merged bundle would put an
+        // eval path back inside the main process - exactly what the
+        // "never evaluates model-written code in main" guarantee forbids.
+        // tests/eval-isolation.test.ts asserts the main entry graph cannot reach
+        // this module, so a future merge attempt fails there too.
+        entry: 'src/main/agent/run-code-child-main.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron/run-code-child',
+            rollupOptions: {
+              output: {
+                entryFileNames: 'index.js',
+                format: 'cjs',
+              },
+              // esbuild is required at RUNTIME by the child to transpile, and it
+              // is a native binary, so it stays external and is resolved from
+              // node_modules at execution time. Inlining its CJS internals
+              // breaks at runtime.
+              external: [...nodeBuiltins, 'electron', 'esbuild'],
+            },
+          },
+        },
+      },
+      {
         entry: 'src/preload/index.ts',
         onstart(args) {
           args.reload();
