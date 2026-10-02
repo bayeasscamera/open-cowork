@@ -42,6 +42,7 @@ import {
   sensitiveReadPaths,
   systemWideDeniedReadPaths,
 } from './run-code-sandbox';
+import { startResourceWatchdog } from './run-code-watchdog';
 import {
   resolveEsbuildBinary,
   resolveEsbuildMain,
@@ -111,7 +112,8 @@ export type RunCodeStatus =
   | 'failed'
   | 'timeout'
   | 'tool_limit'
-  | 'quota_exceeded';
+  | 'quota_exceeded'
+  | 'resource_limit';
 
 export interface RunCodeResult {
   status: RunCodeStatus;
@@ -150,6 +152,22 @@ function killProcessGroup(child: ChildProcess): void {
       // Nothing left to kill.
     }
   }
+}
+
+/**
+ * Human-readable byte count for limit messages. Floor units, no decimals: the
+ * numbers are budgets, not measurements.
+ */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return `${bytes} bytes`;
+  const units = ['bytes', 'KB', 'MB', 'GB'];
+  let value = Math.floor(bytes);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value = Math.floor(value / 1024);
+    unit += 1;
+  }
+  return `${value} ${units[unit]}`;
 }
 
 /**
@@ -380,10 +398,11 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
       return;
     }
 
-    const finish = (result: Omit<RunCodeResult, 'toolCalls' | 'durationMs'>): void => {
+    const finish = (result: Omit<RunCodeResult, 'toolCalls' | 'durationMs' | 'heapLimitBytes'>): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      watchdog?.stop();
       killProcessGroup(child);
       try {
         child.stdin?.end();
@@ -407,6 +426,45 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
         error: `run_code exceeded its ${limits.timeoutMs}ms time limit and the process was killed.`,
       });
     }, limits.timeoutMs);
+
+    // Native memory and CPU time, which neither the V8 flag nor the wall clock
+    // can bound. The same byte budget doubles as the RSS cap, so there is one
+    // number to reason about; the CPU budget is the wall clock plus headroom for
+    // legitimate multi-core work, since worker threads multiply CPU seconds.
+    const watchdog =
+      child.pid === undefined
+        ? undefined
+        : startResourceWatchdog(
+            child.pid,
+            {
+              maxRssBytes: limits.maxMemoryBytes,
+              maxCpuSeconds: Math.ceil(limits.timeoutMs / 1000) + 30,
+            },
+            250,
+            (violation, observed) => {
+              finish(
+                violation === 'memory'
+                  ? {
+                      status: 'resource_limit',
+                      output: stdout,
+                      error:
+                        `run_code exceeded its ${formatBytes(limits.maxMemoryBytes)} memory budget ` +
+                        `(observed RSS ${formatBytes(observed)}; sampling means a fast allocator ` +
+                        `overshoots before the kill) and the process was killed. ` +
+                        `Allocate less, stream the data, or ask for a higher limit.`,
+                    }
+                  : {
+                      status: 'resource_limit',
+                      output: stdout,
+                      error:
+                        `run_code exceeded its CPU budget (${Math.ceil(limits.timeoutMs / 1000) + 30}s ` +
+                        `of CPU time against a ${Math.ceil(limits.timeoutMs / 1000)}s wall clock) and ` +
+                        `the process was killed. A single thread cannot outrun the wall clock, so ` +
+                        `this means worker threads; use fewer of them.`,
+                    }
+              );
+            }
+          );
 
     /** Pending tool calls, keyed by the child's correlation id. */
     const pending = new Map<number, (response: RunCodeResponse) => void>();

@@ -386,7 +386,10 @@ describe('a child that crashes does not take the app with it', () => {
       `,
       limits: { timeoutMs: 20_000, maxMemoryBytes: 256 * 1024 * 1024 },
     });
-    expect(['failed', 'timeout']).toContain(result.status);
+    // The watchdog now classifies this distinctly rather than as a generic
+    // failure: the host killed the child for exceeding its memory budget.
+    expect(result.status).toBe('resource_limit');
+    expect(result.error).toMatch(/memory budget/i);
     // The test process is still alive to make this assertion.
     expect(true).toBe(true);
   }, 40_000);
@@ -740,6 +743,67 @@ describe('run_code really routes the child through the OS sandbox', () => {
     expect(result.status).toBe('completed');
     expect(result.output).toContain('ok');
   });
+});
+
+describe('native memory outside the V8 heap is killed, not just observed', () => {
+  // --max-old-space-size does not cover Buffers or ArrayBuffer backing stores,
+  // which live in native memory. Without the watchdog a script allocates
+  // gigabytes while the heap stays small. With it the host kills the child and
+  // says why.
+  it('kills a child that allocates native memory past the budget', async () => {
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `
+        const blocks = [];
+        // fill(1): zero pages stay virtual until written, so an unfixed test
+        // would allocate "gigabytes" without any resident page and prove nothing.
+        for (let i = 0; i < 40; i++) blocks.push(Buffer.alloc(50 * 1024 * 1024, 1));
+        return 'allocated';
+      `,
+      limits: { timeoutMs: 60_000, maxMemoryBytes: 256 * 1024 * 1024 },
+    });
+    expect(result.status).toBe('resource_limit');
+    expect(result.error).toMatch(/memory budget/i);
+    expect(result.output).not.toContain('allocated');
+  }, 90_000);
+
+  it('does not kill a script that stays inside its budget', async () => {
+    // Without this, a watchdog that kills everything would pass the test above.
+    const { registry, base } = harness([], []);
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `return 'fine';`,
+      limits: { timeoutMs: 15_000, maxMemoryBytes: 256 * 1024 * 1024 },
+    });
+    expect(result.status).toBe('completed');
+  }, 30_000);
+});
+
+describe('CPU time beyond the wall clock is killed', () => {
+  it('kills a child burning CPU on worker threads past the budget', async () => {
+    const { registry, base } = harness([], []);
+    // Four workers spinning: CPU seconds accumulate ~4x faster than the wall
+    // clock, so a wall-clock timeout alone would let this run the full limit
+    // while consuming far more CPU than any legitimate script needs.
+    const result = await runCode({
+      ...base,
+      registry,
+      source: `
+        const { Worker } = await import('node:worker_threads');
+        const code = 'while (true) { Math.sqrt(Math.random()); }';
+        for (let i = 0; i < 4; i++) new Worker(code, { eval: true });
+        await new Promise(() => {});
+      `,
+      limits: { timeoutMs: 120_000 },
+    });
+    // CPU budget is wall clock (120s) + 30s headroom = 150s of CPU; four
+    // spinners reach it in ~38s of wall time.
+    expect(result.status).toBe('resource_limit');
+    expect(result.error).toMatch(/CPU budget/i);
+  }, 120_000);
 });
 
 describe('the heap cap is clamped into a range Node will actually honour', () => {
