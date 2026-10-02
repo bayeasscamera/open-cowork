@@ -36,6 +36,7 @@ import { invokeTool, type PrunerSettings } from '../tools/invoke';
 import type { ToolContext, ToolRegistry } from '../tools/registry';
 import type { ToolGateDeps } from '../tools/pipeline';
 import { findSandboxLauncher, planSandbox, sensitiveReadPaths } from './run-code-sandbox';
+import { resolveEsbuildBinary, resolveRunCodeChildScript } from './run-code-runtime';
 import { logWarn } from '../utils/logger';
 
 export interface RunCodeRequest {
@@ -53,7 +54,10 @@ export interface RunCodeRequest {
   limits?: Partial<RunCodeLimits>;
   /** Node binary to spawn. Overridable for tests. */
   execPath?: string;
-  /** Entry script of the child. Overridable for tests. */
+  /**
+   * Entry script of the child. Defaults to the bundled one; overridable so tests
+   * can compile a fixture instead.
+   */
   childScript?: string;
   /**
    * Directories the child must not read: credentials, keychains, app data.
@@ -175,12 +179,18 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
   // Transpile in the main process? NO — the source is untrusted, and even
   // parsing it here would be work on model-written input inside the main
   // process. The child transpiles its own input.
-  const childScript = request.childScript;
+  // Resolved rather than injected, so the packaged app works without every
+  // caller having to know the layout. A missing child is a build problem and is
+  // reported as one: degrading to some other execution path here would be the
+  // worst possible response.
+  const childScript = request.childScript ?? resolveRunCodeChildScript();
   if (!childScript) {
     return {
       status: 'failed',
       output: '',
-      error: 'run_code is unavailable: no child runtime is configured.',
+      error:
+        'run_code is unavailable: the child runtime was not found in this build. ' +
+        'The run_code child must be built to dist-electron/run-code-child/index.js.',
       toolCalls: 0,
       durationMs: 0,
     };
@@ -263,7 +273,11 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
     workspace: request.cwd,
     deniedReadPaths:
       request.deniedReadPaths ?? sensitiveReadPaths(os.homedir(), request.appDataPath),
-    allowedExecPaths: request.allowedExecPaths ?? [],
+    // The child must transpile, and esbuild is a native binary it spawns, so
+    // that exact path is granted. It is the only binary beyond node.
+    allowedExecPaths: request.allowedExecPaths ?? [resolveEsbuildBinary()].filter(
+      (candidate): candidate is string => candidate !== null
+    ),
     launcherPath: findSandboxLauncher(process.platform, existsSync),
   });
   if (!plan.supported) {
