@@ -107,6 +107,18 @@ export interface SandboxRequest {
   allowedExecPaths?: readonly string[];
   /** Absolute path to `sandbox-exec` (macOS) or `bwrap` (Linux), if known. */
   launcherPath?: string;
+  /**
+   * The user's home directory. Reads beneath it are refused wholesale rather than
+   * path by path - see buildSeatbeltPolicy.
+   */
+  homeDir?: string;
+  /**
+   * Runtime files the child must still be able to read after the home directory
+   * is closed off: the node installation, and any native binary it spawns
+   * (esbuild). Paths inside the home directory are common in development, so
+   * these are re-allowed explicitly rather than left to chance.
+   */
+  readableRuntimePaths?: readonly string[];
 }
 
 /**
@@ -157,34 +169,55 @@ export function sensitiveReadPaths(home: string, appData?: string): string[] {
 /**
  * Build the macOS Seatbelt profile.
  *
- * Shape: `(deny default)`, then allow the operations the child legitimately
- * needs, then deny reads of the credential-bearing directories.
+ * SHAPE, and the reasoning is the interesting part.
  *
- * Why reads are denied by path rather than allowed by path: an allow-list of
- * readable subtrees was built and measured, and node could not boot under it.
- * macOS resolves library and runtime paths through firmlinks that land outside
- * any top-level directory `readdir` reports, so no such list is complete, and an
- * incomplete allow-list fails closed in the worst way — it looks configured
- * while breaking the runtime. Deny-by-path is weaker, and it is stated as such
- * in the module header and in AGENTS.md rather than being presented as a
- * jail.
+ * A read ALLOW-list is not available on macOS, and this was measured rather than
+ * assumed. `(allow file-read-data (subpath ...))` over an enumerated set - node's
+ * install, /System, /usr, /private, /dev, /etc, /var and the workspace - leaves
+ * node unable to start at all: dyld resolves library and shared-cache paths
+ * through firmlinks that do not reduce to any enumerable subtree, and Seatbelt has
+ * no way to express "allow this read only for dyld". An allow-list that does not
+ * boot is worse than no allow-list, because it looks configured.
  *
- * What this genuinely enforces, all verified against a real sandboxed process:
- * writes outside the workspace are refused, opening any socket is refused, and
- * exec of anything but node itself is refused.
+ * So the confinement is a DIRECTORY JAIL instead, which is possible because
+ * Seatbelt is last-rule-wins:
+ *
+ *     (allow file-read-data)                                  ; general
+ *     (deny  file-read-data (subpath "<home>"))               ; close the home dir
+ *     (allow file-read-data (subpath "<workspace>"))          ; reopen the workspace
+ *     (allow file-read-data (subpath "<node install>"))       ; reopen the runtime
+ *
+ * The general allow stays so dyld keeps working; the deny then closes the single
+ * directory that actually matters, and the exceptions are ordered after it. A
+ * workspace inside the home directory still works, because the exception comes
+ * later.
+ *
+ * This is verified against a real sandboxed process, not asserted from the text:
+ * reading the workspace succeeds while ~/.bashrc, ~/.ssh/config, a directory
+ * listing of the home directory, and a symlink planted in the workspace that
+ * points back into the home directory are all refused.
+ *
+ * The home directory is jailed rather than each credential path denied one by one
+ * because a deny-list is an argument from ignorance: it can only cover the
+ * locations someone thought of. Everything under the home directory is refused, so
+ * a credential file nobody anticipated is refused too.
+ *
+ * The list of individually denied paths below is still applied, and still matters,
+ * for material OUTSIDE the home directory (system ssh, for instance).
  */
 export function buildSeatbeltPolicy(request: SandboxRequest): string {
   const execPath = resolvePolicyPath(request.execPath);
   const workspace = resolvePolicyPath(request.workspace);
-  const workspaceLit = seatbeltLiteral(workspace);
+  const home = request.homeDir ? resolvePolicyPath(request.homeDir) : null;
+  const runtimePaths = (request.readableRuntimePaths ?? []).map(resolvePolicyPath);
   const denied = (request.deniedReadPaths ?? []).map(resolvePolicyPath);
 
   const lines: string[] = [
     '(version 1)',
     '(deny default)',
     '',
-    ';; Process capabilities. Only node itself may be exec\'d: the launcher has',
-    ';; to exec it to start, and the script must not be able to launch others.',
+    ';; Process capabilities. Only the listed binaries may be exec\'d: the launcher',
+    ';; has to exec node to start, and the script must not launch anything else.',
     '(allow process-fork)',
     ...[
       execPath,
@@ -197,25 +230,54 @@ export function buildSeatbeltPolicy(request: SandboxRequest): string {
     '(allow ipc-posix-shm*)',
     '(allow signal (target same-sandbox))',
     '',
-    ';; Reads: allowed in general, then refused where credentials live. See the',
-    ';; module header for why this is not an allow-list.',
-    '(allow file-read*)',
+    ';; Reads. Metadata is general - existence, permissions and size, not contents.',
     '(allow file-read-metadata)',
+    '(allow file-read-xattr)',
+    ';; Contents are general too, and then narrowed. See the note on the function:',
+    ';; an allow-list cannot boot node on macOS, so the narrowing is by directory.',
+    '(allow file-read-data)',
   ];
 
-  for (const path of denied) {
-    lines.push(`(deny file-read* (subpath ${seatbeltLiteral(path)}))`);
+  if (home) {
+    lines.push(
+      '',
+      ';; Close the home directory. This is the confinement that matters: a',
+      ';; credential file nobody thought to list is refused along with the ones',
+      ';; somebody did.',
+      `(deny file-read-data (subpath ${seatbeltLiteral(home)}))`
+    );
   }
 
   lines.push(
     '',
-    ';; Writes: the workspace only. This is a real boundary and it holds.',
-    `(allow file-write* (subpath ${workspaceLit}))`,
+    ';; Reopen only what the child legitimately needs, AFTER the deny above so the',
+    ';; last rule wins.',
+    `(allow file-read-data (subpath ${seatbeltLiteral(workspace)}))`
+  );
+  for (const path of runtimePaths) {
+    lines.push(`(allow file-read-data (subpath ${seatbeltLiteral(path)}))`);
+  }
+
+  if (denied.length > 0) {
+    lines.push(
+      '',
+      ';; Individually denied locations, which matters for anything OUTSIDE the home',
+      ';; directory - the system ssh directory, for instance.'
+    );
+    for (const path of denied) {
+      lines.push(`(deny file-read* (subpath ${seatbeltLiteral(path)}))`);
+    }
+  }
+
+  lines.push(
     '',
-    ';; NO network rule. Deny default covers it, so the child cannot open a',
-    ';; socket at all, including to localhost: no exfiltration, no callbacks.',
-    ';; Anything it legitimately needs from outside the workspace must go',
-    ';; through a tools.*() call, which is re-gated in the main process.',
+    ';; Writes: the workspace only. Verified: a write outside it is refused, and a',
+    ';; symlink planted in the workspace does not become a way out.',
+    `(allow file-write* (subpath ${seatbeltLiteral(workspace)}))`,
+    '',
+    ';; NO network rule. Deny default covers it, so the child cannot open a socket',
+    ';; at all, including to localhost. Anything it legitimately needs from outside',
+    ';; must go through a tools.*() call, which is re-gated in the main process.',
     ''
   );
 
@@ -247,9 +309,19 @@ export function buildBubblewrapArgs(
     '--new-session',
   ];
 
-  // Everything read-only by default...
+  // Everything read-only by default. The home directory is deliberately NOT bound:
+  // in a mount namespace, not binding it is the whole jail, so a script cannot
+  // read ~/.ssh or anything else under it. The runtime paths are bound because
+  // they are frequently NOT under /usr - node_modules can be anywhere, and an
+  // esbuild the child cannot read means it cannot transpile.
   for (const readOnly of ['/usr', '/lib', '/lib64', '/bin', '/sbin', '/etc']) {
     if (exists(readOnly)) args.push('--ro-bind', readOnly, readOnly);
+  }
+  for (const runtime of [request.execPath, ...(request.readableRuntimePaths ?? [])].map(
+    (candidate) => resolvePolicyPath(candidate)
+  )) {
+    const parent = runtime.slice(0, Math.max(runtime.lastIndexOf('/'), 1));
+    if (parent && exists(parent)) args.push('--ro-bind', parent, parent);
   }
   args.push(
     '--dev',

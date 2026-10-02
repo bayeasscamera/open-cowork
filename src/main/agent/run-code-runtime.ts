@@ -107,6 +107,31 @@ export function resolveEsbuildBinary(
 }
 
 /**
+ * The directories the child must be able to READ to run esbuild at all.
+ *
+ * Both, and the second one is easy to forget: `resolveEsbuildBinary()` returns
+ * the native executable, but the child also does `import('esbuild')`, which reads
+ * the JavaScript package next to it. Allowing only the binary's directory leaves
+ * the module unresolvable and every script fails to compile — with the home
+ * directory jailed, nothing else exposes it.
+ */
+export function resolveEsbuildRuntimeDirs(appRoots: readonly string[] = defaultAppRoots()): string[] {
+  const dirs: string[] = [];
+  for (const root of appRoots) {
+    const binary = path.join(root, 'node_modules', '@esbuild');
+    const pkg = path.join(root, 'node_modules', 'esbuild');
+    for (const candidate of [binary, pkg]) {
+      try {
+        if (fs.existsSync(candidate)) dirs.push(fs.realpathSync(candidate));
+      } catch {
+        // Keep looking.
+      }
+    }
+  }
+  return [...new Set(dirs)];
+}
+
+/**
  * Roots to search for bundled node_modules.
  *
  * `__dirname` is `src/main/agent` in dev and `dist-electron/main` once built, so

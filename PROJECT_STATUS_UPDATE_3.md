@@ -223,11 +223,52 @@ The consequence is a change in how this area should be tested: for a capability
 that spans resolution, assembly, presentation and invocation, unit tests are not
 enough, and `tests/run-code-e2e-chain.test.ts` now walks the whole thing.
 
+### The read jail: closed, after the method changed
+
+The remaining gap was that a confined child could read ordinary files outside the
+workspace, because reads were refused by a list of known credential paths. That is
+an argument from ignorance — it can only cover the locations somebody thought of.
+The home directory is now closed instead, and it is closed *by directory*:
+
+```
+(allow file-read-data)                              ; general
+(deny  file-read-data (subpath "<home>"))           ; close the home directory
+(allow file-read-data (subpath "<workspace>"))      ; reopen — last rule wins
+(allow file-read-data (subpath "<node install>"))   ; reopen the runtime
+```
+
+Seatbelt is last-rule-wins, so the exceptions placed after the deny reopen exactly
+what the child needs and nothing else. Verified against real sandboxed processes:
+an **ordinary** file in the home directory is refused, not only a secret; listing
+the directory is refused; and a symlink the script plants in its own writable
+workspace, pointing back into the home directory, is refused too.
+
+Getting there required discarding an earlier conclusion. A read **allow-list** was
+re-tested properly and does not work on macOS: `(allow file-read-data (subpath…))`
+over node's install, `/System`, `/usr`, `/private`, `/dev`, `/etc`, `/var` and the
+workspace leaves node unable to start, because dyld resolves library and
+shared-cache paths through firmlinks that reduce to no enumerable subtree. The
+first round of experiments reached a similar conclusion for the wrong reasons —
+some of those profiles failed to *parse*, because `file-read-attributes` is not a
+valid Seatbelt keyword on this macOS version — so the result was re-derived from
+scratch before acting on it.
+
+Two runtime paths had to be reopened for the child to work at all, and finding
+them was empirical: the child's **own script** lives in the build output rather
+than the workspace, and esbuild needs both its native binary *and* the JavaScript
+package next to it, since the child does `import('esbuild')`. Missing either and
+every script fails to compile, with no error that points at the sandbox.
+
+On Linux the jail is structural: bubblewrap never mounts the home directory, so
+there is nothing to allow.
+
 ### Still true, and unchanged by this pass
 
-- **The sandbox is not a jail.** Reads are denied by path, not allowed by path;
-  a confined child can still read ordinary files outside the workspace. A read
-  allow-list was built and node does not boot under one on macOS.
+- **The sandbox is not a jail against everything.** The home directory is closed,
+  but a confined child can still read ordinary files *outside* the home directory
+  and outside the workspace — `/etc` for instance, minus the individually denied
+  paths. Reads are also jailed by directory rather than allow-listed, because a
+  read allow-list cannot boot node on macOS at all.
 - **CPU and native memory outside the V8 heap** are bounded by the timeout, not
   by a limit.
 - **Windows is refused and untested** — no comparable confinement exists.

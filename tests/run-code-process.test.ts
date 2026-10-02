@@ -1,5 +1,13 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs';
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  realpathSync,
+  mkdirSync,
+  symlinkSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -487,6 +495,110 @@ describe('a tool called from code is gated by the session, in code', () => {
   });
 });
 
+describe('a real sandboxed child cannot read the home directory', () => {
+  // The confinement, verified end to end through the whole host. The point is
+  // that it holds for files nobody thought to list, not only for the credential
+  // paths a deny-list would have covered.
+  it('refuses an ordinary file in the home directory, not just a secret', async () => {
+    const { registry, base } = harness([], []);
+    const fakeHome = mkdtempSync(join(tmpdir(), 'cowork-home-'));
+    writeFileSync(join(fakeHome, 'shopping-list.txt'), 'not a credential');
+    try {
+      const result = await runCode({
+        ...base,
+        registry,
+        homeDir: fakeHome,
+        source: `
+          const fs = await import('node:fs');
+          try {
+            const text = fs.readFileSync(${JSON.stringify(join(fakeHome, 'shopping-list.txt'))}, 'utf8');
+            return 'READ_ORDINARY: ' + text;
+          } catch (error) {
+            return 'BLOCKED';
+          }
+        `,
+        limits: { timeoutMs: 20_000 },
+      });
+      expect(result.output).toContain('BLOCKED');
+      expect(result.output).not.toContain('READ_ORDINARY');
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  }, 40_000);
+
+  it('refuses to list the home directory', async () => {
+    const { registry, base } = harness([], []);
+    const fakeHome = mkdtempSync(join(tmpdir(), 'cowork-home-'));
+    mkdirSync(join(fakeHome, '.ssh'), { recursive: true });
+    try {
+      const result = await runCode({
+        ...base,
+        registry,
+        homeDir: fakeHome,
+        source: `
+          const fs = await import('node:fs');
+          try { return 'LISTED: ' + fs.readdirSync(${JSON.stringify(fakeHome)}).join(','); }
+          catch (error) { return 'BLOCKED'; }
+        `,
+        limits: { timeoutMs: 20_000 },
+      });
+      expect(result.output).toContain('BLOCKED');
+      expect(result.output).not.toContain('LISTED');
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  }, 40_000);
+
+  it('refuses a symlink planted in the workspace that points into the home directory', async () => {
+    // The escape a naive "writable workspace" rule gets wrong: the child creates
+    // the link itself, so nothing about the path is suspicious.
+    const { registry, base } = harness([], []);
+    const fakeHome = mkdtempSync(join(tmpdir(), 'cowork-home-'));
+    writeFileSync(join(fakeHome, 'private.txt'), 'secret');
+    try {
+      const link = join(workdir, 'escape-link');
+      symlinkSync(join(fakeHome, 'private.txt'), link);
+      const result = await runCode({
+        ...base,
+        registry,
+        homeDir: fakeHome,
+        source: `
+          const fs = await import('node:fs');
+          try { return 'READ_VIA_LINK: ' + fs.readFileSync(${JSON.stringify(link)}, 'utf8'); }
+          catch (error) { return 'BLOCKED'; }
+        `,
+        limits: { timeoutMs: 20_000 },
+      });
+      expect(result.output).toContain('BLOCKED');
+      expect(result.output).not.toContain('READ_VIA_LINK');
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  }, 40_000);
+
+  it('still reads the workspace normally', async () => {
+    const { registry, base } = harness([], []);
+    const fakeHome = mkdtempSync(join(tmpdir(), 'cowork-home-'));
+    try {
+      const result = await runCode({
+        ...base,
+        registry,
+        homeDir: fakeHome,
+        source: `
+          const fs = await import('node:fs');
+          fs.writeFileSync('note.txt', 'work');
+          return fs.readFileSync('note.txt', 'utf8');
+        `,
+        limits: { timeoutMs: 20_000 },
+      });
+      expect(result.status).toBe('completed');
+      expect(result.output).toBe('work');
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  }, 40_000);
+});
+
 describe('run_code really routes the child through the OS sandbox', () => {
   // The policy is unit-tested in run-code-sandbox.test.ts. What that cannot see
   // is whether runCode actually USES it, so these go through the whole path: a
@@ -555,7 +667,7 @@ describe('run_code really routes the child through the OS sandbox', () => {
         registry,
         // Point the denied set at the fake home, as production derives it from
         // the real home directory.
-        deniedReadPaths: sensitiveReadPaths(fakeHome),
+        homeDir: fakeHome,
         source: `
           const fs = await import('node:fs');
           try {

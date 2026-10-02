@@ -124,6 +124,57 @@ describe('the macOS policy denies by default', () => {
 
 });
 
+describe('the home directory is jailed, by directory rather than by list', () => {
+  // A deny-list of credential paths is an argument from ignorance: it can only
+  // cover the locations somebody thought of. Closing the directory covers the one
+  // nobody did.
+  it('denies reads of the whole home directory', () => {
+    const policy = buildSeatbeltPolicy({ ...baseRequest('/tmp/ws'), homeDir: '/home/u' });
+    expect(policy).toContain('(deny file-read-data (subpath "/home/u"))');
+  });
+
+  it('reopens the workspace AFTER the deny, since the last rule wins', () => {
+    const policy = buildSeatbeltPolicy({ ...baseRequest('/tmp/ws'), homeDir: '/home/u' });
+    // Compared resolved: the policy carries real paths, and on macOS /tmp is a
+    // symlink to /private/tmp, so matching the literal would prove nothing.
+    const workspace = resolvePolicyPath('/tmp/ws');
+    // Order is the entire mechanism. A workspace inside the home directory is
+    // the common case and only works because the exception comes later.
+    expect(policy.indexOf('(deny file-read-data (subpath "/home/u"))')).toBeLessThan(
+      policy.indexOf(`(allow file-read-data (subpath "${workspace}"))`)
+    );
+  });
+
+  it('reopens the runtime paths the child needs to boot', () => {
+    const policy = buildSeatbeltPolicy({
+      ...baseRequest('/tmp/ws'),
+      homeDir: '/home/u',
+      readableRuntimePaths: ['/opt/node', '/opt/esbuild'],
+    });
+    expect(policy).toContain('(allow file-read-data (subpath "/opt/node"))');
+    expect(policy).toContain('(allow file-read-data (subpath "/opt/esbuild"))');
+    expect(policy.indexOf('(deny file-read-data (subpath "/home/u"))')).toBeLessThan(
+      policy.indexOf('(allow file-read-data (subpath "/opt/esbuild"))')
+    );
+  });
+
+  it('still keeps the general allow, because a scoped allow-list cannot boot node', () => {
+    // Removing this is what made every scoped-allow-list experiment fail: dyld
+    // resolves library paths through firmlinks that no enumerable subtree covers.
+    const policy = buildSeatbeltPolicy({ ...baseRequest('/tmp/ws'), homeDir: '/home/u' });
+    expect(policy).toContain('(allow file-read-data)');
+  });
+
+  it('still denies the individual paths outside the home directory', () => {
+    const policy = buildSeatbeltPolicy({
+      ...baseRequest('/tmp/ws'),
+      homeDir: '/home/u',
+      deniedReadPaths: ['/etc/ssh'],
+    });
+    expect(policy).toContain(`(deny file-read* (subpath "${resolvePolicyPath('/etc/ssh')}"))`);
+  });
+});
+
 describe('a real sandboxed process is actually confined', () => {
   // Skipped rather than faked on other platforms: bubblewrap needs a container,
   // and asserting confinement that was never exercised would be worse than
@@ -201,23 +252,37 @@ describe('a real sandboxed process is actually confined', () => {
     }
   });
 
-  it.skipIf(!isDarwin || !hasSeatbelt)('cannot read a denied credential directory', () => {
+  it.skipIf(!isDarwin || !hasSeatbelt)('cannot read anything in the home directory', () => {
+    // The confinement is a directory jail, not a list of known credential paths:
+    // everything under the home directory is refused, so a secret nobody
+    // anticipated is refused along with the ones somebody did.
     const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
     const fakeHome = mkdtempSync(join(tmpdir(), 'cowork-home-'));
     try {
       mkdirSync(join(fakeHome, '.ssh'), { recursive: true });
       writeFileSync(join(fakeHome, '.ssh', 'id_rsa'), 'PRIVATE KEY');
+      writeFileSync(join(fakeHome, 'notes.txt'), 'private notes');
       const policy = buildSeatbeltPolicy({
         ...baseRequest(workspace),
+        homeDir: fakeHome,
         deniedReadPaths: sensitiveReadPaths(fakeHome),
       });
+      expect(policy).toContain(`(deny file-read-data (subpath "${resolvePolicyPath(fakeHome)}"))`);
+      // Both a credential file and an ordinary file are refused: the jail is by
+      // directory, so it does not depend on knowing what is in there.
       const { out } = runInSandbox(
         policy,
-        `try{require('fs').readFileSync(${JSON.stringify(join(fakeHome, '.ssh', 'id_rsa'))},'utf8');console.log('READ_SECRET')}
-         catch(e){console.log('SECRET_BLOCKED:'+e.code)}`
+        `const fs=require('fs');const o=[];
+         try{fs.readFileSync(${JSON.stringify(join(fakeHome, '.ssh', 'id_rsa'))},'utf8');o.push('READ_SECRET')}catch(e){o.push('SECRET_BLOCKED')}
+         try{fs.readFileSync(${JSON.stringify(join(fakeHome, 'notes.txt'))},'utf8');o.push('READ_ORDINARY')}catch(e){o.push('ORDINARY_BLOCKED')}
+         try{fs.readdirSync(${JSON.stringify(fakeHome)});o.push('LISTED_HOME')}catch(e){o.push('HOME_LIST_BLOCKED')}
+         console.log(o.join(' | '));`
       );
       expect(out).toContain('SECRET_BLOCKED');
+      expect(out).toContain('ORDINARY_BLOCKED');
+      expect(out).toContain('HOME_LIST_BLOCKED');
       expect(out).not.toContain('READ_SECRET');
+      expect(out).not.toContain('READ_ORDINARY');
     } finally {
       rmSync(workspace, { recursive: true, force: true });
       rmSync(fakeHome, { recursive: true, force: true });

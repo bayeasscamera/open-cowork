@@ -21,6 +21,7 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'node:fs';
+import * as path from 'node:path';
 import * as os from 'node:os';
 import * as readline from 'readline';
 
@@ -36,7 +37,11 @@ import { invokeTool, type PrunerSettings } from '../tools/invoke';
 import type { ToolContext, ToolRegistry } from '../tools/registry';
 import type { ToolGateDeps } from '../tools/pipeline';
 import { findSandboxLauncher, planSandbox, sensitiveReadPaths } from './run-code-sandbox';
-import { resolveEsbuildBinary, resolveRunCodeChildScript } from './run-code-runtime';
+import {
+  resolveEsbuildBinary,
+  resolveEsbuildRuntimeDirs,
+  resolveRunCodeChildScript,
+} from './run-code-runtime';
 import { logWarn } from '../utils/logger';
 
 export interface RunCodeRequest {
@@ -67,6 +72,12 @@ export interface RunCodeRequest {
   deniedReadPaths?: readonly string[];
   /** The app's userData directory, denied to the child: it holds API keys. */
   appDataPath?: string;
+  /**
+   * The home directory the sandbox closes off. Defaults to the real one.
+   * Overridable so the confinement itself can be tested against a temporary
+   * directory instead of the developer's actual files.
+   */
+  homeDir?: string;
   /**
    * Native binaries the child may exec. The child must transpile, and esbuild
    * ships as a native binary it spawns, so this is granted explicitly rather
@@ -266,6 +277,22 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
   // it can `import('node:fs')` and read anything the user can read, which the
   // tool gate does not govern because no `tools.*()` call is involved.
   const execPath = request.execPath ?? process.execPath;
+  // Everything the child must still read once the home directory is closed off:
+  // node's own installation and the esbuild binary it spawns. Both can live inside
+  // the home directory in development, so they are reopened explicitly rather
+  // than left to chance.
+  const runtimePaths = [
+    path.dirname(execPath),
+    // The child's OWN script. It lives in the build output, which is not
+    // necessarily inside the session workspace, so with the home directory
+    // jailed it needs reopening or the child cannot even load.
+    path.dirname(childScript),
+    ...(request.allowedExecPaths ?? []).map((candidate) => path.dirname(candidate)),
+    // The esbuild PACKAGE as well as its binary: the child imports it, and with
+    // the home directory jailed an unlisted module is simply unresolvable.
+    ...resolveEsbuildRuntimeDirs(),
+  ].filter((candidate, index, all) => all.indexOf(candidate) === index);
+
   const plan = planSandbox({
     platform: process.platform,
     execPath,
@@ -273,6 +300,10 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
     workspace: request.cwd,
     deniedReadPaths:
       request.deniedReadPaths ?? sensitiveReadPaths(os.homedir(), request.appDataPath),
+    // The home directory is closed off wholesale. sensitiveReadPaths still covers
+    // material OUTSIDE it.
+    homeDir: request.homeDir ?? os.homedir(),
+    readableRuntimePaths: runtimePaths,
     // The child must transpile, and esbuild is a native binary it spawns, so
     // that exact path is granted. It is the only binary beyond node.
     allowedExecPaths: request.allowedExecPaths ?? [resolveEsbuildBinary()].filter(
