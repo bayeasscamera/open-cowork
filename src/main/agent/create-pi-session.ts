@@ -66,6 +66,12 @@ export interface CreatePiSessionDeps {
   installPermissionHook: (piSession: PiAgentSession) => void;
   installModsHooks: (piSession: PiAgentSession) => void;
   installPayloadHook: (piSession: PiAgentSession, options: PiPayloadHookOptions) => void;
+  /**
+   * Tool-result pruning budget from the active agent preset. Absent means
+   * "keep the pre-preset behaviour": the historical 500-char threshold and 3
+   * kept results. Only a preset that sets an explicit value changes it.
+   */
+  pruner?: { compactionThresholdChars?: number };
 }
 
 export async function createPiSession(deps: CreatePiSessionDeps): Promise<PiAgentSession> {
@@ -92,7 +98,10 @@ export async function createPiSession(deps: CreatePiSessionDeps): Promise<PiAgen
     extensionFactories: [
       createCompactionExtensionFactory({
         customInstructions: sessionCompactInstructions,
-        pruneToolOutputAbove: 500,
+        // 500 is the historical threshold. A preset may raise or lower it via
+        // pruner.compactionThresholdChars; leaving it unset is what makes the
+        // default preset a no-op rather than a silent behaviour change.
+        pruneToolOutputAbove: deps.pruner?.compactionThresholdChars ?? 500,
         keepRecentToolResults: 3,
       }),
     ],

@@ -41,6 +41,8 @@ export interface ProjectContextResolution {
   refineConfigSetId: string | null;
   /** Model pinned inside the refine ConfigSet (null = the set's active model). */
   refineModelId: string | null;
+  /** Agent preset pinned on the project (null = 'standard'). */
+  presetId: string | null;
   /** Ready-to-inject system prompt block ('' when nothing applies). */
   systemPromptBlock: string;
 }
@@ -56,6 +58,7 @@ function emptyProjectContext(): ProjectContextResolution {
     draftModelId: null,
     refineConfigSetId: null,
     refineModelId: null,
+    presetId: null,
     systemPromptBlock: '',
   };
 }
@@ -189,6 +192,7 @@ export function resolveProjectContext(
       draftModelId: project.draftModelId,
       refineConfigSetId: project.refineConfigSetId,
       refineModelId: project.refineModelId,
+      presetId: project.presetId ?? null,
       systemPromptBlock: buildSystemPromptBlock(project),
     };
   } catch (err) {

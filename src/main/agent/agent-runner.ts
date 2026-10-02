@@ -122,6 +122,7 @@ import {
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
 import { shouldFallbackToProvider } from './provider-fallback';
+import { resolveActivePreset } from './preset-context';
 import {
   estimateTextTokens,
   parseUpstreamContextLimit,
@@ -183,6 +184,7 @@ function resolveProjectContextForRunner(sessionId: string): ProjectContextResolu
       draftModelId: null,
       refineConfigSetId: null,
       refineModelId: null,
+      presetId: null,
       systemPromptBlock: '',
     };
   }
@@ -1143,7 +1145,19 @@ export class CoworkAgentRunner {
         effectiveCwd,
         apiKey,
       });
-      const skillPaths = await this.resolveSkillPaths(session.id);
+      const baseSkillPaths = await this.resolveSkillPaths(session.id);
+
+      // The active agent preset: it contributes extra skill directories for
+      // THIS session only, and its pruner budget below. Resolved once, after
+      // the project context (which carries the project preset pin) is known.
+      const activePreset = resolveActivePreset({
+        projectPresetId: projectContext.presetId,
+        sessionSkillDirs: baseSkillPaths,
+      });
+      if (activePreset.warning) logCtxWarn('[CoworkAgentRunner]', activePreset.warning);
+      const skillPaths = [
+        ...new Set([...baseSkillPaths, ...activePreset.extraSkillDirs]),
+      ];
       const skillsSignature = JSON.stringify(skillPaths);
       log('[CoworkAgentRunner] Skill paths for pi ResourceLoader:', skillPaths);
 
@@ -1313,6 +1327,7 @@ export class CoworkAgentRunner {
           sessionContextSignature: extensionResult.sessionContextSignature,
           sessions: this.piSessions,
           maxCachedSessions: CoworkAgentRunner.MAX_CACHED_SESSIONS,
+          pruner: activePreset.preset.pruner,
           installPermissionHook: (target) => this.installPermissionHook(target, session.id),
           installModsHooks: (target) => this.installModsHooks(target, session.id),
           installPayloadHook: (target, options) =>

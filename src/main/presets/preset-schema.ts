@@ -36,6 +36,14 @@ const prunerSchema = z
     thresholdChars: z.number().int().positive().max(20_000_000),
     headChars: z.number().int().min(0).max(2_000_000),
     tailChars: z.number().int().min(0).max(2_000_000),
+    /**
+     * Tool-result size above which the compaction pass replaces the content
+     * with a placeholder. Optional and absent by default, because the
+     * pre-existing value (500) is what the app has always used: leaving it
+     * unset is what makes `standard` a true no-op. Raising it keeps more
+     * verbatim output at the cost of a more expensive summarization.
+     */
+    compactionThresholdChars: z.number().int().positive().max(2_000_000).optional(),
   })
   .strict()
   // A threshold at or below head+tail would mean "truncate" produces something
