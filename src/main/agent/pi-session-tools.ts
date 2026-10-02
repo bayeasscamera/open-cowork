@@ -32,6 +32,16 @@ import type { MCPManager } from '../mcp/mcp-manager';
 import type { AgentRuntimeCustomTool } from '../extensions/agent-runtime-extension';
 import { presentToolsForPreset, presenterFor } from '../presets/tool-presenter';
 import type { AgentPreset } from '../presets/preset-schema';
+import type { PrunerSettings } from '../tools/invoke';
+import type { ToolGateDeps } from '../tools/pipeline';
+import { buildRunCodeTool } from '../tools/run-code-tool';
+
+export interface BuildRunCodeExecutorDeps {
+  registry: ToolRegistry;
+  gate: ToolGateDeps;
+  allowedTools: readonly string[];
+  pruner?: PrunerSettings;
+}
 
 export interface BuildPiSessionToolsDeps {
   mcpManager?: MCPManager;
@@ -114,6 +124,7 @@ export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
   // presenter and the run_code bridge validate against the real tool set.
   const catalog = [...codingTools, ...customTools];
   syncToolRegistry(catalog);
+
 
   // Presentation. This is where the preset stops being configuration and starts
   // changing behaviour: in `direct` mode the model sees each tool as a tool, and
@@ -223,4 +234,16 @@ export function syncToolRegistry(tools: Array<{ name: string; description?: stri
   }
   toolRegistry.clear();
   for (const tool of fresh.list()) toolRegistry.registerOrReplace(tool);
+}
+
+/**
+ * Register the real `run_code` executor into the catalog.
+ *
+ * The registry is a CATALOG and its stub executors refuse on purpose, so the code
+ * path needs the one tool that actually runs in this process wired in. Without
+ * it, code mode is a feature whose entire purpose - calling tools - cannot work,
+ * which is worse than code mode being absent.
+ */
+export function registerRunCodeExecutor(deps: BuildRunCodeExecutorDeps): void {
+  toolRegistry.registerOrReplace(buildRunCodeTool(deps));
 }

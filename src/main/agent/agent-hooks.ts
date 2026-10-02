@@ -16,7 +16,7 @@ import {
 import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
 import { decidePermissionWithDetail, describeDenyRefusal, describeLockdownRefusal, rememberAlwaysAllow } from '../config/permission-rules-store';
-import { defaultExtractToolPath, runToolGate } from '../tools/pipeline';
+import { defaultExtractToolPath, runToolGate, type ToolGateDeps } from '../tools/pipeline';
 import { toolRegistry, type ToolDefinition } from '../tools/registry';
 import { log, logWarn, logError } from '../utils/logger';
 
@@ -55,7 +55,7 @@ export interface PermissionHookOptions {
  * shape changes, so the hook and `invokeTool()` ask the same question the same
  * way.
  */
-async function decidePermissionAsync(input: {
+export async function decidePermissionAsync(input: {
   sessionId: string;
   toolName: string;
   args: Record<string, unknown>;
@@ -159,13 +159,11 @@ export function installPermissionHook(options: PermissionHookOptions): void {
   const sdkBeforeToolCall: PiBeforeToolCallHook | undefined = agent._beforeToolCall;
 
   const requestPermission = options.requestPermission;
-  const getDisplayName = options.getToolDisplayName;
 
   agent.setBeforeToolCall(
     async (ctx: PiToolCallContext, signal?: AbortSignal): Promise<unknown> => {
       const toolName: string = ctx.toolCall?.name ?? '';
       const input: Record<string, unknown> = ctx.args ?? {};
-      const displayName = getDisplayName(toolName);
 
       // The same gate pipeline `invokeTool()` runs (tools/pipeline.ts).
       // Sharing it is what keeps preset, permission, path-guard and mods
@@ -188,18 +186,15 @@ export function installPermissionHook(options: PermissionHookOptions): void {
         gateTool,
         input,
         { sessionId: options.sessionId, cwd: options.cwd ?? '' },
-        {
+        createSessionGate({
           allowedTools: options.allowedTools,
-          decidePermission: ({ sessionId, toolName: name, args }) =>
-            decidePermissionAsync({ sessionId, toolName: name, args, requestPermission, displayName, toolCallId: ctx.toolCall?.id }),
-          extractPath: defaultExtractToolPath,
+          requestPermission,
+          getToolDisplayName: options.getToolDisplayName,
           checkPath: options.checkPath,
-          runModsPre: ({ sessionId: id, toolName: name, args }) => {
-            const modsDecision = getModsRegistry().runPreToolUse({ sessionId: id, toolName: name, args });
-            recordSkillUseIfApplicable(name, args);
-            return { blocked: Boolean(modsDecision.block), reason: modsDecision.reason };
-          },
-        }
+          // The SDK's own id, so a prompt raised for this call names the call
+          // the user can see in the UI.
+          toolCallId: ctx.toolCall?.id,
+        })
       );
 
       if (!decision.allowed) {
@@ -270,4 +265,48 @@ export function installModsHooks(piSession: PiAgentSession, sessionId: string): 
   });
 
   log(`[CoworkAgentRunner] Mods hooks installed on session ${sessionId}`);
+}
+
+/**
+ * Build the shared tool gate for this session.
+ *
+ * ONE implementation, two callers: the SDK's beforeToolCall hook and the
+ * run_code bridge. That is the point. The hook and the code path must apply the
+ * same permission engine, path guard and mods pre-hook, or "tool calls are gated
+ * identically however they arrive" is a claim rather than a fact — and the code
+ * path is exactly where a divergence would be invisible, since it re-enters
+ * through invokeTool and looks like any other call.
+ *
+ * `toolCallId` is only used to label a permission prompt; omitting it yields a
+ * gate whose prompts are still correct, just not correlated to an SDK call.
+ */
+export function createSessionGate(options: {
+  allowedTools?: readonly string[];
+  requestPermission?: RequestPermission;
+  getToolDisplayName: (toolName: string) => string;
+  checkPath?: (path: string, ctx: { sessionId: string; cwd: string }) => {
+    allowed: boolean;
+    reason?: string;
+  };
+  toolCallId?: string;
+}): ToolGateDeps {
+  return {
+    allowedTools: options.allowedTools,
+    decidePermission: ({ sessionId, toolName, args }) =>
+      decidePermissionAsync({
+        sessionId,
+        toolName,
+        args,
+        requestPermission: options.requestPermission,
+        displayName: options.getToolDisplayName(toolName),
+        ...(options.toolCallId ? { toolCallId: options.toolCallId } : {}),
+      }),
+    extractPath: defaultExtractToolPath,
+    checkPath: options.checkPath,
+    runModsPre: ({ sessionId, toolName, args }) => {
+      const modsDecision = getModsRegistry().runPreToolUse({ sessionId, toolName, args });
+      recordSkillUseIfApplicable(toolName, args);
+      return { blocked: Boolean(modsDecision.block), reason: modsDecision.reason };
+    },
+  };
 }
