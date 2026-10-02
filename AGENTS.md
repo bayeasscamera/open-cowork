@@ -216,6 +216,36 @@ extra consent gate for `presentation: 'code'` and `allowFork: true`.
 
 ---
 
+## The one `new Function` in the main bundle, and who owns it
+
+No first-party source evaluates anything in the main process. The main *bundle*
+still contains a `new Function`, and it belongs to **AJV**, which compiles JSON
+Schema into JavaScript and evaluates the result. AJV arrives through
+`@mariozechner/pi-ai` (validating tool arguments), `electron-store`/`conf` (the
+app's own config schema) and `electron-builder` (build time only).
+
+The distinction that matters is **schema versus data**:
+
+| Input | Role | Reaches `new Function`? |
+|---|---|---|
+| Model output | the DATA being validated | **No** — it is validated against a schema, never compiled as one |
+| Our tool schemas | app-authored TypeBox, declared in source | Yes — it is our own trusted schema |
+| **MCP server schemas** | supplied by a third-party server we run | **Yes** |
+
+So a malicious or compromised MCP server can reach AJV's code generator, at
+validation time and therefore ahead of any permission check. This is recorded
+because it follows from two choices rather than from a mistake: MCP is an
+extension point we do not control, and AJV is a validator. It is not mitigated
+here. If that matters for a deployment, the options are to reject MCP tools whose
+schema uses keywords you do not expect, or to precompile the tool schemas
+yourself instead of letting the SDK compile whatever it is handed.
+
+`tests/main-bundle-eval-provenance.test.ts` asserts the invariant that matters for
+the agent threat model — model output is the data and never the schema — so
+feeding model output into a compiling position fails loudly.
+
+---
+
 ## Project Brain — Architecture Map
 
 ### Electron Main Process (`src/main/`)
