@@ -253,12 +253,17 @@ The distinction that matters is **schema versus data**:
 | **MCP server schemas** | supplied by a third-party server we run | **Yes** |
 
 So a malicious or compromised MCP server can reach AJV's code generator, at
-validation time and therefore ahead of any permission check. This is recorded
-because it follows from two choices rather than from a mistake: MCP is an
-extension point we do not control, and AJV is a validator. It is not mitigated
-here. If that matters for a deployment, the options are to reject MCP tools whose
-schema uses keywords you do not expect, or to precompile the tool schemas
-yourself instead of letting the SDK compile whatever it is handed.
+validation time and therefore ahead of any permission check. Two things bound
+this in practice. First, MCP schemas arrive as JSON, and JSON has no functions:
+a server cannot inject code into the generated validator, only shapes that make
+validation expensive (a pathological `pattern` hanging every call, a megabyte of
+schema). Second, `mcp-schema-guard.ts` now checks every server-provided schema
+BEFORE it becomes a tool — 64 KiB, 10 levels, 2000 nodes, patterns that compile
+and fit 200 chars — and a refusal drops the tool with a logged reason rather
+than silently dropping its schema (a schema-less tool cannot be validated at
+all, which is worse). Detecting catastrophic backtracking in general is
+undecidable, so no heuristic claims to; the length cap plus compilation is what
+turns an unbounded hang into a bounded refusal.
 
 `tests/main-bundle-eval-provenance.test.ts` asserts the invariant that matters for
 the agent threat model — model output is the data and never the schema — so

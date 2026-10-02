@@ -10,7 +10,8 @@ import { Type, type TSchema } from '@sinclair/typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import type { MCPManager } from '../mcp/mcp-manager';
 import { normalizeMcpToolResultForModel } from './tool-result-utils';
-import { logError } from '../utils/logger';
+import { checkMcpSchema, describeMcpSchemaRefusal } from './mcp-schema-guard';
+import { logError, logWarn } from '../utils/logger';
 
 /**
  * Bridge MCP tools from MCPManager into ToolDefinition[] format for the agent SDK.
@@ -18,7 +19,20 @@ import { logError } from '../utils/logger';
  */
 export function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
   const mcpTools = mcpManager.getTools();
-  return mcpTools.map((mcpTool) => {
+  const tools: ToolDefinition[] = [];
+  for (const mcpTool of mcpTools) {
+    // The schema comes from a third party and AJV compiles whatever it is
+    // given, so it is checked BEFORE it becomes a tool. A refusal drops the
+    // tool rather than its schema: a schema-less tool cannot be validated at
+    // all, which is worse than not offering the tool.
+    const refusal = checkMcpSchema(mcpTool.inputSchema);
+    if (refusal) {
+      logWarn(
+        '[MCP] ' +
+          describeMcpSchemaRefusal(mcpTool.serverName, mcpTool.name, refusal)
+      );
+      continue;
+    }
     // Wrap the raw JSON Schema inputSchema as a TypeBox TSchema
     const parameters = Type.Unsafe<Record<string, unknown>>(
       mcpTool.inputSchema as Record<string, unknown>
@@ -46,6 +60,7 @@ export function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
         }
       },
     };
-    return toolDef;
-  });
+    tools.push(toolDef);
+  }
+  return tools;
 }
