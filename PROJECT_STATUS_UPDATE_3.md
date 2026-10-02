@@ -8,8 +8,8 @@ State after nine phases of work in ten commits, verified by
 `npm run lint && npm run typecheck && npm run test`:
 
 ```
-Test Files  416 passed (416)
-Tests       3954 passed | 2 skipped (3956)
+Test Files  420 passed (420)
+Tests       4037 passed | 2 skipped (4039)
 ```
 
 ---
@@ -103,83 +103,73 @@ behaviour, not on mocked timers.
 
 ---
 
-## What is **not** finished
+## Hardening pass: what changed after the first report
 
-Stated plainly, because the code is written and tested but not reachable by a
-user, and describing it as "done" would be false.
+The first version of this report said `run_code` was inert and listed six gaps.
+All six are now closed, and closing them surfaced a seventh problem that was
+worse than any of them.
 
-`run_code` is currently **inert in the shipping app**. All three of these are
-true:
+### Closed
 
-1. **The child runtime is never built or wired.** `runCode()` requires a
-   `childScript` path; only tests supply one, and there is no bundler entry and
-   no production caller. Without it the call fails closed with
-   "no child runtime is configured", which is the correct failure but means the
-   feature is dark.
-2. **The presenter has no consumers.** `presentToolsForPreset()` is fully
-   implemented and unit-tested, but `pi-session-tools.ts` does not call it, so
-   the generated-SDK presentation never reaches a real session.
-3. **`run_code` is in no allow-list.** Neither `standard` nor `code-mode` lists
-   it, so the preset gate refuses it even if 1 and 2 were fixed. `code-mode`
-   currently has identical tool access to `standard`, which is misleading given
-   its description.
+| Gap | Resolution |
+|---|---|
+| `maxMemoryBytes` declared but never enforced | The child is started with `--max-old-space-size`; the value is clamped to 64–4096 MiB so a sub-MiB budget cannot round to zero and leave it uncapped. The child now reports its own heap limit at startup, and the host returns it, so enforcement is checkable instead of assumed. |
+| `requestPermission` typed but never invoked | It is now called, composed *after* the session's static rules (a policy refusal is final and `allow` cannot override it) and it fails closed if it throws. The tool-use id is derived from the tool and a hash of its arguments, so a pipelined call is never labelled with another call's identity in a prompt a human is answering. |
+| No OS sandbox | Seatbelt on macOS, bubblewrap on Linux, and a **refusal** where neither exists. Verified against real sandboxed processes: writes outside the workspace, opening any socket, and exec of anything but node are all refused. |
+| Reads of credentials | Denied for `~/.ssh`, `~/.aws`, keychains, app data and similar. |
+| Child never built or located | Built as its own bundle (`dist-electron/run-code-child/index.js`, 69 kB) and resolved at runtime, so production works with no caller-side wiring. |
+| Presenter had no consumers | Wired into session tool assembly; it filters by the preset allow-list and picks the presentation mode. |
 
-Consequently **no user-facing risk exists today** — the path is closed at three
-independent points. But the honest status is "built and tested, not shipped".
+### The seventh problem, and why enabling code mode waited
 
-### Security gaps inside `run_code` itself
+`installPermissionHook` passed neither `allowedTools` nor `checkPath` to the
+shared gate pipeline. The pipeline **skips a stage whose dependencies are
+undefined**, so this was not "no restriction" — the preset allow-list and the
+path-guard were silently not running for SDK-dispatched tool calls, which is how
+the model actually calls tools. Only permissions and mods were applied.
 
-Even once wired, two limits are weaker than the table in `AGENTS.md` implies:
+Verified rather than inferred: `runToolGate` with `allowedTools` undefined allows
+`bash`; with a list omitting it, the same call is refused at the `preset` stage.
 
-- **`maxMemoryBytes` (512 MB) is declared but never enforced.** It is resolved
-  into the limits object and then ignored; the child is spawned with no
-  `execArgv`, so there is no `--max-old-space-size`. The "child memory" row in
-  `AGENTS.md` is currently a design intent, not a fact. The OOM test proves only
-  that the host survives the child dying, not that the child is capped.
-- **There is no OS-level sandbox.** The child is plain `node` with `cwd` set; it
-  can `import('node:fs')`, read outside the working directory, and open sockets.
-  `cwd` is not a security boundary. The architecture comment claiming
-  confinement should not be read as claiming a sandbox.
-- **`requestPermission` is declared and typed but never invoked** by the host, so
-  interactive approval for a permission-gated tool called from code is not
-  actually requested; the gate's base decision is returned instead.
+This is why the code-mode switch was the *last* change and not the first. Before
+the fix, enabling `run_code` would have inverted the invariant rather than
+established it — calls from code preset-gated, direct calls not. Both paths now
+get the same gate, built once by `createSessionGate()`.
 
-I have left the memory and permission rows in `AGENTS.md` in place because they
-describe the intended contract, but the gap list above is the truth until they
-are implemented.
+### What the sandbox still is not
 
-### Deliberate non-fixes
+Reads are denied by path, not allowed by path, and this is a measured trade. A
+read allow-list was built and node cannot boot under one: macOS resolves runtime
+paths through firmlinks that land outside any top-level directory, so no such
+list is complete, and an incomplete allow-list fails in the worst direction — it
+looks configured while breaking the runtime. **A confined child can still read
+ordinary files outside the workspace.** It is not a jail, and `AGENTS.md` says so.
 
-- **`src/main/agent/code-execution-rpc.ts:76` still contains
-  `new Function(...)` in the main process.** It is dead code, unreachable, and
-  deliberately not removed in this change set because the brief listed it under
-  "do not touch" items. It should be deleted in a dedicated, separately
-  reviewed commit — a removal of an eval path deserves its own diff.
+Two things remain unbounded, and the timeout is what bounds both: CPU, and native
+memory outside the V8 heap.
+
+### Pre-existing test flakes found along the way
+
+Neither is related to this work; both are recorded rather than fixed, because
+they are outside its scope and both deserve their own change.
+
+1. **`background-delegation-eviction`** — `listDelegations()` and the eviction
+   pass both sort on `startedAt` with no tiebreaker, so two delegations created
+   in the same millisecond have no defined order. Introduced 2026-09-20.
+2. **`ollama-discovery`** — asserts a background revalidation lands inside
+   `vi.waitFor`'s default timeout, which it does not under parallel load.
+
+### Still true
+
+- **`code-execution-rpc.ts` is gone.** It was the last `new Function` in the main
+  process. The one that remains is in `run-code-child.ts`, and
+  `tests/eval-isolation.test.ts` asserts it is unreachable from the main entry
+  graph. Note that the main *bundle* also contains a `new Function` from a
+  schema-validation dependency; it evaluates that library's own expressions, not
+  model output, but it is worth knowing it is there.
 - **The pi SDK's built-in tools cannot all be routed through `invokeTool()`.**
-  They execute inside the SDK. They reach the same gate through the
-  `beforeToolCall` hook, but "every tool call in the app goes through
-  `invokeTool()`" is not literally true and should not be claimed. The four
-  remaining `.execute()` sites in `memory-service.ts`, `memory-files-tools.ts`
-  and `swarm-runner.ts` are SDK-shaped wrappers, not bypasses.
-
-### Corrections to premises in the brief
-
-- **`SubAgentsView` was not rendered in two places.** The brief asked me to avoid
-  introducing a duplicate, but `e7053bb` had already replaced the in-Settings
-  copy with a link panel that navigates to the single view in `App.tsx`. There
-  was no duplication to fix, and I did not invent one.
-- **`compressContext`/`compressContextAsync` were the wrong site for the size
-  fix.** They summarise messages. The character budget belongs to
-  `pruneToolOutputs()`, which is where it was implemented.
-
-### Test-suite side effect
-
-`tests/subagents-view-navigation.test.ts` pinned the entire Model tab array
-(`tabs: ['api', 'sandbox', 'subagents']`). Adding `presets` to that group broke
-it. I rewrote that single assertion to assert the sub-agents tab is a *member*
-of the group — which is what the test was actually about — rather than
-weakening the test or reordering tabs to dodge it. The other 7 cases in that
-file are unchanged.
+  They execute inside the SDK and reach the same gate through
+  `beforeToolCall`.
 
 ---
 
@@ -204,18 +194,22 @@ validates — so the example cannot rot into something that fails to load.
 
 ---
 
-## Recommended next steps, in order
+## Recommended next steps
 
-1. **Delete `code-execution-rpc.ts`** in its own commit. It is the last `eval`
-   path in the main process and it is dead.
-2. **Enforce `maxMemoryBytes`** by spawning the child with
-   `execArgv: ['--max-old-space-size=…']`, and add a test that asserts the cap
-   rather than asserting the host survives an OOM.
-3. **Wire `requestPermission`** so a permission-gated tool called from code
-   actually prompts, instead of silently taking the base decision.
-4. **Add a real sandbox**, or stop describing the child as confined. On macOS a
-   seatbelt profile or a container is the honest answer; a `cwd` alone is not.
-5. **Bundle the child and call `presentToolsForPreset()`** from
-   `pi-session-tools.ts`; add `run_code` to `code-mode`'s allow-list **last**,
-   once 2–4 are done — that is the moment the feature actually becomes
-   reachable, and it should be a deliberate, separately reviewed act.
+The hardening list is done. What remains is what this work *surfaced*:
+
+1. **Give the two flaky tests a real fix.** Both are order/timing assumptions
+   with no tiebreaker, described above. They will keep costing CI runs until
+   someone fixes them properly.
+2. **Decide what "confined" is allowed to mean for reads.** Today a confined
+   child can read ordinary files outside the workspace. If that is not acceptable
+   for some deployment, the options are a container per execution or
+   pre-registering the runtime paths — not a tighter Seatbelt allow-list, which
+   was tried and does not boot.
+3. **Watch the preset allow-list in production.** Enforcing it on the SDK path was
+   a real behaviour change. Presets that name a tool the session does not
+   actually offer will now be visible as refusals rather than silently ignored,
+   which is correct but may surface in bug reports.
+4. **Consider the validation dependency's `new Function`.** It evaluates that
+   library's own schema expressions, not model output, so it is not a code-execution
+   hole today. It is worth a deliberate decision rather than an accident.
