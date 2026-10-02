@@ -40,17 +40,26 @@ export function resolveRunCodeChildScript(
   moduleDir: string = __dirname,
   resourcesPath: string | null = process.resourcesPath ?? null
 ): string | null {
-  const candidates: string[] = [
+  // Packaged FIRST, because in a real build it is the only candidate that can
+  // work: the child is an extraResource, deliberately outside the asar, since a
+  // plain `node` process cannot read an asar archive.
+  const candidates: string[] = [];
+  if (resourcesPath) {
+    candidates.push(path.join(resourcesPath, CHILD_RELATIVE));
+  }
+  candidates.push(
     // Built output sits beside the main bundle: dist-electron/main -> ../run-code-child
     path.resolve(moduleDir, '..', CHILD_RELATIVE),
     // Dev / tests: src/main/agent -> <repo>/dist-electron/run-code-child
     path.resolve(moduleDir, '..', '..', '..', 'dist-electron', CHILD_RELATIVE),
-  ];
-
-  if (resourcesPath) {
-    candidates.push(path.join(resourcesPath, 'app.asar', 'dist-electron', CHILD_RELATIVE));
-    candidates.push(path.join(resourcesPath, 'app', 'dist-electron', CHILD_RELATIVE));
-  }
+    // Older/asar-packaged layouts, kept so an existing build still resolves.
+    ...(resourcesPath
+      ? [
+          path.join(resourcesPath, 'app.asar', 'dist-electron', CHILD_RELATIVE),
+          path.join(resourcesPath, 'app', 'dist-electron', CHILD_RELATIVE),
+        ]
+      : [])
+  );
 
   for (const candidate of candidates) {
     try {
@@ -105,16 +114,27 @@ export function resolveEsbuildBinary(
  * Both are offered, plus the packaged location, and each candidate is checked
  * for existence rather than assumed.
  */
-export function defaultAppRoots(moduleDir: string = __dirname): string[] {
-  const roots = [
+export function defaultAppRoots(
+  moduleDir: string = __dirname,
+  resourcesPath: string | null = process.resourcesPath ?? null
+): string[] {
+  // Packaged roots come first whenever a resources path is supplied. A packaged
+  // app must run the binary it shipped, not whatever happens to exist next to
+  // the source tree - otherwise the precedence depends on the machine, and the
+  // sandbox grants exec of whichever one won.
+  const roots: string[] = [];
+  if (resourcesPath) {
+    // app.asar.unpacked first: esbuild is an unpacked native binary, and an exec
+    // target inside an archive is unreachable.
+    roots.push(path.join(resourcesPath, 'app.asar.unpacked'));
+    roots.push(path.join(resourcesPath, 'app.asar'));
+    roots.push(path.join(resourcesPath, 'app'));
+  }
+  roots.push(
     // Dev/tests: src/main/agent -> <repo>
     path.resolve(moduleDir, '..', '..', '..'),
-    // Built: dist-electron/main -> <repo>
-    path.resolve(moduleDir, '..', '..'),
-  ];
-  if (process.resourcesPath) {
-    roots.push(path.join(process.resourcesPath, 'app.asar'));
-    roots.push(path.join(process.resourcesPath, 'app'));
-  }
+    // Built output: dist-electron/main -> <repo>
+    path.resolve(moduleDir, '..', '..')
+  );
   return roots;
 }

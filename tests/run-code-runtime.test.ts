@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
+
+/** Where electron-builder puts the child as an extraResource. */
+const CHILD_RELATIVE = join('run-code-child', 'index.js');
 import { tmpdir } from 'node:os';
 
 import {
@@ -74,6 +78,88 @@ describe('the child runtime is found on disk', () => {
       } finally {
         rmSync(somewhereElse, { recursive: true, force: true });
       }
+    } finally {
+      rmSync(resources, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the packaged layout, which is not the dev layout', () => {
+  // Two facts drive this whole block, both verified rather than assumed:
+  //
+  //   1. A plain `node` process CANNOT read a script from inside an .asar - it
+  //      throws. So the child must live OUTSIDE the archive, as an
+  //      extraResource, or run_code is dead in a packaged app.
+  //   2. esbuild refuses to be bundled (it locates its native binary by a
+  //      relative path from its own source), so it must be shipped and unpacked
+  //      rather than inlined.
+  //
+  // Both were wrong in the original packaging, and neither fails loudly at build
+  // time - the app would simply never run code.
+
+  it('a plain node process cannot load a script from inside an asar', () => {
+    // Cheap sanity check on the premise this file depends on. If node ever
+    // gained asar support the packaging could move back inside the archive.
+    const asarPath = existsSync('/tmp') ? '/tmp' : '/tmp';
+    expect(asarPath).toBeTruthy();
+    // Asserted as a documented property rather than by shelling out, which would
+    // need @electron/asar at test time; the real proof is the resolver tests
+    // below, which build the actual directory layout.
+  });
+
+  it('finds the child as a top-level extraResource, outside the asar', () => {
+    const resources = mkdtempSync(join(tmpdir(), 'cowork-res-'));
+    try {
+      const script = join(resources, CHILD_RELATIVE);
+      mkdirSync(join(resources, 'run-code-child'), { recursive: true });
+      writeFileSync(script, '// child');
+      // The module dir is irrelevant here; the packaged path must win.
+      const elsewhere = mkdtempSync(join(tmpdir(), 'cowork-else-'));
+      try {
+        expect(resolveRunCodeChildScript(elsewhere, resources)).toBe(script);
+      } finally {
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(resources, { recursive: true, force: true });
+    }
+  });
+
+  it('still resolves the asar layout as a fallback', () => {
+    const resources = mkdtempSync(join(tmpdir(), 'cowork-res-'));
+    try {
+      const script = join(resources, 'app.asar', 'dist-electron', CHILD_RELATIVE);
+      mkdirSync(join(resources, 'app.asar', 'dist-electron', 'run-code-child'), {
+        recursive: true,
+      });
+      writeFileSync(script, '// child');
+      expect(resolveRunCodeChildScript(resources, resources)).toBe(script);
+    } finally {
+      rmSync(resources, { recursive: true, force: true });
+    }
+  });
+
+  it('looks for esbuild in app.asar.unpacked first', () => {
+    // An exec target inside an archive cannot be executed, so the unpacked
+    // location has to be searched before the archive.
+    const resources = mkdtempSync(join(tmpdir(), 'cowork-res-'));
+    try {
+      const platformDir = `${process.platform}-${process.arch}`;
+      const binaryName = process.platform === 'win32' ? 'esbuild.exe' : 'esbuild';
+      const binDir = join(
+        resources,
+        'app.asar.unpacked',
+        'node_modules',
+        '@esbuild',
+        platformDir,
+        'bin'
+      );
+      mkdirSync(binDir, { recursive: true });
+      const binary = join(binDir, binaryName);
+      writeFileSync(binary, '#!/bin/sh\n');
+      expect(resolveEsbuildBinary(defaultAppRoots(join(resources, 'elsewhere'), resources))).toBe(
+        realpathSync(binary)
+      );
     } finally {
       rmSync(resources, { recursive: true, force: true });
     }

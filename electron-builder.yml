@@ -19,6 +19,13 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - package.json
+  # The run_code child spawns esbuild to transpile. It is a NATIVE binary, so it
+  # must be present at runtime AND unpacked from the asar - an exec target inside
+  # an archive is unreachable. Verified: esbuild refuses to be bundled (it finds
+  # its binary by a relative path from its own source), so shipping it is the
+  # only option.
+  - node_modules/esbuild/**/*
+  - node_modules/@esbuild/**/*
   - node_modules/@img/**/*
   - node_modules/better-sqlite3/**/*
   - node_modules/@anthropic-ai/sdk/**/*
@@ -59,6 +66,10 @@ files:
 # Sharp native modules must also be unpacked for image processing.
 # Note: MCP servers are bundled with esbuild (all deps inlined), so no need to unpack MCP SDK
 asarUnpack:
+  # esbuild ships as an extensionless native executable; it cannot be exec'd
+  # from inside the asar.
+  - node_modules/@esbuild/**/bin/esbuild
+  - node_modules/@esbuild/**/bin/esbuild.exe
   - node_modules/@img/**/*.node
   - node_modules/@img/**/*.dll
   - node_modules/@img/**/*.dylib
@@ -76,6 +87,10 @@ win:
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   signAndEditExecutable: false
   extraResources:
+    # The run_code child, OUTSIDE the asar on purpose: it is spawned as a plain
+    # `node` process, and plain node cannot read an asar archive. Verified.
+    - from: dist-electron/run-code-child
+      to: run-code-child
     - from: .bundle-resources/mcp
       to: mcp
     - from: resources/node/win32-x64
@@ -110,6 +125,10 @@ mac:
     NSScreenCaptureUsageDescription: 'Open Cowork needs screen recording access for GUI automation.'
     NSAccessibilityUsageDescription: 'Open Cowork needs accessibility access for GUI automation.'
   extraResources:
+    # The run_code child, OUTSIDE the asar on purpose: it is spawned as a plain
+    # `node` process, and plain node cannot read an asar archive. Verified.
+    - from: dist-electron/run-code-child
+      to: run-code-child
     - from: .bundle-resources/mcp
       to: mcp
     - from: resources/node/darwin-${arch}
@@ -143,6 +162,10 @@ linux:
         - x64
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
   extraResources:
+    # The run_code child, OUTSIDE the asar on purpose: it is spawned as a plain
+    # `node` process, and plain node cannot read an asar archive. Verified.
+    - from: dist-electron/run-code-child
+      to: run-code-child
     - from: .bundle-resources/mcp
       to: mcp
     - from: resources/node/linux-x64

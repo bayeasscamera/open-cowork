@@ -1,7 +1,7 @@
 {
   "name": "open-cowork",
   "version": "3.5.0",
-  "description": "Open-source AI agent desktop app for Windows & macOS — one-click install Claude Code, MCP tools, and Skills with sandbox isolation and multi-model support",
+  "description": "Open-source AI agent desktop app for Windows & macOS \u2014 one-click install Claude Code, MCP tools, and Skills with sandbox isolation and multi-model support",
   "keywords": [
     "ai-agent",
     "claude",
@@ -85,6 +85,7 @@
     "dotenv": "^17.2.3",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.3.0",
+    "esbuild": "0.27.2",
     "glob": "^13.0.6",
     "highlight.js": "^11.11.1",
     "i18next": "^25.10.1",
