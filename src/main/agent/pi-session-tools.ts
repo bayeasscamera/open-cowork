@@ -20,7 +20,14 @@ import { buildWebTools } from './web-tools';
 import { buildImageTools } from './image-tools';
 import { wrapBashToolForSudo, wrapBashToolWithDefaultTimeout } from './agent-runner-bash-tools';
 import { createWindowsBashOperations } from './windows-bash-operations';
-import { log } from '../utils/logger';
+import { log, logWarn } from '../utils/logger';
+import {
+  normalizeToolName,
+  toolRegistry,
+  ToolRegistry,
+  type ToolDefinition as CoworkToolDefinition,
+  type ToolRisk,
+} from '../tools/registry';
 import type { MCPManager } from '../mcp/mcp-manager';
 import type { AgentRuntimeCustomTool } from '../extensions/agent-runtime-extension';
 
@@ -95,5 +102,62 @@ export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
     effectiveCwd: deps.cwd,
   });
 
+  // Catalog every tool this session can reach, so the agent preset, the tool
+  // presenter and the run_code bridge validate against the real tool set.
+  syncToolRegistry([...codingTools, ...customTools]);
+
   return { customTools, wrappedTools };
+}
+
+/**
+ * Classify a tool for the registry from its name.
+ *
+ * The pi SDK's `ToolDefinition` carries no risk metadata, so the risk of a
+ * tool is derived once here, from the single place every tool is assembled.
+ * Anything not recognized defaults to 'write' — the conservative class, since
+ * an unknown tool must never be treated as harmless.
+ */
+export function inferToolRisk(name: string): ToolRisk {
+  const lowered = name.toLowerCase();
+  if (/^(mcp__.*__(read|list|search|get|describe)|read|ls|glob|grep)/.test(lowered)) return 'read';
+  if (/^(web_search|web_fetch|fetch|http|mcp__.*__(search|fetch))/i.test(name)) return 'network';
+  if (/^(bash|shell|run|execute|terminal)/.test(lowered)) return 'exec';
+  return 'write';
+}
+
+/**
+ * Populate the process-wide tool registry from this session's assembled tool
+ * set, so presets, the presenter and the run_code bridge all see exactly the
+ * catalog this session can use — not a separately maintained list that can
+ * drift from reality.
+ *
+ * Replaces the previous entry rather than appending: the registry is
+ * per-session state (MCP servers come and go), and `registerOrReplace` keeps a
+ * renamed tool from lingering.
+ */
+export function syncToolRegistry(tools: Array<{ name: string; description?: string; parameters?: unknown }>): void {
+  const fresh = new ToolRegistry();
+  for (const tool of tools) {
+    const name = normalizeToolName(tool.name);
+    if (!name) {
+      logWarn('[pi-session-tools] Skipping tool with an unusable name:', tool.name);
+      continue;
+    }
+    const original = tools.find((t) => t.name === tool.name);
+    fresh.registerOrReplace({
+      name,
+      description: original?.description ?? '',
+      inputSchema: (original?.parameters ?? {}) as CoworkToolDefinition['inputSchema'],
+      risk: inferToolRisk(name),
+      // The registry is a catalog, not a second execution path: execution goes
+      // through the SDK for built-ins and through invokeTool() for the rest.
+      // This stub exists so the shape is complete and never silently invoked.
+      execute: async () => ({
+        content: `Tool '${name}' is catalogued but not executable through the registry; use the session tool set.`,
+        isError: true,
+      }),
+    });
+  }
+  toolRegistry.clear();
+  for (const tool of fresh.list()) toolRegistry.registerOrReplace(tool);
 }
