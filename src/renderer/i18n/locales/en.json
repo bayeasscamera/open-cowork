@@ -179,7 +179,9 @@
     "groupExtensions": "Extensions & Tools",
     "groupPersonal": "Personalization",
     "groupAutomation": "Automation",
-    "groupSystem": "System"
+    "groupSystem": "System",
+    "presets": "Presets",
+    "presetsDesc": "What an agent may do."
   },
   "general": {
     "appearance": "Appearance",
@@ -910,8 +912,11 @@
       "archiveFailed": "Failed to archive project",
       "deleteFailed": "Failed to delete project",
       "linkFailed": "Failed to add the conversation to the project",
-      "nameAndWorkdirRequired": "Name and workspace folder are required"
-    }
+      "nameAndWorkdirRequired": "Name and workspace folder are required",
+      "updateFailed": "Could not update the project."
+    },
+    "presetLabel": "Preset",
+    "presetDefault": "Default (Standard)"
   },
   "appMenu": {
     "preferences": "Preferences…",
@@ -2068,5 +2073,42 @@
     "createFailed": "Unable to create the branch",
     "notARepository": "Not a Git repository",
     "noWorkspace": "No workspace selected"
+  },
+  "presets": {
+    "title": "Agent presets",
+    "description": "What an agent may do: the tools it can call, how its output is trimmed, and whether it may delegate.",
+    "builtin": "Built-in",
+    "user": "Your presets",
+    "proposed": "Proposed",
+    "issues": "Presets that could not be loaded",
+    "empty": "No preset available.",
+    "tools": "Tools",
+    "pruner": "Output trimming",
+    "prunerThreshold": "Keep up to",
+    "prunerHead": "Start",
+    "prunerTail": "End",
+    "presentation": "Presentation",
+    "presentationDirect": "Direct tools",
+    "presentationCode": "Code mode",
+    "delegation": "Delegation",
+    "maxDepth": "Max depth",
+    "allowFork": "Forking",
+    "yes": "Allowed",
+    "no": "Not allowed",
+    "codeModeWarning": "Code mode runs your code in a child process. It is slower per turn and gives the agent a code-execution path.",
+    "longContextWarning": "Requires a model with a very large context window. On a smaller model the turn will overflow upstream.",
+    "consentRequired": "Needs explicit approval",
+    "approve": "Approve",
+    "reject": "Reject",
+    "approved": "Preset approved.",
+    "rejected": "Proposal rejected.",
+    "approveFailed": "Could not approve the preset.",
+    "rejectFailed": "Could not reject the proposal.",
+    "rationale": "Why",
+    "proposedBy": "Proposed by",
+    "consentCheckbox": "I understand this preset changes what the agent can do.",
+    "errorTitle": "This preset could not be loaded",
+    "loadFailed": "Could not load the presets.",
+    "tab": "Presets"
   }
 }

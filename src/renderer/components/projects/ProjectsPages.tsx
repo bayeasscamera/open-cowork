@@ -945,6 +945,33 @@ function ProjectDetailView({ projectId }: { projectId: string }) {
     return groups.filter((g) => g.files.length > 0);
   }, [visibleFiles, t]);
 
+  // Agent preset pin. The catalog is read from the main process, which
+  // re-validates on every read, so a preset edited on disk is reflected here
+  // rather than served from a stale renderer cache.
+  const [presetOptions, setPresetOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const [savingPreset, setSavingPreset] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (typeof window === 'undefined' || !window.electronAPI) return;
+    if (!projectId) return;
+    void window.electronAPI.presets
+      .overview()
+      .then((overview) => {
+        if (!cancelled) {
+          setPresetOptions(overview.presets.map((preset) => ({ id: preset.id, label: preset.label })));
+        }
+      })
+      .catch(() => {
+        // A failed catalog read must not break the page: the selector simply
+        // keeps the default and the pin stays as it was.
+        if (!cancelled) setPresetOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   if (!project) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center bg-background">
@@ -1045,6 +1072,28 @@ function ProjectDetailView({ projectId }: { projectId: string }) {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('projects.errors.detachFailed'));
+    }
+  };
+
+  const setProjectPreset = async (presetId: string) => {
+    setSavingPreset(true);
+    try {
+      const result = await window.electronAPI.projects.update({
+        projectId: project.id,
+        // null = inherit the default, matching the column's NULL semantics.
+        presetId: presetId === '' ? null : presetId,
+      });
+      if (result.success) {
+        // Re-read rather than patching local state: the pin is persisted, and
+        // refresh() is this page's single source of truth after a mutation.
+        await refresh();
+      } else {
+        setError(result.error || t('projects.errors.updateFailed'));
+      }
+    } catch {
+      // Leave the previous value in place rather than showing a false success.
+    } finally {
+      setSavingPreset(false);
     }
   };
 
@@ -1576,6 +1625,28 @@ function ProjectDetailView({ projectId }: { projectId: string }) {
                   </dd>
                 </div>
               )}
+              {/* Preset pin: empty means the default preset, which is what a
+                  NULL column has always meant. */}
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-text-muted">{t('projects.presetLabel')}</dt>
+                <dd>
+                  <select
+                    className="max-w-[60%] rounded border border-border-subtle bg-surface px-1.5 py-0.5 text-[11px] text-text-secondary"
+                    value={project.presetId ?? ''}
+                    disabled={savingPreset || presetOptions.length === 0}
+                    onChange={(event) => void setProjectPreset(event.target.value)}
+                    data-testid="project-preset-select"
+                    aria-label={t('projects.presetLabel')}
+                  >
+                    <option value="">{t('projects.presetDefault')}</option>
+                    {presetOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </dd>
+              </div>
             </dl>
           </section>
 

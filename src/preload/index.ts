@@ -319,6 +319,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       refineConfigSetId?: string | null;
       refineModelId?: string | null;
       instructions?: string | null;
+      /** Agent preset pin; null clears it and means the default preset. */
+      presetId?: string | null;
     }): Promise<{ success: boolean; project?: Project; error?: string }> =>
       invoke({ type: 'projects.update', payload }),
 
@@ -785,6 +787,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('logs.write', level, args),
   },
 
+  // Agent presets — listing plus the approve/reject actions for proposals.
+  presets: {
+    overview: (): Promise<{
+      presets: Array<{
+        id: string;
+        label: string;
+        description?: string;
+        presentation: 'direct' | 'code';
+        builtin: boolean;
+        allowFork: boolean;
+        maxDepth: number;
+        tools: string[];
+        pruner: {
+          thresholdChars: number;
+          headChars: number;
+          tailChars: number;
+          compactionThresholdChars?: number;
+        };
+        consentReasons: string[];
+      }>;
+      proposals: Array<{
+        id: string;
+        proposedBy: string;
+        proposedAt: number;
+        version: number;
+        rationale?: string;
+        requiresConsent: boolean;
+        consentReasons: string[];
+        preset: { label: string };
+      }>;
+      issues: Array<{ id: string; file: string; errors: string[] }>;
+      knownTools: string[];
+    }> => ipcRenderer.invoke('presets.overview'),
+    approve: (id: string, consent = false): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('presets.approve', { id, consent }),
+    reject: (id: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('presets.reject', { id }),
+  },
+
   // Local mods (function hooks)
   mods: {
     list: (): Promise<{
@@ -1227,6 +1268,8 @@ declare global {
           refineConfigSetId?: string | null;
           refineModelId?: string | null;
           instructions?: string | null;
+          /** Agent preset pin; null clears it and means the default preset. */
+          presetId?: string | null;
         }) => Promise<{ success: boolean; project?: Project; error?: string }>;
         archive: (
           projectId: string,
@@ -1599,6 +1642,41 @@ declare global {
         runNow: (id: string) => Promise<ScheduleTask | null>;
       };
       personalFiles: PersonalFilesAPI;
+      presets: {
+        overview: () => Promise<{
+          presets: Array<{
+            id: string;
+            label: string;
+            description?: string;
+            presentation: 'direct' | 'code';
+            builtin: boolean;
+            allowFork: boolean;
+            maxDepth: number;
+            tools: string[];
+            pruner: {
+              thresholdChars: number;
+              headChars: number;
+              tailChars: number;
+              compactionThresholdChars?: number;
+            };
+            consentReasons: string[];
+          }>;
+          proposals: Array<{
+            id: string;
+            proposedBy: string;
+            proposedAt: number;
+            version: number;
+            rationale?: string;
+            requiresConsent: boolean;
+            consentReasons: string[];
+            preset: { label: string };
+          }>;
+          issues: Array<{ id: string; file: string; errors: string[] }>;
+          knownTools: string[];
+        }>;
+        approve: (id: string, consent?: boolean) => Promise<{ success: boolean; error?: string }>;
+        reject: (id: string) => Promise<{ success: boolean; error?: string }>;
+      };
       mods: {
         list: () => Promise<{
           success: boolean;

@@ -35,9 +35,12 @@ describe('dedicated Sub-agents view navigation', () => {
     expect(panel).not.toContain("from './subagents/SubAgentsView'");
     expect(panel).toContain("id: 'subagents' as TabId");
     expect(panel).toContain("label: t('settings.subAgents')");
-    expect(panel).toContain(
-      "labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents']"
-    );
+    // The sub-agents tab lives in the "Model" group. The group's exact tab list
+    // is not what this test is about (presets joined that group later), so it
+    // asserts membership rather than pinning the whole array.
+    const modelGroup = /labelKey: 'settings\.groupModel', tabs: \[([^\]]*)\]/.exec(panel);
+    expect(modelGroup, 'the Model tab group must exist').not.toBeNull();
+    expect(modelGroup?.[1]).toContain("'subagents'");
     // The entry point navigates: it opens the dedicated view and closes Settings.
     expect(panel).toContain('setSubAgentsVisible(true)');
     expect(panel).toContain('onClose();');

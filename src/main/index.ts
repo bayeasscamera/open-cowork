@@ -91,6 +91,7 @@ import { registerRemoteIpcHandlers } from './ipc/remote-handlers';
 import { registerScheduleIpcHandlers } from './ipc/schedule-handlers';
 import { registerMemoryIpcHandlers } from './ipc/memory-handlers';
 import { registerSandboxIpcHandlers } from './ipc/sandbox-handlers';
+import { registerPresetHandlers } from './ipc/preset-handlers';
 import { registerSkillsIpcHandlers } from './ipc/skills-handlers';
 import { registerWindowIpcHandlers } from './ipc/window-handlers';
 import { registerModsIpcHandlers } from './ipc/mods-handlers';
@@ -2207,6 +2208,9 @@ registerWindowIpcHandlers({ getMainWindow: () => mainWindow });
 
 // Sandbox IPC handlers (see main/ipc/sandbox-handlers.ts)
 registerSandboxIpcHandlers();
+
+// Agent preset IPC handlers (see main/ipc/preset-handlers.ts)
+registerPresetHandlers();
 
 // Register built-in local mods once (idempotent registry).
 const modsRegistry = getModsRegistry();

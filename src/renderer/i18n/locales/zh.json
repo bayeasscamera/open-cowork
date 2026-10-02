@@ -179,7 +179,9 @@
     "groupExtensions": "扩展与工具",
     "groupPersonal": "个性化",
     "groupAutomation": "自动化",
-    "groupSystem": "系统"
+    "groupSystem": "系统",
+    "presets": "预设",
+    "presetsDesc": "智能体被允许做什么。"
   },
   "personalization": {
     "memorySectionTitle": "记忆",
@@ -932,8 +934,11 @@
       "archiveFailed": "归档项目失败",
       "deleteFailed": "删除项目失败",
       "linkFailed": "将会话加入项目失败",
-      "nameAndWorkdirRequired": "名称和工作目录为必填项"
-    }
+      "nameAndWorkdirRequired": "名称和工作目录为必填项",
+      "updateFailed": "无法更新项目。"
+    },
+    "presetLabel": "预设",
+    "presetDefault": "默认（标准）"
   },
   "appMenu": {
     "preferences": "偏好设置…",
@@ -2068,5 +2073,42 @@
     "switchFailed": "无法切换分支",
     "createFailed": "无法创建分支",
     "notARepository": "不是 Git 仓库"
+  },
+  "presets": {
+    "title": "智能体预设",
+    "description": "智能体被允许做什么：可以调用的工具、输出裁剪方式，以及是否可以委派。",
+    "builtin": "内置",
+    "user": "你的预设",
+    "proposed": "待批准",
+    "issues": "无法加载的预设",
+    "empty": "没有可用的预设。",
+    "tools": "工具",
+    "pruner": "输出裁剪",
+    "prunerThreshold": "最多保留",
+    "prunerHead": "开头",
+    "prunerTail": "结尾",
+    "presentation": "呈现方式",
+    "presentationDirect": "直接工具",
+    "presentationCode": "代码模式",
+    "delegation": "委派",
+    "maxDepth": "最大深度",
+    "allowFork": "分叉",
+    "yes": "允许",
+    "no": "不允许",
+    "codeModeWarning": "代码模式在子进程中运行你的代码。每轮更慢，并且智能体会获得代码执行路径。",
+    "longContextWarning": "需要超大上下文窗口的模型。在较小的模型上，本轮请求会在上游溢出。",
+    "consentRequired": "需要明确批准",
+    "approve": "批准",
+    "reject": "拒绝",
+    "approved": "预设已批准。",
+    "rejected": "提案已拒绝。",
+    "approveFailed": "无法批准该预设。",
+    "rejectFailed": "无法拒绝该提案。",
+    "rationale": "原因",
+    "proposedBy": "提案者",
+    "consentCheckbox": "我明白此预设会改变智能体的能力范围。",
+    "errorTitle": "此预设无法加载",
+    "loadFailed": "无法加载预设。",
+    "tab": "预设"
   }
 }

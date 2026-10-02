@@ -29,6 +29,7 @@ import { SettingsSchedule } from './settings/SettingsSchedule';
 import { SettingsDiagnostics } from './settings/SettingsDiagnostics';
 import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
+import { SettingsPresets } from './settings/SettingsPresets';
 import { SettingsMemory } from './settings/SettingsMemory';
 import { SettingsPersonalization } from './settings/SettingsPersonalization';
 import { SettingsPermissions } from './settings/SettingsPermissions';
@@ -55,6 +56,7 @@ type TabId =
   | 'api'
   | 'sandbox'
   | 'subagents'
+  | 'presets'
   | 'connectors'
   | 'skills'
   | 'personalization'
@@ -70,6 +72,7 @@ const VALID_TABS = new Set<TabId>([
   'api',
   'sandbox',
   'subagents',
+  'presets',
   'connectors',
   'skills',
   'personalization',
@@ -88,7 +91,7 @@ interface TabGroup {
 }
 
 const TAB_GROUPS: TabGroup[] = [
-  { labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents'] },
+  { labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents', 'presets'] },
   { labelKey: 'settings.groupExtensions', tabs: ['connectors', 'skills'] },
   { labelKey: 'settings.groupPersonal', tabs: ['personalization', 'memory'] },
   { labelKey: 'settings.groupAutomation', tabs: ['schedule', 'remote'] },
@@ -186,6 +189,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.subAgents'),
       icon: Network,
       description: t('settings.subAgentsDesc'),
+    },
+    {
+      id: 'presets' as TabId,
+      label: t('settings.presets'),
+      icon: Network,
+      description: t('settings.presetsDesc'),
     },
     {
       id: 'connectors' as TabId,
@@ -421,6 +430,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
                   {viewedTabs.has('remote') && (
                     <RemoteControlPanel isActive={activeTab === 'remote'} />
                   )}
+                </div>
+                <div className={activeTab === 'presets' ? '' : 'hidden'}>
+                  {viewedTabs.has('presets') && <SettingsPresets isActive={activeTab === 'presets'} />}
                 </div>
                 <div className={activeTab === 'logs' ? '' : 'hidden'}>
                   {viewedTabs.has('logs') && <SettingsLogs isActive={activeTab === 'logs'} />}

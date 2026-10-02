@@ -353,7 +353,9 @@
     "groupExtensions": "Extensions & Outils",
     "groupPersonal": "Personnalisation",
     "groupAutomation": "Automatisation",
-    "groupSystem": "Système"
+    "groupSystem": "Système",
+    "presets": "Préréglages",
+    "presetsDesc": "Ce que l'agent a le droit de faire."
   },
   "welcome": {
     "title": "Comment puis-je vous aider aujourd’hui ?",
@@ -514,8 +516,11 @@
       "archiveFailed": "Échec de l'archivage du projet",
       "deleteFailed": "Échec de la suppression du projet",
       "linkFailed": "Échec de l'ajout de la conversation au projet",
-      "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis"
-    }
+      "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis",
+      "updateFailed": "Impossible de mettre à jour le projet."
+    },
+    "presetLabel": "Préréglage",
+    "presetDefault": "Par défaut (Standard)"
   },
   "appMenu": {
     "preferences": "Préférences…",
@@ -2067,5 +2072,42 @@
     "createFailed": "Impossible de créer la branche",
     "notARepository": "Pas un dépôt Git",
     "noWorkspace": "Aucun dossier sélectionné"
+  },
+  "presets": {
+    "title": "Préréglages d'agent",
+    "description": "Ce que l'agent a le droit de faire : les outils qu'il peut appeler, la taille de sa sortie, et s'il peut déléguer.",
+    "builtin": "Fournis",
+    "user": "Vos préréglages",
+    "proposed": "Proposés",
+    "issues": "Préréglages non chargés",
+    "empty": "Aucun préréglage disponible.",
+    "tools": "Outils",
+    "pruner": "Troncature de la sortie",
+    "prunerThreshold": "Garde jusqu'à",
+    "prunerHead": "Début",
+    "prunerTail": "Fin",
+    "presentation": "Présentation",
+    "presentationDirect": "Outils directs",
+    "presentationCode": "Mode code",
+    "delegation": "Délégation",
+    "maxDepth": "Profondeur max",
+    "allowFork": "Fork",
+    "yes": "Autorisé",
+    "no": "Non autorisé",
+    "codeModeWarning": "Le mode code exécute votre code dans un processus fils. Chaque tour est plus lent et l'agent obtient un chemin d'exécution de code.",
+    "longContextWarning": "Nécessite un modèle à très grande fenêtre de contexte. Sur un modèle plus petit, le touroverflowera en amont.",
+    "consentRequired": "Approbation explicite requise",
+    "approve": "Approuver",
+    "reject": "Refuser",
+    "approved": "Préréglage approuvé.",
+    "rejected": "Proposition refusée.",
+    "approveFailed": "Impossible d'approuver le préréglage.",
+    "rejectFailed": "Impossible de refuser la proposition.",
+    "rationale": "Pourquoi",
+    "proposedBy": "Proposé par",
+    "consentCheckbox": "Je comprends que ce préréglage change ce que l'agent peut faire.",
+    "errorTitle": "Ce préréglage n'a pas pu être chargé",
+    "loadFailed": "Impossible de charger les préréglages.",
+    "tab": "Préréglages"
   }
 }
