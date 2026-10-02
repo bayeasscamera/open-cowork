@@ -297,6 +297,7 @@ feeding model output into a compiling position fails loudly.
 | `schedule/` | Scheduled task manager |
 | `remote/` | Remote control (VM/SSH) |
 | `db/database.ts` | SQLite database init and migrations |
+| `machine-access/` | **Controlled machine access.** `safe-path.ts` (`resolveSafePath` — one resolution used by every file tool), `sensitive-zones.ts` (flagged, never blocked), `risk-assessor.ts` (`assessRisk` → ordinaire/dangereux/suspect), `approval-binding.ts` (fingerprint-bound, expiring approval), `grant-store.ts` (user-only grants + autonomy), `fs-tools.ts` / `fs-journal.ts` / `batch-plan.ts` (tools, trash, journal, undo, batches), `project-rename.ts` (transactional rename), `command-runner.ts` (scrubbed env, timeout, process-group kill), `machine-control.ts` (GUI allow-list, rate limit, emergency stop), `injection-guard.ts`, `machine-access-service.ts` (assembly) |
 
 ### Renderer (`src/renderer/`)
 
@@ -305,6 +306,8 @@ feeding model output into a compiling position fails loudly.
 | `components/ChatView.tsx` | Main chat interface |
 | `components/settings/SettingsAPI.tsx` | API/provider settings (key visibility toggle, all providers) |
 | `components/settings/SettingsGeneral.tsx` | General settings + system info cards |
+| `components/settings/SettingsMachineAccess.tsx` | Machine access: allowed folders, autonomy, allowed apps, system permission state, operation history with Undo, emergency stop |
+| `components/MachineApprovalCard.tsx` | Chat confirmation card (exact command, risk level, before/after rows, source-named reconfirmation). No "always approve" for dangerous/suspicious actions |
 | `hooks/useApiConfigState.ts` | Config state hook |
 | `i18n/locales/en.json` + `fr.json` | All user-facing strings — always update both |
 
@@ -346,6 +349,42 @@ Examples: `provider-guidance.test.ts`, `session-manager-crud.test.ts`
 4. Add test case in `tests/provider-guidance.test.ts`
 5. Run `npm run typecheck` + `npm run test`
 6. Commit: `feat(providers): add <name> provider support`
+
+## Machine access invariants (do not break these)
+
+The feature in `src/main/machine-access/` is governed by one rule: **a
+dangerous or suspicious action is always explained and always asks for user
+approval, at every autonomy level including "allow-all", and the agent can
+never answer that question itself.** `docs/machine-access-security.md` is the
+reference; these are the load-bearing points.
+
+1. **Grants are user-only.** `GrantStore.addGrant(input, origin)` throws unless
+   `origin === 'user'`. There is deliberately no agent-facing "allow" path; the
+   agent uses `requestAccess()`, which produces a request the UI shows.
+2. **Sensitive zones are flagged, never blocked.** Callers get
+   `sensitive: true` and must route to an approval card. Do not convert a
+   sensitive-zone check into a refusal.
+3. **Deletion goes to the trash, always.** Use `fs_trash` / `backupFile`; never
+   `unlink`, never `rm -rf`. Undo refuses rather than destroying user data when
+   the current state diverges from the journal.
+4. **Approval binds to the exact action.** `createBinding` / `isBindingValid`
+   fingerprint the command and paths and expire in 5 minutes. A changed action
+   re-asks; it must never reuse a card.
+5. **Paths resolve before they are checked.** `resolveSafePath` calls
+   `realpath` BEFORE the containment test, and callers re-verify
+   (`reverifySafePath`) immediately before acting (TOCTOU).
+6. **Doubt escalates.** `assessRisk` classifies to the HIGHER level when
+   uncertain. Do not add a branch that lowers a classification.
+7. **Untrusted content is data.** Contents and file names are sanitized before
+   display; a destructive action after untrusted reading forces a reconfirmation
+   naming the source — including under "allow-all".
+8. **Machine access is native-mode only.** In WSL/Lima/SSH/Daytona the agent
+   stays isolated; never imply machine access is active when it is not.
+
+Tests: `tests/machine-access-*.test.ts` (behaviour), `*-branches*.test.ts` and
+`machine-access-coverage.test.ts` (branch closure, held at ≥80%), plus
+`machine-access-e2e.test.ts` for the real-files path. Locked defaults are
+asserted; if you change one, the test must change with it and say why.
 
 ## When Adding a New IPC Channel
 
