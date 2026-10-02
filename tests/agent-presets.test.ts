@@ -291,3 +291,34 @@ describe('preset resolution order', () => {
     expect(resolved.warning).toContain('ghost');
   });
 });
+
+describe('regression: the default is off', () => {
+  it('the standard preset is direct, does not fork, and never offers run_code', async () => {
+    const { presentToolsForPreset, RUN_CODE_TOOL_NAME } = await import(
+      '../src/main/presets/tool-presenter'
+    );
+    const tool = (name: string) =>
+      ({
+        name,
+        description: '',
+        inputSchema: { type: 'object', properties: {} },
+        risk: 'read',
+        execute: async () => ({ content: '' }),
+      }) as never;
+
+    const catalog = presentToolsForPreset(
+      [tool('read_file'), tool(RUN_CODE_TOOL_NAME)],
+      STANDARD_PRESET
+    );
+
+    // Direct presentation: nothing is hidden behind generated code, and the
+    // model is never told a code entry point exists.
+    expect(catalog.viaCode).toEqual([]);
+    expect(catalog.sdkSource).toBe('');
+    expect(STANDARD_PRESET.presentation).toBe('direct');
+    expect(STANDARD_PRESET.delegation.allowFork).toBe(false);
+    // run_code is absent from the standard allow-list, so it is filtered out
+    // of the catalog entirely rather than merely presented directly.
+    expect(STANDARD_PRESET.tools.allow).not.toContain(RUN_CODE_TOOL_NAME);
+  });
+});

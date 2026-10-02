@@ -17,7 +17,15 @@ import { freezePreset, type AgentPreset } from './preset-schema';
 /** The tool-result pruning threshold the app used before presets existed. */
 export const LEGACY_PRUNE_THRESHOLD_CHARS = 500;
 
-/** Full tool catalog exposed by default, matching the pre-preset behaviour. */
+/**
+ * Full tool catalog exposed by default, matching the pre-preset behaviour.
+ *
+ * Only tools that actually exist are listed. `run_code` (code mode) and
+ * `propose_preset` are deliberately ABSENT: they are opt-in capabilities added
+ * later, and listing a tool that is not registered would make the preset fail
+ * validation against the real registry — or worse, advertise a capability to
+ * the model that does not exist.
+ */
 const DEFAULT_TOOL_ALLOW: string[] = [
   'bash',
   'edit',
@@ -26,9 +34,7 @@ const DEFAULT_TOOL_ALLOW: string[] = [
   'ls',
   'multi_edit',
   'notebook_edit',
-  'propose_preset',
   'read',
-  'run_code',
   'task',
   'write',
 ];
