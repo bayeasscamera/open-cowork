@@ -35,6 +35,12 @@ import { app } from 'electron';
 import type { AgentTask, AgentRole, SubAgentRunnerFn } from './multi-agent-coordinator';
 import { SubAgentGate } from './sub-agent-gate';
 import {
+  buildForkSnapshotPrompt,
+  decideFork,
+  type ForkDecisionOk,
+  type ForkRefusal,
+} from './fork-policy';
+import {
   createSwarmRunner,
   type SubAgentSessionArgs,
   type SubAgentSessionResult,
@@ -52,7 +58,7 @@ import { groupResearchByTopic, sharesResearchTopic } from './research-topic';
 import { EmbeddingCache, groupByEmbedding } from './embedding-grouping';
 import { MemoryLLMClient, type MemoryLLMClientLike } from '../memory/memory-llm-client';
 import { log, logError, logWarn } from '../utils/logger';
-import type { ServerEvent } from '../../shared/types';
+import type { Message, ServerEvent } from '../../shared/types';
 import { configStore, type AppConfig as StoreAppConfig } from '../config/config-store';
 import {
   buildDetachedLaunchPlan,
@@ -548,6 +554,23 @@ interface StartDelegationOptions {
   launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
   /** Detached launcher override (tests): never spawn a real Electron process. */
   spawnDetached?: DetachedLauncher;
+  /**
+   * Fork mode: the child inherits the PARENT's ConfigSet and model and starts
+   * from a snapshot of the conversation, instead of picking from the
+   * delegation palette. Refused unless the active preset sets
+   * `delegation.allowFork`; the decision lives in ./fork-policy.ts.
+   */
+  fork?: {
+    /** Active preset policy, already resolved by the caller. */
+    allowFork: boolean;
+    presetId?: string;
+    /** ConfigSet/model the PARENT is running. */
+    parentConfigSetId?: string | null;
+    parentModelId?: string | null;
+    /** Parent conversation to snapshot. */
+    parentMessages?: readonly Message[];
+    snapshotLimit?: number;
+  };
 }
 
 /**
@@ -587,6 +610,24 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
   const depth = options.depth ?? 1;
   if (depth > MAX_DELEGATION_DEPTH) {
     throw new DelegationDepthError(depth);
+  }
+
+  // Fork mode. Decided BEFORE any capacity check or slot acquisition so a
+  // refused fork never occupies the global semaphore, and so the refusal
+  // reaches the model as an explanation rather than a queue wait.
+  const forkDecision = options.fork
+    ? decideFork({
+        depth,
+        allowFork: options.fork.allowFork,
+        presetId: options.fork.presetId,
+        parentConfigSetId: options.fork.parentConfigSetId,
+        parentModelId: options.fork.parentModelId,
+        parentMessages: options.fork.parentMessages,
+        snapshotLimit: options.fork.snapshotLimit,
+      })
+    : null;
+  if (forkDecision && !forkDecision.allowed) {
+    throw new ForkRefusedError(forkDecision.reason, forkDecision.message);
   }
 
   // Enforce the delegation-specific concurrency cap BEFORE launching.
@@ -633,7 +674,7 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
   const controller = new AbortController();
   controllers.set(id, controller);
 
-  const done = launchBackgroundTask(id, delegation, options);
+  const done = launchBackgroundTask(id, delegation, options, forkDecision?.allowed ? forkDecision : undefined);
   emit(delegation, 'status');
   return { taskId: id, done };
 }
@@ -652,16 +693,39 @@ class DelegationDepthError extends Error {
   }
 }
 
+/**
+ * A fork was refused by policy. Carries the machine reason so a caller can
+ * distinguish "the preset forbids this" from "the hierarchy is full" without
+ * parsing the message.
+ */
+export class ForkRefusedError extends Error {
+  readonly reason: ForkRefusal;
+
+  constructor(reason: ForkRefusal, message: string) {
+    super(message);
+    this.name = 'ForkRefusedError';
+    this.reason = reason;
+  }
+}
+
 function launchBackgroundTask(
   id: string,
   delegation: BackgroundDelegation,
-  options: StartDelegationOptions
+  options: StartDelegationOptions,
+  /** Present only for a fork: the inherited ConfigSet/model + snapshot. */
+  fork?: ForkDecisionOk
 ): Promise<void> {
   const task: AgentTask = {
     id,
     role: delegation.role,
     title: delegation.title,
-    prompt: buildAutonomousPrompt(delegation.prompt),
+    // A fork starts from the parent's conversation, so the child prompt is the
+    // snapshot plus its own instruction rather than the instruction alone.
+    prompt: fork
+      ? buildAutonomousPrompt(
+          `${buildForkSnapshotPrompt(fork.snapshot)}\n\n${delegation.prompt}`
+        )
+      : buildAutonomousPrompt(delegation.prompt),
     status: 'pending',
     depth: delegation.depth,
   };
@@ -672,6 +736,24 @@ function launchBackgroundTask(
   // tracking view.
   const effectiveGetConfig = () => {
     const config = options.getConfig ? options.getConfig() : configStore.getAll();
+    // A fork inherits the parent's ConfigSet and model. This is the whole point
+    // of a fork: the same model and the same prompt prefix, so the provider's
+    // prompt cache is reused instead of rebuilt.
+    if (fork) {
+      return {
+        ...config,
+        subAgents: {
+          ...(config.subAgents ?? {
+            configSetId: '',
+            perRole: {},
+            timeoutMs: 120_000,
+            maxConcurrent: 2,
+          }),
+          configSetId: fork.configSetId,
+          modelId: fork.modelId,
+        },
+      };
+    }
     if (!settings.configSetId) return config;
     // Apply the delegation-specific ConfigSet pin without touching the swarm's
     // subAgents config: resolve it the same way the swarm would.
