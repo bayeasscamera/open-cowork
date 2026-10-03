@@ -5,6 +5,11 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  # Manual run. Lets any branch exercise the full OS matrix — including
+  # windows-latest, the only place the Windows-specific paths (WSL paths,
+  # shell resolvers) are actually verified — without opening a PR against
+  # main. Existing push/pull_request triggers are unchanged.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
