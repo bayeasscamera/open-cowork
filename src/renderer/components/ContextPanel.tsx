@@ -17,6 +17,7 @@ import { useIPC } from '../hooks/useIPC';
 import { CompactionHistory } from './CompactionHistory';
 import { ArtifactModal } from './ArtifactModal';
 import { ArtifactPanel } from './ArtifactPanel';
+import { RoomPanel } from './RoomPanel';
 import {
   ChevronDown,
   ChevronUp,
@@ -61,6 +62,7 @@ export function ContextPanel() {
   const { getMCPServers, changeWorkingDir, clearWorkingDir } = useIPC();
   const [artifactsOpen, setArtifactsOpen] = useState(true);
   const [artifactScope, setArtifactScope] = useState<'session' | 'project'>('session');
+  const [roomScope, setRoomScope] = useState<'session' | 'project'>('session');
   const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<MCPServerInfo[]>([]);
   const [copiedPath, setCopiedPath] = useState(false);
@@ -489,6 +491,11 @@ export function ContextPanel() {
           scope={artifactScope}
           onScopeChange={setArtifactScope}
         />
+      </div>
+
+      {/* Rooms: what a multi-agent run left behind, once it is over. */}
+      <div className="border-b border-border-muted px-4 py-3">
+        <RoomPanel sessionId={activeSessionId} scope={roomScope} onScopeChange={setRoomScope} />
       </div>
 
       {/* Working Directory */}

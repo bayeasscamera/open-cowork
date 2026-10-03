@@ -2270,5 +2270,32 @@
     "source": "Source",
     "copy": "Copy",
     "close": "Close"
+  },
+  "rooms": {
+    "title": "Rooms",
+    "desc": "What a multi-agent run left behind: the members, what each produced, and the questions they asked each other.",
+    "scopeSession": "This session",
+    "scopeProject": "Project",
+    "empty": "No runs recorded yet.",
+    "noSession": "Open a session to see its runs.",
+    "loadFailed": "Could not load rooms.",
+    "notFound": "This room is no longer available.",
+    "postFailed": "Could not post the note.",
+    "delete": "Delete room",
+    "deleteFailed": "Could not delete the room.",
+    "deleteDeclined": "Deletion was cancelled.",
+    "members": "Members",
+    "noMessages": "Nothing recorded yet.",
+    "notePlaceholder": "Add a note to this room…",
+    "post": "Post note",
+    "updatedAt": "Updated {{date}}",
+    "modelCalls": "{{count}} model call(s)",
+    "kind_question": "question",
+    "kind_answer": "answer",
+    "kind_note": "note",
+    "status_answered": "answered",
+    "status_timeout": "timed out",
+    "status_unavailable": "unavailable",
+    "status_limit": "limit reached"
   }
 }

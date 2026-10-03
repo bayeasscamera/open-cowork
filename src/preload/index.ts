@@ -50,6 +50,7 @@ import type {
   MachineAccessState,
 } from '../shared/machine-access-contract';
 import type { SecretSourceKind, SecretSourceProbe } from '../shared/secret-source';
+import type { RoomUi, RoomDetailUi, RoomMessageUi } from '../shared/room-contract';
 import type {
   PersistentArtifact,
   PersistentArtifactContent,
@@ -551,6 +552,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ): Promise<{ success: true } | { success: false; error: string }> =>
         ipcRenderer.invoke('artifacts.persistent.delete', sessionId, artifactId),
     },
+  },
+
+  // Rooms: the persistent transcript of a multi-agent run. The session id is
+  // passed explicitly and verified main-side.
+  rooms: {
+    list: (sessionId: string | null, scope?: 'session' | 'project'): Promise<RoomUi[]> =>
+      ipcRenderer.invoke('rooms.list', sessionId, scope),
+    detail: (sessionId: string | null, roomId: string): Promise<RoomDetailUi | null> =>
+      ipcRenderer.invoke('rooms.detail', sessionId, roomId),
+    postMessage: (
+      sessionId: string | null,
+      roomId: string,
+      body: string
+    ): Promise<RoomMessageUi | null> =>
+      ipcRenderer.invoke('rooms.postMessage', { sessionId, roomId, body }),
+    delete: (
+      sessionId: string | null,
+      roomId: string
+    ): Promise<{ success: true } | { success: false; error: string }> =>
+      ipcRenderer.invoke('rooms.delete', sessionId, roomId),
   },
 
   // Config methods
@@ -1545,6 +1566,19 @@ declare global {
             artifactId: string
           ) => Promise<{ success: true } | { success: false; error: string }>;
         };
+      };
+      rooms: {
+        list: (sessionId: string | null, scope?: 'session' | 'project') => Promise<RoomUi[]>;
+        detail: (sessionId: string | null, roomId: string) => Promise<RoomDetailUi | null>;
+        postMessage: (
+          sessionId: string | null,
+          roomId: string,
+          body: string
+        ) => Promise<RoomMessageUi | null>;
+        delete: (
+          sessionId: string | null,
+          roomId: string
+        ) => Promise<{ success: true } | { success: false; error: string }>;
       };
       diagnostics: {
         report: (sessionId?: string | null) => Promise<HealthReport>;

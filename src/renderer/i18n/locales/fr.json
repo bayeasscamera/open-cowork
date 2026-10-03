@@ -2269,5 +2269,32 @@
     "source": "Source",
     "copy": "Copier",
     "close": "Fermer"
+  },
+  "rooms": {
+    "title": "Salles",
+    "desc": "Ce qu'un run multi-agents a laissé : les membres, ce que chacun a produit, et les questions qu'ils se sont posées.",
+    "scopeSession": "Cette session",
+    "scopeProject": "Projet",
+    "empty": "Aucun run enregistré.",
+    "noSession": "Ouvrez une session pour voir ses runs.",
+    "loadFailed": "Impossible de charger les salles.",
+    "notFound": "Cette salle n'est plus disponible.",
+    "postFailed": "Impossible de publier la note.",
+    "delete": "Supprimer la salle",
+    "deleteFailed": "Impossible de supprimer la salle.",
+    "deleteDeclined": "Suppression annulée.",
+    "members": "Membres",
+    "noMessages": "Rien d’enregistré pour le moment.",
+    "notePlaceholder": "Ajouter une note à cette salle…",
+    "post": "Publier",
+    "updatedAt": "Mis à jour {{date}}",
+    "modelCalls": "{{count}} appel(s) modèle",
+    "kind_question": "question",
+    "kind_answer": "réponse",
+    "kind_note": "note",
+    "status_answered": "réponse reçue",
+    "status_timeout": "délai dépassé",
+    "status_unavailable": "indisponible",
+    "status_limit": "limite atteinte"
   }
 }

@@ -85,6 +85,8 @@ import Store from 'electron-store';
 import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { registerArtifactStoreIpcHandlers } from './ipc/artifact-store-handlers';
+import { registerRoomIpcHandlers } from './ipc/room-handlers';
+import { getSharedRoomStore } from './rooms/room-store-factory';
 import { registerConfigIpcHandlers } from './ipc/config-handlers';
 import { registerLogsIpcHandlers } from './ipc/logs-handlers';
 import { registerGitIpcHandlers } from './ipc/git-handlers';
@@ -2237,6 +2239,32 @@ ipcMain.handle('client-invoke', async (_event, data: ClientEvent) => {
 });
 
 registerArtifactsIpcHandlers({ getWorkingDir });
+
+// Rooms (see main/ipc/room-handlers.ts): the persistent transcript of a
+// multi-agent run. Deletion asks through a native dialog, because a room holds
+// the whole record and cannot be rebuilt.
+registerRoomIpcHandlers({
+  getStore: getSharedRoomStore,
+  getProjectId: (sessionId) => getProjectStore().getForSession(sessionId)?.id ?? null,
+  confirmDelete: async (_roomId, name) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    try {
+      const { response } = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Cancel', 'Delete'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Delete room',
+        message: `Delete the room "${name}"?`,
+        detail: 'Its members and every message will be removed. This cannot be undone.',
+        noLink: true,
+      });
+      return response === 1;
+    } catch {
+      return false;
+    }
+  },
+});
 
 // Persistent artifact store (see main/ipc/artifact-store-handlers.ts). Separate
 // from the workspace-file channels above: these read the stored record and its

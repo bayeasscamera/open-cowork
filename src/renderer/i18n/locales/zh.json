@@ -2270,5 +2270,32 @@
     "source": "源码",
     "copy": "复制",
     "close": "关闭"
+  },
+  "rooms": {
+    "title": "Rooms",
+    "desc": "多智能体运行留下的记录：成员、各自的产出，以及彼此提出的问题。",
+    "scopeSession": "当前会话",
+    "scopeProject": "项目",
+    "empty": "暂无已记录的运行。",
+    "noSession": "打开会话以查看其运行记录。",
+    "loadFailed": "无法加载 Rooms。",
+    "notFound": "此 Room 已不可用。",
+    "postFailed": "无法发布笔记。",
+    "delete": "删除 Room",
+    "deleteFailed": "无法删除该 Room。",
+    "deleteDeclined": "已取消删除。",
+    "members": "成员",
+    "noMessages": "暂无记录。",
+    "notePlaceholder": "为此 Room 添加笔记…",
+    "post": "发布",
+    "updatedAt": "更新于 {{date}}",
+    "modelCalls": "{{count}} 次模型调用",
+    "kind_question": "提问",
+    "kind_answer": "回答",
+    "kind_note": "笔记",
+    "status_answered": "已回答",
+    "status_timeout": "超时",
+    "status_unavailable": "不可用",
+    "status_limit": "已达上限"
   }
 }
