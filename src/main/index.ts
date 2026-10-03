@@ -95,6 +95,10 @@ import {
   registerMachineAccessIpcHandlers,
   setMachineAccessSandboxMode,
 } from './ipc/machine-access-handlers';
+import {
+  registerEmergencyStopShortcut,
+  unregisterEmergencyStopShortcut,
+} from './machine-access/emergency-stop';
 import { registerPresetHandlers } from './ipc/preset-handlers';
 import { registerSkillsIpcHandlers } from './ipc/skills-handlers';
 import { registerWindowIpcHandlers } from './ipc/window-handlers';
@@ -2145,7 +2149,8 @@ app.on('before-quit', async (event) => {
     } finally {
       clearTimeout(failsafeTimer);
     }
-    // Unregister shortcuts
+    // Unregister shortcuts (the emergency stop is a global one, so it must go)
+    unregisterEmergencyStopShortcut();
     globalShortcut.unregisterAll();
     log('[App] Cleanup complete — exiting now');
     // Clean shutdown won the race: cancel the long-grace watchdog …
@@ -2218,6 +2223,13 @@ registerSandboxIpcHandlers();
 // mode; the mode setter keeps the UI honest about that.
 registerMachineAccessIpcHandlers();
 setMachineAccessSandboxMode(getSandboxAdapter().mode);
+// The stop is a GLOBAL shortcut in the main process, so it works even when the
+// agent loop is stuck or the window is hidden. It reports back whether the
+// accelerator was actually bound, and the UI says so instead of advertising a
+// dead key.
+registerEmergencyStopShortcut((result) => {
+  sendToRenderer({ type: 'machine-access.emergency-stopped', payload: result });
+});
 
 // Agent preset IPC handlers (see main/ipc/preset-handlers.ts)
 registerPresetHandlers();

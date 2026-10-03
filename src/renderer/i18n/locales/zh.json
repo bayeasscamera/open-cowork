@@ -2184,6 +2184,7 @@
     "unknown": "未知",
     "loading": "正在加载机器访问…",
     "inactiveMode": "机器访问未启用：当前执行模式为隔离模式，智能体仍在其环境中运行。",
-    "appNamePrompt": "要授权的应用名称"
+    "appNamePrompt": "要授权的应用名称",
+    "shortcutUnavailable": "全局快捷键已被其他应用占用，请使用此按钮。"
   }
 }

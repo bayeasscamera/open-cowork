@@ -2184,6 +2184,7 @@
     "unknown": "unknown",
     "loading": "Loading machine access…",
     "inactiveMode": "Machine access is inactive: the active execution mode is isolated, so the agent stays inside its environment.",
-    "appNamePrompt": "Application name to allow"
+    "appNamePrompt": "Application name to allow",
+    "shortcutUnavailable": "The global shortcut is taken by another application; use this button."
   }
 }

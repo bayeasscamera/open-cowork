@@ -871,6 +871,12 @@ export type ServerEvent =
       payload: { sessionId: string; plugins: Array<{ name: string; path: string }> };
     }
   | { type: 'workdir.changed'; payload: { path: string } }
+  // The global emergency stop fired: what it actually stopped. The renderer
+  // raises the "Cowork controls the machine" indicator from this.
+  | {
+      type: 'machine-access.emergency-stopped';
+      payload: { controllers: number; processes: number };
+    }
   | { type: 'session.contextInfo'; payload: { sessionId: string; contextWindow: number } }
   | {
       type: 'workflow.state';

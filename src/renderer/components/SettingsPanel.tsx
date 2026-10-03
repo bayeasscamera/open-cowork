@@ -95,9 +95,6 @@ interface TabGroup {
   tabs: TabId[];
 }
 
-/** Global emergency-stop shortcut, shown next to the button. */
-const EMERGENCY_STOP_SHORTCUT = 'CmdOrCtrl+Shift+.';
-
 const TAB_GROUPS: TabGroup[] = [
   { labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents', 'presets'] },
   { labelKey: 'settings.groupExtensions', tabs: ['connectors', 'skills'] },
@@ -181,7 +178,7 @@ function MachineAccessSection({ isActive }: { isActive: boolean }) {
         onRemoveApp={(name) => void removeMachineAccessApp(name)}
         onUndoBatch={(batchId) => void undoMachineAccessBatch(batchId)}
         onEmergencyStop={() => void machineAccessEmergencyStop()}
-        emergencyShortcut={EMERGENCY_STOP_SHORTCUT}
+        emergencyShortcut={state.emergencyShortcut}
       />
     </div>
   );

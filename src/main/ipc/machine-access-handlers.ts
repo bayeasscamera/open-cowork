@@ -15,7 +15,11 @@
 import { ipcMain, dialog } from 'electron';
 import { getDatabase } from '../db/database';
 import type { MachineAccessService } from '../machine-access/machine-access-service';
-import { getEmergencyStop, AllowedApps } from '../machine-access/machine-control';
+import { AllowedApps } from '../machine-access/machine-control';
+import {
+  triggerEmergencyStop,
+  getRegisteredEmergencyStopAccelerator,
+} from '../machine-access/emergency-stop';
 import { previewRename, executeRename } from '../machine-access/project-rename';
 import {
   getMachineAccessService,
@@ -45,23 +49,36 @@ function getService(workspaceRoot: string, projectId: string): MachineAccessServ
 }
 
 export function registerMachineAccessIpcHandlers(): void {
-  ipcMain.handle('machineAccess.getState', async (_event, args: { workspaceRoot?: string; projectId?: string }) => {
-    try {
-      const svc = getService(args?.workspaceRoot ?? process.cwd(), args?.projectId ?? 'default');
-      return {
-        nativeMode: peekMachineAccessService() !== null,
-        grants: svc.listGrants(),
-        autonomy: svc.autonomy,
-        allowedApps: allowedApps.list(),
-        permissions: await svc.permissions(),
-        history: svc.history(),
-        backupQuotaBytes: 512 * 1024 * 1024,
-      };
-    } catch (error) {
-      logError('[MachineAccess] getState failed:', error);
-      return { nativeMode: false, grants: [], autonomy: 'ask-always', allowedApps: [], permissions: [], history: [] };
+  ipcMain.handle(
+    'machineAccess.getState',
+    async (_event, args: { workspaceRoot?: string; projectId?: string }) => {
+      try {
+        const svc = getService(args?.workspaceRoot ?? process.cwd(), args?.projectId ?? 'default');
+        return {
+          nativeMode: peekMachineAccessService() !== null,
+          grants: svc.listGrants(),
+          autonomy: svc.autonomy,
+          allowedApps: allowedApps.list(),
+          permissions: await svc.permissions(),
+          history: svc.history(),
+          backupQuotaBytes: 512 * 1024 * 1024,
+          // null when another application already owns the accelerator: the UI
+          // must then point at the Stop button instead of advertising a dead key.
+          emergencyShortcut: getRegisteredEmergencyStopAccelerator(),
+        };
+      } catch (error) {
+        logError('[MachineAccess] getState failed:', error);
+        return {
+          nativeMode: false,
+          grants: [],
+          autonomy: 'ask-always',
+          allowedApps: [],
+          permissions: [],
+          history: [],
+        };
+      }
     }
-  });
+  );
 
   // Folder grant: the path comes from the NATIVE picker opened here, or from a
   // renderer confirm button that passes an explicit path. Never from the model.
@@ -69,7 +86,9 @@ export function registerMachineAccessIpcHandlers(): void {
     'machineAccess.pickFolder',
     async (_event, args: { access?: GrantAccess; scope?: GrantScope; expiresAt?: number } = {}) => {
       try {
-        const result = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
+        const result = await dialog.showOpenDialog({
+          properties: ['openDirectory', 'createDirectory'],
+        });
         if (result.canceled || result.filePaths.length === 0) return { granted: false };
         const svc = getService(process.cwd(), 'default');
         const grant = svc.addGrantFromUser({
@@ -96,16 +115,19 @@ export function registerMachineAccessIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('machineAccess.setAutonomy', async (_event, args: { projectId: string; level: AutonomyLevel }) => {
-    try {
-      const svc = getService(process.cwd(), args.projectId);
-      svc.setAutonomy(args.level);
-      return { autonomy: svc.autonomy };
-    } catch (error) {
-      logError('[MachineAccess] setAutonomy failed:', error);
-      return { error: error instanceof Error ? error.message : String(error) };
+  ipcMain.handle(
+    'machineAccess.setAutonomy',
+    async (_event, args: { projectId: string; level: AutonomyLevel }) => {
+      try {
+        const svc = getService(process.cwd(), args.projectId);
+        svc.setAutonomy(args.level);
+        return { autonomy: svc.autonomy };
+      } catch (error) {
+        logError('[MachineAccess] setAutonomy failed:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
     }
-  });
+  );
 
   ipcMain.handle('machineAccess.addApp', async (_event, args: { name: string }) => {
     try {
@@ -113,7 +135,10 @@ export function registerMachineAccessIpcHandlers(): void {
       return { allowedApps: allowedApps.list() };
     } catch (error) {
       logError('[MachineAccess] addApp failed:', error);
-      return { allowedApps: allowedApps.list(), error: error instanceof Error ? error.message : String(error) };
+      return {
+        allowedApps: allowedApps.list(),
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   });
 
@@ -123,14 +148,25 @@ export function registerMachineAccessIpcHandlers(): void {
       return { allowedApps: allowedApps.list() };
     } catch (error) {
       logError('[MachineAccess] removeApp failed:', error);
-      return { allowedApps: allowedApps.list(), error: error instanceof Error ? error.message : String(error) };
+      return {
+        allowedApps: allowedApps.list(),
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   });
 
   // Batch: preview first (changes nothing), then execute the same plan.
   ipcMain.handle(
     'machineAccess.planBatch',
-    async (_event, args: { workspaceRoot: string; projectId: string; ops: BatchOpInput[]; allowGitRoots?: boolean }) => {
+    async (
+      _event,
+      args: {
+        workspaceRoot: string;
+        projectId: string;
+        ops: BatchOpInput[];
+        allowGitRoots?: boolean;
+      }
+    ) => {
       try {
         const svc = getService(args.workspaceRoot, args.projectId);
         return { plan: svc.planBatch(args.ops, args.allowGitRoots ?? false) };
@@ -143,7 +179,15 @@ export function registerMachineAccessIpcHandlers(): void {
 
   ipcMain.handle(
     'machineAccess.runBatch',
-    async (_event, args: { workspaceRoot: string; projectId: string; plan: ReturnType<MachineAccessService['planBatch']>; allowGitRoots?: boolean }) => {
+    async (
+      _event,
+      args: {
+        workspaceRoot: string;
+        projectId: string;
+        plan: ReturnType<MachineAccessService['planBatch']>;
+        allowGitRoots?: boolean;
+      }
+    ) => {
       try {
         const svc = getService(args.workspaceRoot, args.projectId);
         return { result: await svc.runBatch(args.plan, args.allowGitRoots ?? false) };
@@ -154,20 +198,26 @@ export function registerMachineAccessIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('machineAccess.undoBatch', async (_event, args: { workspaceRoot: string; projectId: string; batchId: string }) => {
-    try {
-      const svc = getService(args.workspaceRoot, args.projectId);
-      return { undo: svc.undoBatch(args.batchId) };
-    } catch (error) {
-      logError('[MachineAccess] undoBatch failed:', error);
-      return { error: error instanceof Error ? error.message : String(error) };
+  ipcMain.handle(
+    'machineAccess.undoBatch',
+    async (_event, args: { workspaceRoot: string; projectId: string; batchId: string }) => {
+      try {
+        const svc = getService(args.workspaceRoot, args.projectId);
+        return { undo: svc.undoBatch(args.batchId) };
+      } catch (error) {
+        logError('[MachineAccess] undoBatch failed:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
     }
-  });
+  );
 
   // Project rename: preview lists every reference, execution is transactional.
   ipcMain.handle(
     'machineAccess.previewProjectRename',
-    async (_event, args: { projectId: string; newName: string; renameDir: boolean; newDirName?: string }) => {
+    async (
+      _event,
+      args: { projectId: string; newName: string; renameDir: boolean; newDirName?: string }
+    ) => {
       try {
         const store = getSharedProjectStore();
         const preview = previewRename(
@@ -176,7 +226,8 @@ export function registerMachineAccessIpcHandlers(): void {
               const p = store.get(id);
               return p ? { id: p.id, name: p.name, workdir: p.workdir } : undefined;
             },
-            listSessions: (id) => store.getSessions(id).map((s) => ({ id: s.id, cwd: s.cwd ?? '' })),
+            listSessions: (id) =>
+              store.getSessions(id).map((s) => ({ id: s.id, cwd: s.cwd ?? '' })),
             listFiles: (id) => store.get(id)?.referenceFiles ?? [],
           },
           args.projectId,
@@ -194,7 +245,10 @@ export function registerMachineAccessIpcHandlers(): void {
 
   ipcMain.handle(
     'machineAccess.runProjectRename',
-    async (_event, args: { projectId: string; newName: string; renameDir: boolean; newDirName?: string }) => {
+    async (
+      _event,
+      args: { projectId: string; newName: string; renameDir: boolean; newDirName?: string }
+    ) => {
       try {
         const store = getSharedProjectStore();
         const db = getDatabase();
@@ -206,7 +260,8 @@ export function registerMachineAccessIpcHandlers(): void {
               const p = store.get(id);
               return p ? { id: p.id, name: p.name, workdir: p.workdir } : undefined;
             },
-            listSessions: (id) => store.getSessions(id).map((s) => ({ id: s.id, cwd: s.cwd ?? '' })),
+            listSessions: (id) =>
+              store.getSessions(id).map((s) => ({ id: s.id, cwd: s.cwd ?? '' })),
             listFiles: (id) => store.get(id)?.referenceFiles ?? [],
           },
           args.projectId,
@@ -220,7 +275,8 @@ export function registerMachineAccessIpcHandlers(): void {
               const p = store.get(id);
               return p ? { id: p.id, name: p.name, workdir: p.workdir } : undefined;
             },
-            listSessions: (id) => store.getSessions(id).map((s) => ({ id: s.id, cwd: s.cwd ?? '' })),
+            listSessions: (id) =>
+              store.getSessions(id).map((s) => ({ id: s.id, cwd: s.cwd ?? '' })),
             listFiles: (id) => store.get(id)?.referenceFiles ?? [],
             transaction: (fn) => db.raw.transaction(fn)(),
             applyDbUpdates: (updates) => {
@@ -252,12 +308,14 @@ export function registerMachineAccessIpcHandlers(): void {
   // Emergency stop: independent of the agent loop, works even if it is stuck.
   ipcMain.handle('machineAccess.emergencyStop', async () => {
     try {
-      return getEmergencyStop().stop();
+      return triggerEmergencyStop();
     } catch (error) {
       logError('[MachineAccess] emergencyStop failed:', error);
-      return { controllers: 0, processes: 0, error: error instanceof Error ? error.message : String(error) };
+      return {
+        controllers: 0,
+        processes: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   });
 }
-
-

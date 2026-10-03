@@ -126,10 +126,17 @@ describe('SettingsMachineAccess renders', () => {
     expect(html).toContain('/w/a');
   });
 
-  it('always offers the emergency stop with its shortcut', () => {
-    const html = render();
+  it('always offers the emergency stop', () => {
+    const html = render({ emergencyShortcut: 'CommandOrControl+Shift+.' });
     expect(html).toContain('machineAccess.emergencyStop');
     expect(html).toContain('machineAccess.stopHint');
-    expect(html).toContain('CmdOrCtrl+Shift+.');
+    expect(html).toContain('CommandOrControl+Shift+.');
+  });
+
+  it('says so when the global shortcut is unavailable, instead of showing a dead key', () => {
+    const html = render({ emergencyShortcut: null });
+    expect(html).toContain('machineAccess.emergencyStop');
+    expect(html).toContain('machineAccess.shortcutUnavailable');
+    expect(html).not.toContain('CommandOrControl+Shift+.');
   });
 });

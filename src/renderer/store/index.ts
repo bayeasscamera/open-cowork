@@ -112,6 +112,8 @@ interface MachineAccessStoreState {
   permissions: MachineAccessPermissionState[];
   history: MachineAccessHistoryEntry[];
   backupQuotaBytes?: number;
+  /** Null when another application owns the accelerator. */
+  emergencyShortcut: string | null;
 }
 
 const EMPTY_MACHINE_ACCESS: MachineAccessStoreState = {
@@ -121,6 +123,7 @@ const EMPTY_MACHINE_ACCESS: MachineAccessStoreState = {
   allowedApps: [],
   permissions: [],
   history: [],
+  emergencyShortcut: null,
 };
 
 interface AppState {
@@ -782,6 +785,7 @@ export const useAppStore = create<AppState>((set) => ({
           permissions: state.permissions ?? [],
           history: state.history ?? [],
           backupQuotaBytes: state.backupQuotaBytes,
+          emergencyShortcut: state.emergencyShortcut ?? null,
         },
         machineAccessLoading: false,
       });

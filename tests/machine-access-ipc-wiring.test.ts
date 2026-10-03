@@ -55,7 +55,7 @@ describe('machine-access IPC wiring', () => {
   });
 
   it('folder grants only come from the native picker or a user confirm button', () => {
-    expect(handlers).toContain("dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })");
+    expect(handlers).toMatch(/dialog\.showOpenDialog\(\{\s*properties: \['openDirectory'/);
     expect(handlers).toContain('addGrantFromUser');
     // The grant store is the only place that can create one, and only for the user.
     expect(handlers).toContain('getMachineAccessService');

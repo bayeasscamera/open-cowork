@@ -40,6 +40,8 @@ export interface MachineAccessState {
   permissions: MachineAccessPermissionState[];
   history: MachineAccessHistoryEntry[];
   backupQuotaBytes?: number;
+  /** Bound accelerator, or null when another app already owns it. */
+  emergencyShortcut: string | null;
   error?: string;
 }
 

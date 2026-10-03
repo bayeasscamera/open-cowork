@@ -23,7 +23,8 @@ export interface SettingsMachineAccessProps {
   onRemoveApp: (name: string) => void;
   onUndoBatch: (batchId: string) => void;
   onEmergencyStop: () => void;
-  emergencyShortcut: string;
+  /** Null when another application already owns the accelerator. */
+  emergencyShortcut: string | null;
 }
 
 const AUTONOMY_LEVELS: AutonomyLevel[] = [
@@ -251,8 +252,12 @@ export function SettingsMachineAccess(props: SettingsMachineAccessProps) {
           <div>
             <h3 className="text-sm font-semibold text-text">{t('machineAccess.stopTitle')}</h3>
             <p className="mt-1 text-xs text-text-muted">
-              {t('machineAccess.stopHint')} ({props.emergencyShortcut})
+              {t('machineAccess.stopHint')}
+              {props.emergencyShortcut ? ` (${props.emergencyShortcut})` : ''}
             </p>
+            {!props.emergencyShortcut && (
+              <p className="mt-1 text-xs text-amber-500">{t('machineAccess.shortcutUnavailable')}</p>
+            )}
           </div>
           <button
             type="button"
