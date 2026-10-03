@@ -47,7 +47,7 @@ import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extensi
 import { configStore, type AppTheme } from './config/config-store';
 import { startConfigFileWatcher, stopConfigFileWatcher } from './config/config-file-watcher';
 import { decidePermission } from './config/permission-rules-store';
-import { shutdownSandbox } from './sandbox/sandbox-adapter';
+import { shutdownSandbox, getSandboxAdapter } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { AppMenuState, ClientEvent, ServerEvent } from '../shared/types';
@@ -91,6 +91,10 @@ import { registerRemoteIpcHandlers } from './ipc/remote-handlers';
 import { registerScheduleIpcHandlers } from './ipc/schedule-handlers';
 import { registerMemoryIpcHandlers } from './ipc/memory-handlers';
 import { registerSandboxIpcHandlers } from './ipc/sandbox-handlers';
+import {
+  registerMachineAccessIpcHandlers,
+  setMachineAccessSandboxMode,
+} from './ipc/machine-access-handlers';
 import { registerPresetHandlers } from './ipc/preset-handlers';
 import { registerSkillsIpcHandlers } from './ipc/skills-handlers';
 import { registerWindowIpcHandlers } from './ipc/window-handlers';
@@ -2208,6 +2212,12 @@ registerWindowIpcHandlers({ getMainWindow: () => mainWindow });
 
 // Sandbox IPC handlers (see main/ipc/sandbox-handlers.ts)
 registerSandboxIpcHandlers();
+
+// Machine access IPC handlers (see main/ipc/machine-access-handlers.ts).
+// Machine access acts on the REAL machine, so it is only meaningful in native
+// mode; the mode setter keeps the UI honest about that.
+registerMachineAccessIpcHandlers();
+setMachineAccessSandboxMode(getSandboxAdapter().mode);
 
 // Agent preset IPC handlers (see main/ipc/preset-handlers.ts)
 registerPresetHandlers();

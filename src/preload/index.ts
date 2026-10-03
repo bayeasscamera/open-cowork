@@ -37,6 +37,13 @@ import type {
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type { HealthReport } from '../shared/health-report';
+import type {
+  AutonomyLevel,
+  MachineAccessBatchArgs,
+  MachineAccessPickFolderArgs,
+  MachineAccessRenameArgs,
+  MachineAccessState,
+} from '../shared/machine-access-contract';
 import type { SecretSourceKind, SecretSourceProbe } from '../shared/secret-source';
 import type {
   McpServerConfig,
@@ -568,6 +575,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
   diagnostics: {
     report: (sessionId?: string | null): Promise<HealthReport> =>
       ipcRenderer.invoke('diagnostics.report', { sessionId: sessionId ?? null }),
+  },
+
+  /**
+   * Machine access — controlled direct access to the machine. Folder grants
+   * are created ONLY from the native picker or an explicit confirm button:
+   * there is deliberately no channel here that lets the model grant itself
+   * access, and no channel that answers an approval card on your behalf.
+   */
+  machineAccess: {
+    getState: (args: { workspaceRoot?: string; projectId?: string }): Promise<MachineAccessState> =>
+      ipcRenderer.invoke('machineAccess.getState', args),
+
+    pickFolder: (args?: MachineAccessPickFolderArgs): Promise<{ granted: boolean; grant?: unknown; error?: string }> =>
+      ipcRenderer.invoke('machineAccess.pickFolder', args ?? {}),
+
+    revokeGrant: (args: { id: string }): Promise<{ revoked: boolean; error?: string }> =>
+      ipcRenderer.invoke('machineAccess.revokeGrant', args),
+
+    setAutonomy: (args: { projectId: string; level: AutonomyLevel }): Promise<{ autonomy?: string; error?: string }> =>
+      ipcRenderer.invoke('machineAccess.setAutonomy', args),
+
+    addApp: (args: { name: string }): Promise<{ allowedApps: string[] }> =>
+      ipcRenderer.invoke('machineAccess.addApp', args),
+    removeApp: (args: { name: string }): Promise<{ allowedApps: string[] }> =>
+      ipcRenderer.invoke('machineAccess.removeApp', args),
+
+    planBatch: (args: MachineAccessBatchArgs): Promise<{ plan?: unknown; error?: string }> =>
+      ipcRenderer.invoke('machineAccess.planBatch', args),
+    runBatch: (args: MachineAccessBatchArgs & { plan: unknown }): Promise<{ result?: unknown; error?: string }> =>
+      ipcRenderer.invoke('machineAccess.runBatch', args),
+
+    undoBatch: (args: { workspaceRoot: string; projectId: string; batchId: string }): Promise<{
+      undo?: { undone: string[]; refused: Array<{ id: string; reason: string }> };
+      error?: string;
+    }> => ipcRenderer.invoke('machineAccess.undoBatch', args),
+
+    previewProjectRename: (args: MachineAccessRenameArgs): Promise<{ preview?: unknown; error?: string }> =>
+      ipcRenderer.invoke('machineAccess.previewProjectRename', args),
+    runProjectRename: (args: MachineAccessRenameArgs): Promise<{ workdir?: string; error?: string }> =>
+      ipcRenderer.invoke('machineAccess.runProjectRename', args),
+
+    emergencyStop: (): Promise<{ controllers: number; processes: number; error?: string }> =>
+      ipcRenderer.invoke('machineAccess.emergencyStop'),
   },
 
   /**
@@ -1394,6 +1444,36 @@ declare global {
       };
       diagnostics: {
         report: (sessionId?: string | null) => Promise<HealthReport>;
+      };
+      machineAccess: {
+        getState: (args: { workspaceRoot?: string; projectId?: string }) => Promise<MachineAccessState>;
+        pickFolder: (args?: MachineAccessPickFolderArgs) => Promise<{
+          granted: boolean;
+          grant?: unknown;
+          error?: string;
+        }>;
+        revokeGrant: (args: { id: string }) => Promise<{ revoked: boolean; error?: string }>;
+        setAutonomy: (args: { projectId: string; level: AutonomyLevel }) => Promise<{
+          autonomy?: string;
+          error?: string;
+        }>;
+        addApp: (args: { name: string }) => Promise<{ allowedApps: string[] }>;
+        removeApp: (args: { name: string }) => Promise<{ allowedApps: string[] }>;
+        planBatch: (args: MachineAccessBatchArgs) => Promise<{ plan?: unknown; error?: string }>;
+        runBatch: (args: MachineAccessBatchArgs & { plan: unknown }) => Promise<{
+          result?: unknown;
+          error?: string;
+        }>;
+        undoBatch: (args: { workspaceRoot: string; projectId: string; batchId: string }) => Promise<{
+          undo?: { undone: string[]; refused: Array<{ id: string; reason: string }> };
+          error?: string;
+        }>;
+        previewProjectRename: (args: MachineAccessRenameArgs) => Promise<{
+          preview?: unknown;
+          error?: string;
+        }>;
+        runProjectRename: (args: MachineAccessRenameArgs) => Promise<{ workdir?: string; error?: string }>;
+        emergencyStop: () => Promise<{ controllers: number; processes: number; error?: string }>;
       };
       a2a: {
         getStatus: () => Promise<A2AStatus>;

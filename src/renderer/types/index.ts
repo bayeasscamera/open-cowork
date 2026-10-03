@@ -8,3 +8,4 @@
  */
 export type * from '../../shared/types';
 export type * from '../../shared/personal-files';
+export type * from '../../shared/machine-access-contract';
