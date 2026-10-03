@@ -41,6 +41,8 @@ import {
   formatTeammateReportSection,
   summarizeTeammateExchanges,
 } from '../agent/teammate-bus';
+import { tryCaptureSwarmIntoRoom } from '../rooms/room-swarm-bridge';
+import { getSharedRoomStore } from '../rooms/room-store-factory';
 import {
   CROSS_VERIFICATION_COST,
   renderCrossVerificationSection,
@@ -1188,11 +1190,25 @@ export function buildAgentMetaTools(
         const crossSection = renderCrossVerificationSection(executed.crossVerificationResults);
         const crossSummary = summarizeCrossVerification(executed.crossVerificationResults);
 
-        // Teammate questions are surfaced explicitly (who asked what, the answer
+// Teammate questions are surfaced explicitly (who asked what, the answer
         // and the measured extra model calls) — empty when team mode was off.
         const teammateExchanges = executed.tasks.flatMap((t) => t.teammateExchanges ?? []);
         const teammateSection = formatTeammateReportSection(teammateExchanges);
         const teammateSummary = summarizeTeammateExchanges(teammateExchanges);
+
+        // Mirror the settled plan into a persistent room before the bus is gone.
+        // Best-effort: the swarm already did the work, so a failure to record it
+        // must not cost the user their result.
+        const capturedRoom = tryCaptureSwarmIntoRoom({
+          plan: executed,
+          store: getSharedRoomStore(),
+          sessionId: options.sessionId ?? null,
+        });
+        // Reported rather than silently kept, so a room that failed to record is
+        // visible instead of the user assuming the run was preserved.
+        const roomSection = capturedRoom
+          ? `\n\nRoom: ${capturedRoom.roomId} (${capturedRoom.exchangesRecorded} exchange(s) preserved)`
+          : '\n\nRoom: could not be recorded';
 
         return {
           content: [
@@ -1205,7 +1221,8 @@ export function buildAgentMetaTools(
                 aggregationLine +
                 `\nTask Results:\n${taskSummary}` +
                 (crossSection ? `\n${crossSection}` : '') +
-                (teammateSection ? `\n${teammateSection}` : ''),
+                (teammateSection ? `\n${teammateSection}` : '') +
+                roomSection,
             },
           ],
           details: { ...executed, crossVerificationSummary: crossSummary, teammateSummary },
