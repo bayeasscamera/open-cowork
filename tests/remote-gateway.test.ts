@@ -879,7 +879,16 @@ describe('RemoteGateway HTTP endpoints', () => {
   it('requires the configured control token for status and WebSocket access on a remote listener', async () => {
     const controlToken = 'c'.repeat(32);
     const harness = tracked(
-      makeGateway({ mode: 'open' }, { bind: '0.0.0.0', auth: { mode: 'open', remoteControlToken: controlToken } })
+      makeGateway(
+        { mode: 'open' },
+        {
+          bind: '0.0.0.0',
+          // Satisfies the transport barrier so the control-token checks stay the
+          // only variable here; that barrier has its own cases further down.
+          allowInsecureRemoteBinding: true,
+          auth: { mode: 'open', remoteControlToken: controlToken },
+        }
+      )
     );
     await harness.gateway.start();
     const port = boundPort(harness.gateway);
@@ -1215,5 +1224,49 @@ describe('RemoteGateway WebSocket', () => {
     probe.close();
 
     await waitFor(() => expect(internals(harness.gateway).wsClients.size).toBe(0));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Transport security barrier (real start path)
+// ---------------------------------------------------------------------------
+
+describe('RemoteGateway unencrypted binding barrier', () => {
+  const STRONG = 'k'.repeat(40);
+
+  it('refuses to start on a routable bind with no tunnel and no acknowledgement', async () => {
+    const { gateway } = tracked(makeGateway({ mode: 'token', token: STRONG }, { bind: '0.0.0.0' }));
+    await expect(gateway.start()).rejects.toThrow(/unencrypted/i);
+    expect(gateway.running).toBe(false);
+  });
+
+  it('starts once the unencrypted network is acknowledged', async () => {
+    const { gateway } = tracked(
+      makeGateway(
+        { mode: 'token', token: STRONG },
+        { bind: '127.0.0.1', allowInsecureRemoteBinding: true }
+      )
+    );
+    await gateway.start();
+    expect(gateway.running).toBe(true);
+  });
+
+  it('starts a tunnelled routable bind without an acknowledgement', async () => {
+    const { gateway } = tracked(
+      makeGateway(
+        { mode: 'token', token: STRONG },
+        { bind: '127.0.0.1', tunnel: { enabled: true, type: 'ngrok' } }
+      )
+    );
+    await gateway.start();
+    expect(gateway.running).toBe(true);
+  });
+
+  it('demands a token before it considers the acknowledgement', async () => {
+    const { gateway } = tracked(
+      makeGateway({ mode: 'open' }, { bind: '0.0.0.0', allowInsecureRemoteBinding: true })
+    );
+    await expect(gateway.start()).rejects.toThrow(/remote control token is required/i);
+    expect(gateway.running).toBe(false);
   });
 });

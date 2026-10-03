@@ -112,6 +112,8 @@ export interface GatewayConfig {
   enabled: boolean;
   port: number;
   bind: '127.0.0.1' | '0.0.0.0';
+  /** Acknowledges an unencrypted LAN binding with no tunnel. Defaults to false. */
+  allowInsecureRemoteBinding?: boolean;
   auth: GatewayAuthConfig;
   tunnel?: TunnelConfig;
   defaultWorkingDirectory?: string;

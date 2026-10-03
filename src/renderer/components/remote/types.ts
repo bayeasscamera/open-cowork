@@ -33,6 +33,7 @@ export interface RemoteConfig {
     enabled: boolean;
     port: number;
     bind: string;
+    allowInsecureRemoteBinding?: boolean;
     defaultWorkingDirectory?: string;
     autoApproveSafeTools?: boolean;
     tunnel?: {

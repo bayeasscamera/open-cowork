@@ -57,6 +57,8 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   const [ngrokAuthToken, setNgrokAuthToken] = useState('');
   // Presence only: the stored secret is never rendered in the panel.
   const [hasControlToken, setHasControlToken] = useState(false);
+  const [insecureBindingAcknowledged, setInsecureBindingAcknowledged] = useState(false);
+  const [gatewayBind, setGatewayBind] = useState('127.0.0.1');
   const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
 
@@ -101,6 +103,8 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         setTunnelEnabled(configResult.gateway?.tunnel?.enabled || false);
         setNgrokAuthToken(configResult.gateway?.tunnel?.ngrok?.authToken || '');
         setHasControlToken(!!configResult.gateway?.auth?.remoteControlToken);
+        setInsecureBindingAcknowledged(configResult.gateway?.allowInsecureRemoteBinding === true);
+        setGatewayBind(configResult.gateway?.bind || '127.0.0.1');
         if (configResult.channels?.feishu) {
           setFeishuAppId(configResult.channels.feishu.appId || '');
           setFeishuAppSecret(configResult.channels.feishu.appSecret || '');
@@ -256,6 +260,23 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
     }
   }
 
+  /**
+   * Record the user's acceptance of an unencrypted network. The main process
+   * validates and persists it, so a rejected write leaves the checkbox alone.
+   */
+  async function acknowledgeInsecureBinding(acknowledged: boolean) {
+    if (!isElectron) return;
+    setError(null);
+    try {
+      await window.electronAPI.remote.updateGatewayConfig({
+        allowInsecureRemoteBinding: acknowledged,
+      });
+      setInsecureBindingAcknowledged(acknowledged);
+    } catch (err) {
+      setError({ key: 'remote.saveFailed' });
+    }
+  }
+
   async function copyToClipboard(text: string) {
     // Awaited + fallback: the previous fire-and-forget writeText showed
     // "Copied" even when the copy was rejected (focus lost, file:// sandbox).
@@ -316,6 +337,9 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
       <RemoteControlTokenSection
         hasToken={hasControlToken}
         tunnelEnabled={tunnelEnabled}
+        bind={gatewayBind}
+        insecureBindingAcknowledged={insecureBindingAcknowledged}
+        onAcknowledgeInsecureBinding={acknowledgeInsecureBinding}
         onRotate={rotateControlToken}
         onCopy={copyToClipboard}
       />

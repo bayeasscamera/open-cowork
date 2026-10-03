@@ -1421,7 +1421,13 @@
     "controlTokenConfirmRotate": "Remplacer le jeton actuel ? Tout appareil utilisant l'ancien sera déconnecté.",
     "controlTokenCancel": "Annuler",
     "controlTokenRotated": "Nouveau jeton de contrôle généré",
-    "controlTokenRotateFailed": "Impossible de générer un jeton de contrôle"
+    "controlTokenRotateFailed": "Impossible de générer un jeton de contrôle",
+    "controlTransportTitle": "Sécurité de la connexion",
+    "controlTransportLoopback": "Ce Mac uniquement — rien ne quitte la machine.",
+    "controlTransportTunnel": "Chiffré — un tunnel termine TLS pour les appelants distants.",
+    "controlTransportPlaintext": "Non chiffré — cette écoute est accessible en HTTP simple, donc le jeton traverse le réseau en clair.",
+    "controlTransportPlaintextAck": "Je comprends que ce réseau n'est pas chiffré",
+    "controlTransportPlaintextWarn": "Tant que ce n'est pas acquitté, la passerelle refuse de s'écouter. Activez plutôt un tunnel pour chiffrer la connexion."
   },
   "personalization": {
     "memorySectionTitle": "Mémoire",

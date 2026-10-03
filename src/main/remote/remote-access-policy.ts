@@ -1,4 +1,8 @@
 import type { GatewayAuthConfig, GatewayConfig } from './types';
+import {
+  classifyRemoteTransport,
+  requiresInsecureBindingAcknowledgement,
+} from '../../shared/remote-transport';
 
 /**
  * Minimum credential length for remote control-plane access. There is no
@@ -8,10 +12,15 @@ export const MIN_REMOTE_CONTROL_TOKEN_LENGTH = 32;
 
 export type RemoteNetworkExposure = 'loopback' | 'remote';
 
-export class RemoteNetworkAccessError extends Error {
-  readonly code = 'remote-control-token-required';
+export type RemoteNetworkAccessErrorCode =
+  | 'remote-control-token-required'
+  | 'unencrypted-remote-binding';
 
-  constructor(message: string) {
+export class RemoteNetworkAccessError extends Error {
+  constructor(
+    message: string,
+    readonly code: RemoteNetworkAccessErrorCode = 'remote-control-token-required'
+  ) {
     super(message);
     this.name = 'RemoteNetworkAccessError';
   }
@@ -60,6 +69,11 @@ export function getRemoteControlCredentials(auth: GatewayAuthConfig | undefined)
  * starts. Channel webhooks still receive their own provider-signature checks;
  * this does not replace those checks. It closes the generic control plane,
  * where no per-channel user identity is available.
+ *
+ * A token authenticates but does not encrypt. When the active leg is a plain
+ * LAN binding with no tunnel, the bearer token crosses the network in the
+ * clear, so that case additionally requires an explicit acknowledgement rather
+ * than being treated as equivalent to a TLS-terminated tunnel.
  */
 export function assertSafeRemoteExposure(config: GatewayConfig): void {
   if (getRemoteNetworkExposure(config) === 'loopback') {
@@ -79,6 +93,20 @@ export function assertSafeRemoteExposure(config: GatewayConfig): void {
   if (weak) {
     throw new RemoteNetworkAccessError(
       `A remote control token must be at least ${MIN_REMOTE_CONTROL_TOKEN_LENGTH} characters.`
+    );
+  }
+
+  const transport = classifyRemoteTransport({
+    bind: config.bind,
+    tunnelEnabled: config.tunnel?.enabled === true,
+  });
+  if (
+    requiresInsecureBindingAcknowledgement(transport) &&
+    config.allowInsecureRemoteBinding !== true
+  ) {
+    throw new RemoteNetworkAccessError(
+      'Binding to a routable interface without a tunnel exposes the control channel over unencrypted HTTP, so the token would cross the network in the clear. Enable a tunnel to terminate TLS, or acknowledge the unencrypted network explicitly.',
+      'unencrypted-remote-binding'
     );
   }
 }

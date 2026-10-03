@@ -19,6 +19,13 @@ export interface GatewayConfig {
   /** Bind address ('127.0.0.1' for local only, '0.0.0.0' for all interfaces) */
   bind: '127.0.0.1' | '0.0.0.0';
 
+  /**
+   * Acknowledges binding beyond loopback with no tunnel, where the control
+   * token crosses the network unencrypted. Defaults to false so that exposure
+   * is deliberate; see `assertSafeRemoteExposure`.
+   */
+  allowInsecureRemoteBinding?: boolean;
+
   /** Authentication configuration */
   auth: GatewayAuthConfig;
 

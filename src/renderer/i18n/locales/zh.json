@@ -1377,7 +1377,13 @@
     "controlTokenConfirmRotate": "要更换当前令牌吗？使用旧令牌的设备将被断开连接。",
     "controlTokenCancel": "取消",
     "controlTokenRotated": "已生成新的控制令牌",
-    "controlTokenRotateFailed": "无法生成控制令牌"
+    "controlTokenRotateFailed": "无法生成控制令牌",
+    "controlTransportTitle": "连接安全",
+    "controlTransportLoopback": "仅限本机 — 数据不会离开这台 Mac。",
+    "controlTransportTunnel": "已加密 — 隧道为远程调用方提供 TLS。",
+    "controlTransportPlaintext": "未加密 — 该监听可通过明文 HTTP 访问，令牌将以明文经过网络。",
+    "controlTransportPlaintextAck": "我了解此网络未加密",
+    "controlTransportPlaintextWarn": "在确认之前，网关将拒绝监听。建议启用隧道来加密连接。"
   },
   "time": {
     "now": "刚刚"

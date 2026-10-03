@@ -1355,7 +1355,13 @@
     "controlTokenConfirmRotate": "Replace the current token? Any device using the old one will be disconnected.",
     "controlTokenCancel": "Cancel",
     "controlTokenRotated": "New control token generated",
-    "controlTokenRotateFailed": "Could not generate a control token"
+    "controlTokenRotateFailed": "Could not generate a control token",
+    "controlTransportTitle": "Connection security",
+    "controlTransportLoopback": "This Mac only — nothing leaves the machine.",
+    "controlTransportTunnel": "Encrypted — a tunnel terminates TLS for remote callers.",
+    "controlTransportPlaintext": "Not encrypted — this listener is reachable over plain HTTP, so the token crosses the network in the clear.",
+    "controlTransportPlaintextAck": "I understand this network is unencrypted",
+    "controlTransportPlaintextWarn": "Until this is acknowledged the gateway will refuse to bind. Enable a tunnel to encrypt the connection instead."
   },
   "time": {
     "now": "now"

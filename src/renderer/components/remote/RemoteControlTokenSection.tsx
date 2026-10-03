@@ -1,33 +1,64 @@
 /**
- * RemoteControlTokenSection — the credential guarding the generic remote control
- * plane (`/status` and `/ws`), independent of channel pairing.
+ * RemoteControlTokenSection — the two protections on the generic remote control
+ * plane: the credential that authenticates it, and the transport that carries it.
  *
  * The stored secret is never rendered here: this component only reports whether
  * one is provisioned. Rotation returns the new value exactly once, so it is
  * shown in a copy-once panel and then dropped from component state. Re-rotating
  * invalidates the previous token immediately on the running listener, so it asks
  * for confirmation first.
+ *
+ * The transport classification is shared with the main process, so the label
+ * below cannot drift from the rule the main process actually enforces.
  */
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { KeyRound, RefreshCw, Copy, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import {
+  KeyRound,
+  RefreshCw,
+  Copy,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  Lock,
+  LockOpen,
+} from 'lucide-react';
+import {
+  classifyRemoteTransport,
+  requiresInsecureBindingAcknowledgement,
+} from '../../../shared/remote-transport';
 
 interface Props {
   /** Whether a control token is currently provisioned (never the value). */
   hasToken: boolean;
   /** A tunnel puts the gateway on the public internet, so the token is mandatory. */
   tunnelEnabled: boolean;
+  /** Gateway bind address, used to classify the transport. */
+  bind: string;
+  /** Whether the unencrypted-network acknowledgement has already been given. */
+  insecureBindingAcknowledged: boolean;
+  /** Persist the acknowledgement; resolves once main has accepted the change. */
+  onAcknowledgeInsecureBinding: (acknowledged: boolean) => Promise<void>;
   /** Provision a new token; resolves to the plaintext value, or null on failure. */
   onRotate: () => Promise<string | null>;
   onCopy: (text: string) => void;
 }
 
-export function RemoteControlTokenSection({ hasToken, tunnelEnabled, onRotate, onCopy }: Props) {
+export function RemoteControlTokenSection({
+  hasToken,
+  tunnelEnabled,
+  bind,
+  insecureBindingAcknowledged,
+  onAcknowledgeInsecureBinding,
+  onRotate,
+  onCopy,
+}: Props) {
   const { t } = useTranslation();
   const [isRotating, setIsRotating] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [issuedToken, setIssuedToken] = useState<string | null>(null);
+  const [isAcknowledging, setIsAcknowledging] = useState(false);
 
   async function handleRotate() {
     if (isRotating) return;
@@ -41,7 +72,19 @@ export function RemoteControlTokenSection({ hasToken, tunnelEnabled, onRotate, o
     }
   }
 
+  async function handleAcknowledge() {
+    if (isAcknowledging) return;
+    setIsAcknowledging(true);
+    try {
+      await onAcknowledgeInsecureBinding(!insecureBindingAcknowledged);
+    } finally {
+      setIsAcknowledging(false);
+    }
+  }
+
   const needsToken = tunnelEnabled && !hasToken;
+  const transport = classifyRemoteTransport({ bind, tunnelEnabled });
+  const needsAcknowledgement = requiresInsecureBindingAcknowledgement(transport);
 
   return (
     <div className="p-6 rounded-[2rem] border border-border-subtle bg-background/60 space-y-4">
@@ -101,6 +144,46 @@ export function RemoteControlTokenSection({ hasToken, tunnelEnabled, onRotate, o
           </div>
         </div>
       )}
+
+      <div className="border-t border-border-subtle pt-4 space-y-3">
+        <div className="flex items-start gap-3">
+          {transport === 'plaintext-lan' ? (
+            <LockOpen className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+          ) : (
+            <Lock className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
+          )}
+          <div className="space-y-1">
+            <div className="text-sm font-medium text-text-primary">
+              {t('remote.controlTransportTitle')}
+            </div>
+            <p
+              className={`text-xs ${
+                transport === 'plaintext-lan' ? 'text-warning' : 'text-text-muted'
+              }`}
+            >
+              {transport === 'loopback' && t('remote.controlTransportLoopback')}
+              {transport === 'tunnel-tls' && t('remote.controlTransportTunnel')}
+              {transport === 'plaintext-lan' && t('remote.controlTransportPlaintext')}
+            </p>
+          </div>
+        </div>
+
+        {needsAcknowledgement && (
+          <div className="space-y-2 pl-7">
+            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+              <input
+                type="checkbox"
+                checked={insecureBindingAcknowledged}
+                disabled={isAcknowledging}
+                onChange={handleAcknowledge}
+                className="accent-[var(--color-accent)]"
+              />
+              {t('remote.controlTransportPlaintextAck')}
+            </label>
+            <p className="text-xs text-text-muted">{t('remote.controlTransportPlaintextWarn')}</p>
+          </div>
+        )}
+      </div>
 
       {isConfirming ? (
         <div className="flex items-center gap-2">
