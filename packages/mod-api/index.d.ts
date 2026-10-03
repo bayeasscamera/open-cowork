@@ -136,6 +136,11 @@ export type ContextBuildDecision =
  * assessment and the user's approval card still run AFTER every mod.
  */
 export type PreToolUseDecision =
+  /**
+   * "I have no objection." This is NOT a bypass: the host's permission engine,
+   * path guard and risk assessment run AFTER every mod, so `allow` means the mod
+   * stays out of the way, not that the call is approved.
+   */
   | { readonly action: 'allow' }
   | { readonly action: 'deny'; readonly reason: string }
   | { readonly action: 'rewrite'; readonly args: Record<string, unknown> }

@@ -28,10 +28,17 @@ import type { ToolDefinition, ToolContext, ToolResult } from './registry';
 import type { ToolRisk } from './registry';
 import { log, logWarn } from '../utils/logger';
 
-/** Outcome of the pre-execution gate. */
+/**
+ * Outcome of the pre-execution gate.
+ *
+ * `modsRewrittenBy` is carried on success so the approval card and the audit log
+ * can name the mod whose rewrite produced the action the user is approving. The
+ * card must show the FINAL action; an approval given for the pre-rewrite call
+ * would be an approval the user never gave.
+ */
 export type GateDecision =
-  | { allowed: true; args: Record<string, unknown> }
-  | { allowed: false; reason: string; stage: GateStage };
+  | { allowed: true; args: Record<string, unknown>; modsRewrittenBy?: readonly string[] }
+  | { allowed: false; reason: string; stage: GateStage; rewrittenByMod?: string };
 
 export type GateStage =
   | 'validate'
@@ -67,12 +74,19 @@ export interface ToolGateDeps {
    * path.
    */
   checkPath?: (path: string, ctx: ToolContext) => { allowed: boolean; reason?: string };
-  /** Local mods pre-hooks. */
+  /**
+   * Local mods pre-hooks.
+   *
+   * Returns the FINAL arguments when a mod rewrote them, plus the ids of the mods
+   * that did. The gate re-validates rewritten arguments against the tool schema
+   * and then runs permission, machine access and the path guard on the FINAL
+   * values — never on the originals.
+   */
   runModsPre?: (input: {
     sessionId: string;
     toolName: string;
     args: Record<string, unknown>;
-  }) => { blocked: boolean; reason?: string };
+  }) => { blocked: boolean; reason?: string; args?: Record<string, unknown>; modifiedBy?: readonly string[] };
   /**
    * Controlled machine access: classify the call and demand user approval for
    * anything dangerous or suspicious, or touching a sensitive zone. Runs on
@@ -179,29 +193,64 @@ export async function runToolGate(
     };
   }
 
-  // 3. Existing permission engine (may await a user decision).
+  // 3. Mods pre-hooks — BEFORE every approval decision.
+   //
+   // Order is the whole point. A mod may rewrite a call's arguments, so anything
+   // that decides whether the call is allowed must see the REWRITTEN values:
+   // assessing the original would mean the user approves one action and a
+   // different one runs. This is why mods moved up from the old stage 5.
+   let finalArgs = normalized;
+  let rewrittenBy: readonly string[] = [];
+  if (deps.runModsPre) {
+    const mods = deps.runModsPre({
+      sessionId: ctx.sessionId,
+      toolName: tool.name,
+      args: finalArgs,
+    });
+    if (mods.blocked) {
+      return { allowed: false, stage: 'mods', reason: mods.reason ?? `Tool '${tool.name}' was blocked by a local rule.` };
+    }
+    if (mods.args) {
+      // Re-validate: a rewrite bypasses the schema check the original arguments
+      // went through, and a mod is not more trusted than the model's own output.
+      const revalidated = validateToolArgs(tool.inputSchema, mods.args);
+      if (!revalidated.valid) {
+        return {
+          allowed: false,
+          stage: 'validate',
+          reason: `A mod rewrote this call into an invalid form: ${revalidated.reason}`,
+          ...(mods.modifiedBy?.length ? { rewrittenByMod: mods.modifiedBy[mods.modifiedBy.length - 1] } : {}),
+        };
+      }
+      finalArgs = revalidated.args;
+      rewrittenBy = mods.modifiedBy ?? [];
+    }
+  }
+
+  // 4. Existing permission engine (may await a user decision) — on the FINAL args.
   const permission = await deps.decidePermission({
     sessionId: ctx.sessionId,
     toolName: tool.name,
-    args: normalized,
+    args: finalArgs,
   });
   if (!permission.allowed) {
     return {
       allowed: false,
       stage: 'permission',
       reason: permission.reason ?? `Tool '${tool.name}' was refused by permission rules.`,
+      ...(rewrittenBy.length > 0 ? { rewrittenByMod: rewrittenBy[rewrittenBy.length - 1] } : {}),
     };
   }
 
-  // 3b. Machine access — dangerous/suspicious actions and sensitive zones ask
+  // 4b. Machine access — dangerous/suspicious actions and sensitive zones ask
   //     the user, in EVERY autonomy level including "allow-all". Runs after the
-  //     ordinary permission decision (so an already-refused call never reaches
-  //     a second dialog) and before the path guard.
+  //     ordinary permission decision (so an already-refused call never reaches a
+  //     second dialog) and before the path guard, on the FINAL args.
   if (deps.assessMachineAccess) {
     const machineAccess = await deps.assessMachineAccess({
       sessionId: ctx.sessionId,
       toolName: tool.name,
-      args: normalized,
+      args: finalArgs,
       cwd: ctx.cwd,
     });
     if (machineAccess.blocked) {
@@ -211,13 +260,14 @@ export async function runToolGate(
         reason:
           machineAccess.reason ??
           `Tool '${tool.name}' needs explicit user approval for machine access.`,
+        ...(rewrittenBy.length > 0 ? { rewrittenByMod: rewrittenBy[rewrittenBy.length - 1] } : {}),
       };
     }
   }
 
-  // 4. Path-guard — only for tools that actually touch a path.
+  // 5. Path-guard — only for tools that actually touch a path, on the FINAL args.
   if (deps.extractPath && deps.checkPath) {
-    const target = deps.extractPath(tool.name, normalized);
+    const target = deps.extractPath(tool.name, finalArgs);
     if (target) {
       const pathDecision = deps.checkPath(target, ctx);
       if (!pathDecision.allowed) {
@@ -227,28 +277,17 @@ export async function runToolGate(
           reason:
             pathDecision.reason ??
             `Path '${target}' is outside the workspace for tool '${tool.name}'.`,
+          ...(rewrittenBy.length > 0 ? { rewrittenByMod: rewrittenBy[rewrittenBy.length - 1] } : {}),
         };
       }
     }
   }
 
-  // 5. Mods pre-hooks.
-  if (deps.runModsPre) {
-    const mods = deps.runModsPre({
-      sessionId: ctx.sessionId,
-      toolName: tool.name,
-      args: normalized,
-    });
-    if (mods.blocked) {
-      return {
-        allowed: false,
-        stage: 'mods',
-        reason: mods.reason ?? `Tool '${tool.name}' was blocked by a local rule.`,
-      };
-    }
-  }
-
-  return { allowed: true, args: normalized };
+  return {
+    allowed: true,
+    args: finalArgs,
+    ...(rewrittenBy.length > 0 ? { modsRewrittenBy: rewrittenBy } : {}),
+  };
 }
 
 /** Tools that touch the filesystem and therefore need a path-guard pass. */

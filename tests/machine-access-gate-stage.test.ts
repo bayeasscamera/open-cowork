@@ -183,7 +183,7 @@ describe('machine access runs inside the shared pipeline', () => {
     }
   });
 
-  it('runs after permission and before the path guard', async () => {
+  it('runs after the mods rewrite and before the path guard', async () => {
     const order: string[] = [];
     const deps: ToolGateDeps = {
       decidePermission: () => {
@@ -205,7 +205,9 @@ describe('machine access runs inside the shared pipeline', () => {
       },
     };
     await runToolGate(TOOL, { path: '/tmp/x' }, CTX, deps);
-    expect(order).toEqual(['permission', 'machineAccess', 'pathGuard', 'mods']);
+    // Machine access assesses the FINAL arguments: mods run first so a mod cannot
+    // launder a dangerous path past the risk check by rewriting it afterwards.
+    expect(order).toEqual(['mods', 'permission', 'machineAccess', 'pathGuard']);
   });
 
   it('a permission refusal short-circuits before a second dialog', async () => {

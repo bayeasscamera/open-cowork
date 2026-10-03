@@ -128,7 +128,7 @@ describe('gate pipeline order', () => {
     expect(decision).toMatchObject({ allowed: false, stage: 'pathGuard' });
   });
 
-  it('runs stages in the documented order: validate -> preset -> permission -> path -> mods', async () => {
+  it('runs stages in the documented order: validate -> preset -> mods -> permission -> path', async () => {
     const order: string[] = [];
     const deps: ToolGateDeps = {
       allowedTools: ['read_file'],
@@ -152,7 +152,9 @@ describe('gate pipeline order', () => {
     expect(order).toEqual([]);
 
     await runToolGate(def(), { path: 'a.txt' }, ctx, deps);
-    expect(order).toEqual(['permission', 'path', 'mods']);
+    // Mods run BEFORE every approval decision so that permission and the path
+    // guard see the FINAL arguments a mod produced, not the ones it replaced.
+    expect(order).toEqual(['mods', 'permission', 'path']);
   });
 
   it('lets a mod block an otherwise allowed call', async () => {
