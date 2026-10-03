@@ -2251,5 +2251,24 @@
     "inactiveMode": "机器访问未启用：当前执行模式为隔离模式，智能体仍在其环境中运行。",
     "appNamePrompt": "要授权的应用名称",
     "shortcutUnavailable": "全局快捷键已被其他应用占用，请使用此按钮。"
+  },
+  "artifacts": {
+    "title": "Artifacts",
+    "desc": "由 Agent 存储的内容。与工作区文件不同，它会在会话结束后保留，并保存每个版本。",
+    "scopeSession": "当前会话",
+    "scopeProject": "项目",
+    "empty": "暂无 artifact。",
+    "noSession": "打开会话以查看其 artifact。",
+    "loadFailed": "无法加载 artifact。",
+    "notFound": "此 artifact 已不可用。",
+    "delete": "删除 artifact",
+    "deleteFailed": "无法删除该 artifact。",
+    "deleteDeclined": "已取消删除。",
+    "versionLabel": "版本 {{version}}",
+    "viewingHistory": "正在查看版本 {{version}}",
+    "rendered": "预览",
+    "source": "源码",
+    "copy": "复制",
+    "close": "关闭"
   }
 }

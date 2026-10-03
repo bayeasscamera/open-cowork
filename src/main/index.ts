@@ -84,6 +84,7 @@ import { log, logWarn, logError, closeLogFile, setDevLogsEnabled } from './utils
 import Store from 'electron-store';
 import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
+import { registerArtifactStoreIpcHandlers } from './ipc/artifact-store-handlers';
 import { registerConfigIpcHandlers } from './ipc/config-handlers';
 import { registerLogsIpcHandlers } from './ipc/logs-handlers';
 import { registerGitIpcHandlers } from './ipc/git-handlers';
@@ -2236,6 +2237,33 @@ ipcMain.handle('client-invoke', async (_event, data: ClientEvent) => {
 });
 
 registerArtifactsIpcHandlers({ getWorkingDir });
+
+// Persistent artifact store (see main/ipc/artifact-store-handlers.ts). Separate
+// from the workspace-file channels above: these read the stored record and its
+// version history. Deletion asks through a native dialog because discarding
+// every version at once is not reversible from the store.
+registerArtifactStoreIpcHandlers({
+  getStore: getArtifactStore,
+  getProjectId: (sessionId) => getProjectStore().getForSession(sessionId)?.id ?? null,
+  confirmDelete: async (_artifactId, title) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    try {
+      const { response } = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Cancel', 'Delete'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Delete artifact',
+        message: `Delete "${title}"?`,
+        detail: 'Every version of this artifact will be removed. This cannot be undone.',
+        noLink: true,
+      });
+      return response === 1;
+    } catch {
+      return false;
+    }
+  },
+});
 
 // Config IPC handlers (see main/ipc/config-handlers.ts)
 registerConfigIpcHandlers({

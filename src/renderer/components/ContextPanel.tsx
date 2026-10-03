@@ -16,6 +16,7 @@ import {
 import { useIPC } from '../hooks/useIPC';
 import { CompactionHistory } from './CompactionHistory';
 import { ArtifactModal } from './ArtifactModal';
+import { ArtifactPanel } from './ArtifactPanel';
 import {
   ChevronDown,
   ChevronUp,
@@ -59,6 +60,7 @@ export function ContextPanel() {
   const setGlobalNotice = useAppStore((s) => s.setGlobalNotice);
   const { getMCPServers, changeWorkingDir, clearWorkingDir } = useIPC();
   const [artifactsOpen, setArtifactsOpen] = useState(true);
+  const [artifactScope, setArtifactScope] = useState<'session' | 'project'>('session');
   const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<MCPServerInfo[]>([]);
   const [copiedPath, setCopiedPath] = useState(false);
@@ -477,6 +479,16 @@ export function ContextPanel() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Persistent artifacts: stored records with version history, as opposed to
+          the recent-files list above which previews whatever is on disk now. */}
+      <div className="border-b border-border-muted px-4 py-3">
+        <ArtifactPanel
+          sessionId={activeSessionId}
+          scope={artifactScope}
+          onScopeChange={setArtifactScope}
+        />
       </div>
 
       {/* Working Directory */}

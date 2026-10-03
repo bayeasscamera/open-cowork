@@ -51,6 +51,11 @@ import type {
 } from '../shared/machine-access-contract';
 import type { SecretSourceKind, SecretSourceProbe } from '../shared/secret-source';
 import type {
+  PersistentArtifact,
+  PersistentArtifactContent,
+  PersistentArtifactVersion,
+} from '../shared/artifact-contract';
+import type {
   McpServerConfig,
   McpTool,
   McpServerStatus,
@@ -521,6 +526,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('artifacts.listRecentFiles', cwd, sinceMs, Math.min(limit, 500)),
     readFile: (filePath: string): Promise<string> =>
       ipcRenderer.invoke('artifacts.readFile', filePath),
+    // Persistent artifacts: stored records with version history, distinct from
+    // the workspace-file reads above. The session id is passed explicitly and
+    // verified main-side, so a stale or wrong id simply returns nothing.
+    persistent: {
+      list: (sessionId: string | null, scope?: 'session' | 'project'): Promise<PersistentArtifact[]> =>
+        ipcRenderer.invoke('artifacts.persistent.list', sessionId, scope),
+      get: (sessionId: string | null, artifactId: string): Promise<PersistentArtifactContent | null> =>
+        ipcRenderer.invoke('artifacts.persistent.get', sessionId, artifactId),
+      versions: (
+        sessionId: string | null,
+        artifactId: string
+      ): Promise<Array<{ version: number; byteSize: number; createdAt: number }>> =>
+        ipcRenderer.invoke('artifacts.persistent.versions', sessionId, artifactId),
+      version: (
+        sessionId: string | null,
+        artifactId: string,
+        version: number
+      ): Promise<{ version: number; content: string; createdAt: number } | null> =>
+        ipcRenderer.invoke('artifacts.persistent.version', sessionId, artifactId, version),
+      delete: (
+        sessionId: string | null,
+        artifactId: string
+      ): Promise<{ success: true } | { success: false; error: string }> =>
+        ipcRenderer.invoke('artifacts.persistent.delete', sessionId, artifactId),
+    },
   },
 
   // Config methods
@@ -1492,6 +1522,29 @@ declare global {
           limit?: number
         ) => Promise<Array<{ path: string; modifiedAt: number; size: number }>>;
         readFile: (filePath: string) => Promise<string>;
+        persistent: {
+          list: (
+            sessionId: string | null,
+            scope?: 'session' | 'project'
+          ) => Promise<PersistentArtifact[]>;
+          get: (
+            sessionId: string | null,
+            artifactId: string
+          ) => Promise<PersistentArtifactContent | null>;
+          versions: (
+            sessionId: string | null,
+            artifactId: string
+          ) => Promise<PersistentArtifactVersion[]>;
+          version: (
+            sessionId: string | null,
+            artifactId: string,
+            version: number
+          ) => Promise<{ version: number; content: string; createdAt: number } | null>;
+          delete: (
+            sessionId: string | null,
+            artifactId: string
+          ) => Promise<{ success: true } | { success: false; error: string }>;
+        };
       };
       diagnostics: {
         report: (sessionId?: string | null) => Promise<HealthReport>;

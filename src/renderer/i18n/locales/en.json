@@ -2251,5 +2251,24 @@
     "inactiveMode": "Machine access is inactive: the active execution mode is isolated, so the agent stays inside its environment.",
     "appNamePrompt": "Application name to allow",
     "shortcutUnavailable": "The global shortcut is taken by another application; use this button."
+  },
+  "artifacts": {
+    "title": "Artifacts",
+    "desc": "Content the agent stored. Unlike a workspace file, it survives the session and keeps every version.",
+    "scopeSession": "This session",
+    "scopeProject": "Project",
+    "empty": "No artifacts yet.",
+    "noSession": "Open a session to see its artifacts.",
+    "loadFailed": "Could not load artifacts.",
+    "notFound": "This artifact is no longer available.",
+    "delete": "Delete artifact",
+    "deleteFailed": "Could not delete the artifact.",
+    "deleteDeclined": "Deletion was cancelled.",
+    "versionLabel": "version {{version}}",
+    "viewingHistory": "Viewing version {{version}}",
+    "rendered": "View",
+    "source": "Source",
+    "copy": "Copy",
+    "close": "Close"
   }
 }

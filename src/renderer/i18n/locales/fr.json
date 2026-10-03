@@ -2250,5 +2250,24 @@
     "inactiveMode": "Accès à la machine inactif : le mode d'exécution actif est isolé, l'agent reste dans son environnement.",
     "appNamePrompt": "Nom de l'application à autoriser",
     "shortcutUnavailable": "Le raccourci global est utilisé par une autre application ; utilisez ce bouton."
+  },
+  "artifacts": {
+    "title": "Artifacts",
+    "desc": "Contenu stocké par l'agent. Contrairement à un fichier du workspace, il survit à la session et conserve chaque version.",
+    "scopeSession": "Cette session",
+    "scopeProject": "Projet",
+    "empty": "Aucun artifact pour le moment.",
+    "noSession": "Ouvrez une session pour voir ses artifacts.",
+    "loadFailed": "Impossible de charger les artifacts.",
+    "notFound": "Cet artifact n'est plus disponible.",
+    "delete": "Supprimer l'artifact",
+    "deleteFailed": "Impossible de supprimer l'artifact.",
+    "deleteDeclined": "Suppression annulée.",
+    "versionLabel": "version {{version}}",
+    "viewingHistory": "Version {{version}} affichée",
+    "rendered": "Rendu",
+    "source": "Source",
+    "copy": "Copier",
+    "close": "Fermer"
   }
 }
