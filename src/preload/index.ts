@@ -1,3 +1,8 @@
+import type {
+  InstalledModDto as ModsV2Installed,
+  ModReviewDto as ModsV2Review,
+  SafeModeDto as ModsV2SafeMode,
+} from '../shared/mods-v2-contract';
 import { contextBridge, ipcRenderer } from 'electron';
 import type { PersonalFilesAPI } from '../shared/personal-files';
 import type {
@@ -876,6 +881,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('presets.reject', { id }),
   },
 
+  // Mods v2 (review / install / health). Separate from `mods.*`, which still
+  // serves the v1 registry — folding them would hide a partial migration.
+  modsV2: {
+    inspect: (rootDir: string): Promise<{ success: true; data: ModsV2Review } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.inspect', rootDir),
+    install: (rootDir: string, approvedHash: string): Promise<{ success: true; data: { id: string } } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.install', { rootDir, approvedHash }),
+    list: (): Promise<{ success: true; data: { mods: ModsV2Installed[] } } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.list'),
+    setEnabled: (id: string, enabled: boolean): Promise<{ success: true; data: null } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.setEnabled', id, enabled),
+    uninstall: (id: string): Promise<{ success: true; data: { removed: boolean } } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.uninstall', id),
+    safeMode: (): Promise<{ success: true; data: ModsV2SafeMode } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.safeMode'),
+    paths: (): Promise<{ success: true; data: { stagingDir: string; modsDir: string } } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.paths'),
+  },
+
   // Local mods (function hooks)
   mods: {
     list: (): Promise<{
@@ -1252,6 +1276,31 @@ declare global {
       send: (event: ClientEvent) => void;
       on: (callback: (event: ServerEvent) => void) => () => void;
       invoke: <T>(event: ClientEvent) => Promise<T>;
+      modsV2: {
+        inspect: (
+          rootDir: string
+        ) => Promise<{ success: true; data: ModsV2Review } | { success: false; error: string }>;
+        install: (
+          rootDir: string,
+          approvedHash: string
+        ) => Promise<{ success: true; data: { id: string } } | { success: false; error: string }>;
+        list: () => Promise<
+          { success: true; data: { mods: ModsV2Installed[] } } | { success: false; error: string }
+        >;
+        setEnabled: (
+          id: string,
+          enabled: boolean
+        ) => Promise<{ success: true; data: null } | { success: false; error: string }>;
+        uninstall: (
+          id: string
+        ) => Promise<{ success: true; data: { removed: boolean } } | { success: false; error: string }>;
+        safeMode: () => Promise<
+          { success: true; data: ModsV2SafeMode } | { success: false; error: string }
+        >;
+        paths: () => Promise<
+          { success: true; data: { stagingDir: string; modsDir: string } } | { success: false; error: string }
+        >;
+      };
       session: {
         compact: (
           sessionId: string,

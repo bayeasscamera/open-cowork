@@ -1,3 +1,4 @@
+import { ModsV2Section } from './ModsV2Section';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SettingsContentSection, ToggleSwitch } from './shared';
@@ -69,6 +70,29 @@ export function SettingsMods() {
 
   return (
     <SettingsContentSection title={t('mods.title')} description={t('mods.description')}>
+      {/* Mods v2 lives INSIDE this section, not in a new tab: one subject, one
+          surface. The v1 list above stays because those mods are still the ones
+          the legacy registry reports. */}
+      <ModsV2Section
+        listMods={async () => {
+          const reply = await window.electronAPI.modsV2.list();
+          return reply.success ? reply.data.mods : [];
+        }}
+        safeMode={async () => {
+          const reply = await window.electronAPI.modsV2.safeMode();
+          return reply.success
+            ? reply.data
+            : { active: false, reason: 'none' as const, crashedMods: [], consecutiveBootFailures: 0 };
+        }}
+        setEnabled={async (id, enabled) => {
+          const reply = await window.electronAPI.modsV2.setEnabled(id, enabled);
+          if (!reply.success) throw new Error(reply.error);
+        }}
+        uninstall={async (id) => {
+          const reply = await window.electronAPI.modsV2.uninstall(id);
+          if (!reply.success) throw new Error(reply.error);
+        }}
+      />
       <div className="space-y-3 settings-card space-y-3 p-4" aria-busy={busy}>
         {busy && mods.length === 0 && (
           <p role="status" className="text-sm text-text-muted">{t('mods.loading')}</p>
