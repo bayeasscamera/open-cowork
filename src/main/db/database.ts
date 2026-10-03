@@ -522,6 +522,42 @@ function applySchema(database: Database.Database): void {
     ensureColumn(database, 'projects', 'refine_config_set_id', 'refine_config_set_id TEXT');
     ensureColumn(database, 'projects', 'refine_config_model_id', 'refine_config_model_id TEXT');
 
+    // Persistent artifacts: content the agent produced, stored rather than left
+    // in the workspace, so it survives the session and the file being edited or
+    // deleted underneath it. Each save is a new version; nothing is overwritten
+    // in place. Distinct from reading a workspace file, which does not persist.
+    database.exec(`
+    CREATE TABLE IF NOT EXISTS artifacts (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      project_id TEXT,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      current_version INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+    database.exec(`
+    CREATE TABLE IF NOT EXISTS artifact_versions (
+      artifact_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      mime_type TEXT,
+      byte_size INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (artifact_id, version)
+    )
+  `);
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_artifacts_session_id
+    ON artifacts(session_id)
+  `);
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_artifacts_project_id
+    ON artifacts(project_id)
+  `);
+
     // Sessions can point at the project they belong to (null = no project).
     ensureColumn(database, 'sessions', 'project_id', 'project_id TEXT');
 
