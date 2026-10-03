@@ -302,7 +302,9 @@ describe('FULL FLOW — a sub-agent proposes, the human approves (only then acti
       'release-notes-checklist'
     );
     expect(listProposals()).toHaveLength(0);
-  });
+    // Full round trip through the real tool, store and approval gate:
+    // measured ~0.44s idle, so the 5s default left too thin a margin under load.
+  }, 30_000);
 });
 
 describe('wiring — propose_skill is proposal-only, no dynamic tools for sub-agents', () => {

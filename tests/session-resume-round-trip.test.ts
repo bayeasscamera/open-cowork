@@ -146,7 +146,10 @@ describe('session resume — main-process round trip', () => {
     await restart({ activate: 'session-42' });
 
     expect(lastSessionList().payload.lastActiveSessionId).toBe('session-42');
-  });
+    // Walks the real main-process round trip (store, DB, renderer send):
+    // measured ~0.9s idle, so the 5s default left too thin a margin under load.
+  }, 30_000);
+
 
   it('restores the session after a full relaunch', async () => {
     // First run: the user selects a session, which writes the resume point.

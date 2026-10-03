@@ -225,5 +225,7 @@ describe('versioned memory tools with the real SQLite store', () => {
     expect(reopened.retained).toBe(1);
     expect(reopened.remaining).toBe(0);
     expect(reopened.confirmations).toBe(2);
-  });
+    // Spawns a real child process and transpiles TypeScript on the fly:
+    // measured ~0.6s idle, so the 5s default left too thin a margin under load.
+  }, 30_000);
 });

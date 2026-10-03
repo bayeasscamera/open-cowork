@@ -43,6 +43,13 @@ export default defineConfig({
     },
     mockReset: true,
     restoreMocks: true,
+
+    // The 5s default stays for unit tests, so a genuine hang is still caught
+    // fast. The E2E files raise it where the slow work actually lives.
+    //
+    // Tests that measure a real limit (the CPU-budget test waits out a 120s wall
+    // clock) declare their own timeout and ignore both of these.
+    testTimeout: 5_000,
   },
   resolve: {
     alias: {
