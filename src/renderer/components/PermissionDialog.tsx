@@ -13,6 +13,19 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
   const { respondToPermission } = useIPC();
   const [pendingAlwaysAllow, setPendingAlwaysAllow] = useState(false);
 
+  // A machine-access request carries the risk verdict from assessRisk(). It is
+  // data from the main process, never from the model, so it can be trusted to
+  // decide whether a STANDING approval may even be offered.
+  const input = (permission.input ?? {}) as Record<string, unknown>;
+  const machineAccess = input['machineAccess'] as
+    | { level?: string; reasons?: string[]; sensitive?: boolean; origin?: string; autonomy?: string }
+    | undefined;
+  const isElevated = Boolean(
+    machineAccess && (machineAccess.level === 'dangereux' || machineAccess.level === 'suspect' || machineAccess.sensitive)
+  );
+  /** A dangerous or sensitive action never gets an "always approve" button. */
+  const canAlwaysAllow = !isElevated && permission.toolName !== 'memory_delete';
+
   const getToolDescription = (toolName: string): string => {
     const key = `permission.toolDescriptions.${toolName}`;
     const translated = t(key);
@@ -31,7 +44,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
     'execute_command',
     'write_file',
     'edit_file',
-  ].includes(permission.toolName);
+  ].includes(permission.toolName) || isElevated;
 
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
@@ -110,6 +123,49 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
           })()}
         </div>
 
+        {/* Machine access: why it is flagged, and where the request came from */}
+        {machineAccess && (
+          <div
+            className={`mt-4 p-3 rounded-xl border ${
+              isElevated
+                ? 'bg-warning/10 border-warning/30'
+                : 'bg-surface-muted border-border'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                {t('machineAccess.title')}
+              </span>
+              <span
+                className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${
+                  machineAccess.level === 'dangereux'
+                    ? 'bg-danger/15 text-danger'
+                    : machineAccess.level === 'suspect'
+                      ? 'bg-orange-500/15 text-orange-500'
+                      : 'bg-accent-muted text-accent'
+                }`}
+              >
+                {t(`machineAccess.risk.${machineAccess.level ?? 'ordinaire'}`)}
+              </span>
+            </div>
+            {machineAccess.reasons && machineAccess.reasons.length > 0 && (
+              <ul className="text-xs text-text-secondary space-y-0.5">
+                {machineAccess.reasons.map((reason) => (
+                  <li key={reason}>· {reason}</li>
+                ))}
+              </ul>
+            )}
+            {machineAccess.origin && machineAccess.origin !== 'user-message' && (
+              <p className="mt-2 text-xs text-orange-500">
+                {t('machineAccess.card.reconfirmation', { source: machineAccess.origin })}
+              </p>
+            )}
+            <p className="mt-2 text-[11px] text-text-secondary">
+              {t('machineAccess.alwaysApprovalReminder')}
+            </p>
+          </div>
+        )}
+
         {/* Warning */}
         {isHighRisk && (
           <div className="mt-4 p-3 bg-warning/10 border border-warning/20 rounded-xl">
@@ -140,7 +196,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
         </div>
 
         {/* Always Allow option */}
-        {permission.toolName !== 'memory_delete' && (!pendingAlwaysAllow ? (
+        {canAlwaysAllow && (!pendingAlwaysAllow ? (
           <button
             onClick={() => {
               const dangerousTools = ['bash', 'write', 'edit', 'execute_command'];

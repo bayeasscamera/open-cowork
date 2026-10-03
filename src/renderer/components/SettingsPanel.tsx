@@ -35,9 +35,6 @@ import { SettingsMemory } from './settings/SettingsMemory';
 import { SettingsPersonalization } from './settings/SettingsPersonalization';
 import { SettingsPermissions } from './settings/SettingsPermissions';
 import { SettingsMachineAccess } from './settings/SettingsMachineAccess';
-import type { FolderGrant, AutonomyLevel } from '@main/machine-access/types';
-import type { MachineAccessPermissionState } from '@renderer/types';
-import type { FsOperation } from '@main/machine-access/fs-journal';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -98,6 +95,9 @@ interface TabGroup {
   tabs: TabId[];
 }
 
+/** Global emergency-stop shortcut, shown next to the button. */
+const EMERGENCY_STOP_SHORTCUT = 'CmdOrCtrl+Shift+.';
+
 const TAB_GROUPS: TabGroup[] = [
   { labelKey: 'settings.groupModel', tabs: ['api', 'sandbox', 'subagents', 'presets'] },
   { labelKey: 'settings.groupExtensions', tabs: ['connectors', 'skills'] },
@@ -129,27 +129,65 @@ function SubAgentsLinkPanel({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-export interface MachineAccessPanelProps {
-  grants: FolderGrant[];
-  autonomy: AutonomyLevel;
-  allowedApps: string[];
-  permissions: MachineAccessPermissionState[];
-  history: FsOperation[];
-  onAddGrant: () => void;
-  onRevokeGrant: (id: string) => void;
-  onChangeAutonomy: (level: AutonomyLevel) => void;
-  onAddApp: () => void;
-  onRemoveApp: (name: string) => void;
-  onUndoBatch: (batchId: string) => void;
-  onEmergencyStop: () => void;
-  emergencyShortcut: string;
+/**
+ * Connects the machine-access panel to the store and the real IPC surface.
+ * Kept as a container so the panel itself stays a pure view, and so the
+ * emergency stop is reachable from one place only.
+ */
+function MachineAccessSection({ isActive }: { isActive: boolean }) {
+  const { t } = useTranslation();
+  const state = useAppStore((s) => s.machineAccess);
+  const loading = useAppStore((s) => s.machineAccessLoading);
+  const error = useAppStore((s) => s.machineAccessError);
+  const loadMachineAccess = useAppStore((s) => s.loadMachineAccess);
+  const addMachineAccessGrant = useAppStore((s) => s.addMachineAccessGrant);
+  const revokeMachineAccessGrant = useAppStore((s) => s.revokeMachineAccessGrant);
+  const setMachineAccessAutonomy = useAppStore((s) => s.setMachineAccessAutonomy);
+  const addMachineAccessApp = useAppStore((s) => s.addMachineAccessApp);
+  const removeMachineAccessApp = useAppStore((s) => s.removeMachineAccessApp);
+  const undoMachineAccessBatch = useAppStore((s) => s.undoMachineAccessBatch);
+  const machineAccessEmergencyStop = useAppStore((s) => s.machineAccessEmergencyStop);
+
+  useEffect(() => {
+    if (isActive) void loadMachineAccess();
+  }, [isActive, loadMachineAccess]);
+
+  if (loading && state.grants.length === 0) {
+    return <p className="text-sm text-text-muted">{t('machineAccess.loading')}</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {!state.nativeMode && (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+          {t('machineAccess.inactiveMode')}
+        </p>
+      )}
+      {error && (
+        <p className="rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-xs text-danger">
+          {error}
+        </p>
+      )}
+      <SettingsMachineAccess
+        grants={state.grants}
+        autonomy={state.autonomy}
+        allowedApps={state.allowedApps}
+        permissions={state.permissions}
+        history={state.history}
+        onAddGrant={() => void addMachineAccessGrant()}
+        onRevokeGrant={(id) => void revokeMachineAccessGrant(id)}
+        onChangeAutonomy={(level) => void setMachineAccessAutonomy(level)}
+        onAddApp={() => void addMachineAccessApp(window.prompt(t('machineAccess.appNamePrompt')) ?? '')}
+        onRemoveApp={(name) => void removeMachineAccessApp(name)}
+        onUndoBatch={(batchId) => void undoMachineAccessBatch(batchId)}
+        onEmergencyStop={() => void machineAccessEmergencyStop()}
+        emergencyShortcut={EMERGENCY_STOP_SHORTCUT}
+      />
+    </div>
+  );
 }
 
-export function SettingsPanel({
-  onClose,
-  initialTab = 'api',
-  machineAccessProps,
-}: SettingsPanelProps & { machineAccessProps?: MachineAccessPanelProps }) {
+export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProps) {
   const { t } = useTranslation();
   const { width } = useWindowSize();
   const compactSidebar = width < 900;
@@ -485,8 +523,8 @@ export function SettingsPanel({
                   )}
                 </div>
                 <div className={activeTab === 'machineAccess' ? '' : 'hidden'}>
-                  {viewedTabs.has('machineAccess') && machineAccessProps && (
-                    <SettingsMachineAccess {...machineAccessProps} />
+                  {viewedTabs.has('machineAccess') && (
+                    <MachineAccessSection isActive={activeTab === 'machineAccess'} />
                   )}
                 </div>
               </div>

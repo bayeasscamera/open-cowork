@@ -2,8 +2,7 @@ import { useCallback, useState } from 'react';
 import { FolderPlus, Trash2, ShieldAlert, OctagonX, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FolderGrant, AutonomyLevel } from '@main/machine-access/types';
-import type { FsOperation } from '@main/machine-access/fs-journal';
-import type { MachineAccessPermissionState } from '@renderer/types';
+import type { MachineAccessHistoryEntry, MachineAccessPermissionState } from '@renderer/types';
 
 export interface SettingsMachineAccessProps {
   grants: FolderGrant[];
@@ -11,7 +10,11 @@ export interface SettingsMachineAccessProps {
   /** Default autonomy for projects without an explicit pin. */
   allowedApps: string[];
   permissions: MachineAccessPermissionState[];
-  history: FsOperation[];
+  /**
+   * Journal rows. Typed by the contract rather than the journal class so the
+   * renderer depends on the wire shape, not on the main-process module.
+   */
+  history: MachineAccessHistoryEntry[];
   /** UI-only wiring: the main process owns the real behaviour. */
   onAddGrant: () => void;
   onRevokeGrant: (id: string) => void;

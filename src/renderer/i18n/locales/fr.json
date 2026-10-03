@@ -2180,6 +2180,9 @@
       "before": "Avant",
       "after": "Après"
     },
-    "unknown": "inconnue"
+    "unknown": "inconnue",
+    "loading": "Chargement de l'accès à la machine…",
+    "inactiveMode": "Accès à la machine inactif : le mode d'exécution actif est isolé, l'agent reste dans son environnement.",
+    "appNamePrompt": "Nom de l'application à autoriser"
   }
 }

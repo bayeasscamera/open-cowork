@@ -17,6 +17,12 @@ import type {
   TaskRunResult,
   WorkflowState,
 } from '../../shared/workflow-types';
+import type {
+  AutonomyLevel,
+  FolderGrant,
+  MachineAccessHistoryEntry,
+  MachineAccessPermissionState,
+} from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
 type GlobalNoticeType = 'info' | 'warning' | 'error' | 'success';
@@ -96,6 +102,27 @@ function getSession(states: Record<string, SessionState>, sessionId: string): Se
   return states[sessionId] ?? DEFAULT_SESSION_STATE;
 }
 
+/** Slice shape for controlled machine access. Mirrors the IPC contract. */
+interface MachineAccessStoreState {
+  /** False in WSL/Lima/SSH/Daytona: machine access is genuinely inactive. */
+  nativeMode: boolean;
+  grants: FolderGrant[];
+  autonomy: AutonomyLevel;
+  allowedApps: string[];
+  permissions: MachineAccessPermissionState[];
+  history: MachineAccessHistoryEntry[];
+  backupQuotaBytes?: number;
+}
+
+const EMPTY_MACHINE_ACCESS: MachineAccessStoreState = {
+  nativeMode: false,
+  grants: [],
+  autonomy: 'ask-always',
+  allowedApps: [],
+  permissions: [],
+  history: [],
+};
+
 interface AppState {
   // Sessions
   sessions: Session[];
@@ -154,6 +181,16 @@ interface AppState {
   documentPanelVisible: boolean;
   showSettings: boolean;
   settingsTab: string | null;
+
+  // Machine access (controlled direct access to the machine). `null` until the
+  // first load, so the UI can say "loading" instead of inventing empty state.
+  machineAccess: MachineAccessStoreState;
+  machineAccessLoading: boolean;
+  machineAccessError: string | null;
+  /** True right after an emergency stop, until work resumes. */
+  machineAccessStopped: boolean;
+  /** Workspace the machine-access panel operates on (batch ops need it). */
+  machineAccessWorkspaceRoot: string;
 
   // Permission
   pendingPermission: PermissionRequest | null;
@@ -245,6 +282,18 @@ interface AppState {
   setDocumentPanelVisible: (visible: boolean) => void;
   setShowSettings: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
+  loadMachineAccess: (args?: { workspaceRoot?: string; projectId?: string }) => Promise<void>;
+  addMachineAccessGrant: (args?: {
+    access?: 'read' | 'read-write';
+    scope?: 'session' | 'project' | 'permanent';
+    expiresAt?: number;
+  }) => Promise<void>;
+  revokeMachineAccessGrant: (id: string) => Promise<void>;
+  setMachineAccessAutonomy: (level: AutonomyLevel) => Promise<void>;
+  addMachineAccessApp: (name: string) => Promise<void>;
+  removeMachineAccessApp: (name: string) => Promise<void>;
+  undoMachineAccessBatch: (batchId: string) => Promise<void>;
+  machineAccessEmergencyStop: () => Promise<void>;
   setWorkflowState: (sessionId: string, state: WorkflowState) => void;
   setWorkflowTaskResult: (sessionId: string, result: TaskRunResult) => void;
   setWorkflowTaskProgress: (sessionId: string, progress: TaskRunProgress) => void;
@@ -349,6 +398,11 @@ export const useAppStore = create<AppState>((set) => ({
   documentPanelVisible: false,
   showSettings: false,
   settingsTab: null,
+  machineAccess: EMPTY_MACHINE_ACCESS,
+  machineAccessLoading: false,
+  machineAccessError: null,
+  machineAccessStopped: false,
+  machineAccessWorkspaceRoot: '',
   pendingPermission: null,
   pendingSudoPassword: null,
   settings: defaultSettings,
@@ -714,6 +768,77 @@ export const useAppStore = create<AppState>((set) => ({
   setDocumentPanelVisible: (visible) => set({ documentPanelVisible: visible }),
   setShowSettings: (show) => set({ showSettings: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
+
+  loadMachineAccess: async (args) => {
+    set({ machineAccessLoading: true, machineAccessError: null });
+    try {
+      const state = await window.electronAPI.machineAccess.getState(args ?? {});
+      set({
+        machineAccess: {
+          nativeMode: state.nativeMode,
+          grants: state.grants ?? [],
+          autonomy: state.autonomy ?? 'ask-always',
+          allowedApps: state.allowedApps ?? [],
+          permissions: state.permissions ?? [],
+          history: state.history ?? [],
+          backupQuotaBytes: state.backupQuotaBytes,
+        },
+        machineAccessLoading: false,
+      });
+    } catch (error) {
+      set({
+        machineAccessLoading: false,
+        machineAccessError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+
+  addMachineAccessGrant: async (args) => {
+    // The path comes from the native picker in the main process; the renderer
+    // never supplies one, so the model cannot grant itself a folder.
+    const result = await window.electronAPI.machineAccess.pickFolder(args ?? {});
+    if (result.granted) await useAppStore.getState().loadMachineAccess();
+  },
+
+  revokeMachineAccessGrant: async (id) => {
+    await window.electronAPI.machineAccess.revokeGrant({ id });
+    await useAppStore.getState().loadMachineAccess();
+  },
+
+  setMachineAccessAutonomy: async (level) => {
+    const result = await window.electronAPI.machineAccess.setAutonomy({
+      projectId: useAppStore.getState().activeProjectId ?? 'default',
+      level,
+    });
+    set({ machineAccess: { ...useAppStore.getState().machineAccess, autonomy: level } });
+    void result;
+  },
+
+  addMachineAccessApp: async (name) => {
+    const result = await window.electronAPI.machineAccess.addApp({ name });
+    set({ machineAccess: { ...useAppStore.getState().machineAccess, allowedApps: result.allowedApps } });
+  },
+
+  removeMachineAccessApp: async (name) => {
+    const result = await window.electronAPI.machineAccess.removeApp({ name });
+    set({ machineAccess: { ...useAppStore.getState().machineAccess, allowedApps: result.allowedApps } });
+  },
+
+  undoMachineAccessBatch: async (batchId) => {
+    const { activeProjectId } = useAppStore.getState();
+    await window.electronAPI.machineAccess.undoBatch({
+      workspaceRoot: useAppStore.getState().machineAccessWorkspaceRoot,
+      projectId: activeProjectId ?? 'default',
+      batchId,
+    });
+    await useAppStore.getState().loadMachineAccess();
+  },
+
+  machineAccessEmergencyStop: async () => {
+    await window.electronAPI.machineAccess.emergencyStop();
+    set({ machineAccessStopped: true });
+  },
+
   setWorkflowState: (sessionId, state) =>
     set((current) => {
       const previous = current.workflowStates[sessionId];

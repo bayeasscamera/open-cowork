@@ -2181,6 +2181,9 @@
       "before": "Before",
       "after": "After"
     },
-    "unknown": "unknown"
+    "unknown": "unknown",
+    "loading": "Loading machine access…",
+    "inactiveMode": "Machine access is inactive: the active execution mode is isolated, so the agent stays inside its environment.",
+    "appNamePrompt": "Application name to allow"
   }
 }
