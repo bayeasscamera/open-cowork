@@ -7,14 +7,14 @@
 Verified by `npm run check` (typecheck + lint + full suite):
 
 ```
-Test Files  449 passed (449)
-Tests       4326 passed | 2 skipped (4328)
+Test Files  455 passed (455)
+Tests       4377 passed | 2 skipped (4379)
 ```
 
 New code coverage (`src/main/machine-access/`, all four metrics ≥ 80%):
 
 ```
-Statements 93.30 % | Branches 81.61 % | Functions 94.94 % | Lines 95.30 %
+Statements 93.26 % | Branches 82.26 % | Functions 95.38 % | Lines 95.14 %
 ```
 
 ---
@@ -127,42 +127,18 @@ done" list surfaced **five more real defects**:
 
 - **Windows**: `ci.yml` already runs a `windows-latest` matrix, so this suite
   runs on real Windows on every PR — but **I have not observed such a run**,
-  because nothing was pushed. I did harden what I could reason about:
-  `machine-access-windows-rules.test.ts` pins device names, UNC, drive roots,
-  case folding, reserved names and the Windows command set, and the output-cap
-  test now writes a command the host shell actually understands (`yes | head`
-  would have failed under PowerShell).
-- **Real macOS Accessibility / Screen Recording / Automation**: Screen Recording
-  and Accessibility are now genuinely probed. Automation has **no macOS
-  read-back API at all**, so it reports `known: false` and can never claim
-  granted. On this machine the probe correctly detected Screen Recording as
-  granted — which is how I know it works rather than assume it.
-- **`shell.trashItem`** is now wired through the real Electron API; the test
-  suite still substitutes a faithful stand-in, so the Electron call itself is
-  unverified.
-- **UI never visually verified.** The components typecheck and are
-  i18n-complete with parity asserted by test, but nobody has looked at them
-  rendering, and they are not mounted yet.
-
-## What is now wired
-
-The IPC surface exists and is registered at boot: `src/main/ipc/machine-access-handlers.ts`
-(twelve `machineAccess.*` channels), exposed through `src/preload/index.ts`
-against a contract declared once in `src/shared/machine-access-contract.ts`.
-`tests/machine-access-ipc-wiring.test.ts` asserts every exposed channel has a
-handler, that the exposed set is EXACTLY those channels, and that there is
-deliberately no channel to self-grant a folder or to answer an approval card.
-
-`machineAccess.setAutonomy` is bound to the live sandbox mode: under
-WSL/Lima/SSH/Daytona the service is null and the UI reports machine access as
-inactive rather than implying it works.
-
-## Still not wired
-
-The agent-runner integration (feeding `assessRisk` / the approval flow into the
-SDK tool-call path through `invokeTool`) and the renderer store that populates
-`SettingsMachineAccess` are still absent. The two UI components receive their
-props from a caller that does not exist yet, so the tab renders nothing.
+  because nothing was pushed. `machine-access-windows-rules.test.ts` pins the
+  platform rules (device names, UNC, drive root, case folding, reserved names,
+  the Windows command vocabulary) and the output-cap test writes a command the
+  host shell actually understands.
+- **A real global-shortcut registration**: the shortcut logic is tested against
+  a stubbed `globalShortcut`. Whether the OS actually grants
+  `Cmd/Ctrl+Shift+.` to a packaged app is not verified here.
+- **`shell.trashItem`** is wired and exercised through a faithful stand-in that
+  records the call; the Electron call itself is not run in these tests.
+- **The UI is verified by server rendering, not by looking at it.** Layout,
+  spacing, colour contrast and responsiveness in a real window are unverified —
+  no one has run the packaged app and looked at these screens.
 
 ## Commits (this work)
 
@@ -212,11 +188,13 @@ a5e372c feat(security): machine-access service and end-to-end test on real files
 
 ## Suggested next steps
 
-1. Wire the IPC surface + preload + renderer store, then look at the two new UI
-   surfaces in the running app.
-2. Split the single pre-commit fixup (`fix(security): drop unused origin…`) out
-   of the feature commit it belongs to.
-3. On a Windows host, run the machine-access suite for real.
-4. Replace the standing "grant access level does not affect the workspace"
-   surprise with an explicit statement in the Settings copy.
+1. Run the app and LOOK at the two screens. The components render correctly in
+   tests; nobody has seen them in a window.
+2. Push the branch so the existing `windows-latest` CI matrix actually runs this
+   suite on real Windows — that is the only way to close the last platform gap.
+3. Split the pre-commit fixups (`fix(security): drop unused origin…`, the
+   control-regex lint comment) out of the feature commits they belong to.
+4. Consider surfacing the batch preview table inside the chat, so a multi-file
+   reorganization shows its before/after where the request was made, not only in
+   Settings.
 ```
