@@ -66,6 +66,15 @@ export class MachineAccessService {
     this.journal = new FsJournal(deps.db ?? null);
   }
 
+  /** Identity of this service, so the runtime never hands out a stale one. */
+  get projectId(): string {
+    return this.deps.projectId;
+  }
+
+  get workspaceRoot(): string {
+    return this.deps.workspaceRoot;
+  }
+
   get backupRoot(): string {
     return path.join(this.deps.appDataPath, 'cowork-trash');
   }

@@ -57,6 +57,8 @@ describe('machine-access IPC wiring', () => {
   it('folder grants only come from the native picker or a user confirm button', () => {
     expect(handlers).toContain("dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })");
     expect(handlers).toContain('addGrantFromUser');
+    // The grant store is the only place that can create one, and only for the user.
+    expect(handlers).toContain('getMachineAccessService');
     // The agent-facing API throws instead of creating a grant.
     expect(read('src/main/machine-access/grant-store.ts')).toContain(
       "if (origin !== 'user')"
@@ -64,7 +66,9 @@ describe('machine-access IPC wiring', () => {
   });
 
   it('deletion goes through the system trash, never unlink or rm -rf', () => {
-    expect(handlers).toContain('shell.trashItem(filePath)');
+    // The ONLY deletion path is the system trash, wired in the runtime.
+    const runtime = read('src/main/machine-access/runtime.ts').replace(/\s+/g, ' ');
+    expect(runtime).toContain('shell.trashItem(filePath)');
     expect(handlers).not.toContain('unlinkSync');
     expect(handlers).not.toContain('rm -rf');
   });
@@ -72,8 +76,12 @@ describe('machine-access IPC wiring', () => {
   it('handlers are registered at boot and bound to the execution mode', () => {
     expect(main).toContain('registerMachineAccessIpcHandlers()');
     expect(main).toContain('setMachineAccessSandboxMode(getSandboxAdapter().mode)');
-    // Machine access is native-mode only.
-    expect(handlers).toContain("if (mode !== 'native' && mode !== 'none')");
+    // Machine access is native-mode only; the runtime owns that rule.
+    const runtime = read('src/main/machine-access/runtime.ts').replace(/\s+/g, ' ');
+    expect(runtime).toContain(
+      "activeMode === 'wsl' || activeMode === 'lima' || activeMode === 'ssh' || activeMode === 'daytona'"
+    );
+    expect(runtime).toContain('return null;');
   });
 
   it('every handler is wrapped so a failure never crashes the main process', () => {

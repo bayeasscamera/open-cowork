@@ -33,7 +33,13 @@ export type GateDecision =
   | { allowed: true; args: Record<string, unknown> }
   | { allowed: false; reason: string; stage: GateStage };
 
-export type GateStage = 'validate' | 'preset' | 'permission' | 'pathGuard' | 'mods';
+export type GateStage =
+  | 'validate'
+  | 'preset'
+  | 'permission'
+  | 'machineAccess'
+  | 'pathGuard'
+  | 'mods';
 
 /** Collaborative dependencies, injected so the module stays testable. */
 export interface ToolGateDeps {
@@ -67,6 +73,23 @@ export interface ToolGateDeps {
     toolName: string;
     args: Record<string, unknown>;
   }) => { blocked: boolean; reason?: string };
+  /**
+   * Controlled machine access: classify the call and demand user approval for
+   * anything dangerous or suspicious, or touching a sensitive zone. Runs on
+   * BOTH entry points (this pipeline is shared), so the model cannot reach a
+   * dangerous action through the code path that skips the hook.
+   *
+   * Absent = the stage is skipped, never failed: a caller with no machine
+   * access wired keeps its previous behaviour.
+   */
+  assessMachineAccess?: (input: {
+    sessionId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+    cwd: string;
+  }) =>
+    | { blocked: boolean; reason?: string }
+    | Promise<{ blocked: boolean; reason?: string }>;
 }
 
 /**
@@ -168,6 +191,28 @@ export async function runToolGate(
       stage: 'permission',
       reason: permission.reason ?? `Tool '${tool.name}' was refused by permission rules.`,
     };
+  }
+
+  // 3b. Machine access — dangerous/suspicious actions and sensitive zones ask
+  //     the user, in EVERY autonomy level including "allow-all". Runs after the
+  //     ordinary permission decision (so an already-refused call never reaches
+  //     a second dialog) and before the path guard.
+  if (deps.assessMachineAccess) {
+    const machineAccess = await deps.assessMachineAccess({
+      sessionId: ctx.sessionId,
+      toolName: tool.name,
+      args: normalized,
+      cwd: ctx.cwd,
+    });
+    if (machineAccess.blocked) {
+      return {
+        allowed: false,
+        stage: 'machineAccess',
+        reason:
+          machineAccess.reason ??
+          `Tool '${tool.name}' needs explicit user approval for machine access.`,
+      };
+    }
   }
 
   // 4. Path-guard — only for tools that actually touch a path.

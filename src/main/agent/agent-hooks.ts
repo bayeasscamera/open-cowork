@@ -17,6 +17,7 @@ import { getModsRegistry } from '../mods/mods-runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
 import { decidePermissionWithDetail, describeDenyRefusal, describeLockdownRefusal, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { defaultExtractToolPath, runToolGate, type ToolGateDeps } from '../tools/pipeline';
+import { assessMachineAccessCall } from './machine-access-gate';
 import { toolRegistry, type ToolDefinition } from '../tools/registry';
 import { log, logWarn, logError } from '../utils/logger';
 
@@ -42,6 +43,15 @@ export interface PermissionHookOptions {
   checkPath?: (path: string, ctx: { sessionId: string; cwd: string }) => {
     allowed: boolean;
     reason?: string;
+  };
+  /**
+   * Where the request came from. Anything other than a user message makes the
+   * action suspect and forces a reconfirmation naming the source — including
+   * under "allow-all".
+   */
+  origin?: {
+    kind: 'user-message' | 'file-content' | 'web-content' | 'tool-result';
+    label?: string;
   };
 }
 
@@ -289,6 +299,11 @@ export function createSessionGate(options: {
     reason?: string;
   };
   toolCallId?: string;
+  /** Request origin, used by the machine-access stage for reconfirmation. */
+  origin?: {
+    kind: 'user-message' | 'file-content' | 'web-content' | 'tool-result';
+    label?: string;
+  };
 }): ToolGateDeps {
   return {
     allowedTools: options.allowedTools,
@@ -303,6 +318,18 @@ export function createSessionGate(options: {
       }),
     extractPath: defaultExtractToolPath,
     checkPath: options.checkPath,
+    // Controlled machine access: the SAME stage for the SDK hook and the
+    // run_code bridge, so a dangerous action cannot be reached by arriving
+    // through the code path instead.
+    assessMachineAccess: (input) =>
+      assessMachineAccessCall(
+        { toolName: input.toolName, args: input.args, cwd: input.cwd },
+        {
+          ...(options.requestPermission ? { requestPermission: options.requestPermission } : {}),
+          sessionId: input.sessionId,
+          ...(options.origin ? { origin: options.origin } : {}),
+        }
+      ),
     runModsPre: ({ sessionId, toolName, args }) => {
       const modsDecision = getModsRegistry().runPreToolUse({ sessionId, toolName, args });
       recordSkillUseIfApplicable(toolName, args);

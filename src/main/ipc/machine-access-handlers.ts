@@ -12,48 +12,34 @@
  * after the user clicked a button, and it re-checks the action fingerprint.
  */
 
-import { ipcMain, dialog, shell, app } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { getDatabase } from '../db/database';
-import { MachineAccessService } from '../machine-access/machine-access-service';
+import type { MachineAccessService } from '../machine-access/machine-access-service';
 import { getEmergencyStop, AllowedApps } from '../machine-access/machine-control';
 import { previewRename, executeRename } from '../machine-access/project-rename';
+import {
+  getMachineAccessService,
+  peekMachineAccessService,
+  setMachineAccessSandboxMode,
+} from '../machine-access/runtime';
 import { getSharedProjectStore } from '../projects/project-store';
-import { toolRegistry } from '../tools/registry';
 import type { AutonomyLevel, GrantAccess, GrantScope } from '../machine-access/types';
 import type { BatchOpInput } from '../machine-access/batch-plan';
 import { logError } from '../utils/logger';
 
-let service: MachineAccessService | null = null;
+// The service lives in machine-access/runtime so the IPC handlers and the
+// agent tool gate share ONE instance. Two instances would let a grant revoked
+// in Settings still be honoured by a tool call.
+export { setMachineAccessSandboxMode };
+
 const allowedApps = new AllowedApps();
 
-/**
- * The service is per-workspace. Machine access is native-mode only, so a
- * non-native sandbox mode leaves it null and the UI shows machine access as
- * inactive rather than implying it works.
- */
-export function setMachineAccessSandboxMode(mode: string): void {
-  if (mode !== 'native' && mode !== 'none') {
-    service = null;
-  }
-}
-
 function getService(workspaceRoot: string, projectId: string): MachineAccessService {
+  const service = getMachineAccessService(workspaceRoot, projectId);
   if (!service) {
-    const db = getDatabase();
-    service = new MachineAccessService({
-      workspaceRoot,
-      projectId,
-      appDataPath: app.getPath('userData'),
-      registry: toolRegistry,
-      db: {
-        prepare: (sql: string) => db.raw.prepare(sql),
-        exec: (sql: string) => db.raw.exec(sql),
-      },
-      trashItem: async (filePath: string) => {
-        await shell.trashItem(filePath);
-      },
-    });
-    service.registerTools();
+    throw new Error(
+      'Machine access is inactive: the active execution mode is isolated, not native.'
+    );
   }
   return service;
 }
@@ -63,7 +49,7 @@ export function registerMachineAccessIpcHandlers(): void {
     try {
       const svc = getService(args?.workspaceRoot ?? process.cwd(), args?.projectId ?? 'default');
       return {
-        nativeMode: service !== null,
+        nativeMode: peekMachineAccessService() !== null,
         grants: svc.listGrants(),
         autonomy: svc.autonomy,
         allowedApps: allowedApps.list(),
@@ -274,7 +260,4 @@ export function registerMachineAccessIpcHandlers(): void {
   });
 }
 
-/** Reset between tests / app restarts. */
-export function __resetMachineAccessForTests(): void {
-  service = null;
-}
+
