@@ -297,7 +297,8 @@ feeding model output into a compiling position fails loudly.
 | `schedule/` | Scheduled task manager |
 | `remote/` | Remote control (VM/SSH) |
 | `db/database.ts` | SQLite database init and migrations |
-| `machine-access/` | **Controlled machine access.** `safe-path.ts` (`resolveSafePath` — one resolution used by every file tool), `sensitive-zones.ts` (flagged, never blocked), `risk-assessor.ts` (`assessRisk` → ordinaire/dangereux/suspect), `approval-binding.ts` (fingerprint-bound, expiring approval), `grant-store.ts` (user-only grants + autonomy), `fs-tools.ts` / `fs-journal.ts` / `batch-plan.ts` (tools, trash, journal, undo, batches), `project-rename.ts` (transactional rename), `command-runner.ts` (scrubbed env, timeout, process-group kill), `machine-control.ts` (GUI allow-list, rate limit, emergency stop), `injection-guard.ts`, `machine-access-service.ts` (assembly) |
+| `machine-access/` | **Controlled machine access.** `safe-path.ts` (`resolveSafePath` — one resolution used by every file tool), `sensitive-zones.ts` (flagged, never blocked), `risk-assessor.ts` (`assessRisk` → ordinaire/dangereux/suspect), `approval-binding.ts` (fingerprint-bound, expiring approval), `grant-store.ts` (user-only grants + autonomy), `fs-tools.ts` / `fs-journal.ts` / `batch-plan.ts` (tools, trash, journal, undo, batches), `project-rename.ts` (transactional rename), `command-runner.ts` (scrubbed env, timeout, process-group kill), `machine-control.ts` (GUI allow-list, rate limit, emergency stop), `injection-guard.ts`, `machine-access-service.ts` (assembly), `runtime.ts` (**the one shared service** — one instance for IPC and the gate; null in WSL/Lima/SSH/Daytona), `emergency-stop.ts` (global `Cmd/Ctrl+Shift+.` stop) |
+| `agent/machine-access-gate.ts` | Machine access as a stage of the SHARED tool gate — so the SDK hook and `run_code` bridge cannot diverge. Refuses `allow_always` for dangerous/sensitive actions and fails closed when no prompt can be shown |
 
 ### Renderer (`src/renderer/`)
 
@@ -378,8 +379,16 @@ reference; these are the load-bearing points.
 7. **Untrusted content is data.** Contents and file names are sanitized before
    display; a destructive action after untrusted reading forces a reconfirmation
    naming the source — including under "allow-all".
-8. **Machine access is native-mode only.** In WSL/Lima/SSH/Daytona the agent
-   stays isolated; never imply machine access is active when it is not.
+8. **Machine access is native-mode only.** `machine-access/runtime.ts` returns
+   `null` in WSL/Lima/SSH/Daytona; never imply machine access is active when it
+   is not.
+9. **One service, one truth.** `runtime.ts` owns the singleton. Never construct a
+   `MachineAccessService` anywhere else: two instances would let a grant revoked
+   in Settings still be honoured by a tool call.
+10. **The gate is a stage, not a side-channel.** Machine-access checks belong in
+   `runToolGate` (via `createSessionGate`), never inside a tool body only — a
+   tool-only check is skipped by the call path that re-enters through
+   `invokeTool`.
 
 Tests: `tests/machine-access-*.test.ts` (behaviour), `*-branches*.test.ts` and
 `machine-access-coverage.test.ts` (branch closure, held at ≥80%), plus
