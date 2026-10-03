@@ -7,14 +7,14 @@
 Verified by `npm run check` (typecheck + lint + full suite):
 
 ```
-Test Files  445 passed (445)
-Tests       4297 passed | 2 skipped (4299)
+Test Files  449 passed (449)
+Tests       4326 passed | 2 skipped (4328)
 ```
 
 New code coverage (`src/main/machine-access/`, all four metrics ≥ 80%):
 
 ```
-Statements 91.63 % | Branches 80.18 % | Functions 94.18 % | Lines 93.57 %
+Statements 93.30 % | Branches 81.61 % | Functions 94.94 % | Lines 95.30 %
 ```
 
 ---
@@ -80,27 +80,33 @@ and need no `ensureColumn` path.
 
 ---
 
-## Bugs the tests found (and I fixed)
+## Bugs found in this pass, and fixed
 
-Three were real defects in my own code, not test noise:
+The three from the first pass remain fixed (`validateAppName` separators,
+other-users' sensitive zones, missing `fs` import). Working through the "not
+done" list surfaced **five more real defects**:
 
-1. **`validateAppName` accepted path separators.** `a/b` and `../../escape`
-   passed validation. Under `allow-all` a crafted name could then write outside
-   the granted folder, because the scaffold forwarded autonomy into the
-   resolution. Fixed: separators rejected, and the scaffold **never** forwards
-   autonomy — a project must always land inside a granted folder.
-2. **"Other users' folders" was not implemented.** Spec 2.2 requires it; the
-   first version only knew secret sub-segments of _your_ home. Now `/Users/<x>`
-   and `/home/<x>` are sensitive when `x` is not the current user.
-3. **`app-scaffold.ts` never imported `fs`.** Latent until a guard started
-   calling `fs.statSync`; the failure was reported as "granted root does not
-   exist", which would have been a confusing diagnostic in production.
-
-Also fixed while testing: `validateAppName` missed `\\`; the injection detector
-only matched phrases with spaces, so `ignore_all_previous_instructions.txt` read
-as an ordinary filename.
-
----
+4. **`addApp` / `removeApp` IPC handlers had no try/catch.** An exception in
+   them would have propagated into the renderer instead of coming back as an
+   error. Every handler in this surface is now wrapped.
+5. **A workspace reached through a symlink was refused entirely.** The
+   containment check compared a `realpath`-ed target against a _lexical_
+   workspace root. On macOS the temp root is `/var/folders/...`, a symlink to
+   `/private/var/...`, so EVERY file in such a workspace reported a false
+   escape. The root is now canonicalized before the comparison — the same class
+   of bug I had found in `NativeExecutor` in phase 1, now closed here too.
+6. **Null bytes were silently stripped from paths.** Stripping makes `a\0b`
+   collide with `ab`, hiding exactly the path confusion a NUL is used for. They
+   are now REFUSED (as `path-containment` already did), returning a refusal
+   rather than throwing into the model loop. The test that "covered" this was
+   passing for the wrong reason — fix #5 exposed it.
+7. **The real permission probe blocked the IPC call.** `system_profiler` takes
+   seconds, so `machineAccess.getState` would have stalled the settings page.
+   The result is now cached for 60 s and can be invalidated.
+8. **`classifyLevel` only knew POSIX vocabulary.** `dir`, `type`, `del`, `md`,
+   `where`, `powershell` were unclassified on Windows. Both vocabularies are
+   now recognised on either platform, and dangerous wins over every other class
+   (`sudo rm` is not merely a "write").
 
 ## Deliberate non-behaviour worth naming
 
@@ -119,32 +125,44 @@ as an ordinary filename.
 
 ## Not verified — stated without inflation
 
-- **Windows**: exercised only through platform-parameterized unit tests
-  (`CON`/`NUL`, UNC, case folding, `taskkill`). Never run on a real Windows host.
-- **Real macOS system permissions**: Accessibility, Screen Recording and
-  Automation are _reported and explained_, never requested or probed. No real
-  grant was ever obtained from the OS.
-- **Cross-device project rename** (copy + verify + trash source) could not be
-  exercised on a single volume; the code path exists and is written defensively,
-  but it is untested. Same-device rename is tested.
-- **The Electron system trash** was replaced in tests by a faithful stand-in
-  (move aside + restorable backup). `shell.trashItem` itself is unverified.
-- **UI never visually verified.** `SettingsMachineAccess.tsx` and
-  `MachineApprovalCard.tsx` typecheck and are i18n-complete (en/fr/zh, parity
-  asserted by test), but nobody has looked at them rendering.
+- **Windows**: `ci.yml` already runs a `windows-latest` matrix, so this suite
+  runs on real Windows on every PR — but **I have not observed such a run**,
+  because nothing was pushed. I did harden what I could reason about:
+  `machine-access-windows-rules.test.ts` pins device names, UNC, drive roots,
+  case folding, reserved names and the Windows command set, and the output-cap
+  test now writes a command the host shell actually understands (`yes | head`
+  would have failed under PowerShell).
+- **Real macOS Accessibility / Screen Recording / Automation**: Screen Recording
+  and Accessibility are now genuinely probed. Automation has **no macOS
+  read-back API at all**, so it reports `known: false` and can never claim
+  granted. On this machine the probe correctly detected Screen Recording as
+  granted — which is how I know it works rather than assume it.
+- **`shell.trashItem`** is now wired through the real Electron API; the test
+  suite still substitutes a faithful stand-in, so the Electron call itself is
+  unverified.
+- **UI never visually verified.** The components typecheck and are
+  i18n-complete with parity asserted by test, but nobody has looked at them
+  rendering, and they are not mounted yet.
 
----
+## What is now wired
 
-## Not wired into the running app
+The IPC surface exists and is registered at boot: `src/main/ipc/machine-access-handlers.ts`
+(twelve `machineAccess.*` channels), exposed through `src/preload/index.ts`
+against a contract declared once in `src/shared/machine-access-contract.ts`.
+`tests/machine-access-ipc-wiring.test.ts` asserts every exposed channel has a
+handler, that the exposed set is EXACTLY those channels, and that there is
+deliberately no channel to self-grant a folder or to answer an approval card.
 
-The modules are complete, tested and documented. The **IPC surface, renderer
-store wiring and agent-runner integration are not implemented**: the service is
-constructed in tests, not by `src/main/index.ts`. Until that wiring exists,
-these capabilities are not reachable from the UI, and the Settings tab renders
-nothing until `machineAccessProps` is supplied. I chose not to guess the IPC
-channel shape and preload contract in this pass.
+`machineAccess.setAutonomy` is bound to the live sandbox mode: under
+WSL/Lima/SSH/Daytona the service is null and the UI reports machine access as
+inactive rather than implying it works.
 
----
+## Still not wired
+
+The agent-runner integration (feeding `assessRisk` / the approval flow into the
+SDK tool-call path through `invokeTool`) and the renderer store that populates
+`SettingsMachineAccess` are still absent. The two UI components receive their
+props from a caller that does not exist yet, so the tab renders nothing.
 
 ## Commits (this work)
 
@@ -165,6 +183,29 @@ d42bc06  feat(security): app scaffolding with port detection and typosquat check
 1b870ed  feat(security): machine-access settings panel and chat approval card
 a5e372c  feat(security): machine-access service and end-to-end test on real files
 8e4e045  test(security): close branch coverage for machine-access modules
+33e37da  docs(security): document controlled machine access invariants and status
+dfeadac  feat(security): wire machine-access IPC, preload surface and shared contract
+52ad5fe  feat(security): probe real macOS permissions, make cross-device rename testable
+e1185ee  fix(security): canonicalize workspace root, refuse null bytes, widen command vocabulary
+```
+
+004e7b7 test(security): NativeExecutor + PathGuard characterization tests
+ac2e625 feat(security): machine-access core (safe path, sensitive zones, risk, approval binding)
+2a6cffc feat(security): user-only folder grants and per-project autonomy levels
+1f59989 feat(security): file tools with system trash, journal and safe undo
+527a816 feat(security): batched file ops with preview, drift check and stop-on-error
+f753c8a feat(security): transactional project rename with reference preview and rollback
+e1df8d8 feat(security): confined command runner with classification, scrubbed env, group kill
+4a30d7c fix(security): drop unused origin parameter from runCommand
+d42bc06 feat(security): app scaffolding with port detection and typosquat checks
+3daebc4 test(security): accept either rejection path for crafted scaffold names
+01ed78a feat(security): visible machine control, permission states and emergency stop
+750b15b feat(security): prompt-injection guard with source-named reconfirmation
+204d95a fix(security): document and silence control-regex lint in injection guard
+1b870ed feat(security): machine-access settings panel and chat approval card
+a5e372c feat(security): machine-access service and end-to-end test on real files
+8e4e045 test(security): close branch coverage for machine-access modules
+
 ```
 
 ---
@@ -178,3 +219,4 @@ a5e372c  feat(security): machine-access service and end-to-end test on real file
 3. On a Windows host, run the machine-access suite for real.
 4. Replace the standing "grant access level does not affect the workspace"
    surprise with an explicit statement in the Settings copy.
+```
