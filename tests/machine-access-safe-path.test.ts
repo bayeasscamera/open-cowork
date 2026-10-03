@@ -114,3 +114,38 @@ describe('resolveSafePath', () => {
     }
   });
 });
+
+describe('resolveSafePath refuses rather than rewrites hostile input', () => {
+  it('a null byte is a refusal, not a silently stripped character', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-nul-')));
+    try {
+      // Stripping would make `a\0b` collide with `ab`, hiding path confusion.
+      const r = resolveSafePath('a\u0000b', { workspaceRoot: root, platform: 'linux' });
+      expect(r.ok).toBe(false);
+      expect(r.error).toMatch(/null byte/i);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('a workspace reached through a symlink still resolves inside itself', () => {
+    if (process.platform === 'win32') return;
+    // Regression guard: on macOS the temp root is /var/folders/... which is a
+    // symlink to /private/var/..., so comparing a realpath-ed target against a
+    // lexical root reported a false escape for EVERY file in the workspace.
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-link-')));
+    const real = path.join(base, 'real-workspace');
+    const viaSymlink = path.join(base, 'linked');
+    try {
+      fs.mkdirSync(real);
+      fs.symlinkSync(real, viaSymlink);
+      // The root given by the caller is NOT canonical; resolution must still work.
+      expect(fs.realpathSync(viaSymlink)).not.toBe(viaSymlink);
+      const r = resolveSafePath('file.txt', { workspaceRoot: viaSymlink, platform: 'linux' });
+      expect(r.ok).toBe(true);
+      expect(r.realPath).toContain('real-workspace');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+});

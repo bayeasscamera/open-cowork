@@ -47,7 +47,13 @@ function isUnc(input: string): boolean {
 
 /** Lexical normalization shared by resolve + re-verify. */
 export function normalizeInput(input: string, platform: NodeJS.Platform): string {
-  let out = input.normalize('NFC').replace(/\0/g, '');
+  // A NUL byte truncates the string in downstream OS APIs, which is a classic
+  // path-confusion vector. It is REFUSED rather than stripped: silently
+  // rewriting the input would make `a\0b` collide with `ab`.
+  if (input.includes('\u0000')) {
+    throw new Error('path contains a null byte');
+  }
+  let out = input.normalize('NFC');
   if (platform === 'win32') out = out.replace(/\//g, '\\');
   else out = out.replace(/\\/g, '/');
   return out.trim();
@@ -68,6 +74,15 @@ function grantCovers(
     if (isPathWithinRoot(realPath, grantPath, caseInsensitive)) return true;
   }
   return false;
+}
+
+/** Real path of an existing path, or undefined when it does not exist. */
+function canonicalizeExisting(target: string): string | undefined {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return undefined;
+  }
 }
 
 function checkLexicalHazards(
@@ -98,14 +113,27 @@ export function resolveSafePath(input: string, options: SafePathOptions): SafePa
   const platform = options.platform ?? process.platform;
   const now = options.now ?? Date.now();
   const autonomy = options.autonomy ?? 'ask-always';
-  const normalized = normalizeInput(input, platform);
+  let normalized: string;
+  try {
+    normalized = normalizeInput(input, platform);
+  } catch (error) {
+    // Refused inputs resolve as a refusal, never as a throw: a tool must not
+    // crash the model loop because of a hostile path.
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 
   const hazard = checkLexicalHazards(normalized, options.workspaceRoot, platform);
   if (hazard) return { ok: false, error: hazard };
 
+  // The workspace root must be compared in its CANONICAL form. On macOS the
+  // temp directory is /var/folders/... which is a symlink to /private/var/...,
+  // so a lexical comparison against a realpath-ed target would report a false
+  // escape for every file. Same reasoning applies to any symlinked workspace.
+  const canonicalRoot = canonicalizeExisting(options.workspaceRoot) ?? options.workspaceRoot;
+
   const absolute = path.isAbsolute(normalized)
     ? path.normalize(normalized)
-    : path.normalize(path.join(options.workspaceRoot, normalized));
+    : path.normalize(path.join(canonicalRoot, normalized));
 
   // Resolve symlinks before the containment check (spec 3.2).
   let realPath: string = absolute;
@@ -133,7 +161,7 @@ export function resolveSafePath(input: string, options: SafePathOptions): SafePa
 
   const sensitive = isSensitivePath(realPath, { platform, homeDir: options.homeDir });
   const caseInsensitive = platform !== 'linux';
-  const inWorkspace = isPathWithinRoot(realPath, options.workspaceRoot, caseInsensitive);
+  const inWorkspace = isPathWithinRoot(realPath, canonicalRoot, caseInsensitive);
   const inGrant = grantCovers(realPath, options.grants ?? [], options.needsWrite ?? false, now, platform);
 
   if (autonomy !== 'allow-all' && !inWorkspace && !inGrant) {

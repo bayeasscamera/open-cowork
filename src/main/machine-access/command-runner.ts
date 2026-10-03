@@ -80,14 +80,31 @@ export function scrubEnv(extra: Record<string, string> = {}, platform: NodeJS.Pl
   return out;
 }
 
+/**
+ * Command classification vocabulary. Windows and POSIX spell the same
+ * operations differently (`dir`/`ls`, `del`/`rm`, `type`/`cat`), so both sets
+ * are recognised regardless of host platform — a Windows command typed on a
+ * POSIX host is still classified, and vice versa.
+ */
+const LECTURE_COMMANDS =
+  /\b(ls|dir|cat|type|head|tail|grep|rg|find|fd|stat|wc|which|where|echo|printf|pwd|cd|tree|file)\b/i;
+const WRITE_COMMANDS =
+  /\b(rm|del|mv|move|cp|copy|mkdir|md|touch|tee|truncate|ren|rename|shred)\b/i;
+const EXECUTE_COMMANDS =
+  /\b(node|npm|npx|pnpm|yarn|python|python3|pip|go|cargo|make|bash|sh|dotnet|java|mvn|gradle|powershell|pwsh|cmd)\b/i;
+const NETWORK_COMMANDS = /\b(curl|wget|nc|ncat|ssh|scp|sftp|ftp|telnet|Invoke-WebRequest)\b/i;
+const DANGEROUS_COMMANDS =
+  /\b(mkfs|dd|chown|chmod|mount|umount|shutdown|reboot|halt|poweroff|diskutil|sudo|runas|format|diskpart|takeown|icacls|Set-ExecutionPolicy)\b/i;
+
 /** Read-only commands need no confirmation under 'read-free'. */
 export function classifyLevel(command: string): CommandLevel {
   const c = command.trim();
-  if (/\b(curl|wget|nc|ssh|scp|ftp|telnet)\b/i.test(c)) return 'reseau';
-  if (/\b(mkfs|dd|chown|chmod|mount|shutdown|reboot|diskutil|sudo|runas)\b/i.test(c)) return 'dangereux';
-  if (/\b(rm|mv|rmdir|del|cp|mkdir|touch|tee|truncate)\b/i.test(c)) return 'ecriture';
-  if (/\b(node|npm|npx|pnpm|yarn|python|pip|go|cargo|make|bash|sh|python3)\b/i.test(c)) return 'execution';
-  if (/\b(ls|cat|head|tail|grep|rg|find|stat|wc|which|echo|pwd)\b/i.test(c)) return 'lecture';
+  // Dangerous wins over every other class: `sudo rm` is not a "write".
+  if (DANGEROUS_COMMANDS.test(c) || /:\(\)\s*\{.*\};\s*:/.test(c)) return 'dangereux';
+  if (NETWORK_COMMANDS.test(c)) return 'reseau';
+  if (WRITE_COMMANDS.test(c)) return 'ecriture';
+  if (EXECUTE_COMMANDS.test(c)) return 'execution';
+  if (LECTURE_COMMANDS.test(c)) return 'lecture';
   return 'execution';
 }
 

@@ -94,7 +94,12 @@ describe('command runner', () => {
     expect(res.stdout).toContain('ok');
     expect(res.exitCode).toBe(0);
 
-    const big = 'yes x | head -c 200000';
+    // The runner uses /bin/bash on POSIX and powershell.exe on Windows, so the
+    // "lots of output" command must be written for the host shell.
+    const big =
+      process.platform === 'win32'
+        ? "1..200000 | ForEach-Object { 'y' * 100 }"
+        : 'yes x | head -c 200000';
     const bigOutcome = assessCommand({ ...base(), command: big }, { kind: 'user-message' });
     const capped = await runCommand(
       { ...base(), command: big, limits: { maxOutputBytes: 2048 } },
