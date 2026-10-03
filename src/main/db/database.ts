@@ -558,6 +558,60 @@ function applySchema(database: Database.Database): void {
     ON artifacts(project_id)
   `);
 
+    // Rooms: a shared working space several agents contribute to, which outlives
+    // the swarm that created it. The teammate bus is plan-scoped scratch state
+    // dropped when the plan settles; a room keeps what was worth keeping — the
+    // artifacts produced and the exchanges that explain how they came about.
+    database.exec(`
+    CREATE TABLE IF NOT EXISTS rooms (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      project_id TEXT,
+      name TEXT NOT NULL,
+      goal TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+    database.exec(`
+    CREATE TABLE IF NOT EXISTS room_members (
+      room_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      task_id TEXT,
+      joined_at INTEGER NOT NULL,
+      PRIMARY KEY (room_id, role)
+    )
+  `);
+    database.exec(`
+    CREATE TABLE IF NOT EXISTS room_messages (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      from_role TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      body TEXT NOT NULL,
+      model_calls INTEGER NOT NULL DEFAULT 0,
+      status TEXT,
+      created_at INTEGER NOT NULL
+    )
+  `);
+    // An exchange's outcome (answered / timeout / unavailable / limit) is what
+    // makes a room readable as a record, so the column is part of the schema
+    // rather than an afterthought.
+    ensureColumn(database, 'room_messages', 'status', 'status TEXT');
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_rooms_session_id
+    ON rooms(session_id)
+  `);
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_rooms_project_id
+    ON rooms(project_id)
+  `);
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_room_messages_room_id
+    ON room_messages(room_id, created_at)
+  `);
+
     // Sessions can point at the project they belong to (null = no project).
     ensureColumn(database, 'sessions', 'project_id', 'project_id TEXT');
 
