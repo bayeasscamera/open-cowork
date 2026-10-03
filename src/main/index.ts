@@ -133,6 +133,9 @@ import { initModsRuntime } from './mods/v2/runtime';
 import { SafeModeController } from './mods/v2/safe-mode';
 import { createBuiltinMods } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore } from './projects/project-store';
+import { ArtifactExtension } from './artifacts/artifact-extension';
+import { createArtifactStore } from './artifacts/artifact-store-factory';
+import type { ArtifactStore } from './artifacts/artifact-store';
 import {
   delegationNotifyEnabled,
   resumeInterruptedDelegations,
@@ -207,6 +210,7 @@ let pluginRuntimeService: PluginRuntimeService | null = null;
 let memoryService: MemoryService | null = null;
 let scheduledTaskManager: ScheduledTaskManager | null = null;
 let projectStore: ProjectStore | null = null;
+let artifactStore: ArtifactStore | null = null;
 
 /** Lazily wire the ProjectStore over the database once it is initialized. */
 function getProjectStore(): ProjectStore {
@@ -214,6 +218,14 @@ function getProjectStore(): ProjectStore {
     projectStore = createProjectStore(getDatabase());
   }
   return projectStore;
+}
+
+/** Lazily wire the ArtifactStore over the database, same lifetime as projects. */
+function getArtifactStore(): ArtifactStore {
+  if (!artifactStore) {
+    artifactStore = createArtifactStore(getDatabase());
+  }
+  return artifactStore;
 }
 
 // Wire the extracted modules to the mutable app-level singletons above.
@@ -1177,6 +1189,12 @@ app
       const headlessExtensionManager = new AgentRuntimeExtensionManager([
         new MemoryExtension(memoryService),
         new ConfigExtension(configStore),
+        // Artifacts are session-scoped, so the store is resolved per run rather
+        // than captured: one extension instance serves every session.
+        new ArtifactExtension({
+          getStore: getArtifactStore,
+          getProjectId: (sessionId) => getProjectStore().getForSession(sessionId)?.id ?? null,
+        }),
         new SubagentExtension(
           () => sessionManager?.getMCPManager() ?? null,
           sendToRenderer,
@@ -1630,6 +1648,12 @@ app
     const extensionManager = new AgentRuntimeExtensionManager([
       new MemoryExtension(memoryService),
       new ConfigExtension(configStore),
+      // Artifacts are session-scoped, so the store is resolved per run rather
+      // than captured: one extension instance serves every session.
+      new ArtifactExtension({
+        getStore: getArtifactStore,
+        getProjectId: (sessionId) => getProjectStore().getForSession(sessionId)?.id ?? null,
+      }),
       new SubagentExtension(
         () => sessionManager?.getMCPManager() ?? null,
         sendToRenderer,
