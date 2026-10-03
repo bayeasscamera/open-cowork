@@ -4,6 +4,7 @@
  */
 
 import Store from 'electron-store';
+import * as crypto from 'node:crypto';
 import { log, logWarn } from '../utils/logger';
 import {
   createEncryptedStoreWithKeyRotation,
@@ -12,6 +13,7 @@ import {
 import type {
   RemoteConfig,
   GatewayConfig,
+  GatewayAuthConfig,
   FeishuChannelConfig,
   WechatChannelConfig,
   TelegramChannelConfig,
@@ -20,6 +22,11 @@ import type {
   PairedUser,
 } from './types';
 import { DEFAULT_REMOTE_CONFIG } from './types';
+import {
+  RemoteNetworkAccessError,
+  assertSafeRemoteExposure,
+  getRemoteControlToken,
+} from './remote-access-policy';
 
 class RemoteConfigStore {
   private store: Store<RemoteConfig & { pairedUsers: PairedUser[] }>;
@@ -142,15 +149,65 @@ class RemoteConfigStore {
   }
 
   /**
-   * Update gateway config
+   * Update gateway config.
+   *
+   * The merged configuration is validated before it is saved. In particular, a
+   * remotely reachable listener cannot be persisted without a strong control
+   * token. Validating here protects both the settings UI and future restarts:
+   * startup validation alone would only fail after the unsafe value was stored.
    */
   setGatewayConfig(config: Partial<GatewayConfig>): void {
     const current = this.getGatewayConfig();
-    this.store.set('gateway', {
+    const sanitized = this.filterProtoPollution(config as Record<string, unknown>);
+    const next: GatewayConfig = {
       ...current,
-      ...this.filterProtoPollution(config as Record<string, unknown>),
-    });
+      ...sanitized,
+      auth: this.mergeAuthConfig(current.auth, sanitized.auth),
+    };
+    assertSafeRemoteExposure(next);
+    this.store.set('gateway', next);
     log('[RemoteConfig] Gateway config updated');
+  }
+
+  /**
+   * Merge nested auth settings without discarding credentials the update did not
+   * mention. A shallow merge would silently delete a previously provisioned
+   * remote-control token whenever another auth field changed.
+   */
+  private mergeAuthConfig(
+    current: GatewayAuthConfig,
+    update: unknown
+  ): GatewayAuthConfig {
+    if (update === undefined) return current;
+    if (typeof update !== 'object' || update === null || Array.isArray(update)) {
+      throw new RemoteNetworkAccessError('Gateway auth settings must be an object.');
+    }
+    return {
+      ...current,
+      ...this.filterProtoPollution(update as Record<string, unknown>),
+    } as GatewayAuthConfig;
+  }
+
+  /**
+   * Provision a new remote-control credential and invalidate the previous one.
+   * The plaintext is returned once so the desktop UI can show it to the local
+   * user for copying; it is never logged.
+   */
+  rotateRemoteControlToken(): string {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const current = this.getGatewayConfig();
+    this.setGatewayConfig({
+      auth: {
+        ...current.auth,
+        remoteControlToken: token,
+      },
+    });
+    return token;
+  }
+
+  /** Whether a remote-control credential is currently provisioned. */
+  hasRemoteControlToken(): boolean {
+    return getRemoteControlToken(this.getGatewayConfig().auth).length > 0;
   }
 
   /**

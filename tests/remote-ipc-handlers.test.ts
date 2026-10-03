@@ -19,7 +19,11 @@ const mocks = vi.hoisted(() => ({
     getFeishuWebhookUrl: vi.fn(),
     restart: vi.fn(),
   },
-  config: { getAll: vi.fn(), setEnabled: vi.fn() },
+  config: {
+    getAll: vi.fn(),
+    setEnabled: vi.fn(),
+    rotateRemoteControlToken: vi.fn(),
+  },
 }));
 
 vi.mock('electron', () => ({
@@ -66,6 +70,7 @@ describe('remote IPC handlers', () => {
       'remote.rejectPairing',
       'remote.restart',
       'remote.revokePairing',
+      'remote.rotateRemoteControlToken',
       'remote.setEnabled',
       'remote.updateFeishuConfig',
       'remote.updateGatewayConfig',
@@ -93,6 +98,19 @@ describe('remote IPC handlers', () => {
       success: false,
       error: 'port busy',
     });
+  });
+
+  it('remote.rotateRemoteControlToken provisions a token and restarts the listener', async () => {
+    registerRemoteIpcHandlers();
+    mocks.config.rotateRemoteControlToken.mockReturnValue('new-token');
+    mocks.manager.restart.mockResolvedValue(undefined);
+
+    expect(await invoke('remote.rotateRemoteControlToken')).toEqual({
+      success: true,
+      token: 'new-token',
+    });
+    expect(mocks.config.rotateRemoteControlToken).toHaveBeenCalledTimes(1);
+    expect(mocks.manager.restart).toHaveBeenCalledTimes(1);
   });
 
   it('read-only channels degrade to safe defaults on failure', async () => {

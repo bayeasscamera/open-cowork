@@ -89,6 +89,8 @@ export interface GatewayAuthConfig {
   token?: string;
   allowlist?: string[];
   requirePairing?: boolean;
+  /** Dedicated remote-control credential, independent of channel-message authorization. */
+  remoteControlToken?: string;
 }
 
 /** Tunnel configuration. */

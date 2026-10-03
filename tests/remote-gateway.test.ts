@@ -869,6 +869,33 @@ describe('RemoteGateway HTTP endpoints', () => {
     expect(correct.status).toBe(200);
   });
 
+  it('refuses to start on a non-loopback listener without a remote-control token', async () => {
+    const harness = tracked(makeGateway({ mode: 'open' }, { bind: '0.0.0.0' }));
+
+    await expect(harness.gateway.start()).rejects.toThrow(/remote control token/i);
+    expect(harness.gateway.running).toBe(false);
+  });
+
+  it('requires the configured control token for status and WebSocket access on a remote listener', async () => {
+    const controlToken = 'c'.repeat(32);
+    const harness = tracked(
+      makeGateway({ mode: 'open' }, { bind: '0.0.0.0', auth: { mode: 'open', remoteControlToken: controlToken } })
+    );
+    await harness.gateway.start();
+    const port = boundPort(harness.gateway);
+
+    expect((await httpRequest(port, '/status')).status).toBe(401);
+
+    const probe = await WsProbe.connect(port);
+    probes.push(probe);
+    await probe.next('connected');
+    probe.send({ type: 'auth', payload: {} });
+    expect((await probe.next('auth_result')).payload).toEqual({
+      success: false,
+      error: expect.stringMatching(/remote control token/i),
+    });
+  });
+
   it('returns 404 for unknown paths', async () => {
     const harness = tracked(makeGateway({ mode: 'open' }));
     await harness.gateway.start();

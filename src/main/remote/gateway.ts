@@ -20,6 +20,11 @@ import type {
   GatewayEvent,
 } from './types';
 import { MessageRouter } from './message-router';
+import {
+  assertSafeRemoteExposure,
+  getRemoteControlCredentials,
+  getRemoteNetworkExposure,
+} from './remote-access-policy';
 
 /**
  * Constant-time string comparison for secrets (tokens, codes).
@@ -88,6 +93,30 @@ export class RemoteGateway extends EventEmitter {
   }
 
   /**
+   * Credentials accepted for the generic control plane. Provider channel mail
+   * continues to use channel-specific authorization; this list only guards
+   * `/status` and unauthenticated `/ws` clients, for which no channel identity
+   * is available.
+   */
+  private controlPlaneCredentials(): string[] {
+    return getRemoteControlCredentials(this.config.auth).filter(
+      (credential) => credential.length > 0
+    );
+  }
+
+  private hasValidControlPlaneCredential(provided: string): boolean {
+    return this.controlPlaneCredentials().some((credential) =>
+      timingSafeEqualStrings(provided, credential)
+    );
+  }
+
+  private remoteControlTokenError(): string {
+    return this.controlPlaneCredentials().length > 0
+      ? 'Invalid remote control token'
+      : 'Remote control token is required for this network configuration';
+  }
+
+  /**
    * Start the gateway
    */
   async start(): Promise<void> {
@@ -95,6 +124,10 @@ export class RemoteGateway extends EventEmitter {
       logWarn('[Gateway] Already running');
       return;
     }
+
+    // Fail closed before binding a socket: a remote listener must never start
+    // without a sufficiently strong control-plane credential.
+    assertSafeRemoteExposure(this.config);
 
     log('[Gateway] Starting gateway on port', this.config.port);
 
@@ -582,15 +615,21 @@ export class RemoteGateway extends EventEmitter {
       return;
     }
 
-    // Status endpoint — only exposed without credentials when no token is
-    // configured (auth mode 'open'/allowlist/pairing on loopback). With a
-    // token configured, require it to avoid leaking channel/session state.
+    // Status endpoint. A configured control-plane credential always wins: if the
+    // user provisioned one, anonymous status reads are closed even on loopback.
+    // On a remotely reachable listener, detailed status is closed unless the
+    // caller presents that credential. The plain health endpoint remains the
+    // unauthenticated liveness signal.
     if (url === '/status') {
-      if (this.config.auth.mode === 'token' && this.config.auth.token) {
+      const controlCredentials = this.controlPlaneCredentials();
+      const canReadStatus =
+        controlCredentials.length === 0 && getRemoteNetworkExposure(this.config) === 'loopback';
+
+      if (!canReadStatus) {
         const provided = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim() || '';
-        if (!timingSafeEqualStrings(provided, this.config.auth.token)) {
+        if (!this.hasValidControlPlaneCredential(provided)) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Unauthorized' }));
+          res.end(JSON.stringify({ error: this.remoteControlTokenError() }));
           return;
         }
       }
@@ -776,14 +815,32 @@ export class RemoteGateway extends EventEmitter {
     }
 
     const { token } = message.payload as { token?: string };
+    const providedToken = typeof token === 'string' ? token : '';
+
+    // A remotely reachable control plane cannot admit anonymous generic clients.
+    // Unlike messaging channels, a `/ws` client has no independently verifiable
+    // provider identity, so auto-authentication is only safe on loopback.
+    if (getRemoteNetworkExposure(this.config) === 'remote') {
+      if (this.hasValidControlPlaneCredential(providedToken)) {
+        client.authenticated = true;
+        this.sendWSMessage(client.ws, {
+          type: 'auth_result',
+          payload: { success: true },
+          requestId: message.requestId,
+        });
+        log('[Gateway] WS client authenticated:', client.id);
+      } else {
+        this.sendWSMessage(client.ws, {
+          type: 'auth_result',
+          payload: { success: false, error: this.remoteControlTokenError() },
+          requestId: message.requestId,
+        });
+      }
+      return;
+    }
 
     if (this.config.auth.mode === 'token') {
-      if (
-        timingSafeEqualStrings(
-          typeof token === 'string' ? token : '',
-          this.config.auth.token || ''
-        ) && this.config.auth.token
-      ) {
+      if (timingSafeEqualStrings(providedToken, this.config.auth.token || '') && this.config.auth.token) {
         client.authenticated = true;
         this.sendWSMessage(client.ws, {
           type: 'auth_result',

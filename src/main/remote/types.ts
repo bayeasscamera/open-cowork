@@ -42,6 +42,13 @@ export interface GatewayAuthConfig {
   /** Allowed user IDs (required when mode is 'allowlist') */
   allowlist?: string[];
 
+  /**
+   * Credential for the generic remote-control plane (`/status` and `/ws`).
+   * It is independent of channel-message authorization so a phone can use a
+   * dedicated secret without changing Feishu/Slack pairing or allowlist rules.
+   */
+  remoteControlToken?: string;
+
   /** Whether to require pairing for new users */
   requirePairing?: boolean;
 }

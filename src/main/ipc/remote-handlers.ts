@@ -125,6 +125,19 @@ export function registerRemoteIpcHandlers(): void {
     }
   });
 
+  ipcMain.handle('remote.rotateRemoteControlToken', async () => {
+    try {
+      const token = remoteConfigStore.rotateRemoteControlToken();
+      // Apply immediately to a running listener so the replaced credential does
+      // not remain usable. Restarting an idle service is a harmless no-op.
+      await remoteManager.restart();
+      return { success: true, token };
+    } catch (error) {
+      logError('[Remote] Error rotating remote control token:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
   ipcMain.handle('remote.clearRemoteSession', (_event, sessionId: string) => {
     try {
       const success = remoteManager.clearRemoteSession(sessionId);

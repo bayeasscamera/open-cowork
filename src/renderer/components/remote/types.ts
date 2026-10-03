@@ -47,6 +47,7 @@ export interface RemoteConfig {
       mode: string;
       token?: string;
       requirePairing?: boolean;
+      remoteControlToken?: string;
     };
   };
   channels: {

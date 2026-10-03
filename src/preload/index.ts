@@ -962,6 +962,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Remote control methods
   remote: {
     getConfig: (): Promise<RemoteConfig> => ipcRenderer.invoke('remote.getConfig'),
+    rotateRemoteControlToken: (): Promise<{ success: true; token: string } | { success: false; error?: string }> =>
+      ipcRenderer.invoke('remote.rotateRemoteControlToken'),
     getStatus: (): Promise<{
       running: boolean;
       port?: number;
@@ -1722,6 +1724,9 @@ declare global {
       };
       remote: {
         getConfig: () => Promise<RemoteConfig>;
+        rotateRemoteControlToken: () => Promise<
+          { success: true; token: string } | { success: false; error?: string }
+        >;
         getStatus: () => Promise<{
           running: boolean;
           port?: number;
