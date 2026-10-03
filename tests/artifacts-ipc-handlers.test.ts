@@ -134,6 +134,65 @@ describe('artifacts IPC handlers', () => {
       expect(result.length).toBe(100000 + '\n\n[Content truncated: file exceeds 5MB]'.length);
     });
 
+    it('reads a bounded prefix of a large file, without loading the whole payload', async () => {
+      // The cap has to bound the read itself. Reading everything and slicing
+      // afterwards still pulls the whole file into the main process — measured
+      // at +80MB of heap for an 80MB file to return 100KB — which is the freeze
+      // the cap exists to prevent.
+      //
+      // `vi.spyOn` cannot patch an ESM namespace, so the property is measured
+      // directly: peak heap growth must stay near the preview budget, not near
+      // the file size. Only a genuinely bounded read can satisfy that.
+      const size = 80 * 1024 * 1024;
+      const path = join(workspace, 'big.log');
+      writeFileSync(path, Buffer.alloc(size, 97));
+
+      const handler = registeredHandler('artifacts.readFile');
+      const invoke = handler as (event: unknown, filePath: string) => Promise<unknown>;
+
+      if (global.gc) global.gc();
+      const before = process.memoryUsage().heapUsed;
+      const result = (await invoke(undefined, path)) as string;
+      const growth = process.memoryUsage().heapUsed - before;
+
+      expect(result.endsWith('\n\n[Content truncated: file exceeds 5MB]')).toBe(true);
+      expect(result.length).toBe(100000 + '\n\n[Content truncated: file exceeds 5MB]'.length);
+      // Generous headroom for the returned string itself, while staying far
+      // below what loading the file would cost.
+      expect(growth).toBeLessThan(size / 4);
+    });
+
+    it('does not leak descriptors across repeated bounded reads', async () => {
+      // An unclosed descriptor per oversized preview would accumulate while the
+      // user browses files, so the handle is released on every path.
+      const path = join(workspace, 'big.log');
+      writeFileSync(path, Buffer.alloc(OVER_5MB, 97));
+      const handler = registeredHandler('artifacts.readFile');
+      const invoke = handler as (event: unknown, filePath: string) => Promise<unknown>;
+
+      for (let i = 0; i < 25; i++) {
+        await invoke(undefined, path);
+      }
+
+      // Still able to open files afterwards: a descriptor leak would eventually
+      // exhaust the per-process limit and throw here.
+      const after = join(workspace, 'after.log');
+      writeFileSync(after, 'still working');
+      await expect(invoke(undefined, after)).resolves.toBe('still working');
+    });
+
+    it('returns a file at exactly the cap without truncating it', async () => {
+      const atCap = 5 * 1024 * 1024;
+      const path = join(workspace, 'edge.log');
+      writeFileSync(path, Buffer.alloc(atCap, 98));
+      const handler = registeredHandler('artifacts.readFile');
+      const result = (await (
+        handler as (event: unknown, filePath: string) => Promise<unknown>
+      )(undefined, path)) as string;
+      expect(result).not.toContain('Content truncated');
+      expect(result.length).toBe(atCap);
+    });
+
     it('reads any path when no workspace is active', async () => {
       // Preserved behavior: without an active workspace there is nothing to
       // confine reads to, so the handler does not enforce containment.

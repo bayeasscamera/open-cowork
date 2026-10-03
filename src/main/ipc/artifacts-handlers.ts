@@ -18,6 +18,14 @@ interface ArtifactsIpcContext {
   getWorkingDir(): string | null;
 }
 
+/** Above this size the file is previewed from a bounded prefix instead. */
+const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
+
+/** How much of an oversized file is ever returned. */
+const MAX_PREVIEW_CHARS = 100000;
+
+const TRUNCATION_NOTICE = '\n\n[Content truncated: file exceeds 5MB]';
+
 export function registerArtifactsIpcHandlers(context: ArtifactsIpcContext): void {
   ipcMain.handle(
     'artifacts.listRecentFiles',
@@ -43,13 +51,21 @@ export function registerArtifactsIpcHandlers(context: ArtifactsIpcContext): void
           throw new Error(`Access denied: path is outside the workspace: ${filePath}`);
         }
       }
-      // Limit to 5MB to avoid freezing UI
+      // Bound the read itself, not just what is returned. Reading the file whole
+      // and slicing afterwards loads the entire payload into the main process
+      // before discarding it, which is the freeze the cap exists to prevent.
       const stat = fs.statSync(filePath);
-      if (stat.size > 5 * 1024 * 1024) {
-        return (
-          fs.readFileSync(filePath, 'utf-8').slice(0, 100000) +
-          '\n\n[Content truncated: file exceeds 5MB]'
-        );
+      if (stat.size > MAX_PREVIEW_BYTES) {
+        const handle = fs.openSync(filePath, 'r');
+        try {
+          const buffer = Buffer.alloc(MAX_PREVIEW_CHARS);
+          const bytesRead = fs.readSync(handle, buffer, 0, MAX_PREVIEW_CHARS, 0);
+          return (
+            buffer.toString('utf-8', 0, bytesRead) + TRUNCATION_NOTICE
+          );
+        } finally {
+          fs.closeSync(handle);
+        }
       }
       return fs.readFileSync(filePath, 'utf-8');
     } catch (err: unknown) {
