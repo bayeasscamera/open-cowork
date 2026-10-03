@@ -1340,7 +1340,22 @@
     "userRemoved": "User removed",
     "revokeFailed": "Failed to remove user",
     "copied": "Copied",
-    "copyFailed": "Could not copy to clipboard."
+    "copyFailed": "Could not copy to clipboard.",
+    "controlTokenTitle": "Remote control token",
+    "controlTokenDesc": "This secret guards the control channel used by a phone or browser. It is separate from your Feishu pairing, so you can share it without touching who else may talk to the bot.",
+    "controlTokenConfigured": "Configured — the control channel is protected.",
+    "controlTokenMissing": "Not configured.",
+    "controlTokenRequiredWarning": "A tunnel publishes this Mac to the internet. Without a token the gateway refuses to start, so generate one before saving.",
+    "controlTokenIssuedTitle": "Copy this token now",
+    "controlTokenIssuedWarning": "Shown only once. The previous token stopped working immediately. If you lose this, generate another.",
+    "controlTokenCopy": "Copy token",
+    "controlTokenDismiss": "Dismiss",
+    "controlTokenRotate": "Replace token",
+    "controlTokenGenerate": "Generate token",
+    "controlTokenConfirmRotate": "Replace the current token? Any device using the old one will be disconnected.",
+    "controlTokenCancel": "Cancel",
+    "controlTokenRotated": "New control token generated",
+    "controlTokenRotateFailed": "Could not generate a control token"
   },
   "time": {
     "now": "now"

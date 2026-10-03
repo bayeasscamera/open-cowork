@@ -16,6 +16,7 @@ import { AdvancedConfigStep } from './remote/AdvancedConfigStep';
 import { AuthorizedUsersSection } from './remote/AuthorizedUsersSection';
 import { QuickStartGuide } from './remote/QuickStartGuide';
 import { A2ASection } from './remote/A2ASection';
+import { RemoteControlTokenSection } from './remote/RemoteControlTokenSection';
 import { copyTextToClipboard } from '../utils/clipboard';
 import type {
   GatewayStatus,
@@ -54,6 +55,8 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   const [useLongConnection, setUseLongConnection] = useState(true);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [ngrokAuthToken, setNgrokAuthToken] = useState('');
+  // Presence only: the stored secret is never rendered in the panel.
+  const [hasControlToken, setHasControlToken] = useState(false);
   const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
 
@@ -97,6 +100,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         setAutoApproveSafeTools(configResult.gateway?.autoApproveSafeTools !== false);
         setTunnelEnabled(configResult.gateway?.tunnel?.enabled || false);
         setNgrokAuthToken(configResult.gateway?.tunnel?.ngrok?.authToken || '');
+        setHasControlToken(!!configResult.gateway?.auth?.remoteControlToken);
         if (configResult.channels?.feishu) {
           setFeishuAppId(configResult.channels.feishu.appId || '');
           setFeishuAppSecret(configResult.channels.feishu.appSecret || '');
@@ -229,6 +233,29 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
     }
   }
 
+  /**
+   * Provision a new control token. Returns the plaintext so the section can show
+   * it once; a failure resolves to null so the panel can keep its own banner.
+   */
+  async function rotateControlToken(): Promise<string | null> {
+    if (!isElectron) return null;
+    setError(null);
+    try {
+      const result = await window.electronAPI.remote.rotateRemoteControlToken();
+      if (!result.success) {
+        setError({ key: 'remote.controlTokenRotateFailed' });
+        return null;
+      }
+      setHasControlToken(true);
+      setSuccess({ key: 'remote.controlTokenRotated' });
+      setTimeout(() => setSuccess(null), 3000);
+      return result.token;
+    } catch (err) {
+      setError({ key: 'remote.controlTokenRotateFailed' });
+      return null;
+    }
+  }
+
   async function copyToClipboard(text: string) {
     // Awaited + fallback: the previous fire-and-forget writeText showed
     // "Copied" even when the copy was rejected (focus lost, file:// sandbox).
@@ -284,6 +311,13 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         isTogglingGateway={isTogglingGateway}
         isFeishuConfigured={isFeishuConfigured}
         onToggle={toggleGateway}
+      />
+
+      <RemoteControlTokenSection
+        hasToken={hasControlToken}
+        tunnelEnabled={tunnelEnabled}
+        onRotate={rotateControlToken}
+        onCopy={copyToClipboard}
       />
 
       {status?.running && feishuDmPolicy === 'pairing' && <PairingGuideCard />}

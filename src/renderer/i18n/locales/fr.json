@@ -1406,7 +1406,22 @@
     "userRemoved": "User removed",
     "revokeFailed": "Failed to remove user",
     "copied": "Copied",
-    "copyFailed": "Impossible de copier dans le presse-papiers."
+    "copyFailed": "Impossible de copier dans le presse-papiers.",
+    "controlTokenTitle": "Jeton de contrôle à distance",
+    "controlTokenDesc": "Ce secret protège le canal de commande utilisé par un téléphone ou un navigateur. Il est indépendant de l'appairage Feishu : vous pouvez le partager sans modifier qui d'autre a le droit de parler au bot.",
+    "controlTokenConfigured": "Configuré — le canal de contrôle est protégé.",
+    "controlTokenMissing": "Non configuré.",
+    "controlTokenRequiredWarning": "Un tunnel expose ce Mac à Internet. Sans jeton, la passerelle refuse de démarrer : générez-en un avant d'enregistrer.",
+    "controlTokenIssuedTitle": "Copiez ce jeton maintenant",
+    "controlTokenIssuedWarning": "Affiché une seule fois. Le jeton précédent a cessé de fonctionner immédiatement. Si vous le perdez, générez-en un autre.",
+    "controlTokenCopy": "Copier le jeton",
+    "controlTokenDismiss": "Fermer",
+    "controlTokenRotate": "Remplacer le jeton",
+    "controlTokenGenerate": "Générer un jeton",
+    "controlTokenConfirmRotate": "Remplacer le jeton actuel ? Tout appareil utilisant l'ancien sera déconnecté.",
+    "controlTokenCancel": "Annuler",
+    "controlTokenRotated": "Nouveau jeton de contrôle généré",
+    "controlTokenRotateFailed": "Impossible de générer un jeton de contrôle"
   },
   "personalization": {
     "memorySectionTitle": "Mémoire",

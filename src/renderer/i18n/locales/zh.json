@@ -1362,7 +1362,22 @@
     "userRemoved": "用户已移除",
     "revokeFailed": "移除失败",
     "copied": "已复制",
-    "copyFailed": "无法复制到剪贴板。"
+    "copyFailed": "无法复制到剪贴板。",
+    "controlTokenTitle": "远程控制令牌",
+    "controlTokenDesc": "此密钥保护手机或浏览器使用的控制通道。它与飞书配对相互独立，因此你可以共享它，而不影响其他与机器人对话的权限。",
+    "controlTokenConfigured": "已配置 — 控制通道已受保护。",
+    "controlTokenMissing": "未配置。",
+    "controlTokenRequiredWarning": "隧道会将这台 Mac 暴露到互联网。没有令牌，网关将拒绝启动，请先生成令牌再保存。",
+    "controlTokenIssuedTitle": "请立即复制此令牌",
+    "controlTokenIssuedWarning": "仅显示一次。之前的令牌已立即失效。如果丢失，请重新生成。",
+    "controlTokenCopy": "复制令牌",
+    "controlTokenDismiss": "关闭",
+    "controlTokenRotate": "更换令牌",
+    "controlTokenGenerate": "生成令牌",
+    "controlTokenConfirmRotate": "要更换当前令牌吗？使用旧令牌的设备将被断开连接。",
+    "controlTokenCancel": "取消",
+    "controlTokenRotated": "已生成新的控制令牌",
+    "controlTokenRotateFailed": "无法生成控制令牌"
   },
   "time": {
     "now": "刚刚"
