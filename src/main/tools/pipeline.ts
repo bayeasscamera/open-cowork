@@ -86,7 +86,12 @@ export interface ToolGateDeps {
     sessionId: string;
     toolName: string;
     args: Record<string, unknown>;
-  }) => { blocked: boolean; reason?: string; args?: Record<string, unknown>; modifiedBy?: readonly string[] };
+  }) =>
+    | { blocked: boolean; reason?: string; args?: Record<string, unknown>; modifiedBy?: readonly string[] }
+    // Async because v2 mod hooks may be async and are bounded by a per-hook
+    // timeout. The gate awaits this, so an `ask` decision and a rewrite both
+    // complete before permission and machine access run.
+    | Promise<{ blocked: boolean; reason?: string; args?: Record<string, unknown>; modifiedBy?: readonly string[] }>;
   /**
    * Controlled machine access: classify the call and demand user approval for
    * anything dangerous or suspicious, or touching a sensitive zone. Runs on
@@ -202,7 +207,7 @@ export async function runToolGate(
    let finalArgs = normalized;
   let rewrittenBy: readonly string[] = [];
   if (deps.runModsPre) {
-    const mods = deps.runModsPre({
+    const mods = await deps.runModsPre({
       sessionId: ctx.sessionId,
       toolName: tool.name,
       args: finalArgs,

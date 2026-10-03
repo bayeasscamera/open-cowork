@@ -7,11 +7,12 @@
  * over the same inputs and asserts they agree. If porting ever changes what a
  * built-in mod DOES, that test fails rather than shipping quietly.
  *
- * Two ordering facts carried over deliberately, because they were load-bearing:
- *  - `security-redactor` runs AFTER `telemetry`, so the redactor sees the final
- *    text and the log line records the call.
- *  - `diff-collector` snapshots on PRE and captures on POST, so its "before"
- *    image predates any write.
+ * Ordering: bands decide the RUNTIME order, not this list. `security-redactor`
+ * is `system` band (A9), so it now registers BEFORE the `user`-band mods rather
+ * than after them. That is the safer direction — secrets are masked before any
+ * other mod observes the result — and `telemetry` logs the tool name rather than
+ * its content, so nothing observable changes. `diff-panel` snapshots on PRE and
+ * captures on POST, so its "before" image still predates any write.
  *
  * Bands: `sec-default` and `security-redactor` are `system` and fail CLOSED —
  * failing to evaluate a security mod must never mean "allow". The other two are

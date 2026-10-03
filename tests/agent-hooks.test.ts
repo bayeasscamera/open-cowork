@@ -39,6 +39,7 @@ vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logWarn: vi.fn(), log
 
 import { log, logWarn, logError } from '../src/main/utils/logger';
 import { installPermissionHook, installModsHooks } from '../src/main/agent/agent-hooks';
+import { ModsRuntime, setModsRuntimeForTest } from '../src/main/mods/v2/runtime';
 
 type Hook = (ctx: unknown, signal?: AbortSignal) => Promise<unknown>;
 
@@ -243,13 +244,18 @@ describe('installModsHooks', () => {
     );
   });
 
-  it('blocks in the pre-hook when a mod rejects the call', async () => {
+  it('does NOT run mod pre-hooks here — the shared gate owns them', async () => {
+    // This slot used to run `onPreToolUse` and then delegate to the permission
+    // hook, which ran it AGAIN through the gate. Every SDK-dispatched tool call
+    // therefore executed mod pre-hooks twice. Refusal now happens in exactly one
+    // place (runToolGate -> runModsPre), on both the hook path and run_code.
     mocks.runPreToolUse.mockReturnValue({ block: true, reason: 'secrets' });
 
     installModsHooks({} as never, 'session-1');
     const result = await beforeHook?.(ctx);
 
-    expect(result).toEqual({ block: true, reason: 'secrets' });
+    expect(mocks.runPreToolUse).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
   });
 
   it('records skill use and chains to the previous pre-hook', async () => {
@@ -264,19 +270,33 @@ describe('installModsHooks', () => {
   });
 
   it('rewrites the tool result text in the post-hook', async () => {
-    mocks.runPostToolUse.mockReturnValue('redacted');
+    // Post-hooks have no gate stage — the result does not exist when the gate
+    // runs — so they stay on the SDK's after-tool-call slot, now served by the
+    // v2 runtime instead of the v1 registry.
+    const runtime = new ModsRuntime({ tools: { invoke: async () => ({ content: '' }) } });
+    setModsRuntimeForTest(runtime);
 
     installModsHooks({} as never, 'session-1');
     const result = await afterHook?.({
       toolCall: { id: 'tool-1', name: 'Read' },
       args: { path: '/tmp/x' },
-      result: { content: [{ type: 'text', text: 'secret' }] },
+      result: { content: [{ type: 'text', text: `${'ghp_'}${'A'.repeat(36)}` }] },
     });
 
-    expect(result).toEqual({ content: [{ type: 'text', text: 'redacted' }] });
+    // The built-in security-redactor is live in the runtime, so a real secret is
+    // masked by the REAL implementation rather than by a mocked return value.
+    // The token is assembled from parts: a well-formed literal in a test file is
+    // indistinguishable from a leak, and GitHub push protection blocks on that.
+    const fakeToken = `${'ghp_'}${'A'.repeat(36)}`;
+    expect(result).toBeDefined();
+    const rewritten = JSON.stringify(result);
+    expect(rewritten).not.toContain(fakeToken);
+    expect(rewritten).toMatch(/REDACTED/);
+    setModsRuntimeForTest(null);
   });
 
   it('leaves the tool result untouched when no mod rewrites it', async () => {
+    setModsRuntimeForTest(null);
     installModsHooks({} as never, 'session-1');
     const result = await afterHook?.({
       toolCall: { id: 'tool-1', name: 'Read' },

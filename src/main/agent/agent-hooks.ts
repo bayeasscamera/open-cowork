@@ -13,7 +13,7 @@ import {
   type PiBeforeToolCallHook,
   type PiToolCallContext,
 } from './pi-agent-access';
-import { getModsRegistry } from '../mods/mods-runtime';
+import { getModsRuntime } from '../mods/v2/runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
 import { decidePermissionWithDetail, describeDenyRefusal, describeLockdownRefusal, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { defaultExtractToolPath, runToolGate, type ToolGateDeps } from '../tools/pipeline';
@@ -245,11 +245,12 @@ export function installModsHooks(piSession: PiAgentSession, sessionId: string): 
       async (ctx: PiToolCallContext, signal?: AbortSignal): Promise<unknown> => {
         const toolName: string = ctx.toolCall?.name ?? '';
         const args: Record<string, unknown> = ctx.args ?? {};
-        const modsDecision = getModsRegistry().runPreToolUse({ sessionId, toolName, args });
+        // Pre-hooks are NOT run here. They run inside the shared gate
+        // (`runToolGate` -> `runModsPre`), which this slot delegates to. Running
+        // them in both places meant every SDK-dispatched tool call executed
+        // `onPreToolUse` TWICE — invisible with mods that only observe, but a mod
+        // that multiplies its arguments doubled every call.
         recordSkillUseIfApplicable(toolName, args);
-        if (modsDecision.block) {
-          return { block: true, reason: modsDecision.reason ?? 'Blocked by a local mod.' };
-        }
         return originalBefore ? originalBefore(ctx, signal) : undefined;
       }
     );
@@ -264,12 +265,13 @@ export function installModsHooks(piSession: PiAgentSession, sessionId: string): 
       .filter((block: { type?: string; text?: string }) => block.type === 'text')
       .map((block: { text?: string }) => block.text ?? '')
       .join('');
-    const replaced = getModsRegistry().runPostToolUse(
-      { sessionId, toolName, args },
-      { content: text }
-    );
-    if (replaced !== text) {
-      return { content: [{ type: 'text', text: replaced }] };
+    const mods = getModsRuntime();
+    if (!mods || !mods.isEnabled()) return undefined;
+    // Post-hooks have no equivalent stage in the gate: the result does not exist
+    // yet when the gate runs, so this stays on the SDK's after-tool-call slot.
+    const outcome = await mods.runPostToolUse({ sessionId, toolName, args }, { content: text });
+    if (outcome.content !== text) {
+      return { content: [{ type: 'text', text: outcome.content }] };
     }
     return undefined;
   });
@@ -330,10 +332,20 @@ export function createSessionGate(options: {
           ...(options.origin ? { origin: options.origin } : {}),
         }
       ),
-    runModsPre: ({ sessionId, toolName, args }) => {
-      const modsDecision = getModsRegistry().runPreToolUse({ sessionId, toolName, args });
+    runModsPre: async ({ sessionId, toolName, args }) => {
       recordSkillUseIfApplicable(toolName, args);
-      return { blocked: Boolean(modsDecision.block), reason: modsDecision.reason };
+      const mods = getModsRuntime();
+      // No runtime (not yet initialised, or `--no-mods`) means the stage is
+      // SKIPPED, not failed: a Cowork that starts with mods off must behave
+      // exactly as it did before mods existed.
+      if (!mods || !mods.isEnabled()) return { blocked: false };
+      const outcome = await mods.runPreToolUse({ sessionId, toolName, args });
+      return {
+        blocked: outcome.blocked,
+        ...(outcome.reason ? { reason: outcome.reason } : {}),
+        ...(outcome.args ? { args: outcome.args } : {}),
+        ...(outcome.modifiedBy ? { modifiedBy: outcome.modifiedBy } : {}),
+      };
     },
   };
 }

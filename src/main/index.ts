@@ -81,6 +81,7 @@ import {
 import { getUnsupportedWorkspacePathReason } from './workspace-path-constraints';
 
 import { log, logWarn, logError, closeLogFile, setDevLogsEnabled } from './utils/logger';
+import Store from 'electron-store';
 import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
 import { registerConfigIpcHandlers } from './ipc/config-handlers';
@@ -121,6 +122,8 @@ import { createAgentTaskRunner } from './agent/agent-task-runner';
 import { createShellProofRunner } from './agent/proof-runner';
 import type { ProjectMemoryStore } from './memory/project-memory-store';
 import { getModsRegistry } from './mods/mods-runtime';
+import { initModsRuntime } from './mods/v2/runtime';
+import { SafeModeController } from './mods/v2/safe-mode';
 import { createBuiltinMods } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore } from './projects/project-store';
 import {
@@ -2235,9 +2238,64 @@ registerEmergencyStopShortcut((result) => {
 registerPresetHandlers();
 
 // Register built-in local mods once (idempotent registry).
+//
+// Two registries coexist on purpose during the v1 -> v2 migration:
+//   - the v1 registry keeps the legacy `mods.*` IPC surface working;
+//   - the v2 runtime is what the AGENT actually calls (see agent-hooks.ts).
+// The v1 mods are no longer invoked on tool calls, so nothing runs twice.
 const modsRegistry = getModsRegistry();
 for (const mod of createBuiltinMods()) {
   modsRegistry.register(mod);
+}
+
+// Mods v2 runtime. Safe mode is evaluated BEFORE any mod is registered, so
+// `--no-mods`, the setting, and the automatic fallback after repeated boot
+// failures all take effect on this launch rather than the next one.
+const safeModeStore = new Store<{ disableModsGlobally: boolean }>({ name: 'mods-config' });
+const safeModeState = {
+  disabledGlobally: safeModeStore.get('disableModsGlobally') ?? false,
+  consecutiveBootFailures: 0,
+  lastFailedMods: [] as string[],
+  autoEnteredAt: null as number | null,
+};
+const safeMode = new SafeModeController({
+  load: () => safeModeState,
+  save: (next) => {
+    Object.assign(safeModeState, next);
+    safeModeStore.set('disableModsGlobally', next.disabledGlobally);
+  },
+});
+const safeModeDecision = safeMode.evaluate();
+initModsRuntime({
+  enabled: !safeModeDecision.safeMode,
+  tools: {
+    // A mod asking for a tool must go through the SAME gate as everyone else:
+    // preset allow-list, permissions, path guard, machine access. The gate's
+    // `decidePermission` is REQUIRED, and at startup there is no session whose
+    // `requestPermission` could ask the user. So this refuses, rather than
+    // quietly invoking with no approval step at all.
+    //
+    // Failing closed is the point: a mod that could call tools before the
+    // permission round-trip exists would be exactly the "mod bypasses the
+    // pipeline" hole the mod API documents. Phase 6 replaces this with the
+    // session-scoped handler that routes the approval to the user's card.
+    invoke: async (modId, toolName) => ({
+      content:
+        `Refused: a mod asked to run "${toolName}" (mod "${modId}"), but no session ` +
+        'permission handler is attached at startup. Tool calls from mods are only ' +
+        'available while a session is active.',
+    }),
+  },
+  session: { id: 'startup', cwd: currentWorkingDir ?? process.cwd() },
+  log: {
+    debug: (message: string) => log(`[mod] ${message}`),
+    info: (message: string) => log(`[mod] ${message}`),
+    warn: (message: string) => logWarn(`[mod] ${message}`),
+    error: (message: string) => logError(`[mod] ${message}`),
+  },
+});
+if (safeModeDecision.safeMode) {
+  log(`[Mods] Starting with mods DISABLED (${safeModeDecision.reason}).`);
 }
 
 // Logs IPC handlers (see main/ipc/logs-handlers.ts)
