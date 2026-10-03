@@ -14,7 +14,8 @@ export type RemoteNetworkExposure = 'loopback' | 'remote';
 
 export type RemoteNetworkAccessErrorCode =
   | 'remote-control-token-required'
-  | 'unencrypted-remote-binding';
+  | 'unencrypted-remote-binding'
+  | 'incomplete-tls-config';
 
 export class RemoteNetworkAccessError extends Error {
   constructor(
@@ -65,17 +66,44 @@ export function getRemoteControlCredentials(auth: GatewayAuthConfig | undefined)
 }
 
 /**
+ * Validate a TLS configuration before it is trusted.
+ *
+ * Enabling TLS is a claim that the listener is encrypted. Half a claim is worse
+ * than none, because the plaintext acknowledgement below would then be skipped
+ * on the promise of a certificate that cannot be loaded — so an incomplete TLS
+ * config has to fail here, before anything is persisted.
+ */
+export function assertTlsConfigUsable(config: Pick<GatewayConfig, 'tls'>): void {
+  const tls = config.tls;
+  if (!tls || tls.enabled !== true) return;
+
+  const missing: string[] = [];
+  if (typeof tls.certPath !== 'string' || tls.certPath.trim() === '') missing.push('certPath');
+  if (typeof tls.keyPath !== 'string' || tls.keyPath.trim() === '') missing.push('keyPath');
+  if (missing.length > 0) {
+    throw new RemoteNetworkAccessError(
+      `TLS is enabled but ${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} missing. ` +
+        'Provide both a certificate and a key, or disable TLS.',
+      'incomplete-tls-config'
+    );
+  }
+}
+
+/**
  * Refuse an unauthenticated or weakly authenticated remote listener before it
  * starts. Channel webhooks still receive their own provider-signature checks;
  * this does not replace those checks. It closes the generic control plane,
  * where no per-channel user identity is available.
  *
  * A token authenticates but does not encrypt. When the active leg is a plain
- * LAN binding with no tunnel, the bearer token crosses the network in the
- * clear, so that case additionally requires an explicit acknowledgement rather
- * than being treated as equivalent to a TLS-terminated tunnel.
+ * LAN binding with no tunnel and no certificate, the bearer token crosses the
+ * network in the clear, so that case additionally requires an explicit
+ * acknowledgement rather than being treated as equivalent to a TLS-terminated
+ * tunnel or a locally served certificate.
  */
 export function assertSafeRemoteExposure(config: GatewayConfig): void {
+  assertTlsConfigUsable(config);
+
   if (getRemoteNetworkExposure(config) === 'loopback') {
     return;
   }
@@ -99,6 +127,7 @@ export function assertSafeRemoteExposure(config: GatewayConfig): void {
   const transport = classifyRemoteTransport({
     bind: config.bind,
     tunnelEnabled: config.tunnel?.enabled === true,
+    tlsEnabled: config.tls?.enabled === true,
   });
   if (
     requiresInsecureBindingAcknowledgement(transport) &&

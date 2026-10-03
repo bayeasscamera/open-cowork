@@ -7,6 +7,8 @@ import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer, Server as HttpServer, IncomingMessage, ServerResponse } from 'http';
+import { createServer as createHttpsServer, ServerOptions as HttpsServerOptions } from 'https';
+import { readFileSync } from 'fs';
 import { log, logError, logWarn } from '../utils/logger';
 import type {
   GatewayConfig,
@@ -117,6 +119,37 @@ export class RemoteGateway extends EventEmitter {
   }
 
   /**
+   * Build the server options for HTTPS, or null to serve plain HTTP.
+   *
+   * This never degrades quietly. If TLS is enabled but the certificate or key
+   * cannot be read, it throws instead of returning null: a user who asked for
+   * encryption must never silently get a plaintext listener, because every
+   * other security decision in this file is derived from the assumption that a
+   * working transport was actually established.
+   */
+  private httpsServerOptions(): HttpsServerOptions | null {
+    const tls = this.config.tls;
+    if (!tls || tls.enabled !== true) return null;
+
+    const read = (path: string, label: string): Buffer => {
+      try {
+        return readFileSync(path);
+      } catch (error) {
+        throw new Error(
+          `TLS is enabled but the ${label} could not be read from ${path}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    };
+
+    const cert = read(tls.certPath, 'certificate');
+    const key = read(tls.keyPath, 'private key');
+    log('[Gateway] Serving HTTPS/WSS with the configured certificate');
+    return { cert, key };
+  }
+
+  /**
    * Start the gateway
    */
   async start(): Promise<void> {
@@ -126,14 +159,20 @@ export class RemoteGateway extends EventEmitter {
     }
 
     // Fail closed before binding a socket: a remote listener must never start
-    // without a sufficiently strong control-plane credential.
+    // without a sufficiently strong control-plane credential, and an incomplete
+    // TLS configuration must never be treated as "no TLS configured".
     assertSafeRemoteExposure(this.config);
+    const httpsOptions = this.httpsServerOptions();
 
     log('[Gateway] Starting gateway on port', this.config.port);
 
     try {
-      // Create HTTP server for webhook callbacks
-      this.httpServer = createServer(this.handleHttpRequest.bind(this));
+      // Create HTTP(S) server for webhook callbacks. The WebSocket server below
+      // attaches to this same server, so serving TLS here also yields WSS —
+      // there is no separate WebSocket listener to secure.
+      this.httpServer = httpsOptions
+        ? createHttpsServer(httpsOptions, this.handleHttpRequest.bind(this))
+        : createServer(this.handleHttpRequest.bind(this));
 
       // Create WebSocket server
       this.wss = new WebSocketServer({

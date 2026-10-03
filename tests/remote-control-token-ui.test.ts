@@ -103,7 +103,7 @@ describe('remote control token UI', () => {
     // The label must not be computed independently of the policy, or the UI can
     // claim a transport is safe while main refuses (or the reverse).
     expect(section).toContain("from '../../../shared/remote-transport'");
-    expect(section).toContain('classifyRemoteTransport({ bind, tunnelEnabled })');
+    expect(section).toContain('classifyRemoteTransport({ bind, tunnelEnabled, tlsEnabled })');
     expect(section).toContain('requiresInsecureBindingAcknowledgement(transport)');
   });
 });

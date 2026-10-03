@@ -1383,7 +1383,18 @@
     "controlTransportTunnel": "已加密 — 隧道为远程调用方提供 TLS。",
     "controlTransportPlaintext": "未加密 — 该监听可通过明文 HTTP 访问，令牌将以明文经过网络。",
     "controlTransportPlaintextAck": "我了解此网络未加密",
-    "controlTransportPlaintextWarn": "在确认之前，网关将拒绝监听。建议启用隧道来加密连接。"
+    "controlTransportPlaintextWarn": "在确认之前，网关将拒绝监听。建议启用隧道来加密连接。",
+    "tlsTitle": "证书（HTTPS）",
+    "tlsDesc": "使用你已有的证书提供 HTTPS 与 WSS。Cowork 不会生成证书：自签名证书仍需在每台手机上手动信任。",
+    "tlsHint": "受信任的局域网请使用 mkcert；使用域名请使用 Cloudflare Origin CA / Let's Encrypt 证书。",
+    "tlsEnabled": "提供 HTTPS/WSS",
+    "tlsCertPath": "证书路径（PEM）",
+    "tlsKeyPath": "私钥路径（PEM）",
+    "tlsCertPlaceholder": "/path/to/cert.pem",
+    "tlsKeyPlaceholder": "/path/to/key.pem",
+    "tlsEnabledWarning": "如果证书或私钥无法读取，网关将拒绝启动，而不会退回到未加密的监听。",
+    "tlsMissingWarning": "TLS 已启用但未设置证书路径，网关将拒绝启动。",
+    "tlsTransportLabel": "在此网络上已加密"
   },
   "time": {
     "now": "刚刚"

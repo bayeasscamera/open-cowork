@@ -1361,7 +1361,18 @@
     "controlTransportTunnel": "Encrypted — a tunnel terminates TLS for remote callers.",
     "controlTransportPlaintext": "Not encrypted — this listener is reachable over plain HTTP, so the token crosses the network in the clear.",
     "controlTransportPlaintextAck": "I understand this network is unencrypted",
-    "controlTransportPlaintextWarn": "Until this is acknowledged the gateway will refuse to bind. Enable a tunnel to encrypt the connection instead."
+    "controlTransportPlaintextWarn": "Until this is acknowledged the gateway will refuse to bind. Enable a tunnel to encrypt the connection instead.",
+    "tlsTitle": "Certificate (HTTPS)",
+    "tlsDesc": "Serve HTTPS and WSS from a certificate you already have. Cowork never generates one: a self-signed certificate would still have to be trusted by hand on every phone.",
+    "tlsHint": "Use mkcert for a trusted local network, or a Cloudflare Origin CA / Let's Encrypt certificate for a hostname.",
+    "tlsEnabled": "Serve HTTPS/WSS",
+    "tlsCertPath": "Certificate path (PEM)",
+    "tlsKeyPath": "Private key path (PEM)",
+    "tlsCertPlaceholder": "/path/to/cert.pem",
+    "tlsKeyPlaceholder": "/path/to/key.pem",
+    "tlsEnabledWarning": "If the certificate or key cannot be read, the gateway refuses to start rather than falling back to an unencrypted listener.",
+    "tlsMissingWarning": "TLS is on but no certificate paths are set, so the gateway will refuse to start.",
+    "tlsTransportLabel": "Encrypted on this network"
   },
   "time": {
     "now": "now"

@@ -59,6 +59,9 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   const [hasControlToken, setHasControlToken] = useState(false);
   const [insecureBindingAcknowledged, setInsecureBindingAcknowledged] = useState(false);
   const [gatewayBind, setGatewayBind] = useState('127.0.0.1');
+  const [tlsEnabled, setTlsEnabled] = useState(false);
+  const [tlsCertPath, setTlsCertPath] = useState('');
+  const [tlsKeyPath, setTlsKeyPath] = useState('');
   const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
 
@@ -105,6 +108,9 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         setHasControlToken(!!configResult.gateway?.auth?.remoteControlToken);
         setInsecureBindingAcknowledged(configResult.gateway?.allowInsecureRemoteBinding === true);
         setGatewayBind(configResult.gateway?.bind || '127.0.0.1');
+        setTlsEnabled(configResult.gateway?.tls?.enabled === true);
+        setTlsCertPath(configResult.gateway?.tls?.certPath || '');
+        setTlsKeyPath(configResult.gateway?.tls?.keyPath || '');
         if (configResult.channels?.feishu) {
           setFeishuAppId(configResult.channels.feishu.appId || '');
           setFeishuAppSecret(configResult.channels.feishu.appSecret || '');
@@ -164,6 +170,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         port: gatewayPort,
         defaultWorkingDirectory: defaultWorkingDirectory || undefined,
         autoApproveSafeTools,
+        tls: { enabled: tlsEnabled, certPath: tlsCertPath, keyPath: tlsKeyPath },
         tunnel:
           tunnelEnabled && ngrokAuthToken
             ? {
@@ -339,6 +346,12 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         tunnelEnabled={tunnelEnabled}
         bind={gatewayBind}
         insecureBindingAcknowledged={insecureBindingAcknowledged}
+        tlsEnabled={tlsEnabled}
+        tlsCertPath={tlsCertPath}
+        tlsKeyPath={tlsKeyPath}
+        onTlsEnabledChange={setTlsEnabled}
+        onTlsCertPathChange={setTlsCertPath}
+        onTlsKeyPathChange={setTlsKeyPath}
         onAcknowledgeInsecureBinding={acknowledgeInsecureBinding}
         onRotate={rotateControlToken}
         onCopy={copyToClipboard}

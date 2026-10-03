@@ -116,6 +116,7 @@ export interface GatewayConfig {
   allowInsecureRemoteBinding?: boolean;
   auth: GatewayAuthConfig;
   tunnel?: TunnelConfig;
+  tls?: { enabled: boolean; certPath: string; keyPath: string };
   defaultWorkingDirectory?: string;
   autoApproveSafeTools?: boolean;
 }

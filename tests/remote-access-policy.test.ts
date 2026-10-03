@@ -133,6 +133,64 @@ describe('unencrypted LAN binding barrier', () => {
     );
   });
 
+  it('does not demand the acknowledgement when a certificate serves the bind', () => {
+    expect(() =>
+      assertSafeRemoteExposure(
+        config({
+          bind: '0.0.0.0',
+          tls: { enabled: true, certPath: '/tmp/cert.pem', keyPath: '/tmp/key.pem' },
+          auth: { mode: 'token', token: STRONG },
+        })
+      )
+    ).not.toThrow();
+  });
+
+  it('still demands a token with a certificate configured', () => {
+    expect(() =>
+      assertSafeRemoteExposure(
+        config({
+          bind: '0.0.0.0',
+          tls: { enabled: true, certPath: '/tmp/cert.pem', keyPath: '/tmp/key.pem' },
+        })
+      )
+    ).toThrow(/remote control token is required/i);
+  });
+
+  it('rejects TLS that is enabled without both paths', () => {
+    expect(() =>
+      assertSafeRemoteExposure(
+        config({
+          bind: '0.0.0.0',
+          tls: { enabled: true, certPath: '', keyPath: '/tmp/key.pem' },
+          auth: { mode: 'token', token: STRONG },
+        })
+      )
+    ).toThrow(/certPath/i);
+
+    try {
+      assertSafeRemoteExposure(
+        config({
+          bind: '0.0.0.0',
+          tls: { enabled: true, certPath: '/tmp/cert.pem', keyPath: '  ' },
+          auth: { mode: 'token', token: STRONG },
+        })
+      );
+    } catch (error) {
+      expect((error as RemoteNetworkAccessError).code).toBe('incomplete-tls-config');
+    }
+  });
+
+  it('ignores a disabled TLS block rather than demanding paths for it', () => {
+    expect(() =>
+      assertSafeRemoteExposure(
+        config({
+          bind: '127.0.0.1',
+          tls: { enabled: false, certPath: '', keyPath: '' },
+        })
+      )
+    ).not.toThrow();
+  });
+
   it('still demands a token before it considers the acknowledgement', () => {
     // Acknowledging plaintext must not become a way to skip authentication.
     expect(() =>
@@ -158,9 +216,17 @@ describe('transport classification', () => {
 
   it('marks only the plaintext LAN leg as unencrypted and off-host', () => {
     expect(isTransportEncrypted('tunnel-tls')).toBe(true);
+    expect(isTransportEncrypted('lan-tls')).toBe(true);
     expect(isTransportEncrypted('plaintext-lan')).toBe(false);
     expect(requiresInsecureBindingAcknowledgement('plaintext-lan')).toBe(true);
+    expect(requiresInsecureBindingAcknowledgement('lan-tls')).toBe(false);
     expect(requiresInsecureBindingAcknowledgement('tunnel-tls')).toBe(false);
     expect(requiresInsecureBindingAcknowledgement('loopback')).toBe(false);
+  });
+
+  it('treats a routable bind with a certificate as encrypted', () => {
+    expect(classifyRemoteTransport({ bind: '0.0.0.0', tlsEnabled: true })).toBe('lan-tls');
+    // TLS does not turn a loopback bind into something off-host.
+    expect(classifyRemoteTransport({ bind: '127.0.0.1', tlsEnabled: true })).toBe('loopback');
   });
 });

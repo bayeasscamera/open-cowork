@@ -34,6 +34,7 @@ export interface RemoteConfig {
     port: number;
     bind: string;
     allowInsecureRemoteBinding?: boolean;
+    tls?: { enabled: boolean; certPath: string; keyPath: string };
     defaultWorkingDirectory?: string;
     autoApproveSafeTools?: boolean;
     tunnel?: {

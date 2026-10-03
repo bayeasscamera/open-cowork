@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   Lock,
   LockOpen,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   classifyRemoteTransport,
@@ -38,6 +39,13 @@ interface Props {
   bind: string;
   /** Whether the unencrypted-network acknowledgement has already been given. */
   insecureBindingAcknowledged: boolean;
+  /** Whether HTTPS/WSS is enabled from a user-supplied certificate. */
+  tlsEnabled: boolean;
+  tlsCertPath: string;
+  tlsKeyPath: string;
+  onTlsEnabledChange: (enabled: boolean) => void;
+  onTlsCertPathChange: (value: string) => void;
+  onTlsKeyPathChange: (value: string) => void;
   /** Persist the acknowledgement; resolves once main has accepted the change. */
   onAcknowledgeInsecureBinding: (acknowledged: boolean) => Promise<void>;
   /** Provision a new token; resolves to the plaintext value, or null on failure. */
@@ -50,6 +58,12 @@ export function RemoteControlTokenSection({
   tunnelEnabled,
   bind,
   insecureBindingAcknowledged,
+  tlsEnabled,
+  tlsCertPath,
+  tlsKeyPath,
+  onTlsEnabledChange,
+  onTlsCertPathChange,
+  onTlsKeyPathChange,
   onAcknowledgeInsecureBinding,
   onRotate,
   onCopy,
@@ -83,8 +97,9 @@ export function RemoteControlTokenSection({
   }
 
   const needsToken = tunnelEnabled && !hasToken;
-  const transport = classifyRemoteTransport({ bind, tunnelEnabled });
+  const transport = classifyRemoteTransport({ bind, tunnelEnabled, tlsEnabled });
   const needsAcknowledgement = requiresInsecureBindingAcknowledgement(transport);
+  const tlsIncomplete = tlsEnabled && (!tlsCertPath.trim() || !tlsKeyPath.trim());
 
   return (
     <div className="p-6 rounded-[2rem] border border-border-subtle bg-background/60 space-y-4">
@@ -163,10 +178,55 @@ export function RemoteControlTokenSection({
             >
               {transport === 'loopback' && t('remote.controlTransportLoopback')}
               {transport === 'tunnel-tls' && t('remote.controlTransportTunnel')}
+              {transport === 'lan-tls' && t('remote.tlsTransportLabel')}
               {transport === 'plaintext-lan' && t('remote.controlTransportPlaintext')}
             </p>
           </div>
         </div>
+
+        {tlsEnabled && (
+          <div className="space-y-2 pl-7">
+            <div className="flex items-center gap-2 text-xs text-text-secondary">
+              <ShieldCheck className="w-3.5 h-3.5 text-success flex-shrink-0" />
+              <span>{t('remote.tlsTitle')}</span>
+            </div>
+            <p className="text-xs text-text-muted">{t('remote.tlsDesc')}</p>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={tlsCertPath}
+                onChange={(e) => onTlsCertPathChange(e.target.value)}
+                placeholder={t('remote.tlsCertPlaceholder')}
+                aria-label={t('remote.tlsCertPath')}
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+              />
+              <input
+                type="text"
+                value={tlsKeyPath}
+                onChange={(e) => onTlsKeyPathChange(e.target.value)}
+                placeholder={t('remote.tlsKeyPlaceholder')}
+                aria-label={t('remote.tlsKeyPath')}
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+              />
+            </div>
+            <p className="text-xs text-text-muted">{t('remote.tlsHint')}</p>
+            {tlsIncomplete ? (
+              <p className="text-xs text-error">{t('remote.tlsMissingWarning')}</p>
+            ) : (
+              <p className="text-xs text-text-muted">{t('remote.tlsEnabledWarning')}</p>
+            )}
+          </div>
+        )}
+
+        <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer pl-7">
+          <input
+            type="checkbox"
+            checked={tlsEnabled}
+            onChange={(e) => onTlsEnabledChange(e.target.checked)}
+            className="accent-[var(--color-accent)]"
+          />
+          {t('remote.tlsEnabled')}
+        </label>
 
         {needsAcknowledgement && (
           <div className="space-y-2 pl-7">

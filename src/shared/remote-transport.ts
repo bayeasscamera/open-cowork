@@ -18,6 +18,8 @@ export type RemoteTransport =
   | 'loopback'
   /** Reached through a tunnel, which terminates TLS at the tunnel provider. */
   | 'tunnel-tls'
+  /** Bound to a routable interface and served over HTTPS/WSS from a certificate. */
+  | 'lan-tls'
   /** Bound to a routable interface with no tunnel: plain HTTP/WS on the wire. */
   | 'plaintext-lan';
 
@@ -26,19 +28,23 @@ export interface RemoteTransportInput {
   bind?: string;
   /** Whether an external tunnel is enabled. */
   tunnelEnabled?: boolean;
+  /** Whether the gateway serves HTTPS/WSS from a configured certificate. */
+  tlsEnabled?: boolean;
 }
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', 'localhost']);
 
 /**
- * Classify the active transport. A tunnel wins over the bind address: when one
- * is enabled the public leg is TLS regardless of the local bind, so the plain
- * LAN path is not what a remote caller is using.
+ * Classify the active transport. A tunnel wins over everything else: when one
+ * is enabled the public leg is TLS whatever the local bind or local certificate
+ * say. Otherwise a routable bind is encrypted only if the gateway is actually
+ * serving HTTPS.
  */
 export function classifyRemoteTransport(input: RemoteTransportInput): RemoteTransport {
   if (input.tunnelEnabled === true) return 'tunnel-tls';
   const bind = (input.bind ?? '127.0.0.1').trim();
-  return LOOPBACK_ADDRESSES.has(bind) ? 'loopback' : 'plaintext-lan';
+  if (LOOPBACK_ADDRESSES.has(bind)) return 'loopback';
+  return input.tlsEnabled === true ? 'lan-tls' : 'plaintext-lan';
 }
 
 /** Whether traffic on this transport is encrypted (or never leaves the host). */

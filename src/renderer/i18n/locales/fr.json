@@ -1427,7 +1427,18 @@
     "controlTransportTunnel": "Chiffré — un tunnel termine TLS pour les appelants distants.",
     "controlTransportPlaintext": "Non chiffré — cette écoute est accessible en HTTP simple, donc le jeton traverse le réseau en clair.",
     "controlTransportPlaintextAck": "Je comprends que ce réseau n'est pas chiffré",
-    "controlTransportPlaintextWarn": "Tant que ce n'est pas acquitté, la passerelle refuse de s'écouter. Activez plutôt un tunnel pour chiffrer la connexion."
+    "controlTransportPlaintextWarn": "Tant que ce n'est pas acquitté, la passerelle refuse de s'écouter. Activez plutôt un tunnel pour chiffrer la connexion.",
+    "tlsTitle": "Certificat (HTTPS)",
+    "tlsDesc": "Servir HTTPS et WSS à partir d'un certificat que vous possédez déjà. Cowork n'en génère jamais : un certificat auto-signé devrait encore être approuvé manuellement sur chaque téléphone.",
+    "tlsHint": "Utilisez mkcert pour un réseau local de confiance, ou un certificat Cloudflare Origin CA / Let's Encrypt pour un nom d'hôte.",
+    "tlsEnabled": "Servir HTTPS/WSS",
+    "tlsCertPath": "Chemin du certificat (PEM)",
+    "tlsKeyPath": "Chemin de la clé privée (PEM)",
+    "tlsCertPlaceholder": "/chemin/vers/cert.pem",
+    "tlsKeyPlaceholder": "/chemin/vers/key.pem",
+    "tlsEnabledWarning": "Si le certificat ou la clé est illisible, la passerelle refuse de démarrer plutôt que de retomber sur une écoute non chiffrée.",
+    "tlsMissingWarning": "Le TLS est activé mais aucun chemin de certificat nest défini : la passerelle refusera de démarrer.",
+    "tlsTransportLabel": "Chiffré sur ce réseau"
   },
   "personalization": {
     "memorySectionTitle": "Mémoire",

@@ -9,6 +9,15 @@
 // Gateway Configuration
 // ============================================================================
 
+export interface GatewayTlsConfig {
+  /** Serve HTTPS/WSS from the supplied certificate instead of plain HTTP/WS. */
+  enabled: boolean;
+  /** Absolute path to a PEM certificate, or a bundle containing one. */
+  certPath: string;
+  /** Absolute path to the PEM private key. */
+  keyPath: string;
+}
+
 export interface GatewayConfig {
   /** Whether remote gateway is enabled */
   enabled: boolean;
@@ -31,6 +40,20 @@ export interface GatewayConfig {
 
   /** Tunnel configuration for public access */
   tunnel?: TunnelConfig;
+
+  /**
+   * Serve HTTPS/WSS from a user-supplied certificate instead of plain HTTP/WS.
+   *
+   * The certificate is never generated here: a self-signed certificate would
+   * still have to be installed and trusted by hand on every phone, which is
+   * worse than saying so. Point this at a real certificate instead — mkcert for
+   * a trusted local network, or a Cloudflare Origin CA / Let's Encrypt
+   * certificate for a hostname.
+   *
+   * When enabled but unreadable, the gateway refuses to start rather than
+   * falling back to plaintext.
+   */
+  tls?: GatewayTlsConfig;
 
   /** Default working directory for remote sessions */
   defaultWorkingDirectory?: string;
