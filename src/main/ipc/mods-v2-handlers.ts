@@ -13,7 +13,7 @@
 
 import { ipcMain } from 'electron';
 import { logError, logWarn } from '../utils/logger';
-import { buildInstallReview } from '../mods/v2/install-plan';
+import { buildInstallReview, type InstallReview } from '../mods/v2/install-plan';
 import { getModsRuntime } from '../mods/v2/runtime';
 import {
   isInstallRequest,
@@ -33,7 +33,7 @@ export interface ModsV2Deps {
   setEnabled: (id: string, enabled: boolean, projectId?: string) => void;
   uninstall: (modId: string) => Promise<boolean>;
   /** Commit an approved, staged plugin. */
-  commit: (input: { review: ModReviewDto; stagingDir: string; approvedHash: string; source: string }) => Promise<{ ok: boolean; error?: string }>;
+  commit: (input: { review: InstallReview; stagingDir: string; approvedHash: string; source: string }) => Promise<{ ok: boolean; error?: string }>;
   safeMode: () => SafeModeDto;
 }
 
@@ -70,7 +70,9 @@ export function registerModsV2IpcHandlers(deps: ModsV2Deps): void {
       if (!review.ok) return { success: false as const, error: review.error };
 
       const outcome = await deps.commit({
-        review: review.review as ModReviewDto,
+        // The RECOMPUTED review, not the renderer's copy: it was rebuilt from disk
+        // a moment ago, so its fingerprint is the one being compared.
+        review: review.review,
         stagingDir: request.rootDir,
         approvedHash: request.approvedHash,
         source: 'local folder',

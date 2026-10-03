@@ -103,7 +103,14 @@ import {
 import { registerPresetHandlers } from './ipc/preset-handlers';
 import { registerSkillsIpcHandlers } from './ipc/skills-handlers';
 import { registerWindowIpcHandlers } from './ipc/window-handlers';
+import * as path from 'path';
 import { registerModsIpcHandlers } from './ipc/mods-handlers';
+import { registerModsV2IpcHandlers } from './ipc/mods-v2-handlers';
+import { ModApprovalStore, type ApprovalStoreLike, type ApprovedMod } from './mods/v2/approval-store';
+import { ModInstaller, type InstalledMod } from './mods/v2/installer';
+import { createNodeImporter } from './mods/v2/loader';
+import { getModsRuntime } from './mods/v2/runtime';
+import { ModEventBus } from './mods/v2/event-bus';
 import { registerWorkflowIpcHandlers } from './ipc/workflow-handlers';
 import { registerProjectMemoryIpcHandlers } from './ipc/project-memory-handlers';
 import { registerControlCenterIpcHandlers } from './ipc/control-center-handlers';
@@ -2313,6 +2320,75 @@ registerGitIpcHandlers({
 
 // Mods and diff IPC handlers (see main/ipc/mods-handlers.ts)
 registerModsIpcHandlers();
+
+// Mods v2: the review/install surface the settings UI talks to. Registered
+// separately from the legacy `mods.*` channels above, which still serve the old
+// panel — folding them together would make a partial migration look complete.
+{
+  const base = app.getPath('userData');
+  const modsDir = path.join(base, 'mods');
+  const stagingDir = path.join(base, 'mods-staging');
+  const modsStore = new Store<{
+    installed: Record<string, unknown>;
+    enable: { byMod: Record<string, boolean>; byProject: Record<string, Record<string, boolean>> };
+  }>({ name: 'mods-v2' });
+  const v2State = {
+    installed: (modsStore.get('installed') ?? {}) as Record<string, InstalledMod>,
+    enable: modsStore.get('enable') ?? { byMod: {}, byProject: {} },
+  };
+  const approvalBacking: ApprovalStoreLike = {
+    load: () => (modsStore.get('approvals') ?? {}) as Record<string, ApprovedMod>,
+    save: (data) => modsStore.set('approvals', data),
+  };
+  const approvals = new ModApprovalStore(approvalBacking);
+  const runtime = getModsRuntime();
+  const installer = new ModInstaller(
+    {
+      load: () => ({
+        installed: v2State.installed as Record<string, InstalledMod>,
+        enable: v2State.enable,
+      }),
+      save: (data) => {
+        v2State.installed = data.installed as Record<string, InstalledMod>;
+        v2State.enable = data.enable;
+        modsStore.set('installed', data.installed);
+        modsStore.set('enable', data.enable);
+      },
+    },
+    approvals,
+    // Mod-initiated tool calls fail closed at startup; see the runtime wiring.
+    { tools: { invoke: async () => ({ content: '' }) } },
+    createNodeImporter(),
+    modsDir,
+    stagingDir
+  );
+
+  registerModsV2IpcHandlers({
+    stagingDir,
+    modsDir,
+    listInstalled: () =>
+      installer.list().map((mod) => ({ ...mod, enabled: installer.isEnabled(mod.id) })),
+    setEnabled: (id, enabled, projectId) => installer.setEnabled(id, enabled, projectId),
+    uninstall: (modId) => installer.uninstall(modId),
+    commit: (input) => installer.commit(input),
+    safeMode: () => {
+      const decision = safeMode.evaluate();
+      return {
+        active: decision.safeMode,
+        reason: decision.reason,
+        crashedMods: decision.crashedMods,
+        consecutiveBootFailures: safeMode.snapshot().consecutiveBootFailures,
+      };
+    },
+  });
+
+  // Load approved mods at startup, after the handlers exist so the UI can read
+  // health immediately. Failures are reported, never fatal: Cowork must start.
+  void installer.loadInstalled(runtime?.bus ?? new ModEventBus()).then(
+    (outcome) => log(`[Mods] Installed mods loaded: ${outcome.loaded.join(', ') || '(none)'}${outcome.refused.length > 0 ? `; refused: ${outcome.refused.map((entry) => entry.id).join(', ')}` : ''}`),
+    (error: unknown) => logWarn('[Mods] Failed to load installed mods:', error)
+  );
+}
 
 // Remote control IPC handlers (see main/ipc/remote-handlers.ts)
 registerRemoteIpcHandlers();
