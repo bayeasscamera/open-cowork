@@ -22,10 +22,11 @@
     "paths": {
       "@/*": ["src/*"],
       "@main/*": ["src/main/*"],
-      "@renderer/*": ["src/renderer/*"]
+      "@renderer/*": ["src/renderer/*"],
+      "@cowork/mod-api": ["packages/mod-api/index.d.ts"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "packages/mod-api"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
 
