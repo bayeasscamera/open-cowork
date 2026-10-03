@@ -1394,7 +1394,12 @@
     "tlsKeyPlaceholder": "/path/to/key.pem",
     "tlsEnabledWarning": "如果证书或私钥无法读取，网关将拒绝启动，而不会退回到未加密的监听。",
     "tlsMissingWarning": "TLS 已启用但未设置证书路径，网关将拒绝启动。",
-    "tlsTransportLabel": "在此网络上已加密"
+    "tlsTransportLabel": "在此网络上已加密",
+    "bindLabel": "谁可以连接",
+    "bindLoopback": "仅限本机",
+    "bindLoopbackHint": "推荐",
+    "bindAllInterfaces": "本网络上的任何人",
+    "bindAllInterfacesHint": "可从你的 Wi-Fi 访问"
   },
   "time": {
     "now": "刚刚"

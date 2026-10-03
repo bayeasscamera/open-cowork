@@ -37,6 +37,7 @@ interface Props {
   tunnelEnabled: boolean;
   /** Gateway bind address, used to classify the transport. */
   bind: string;
+  onBindChange: (bind: '127.0.0.1' | '0.0.0.0') => void;
   /** Whether the unencrypted-network acknowledgement has already been given. */
   insecureBindingAcknowledged: boolean;
   /** Whether HTTPS/WSS is enabled from a user-supplied certificate. */
@@ -57,6 +58,7 @@ export function RemoteControlTokenSection({
   hasToken,
   tunnelEnabled,
   bind,
+  onBindChange,
   insecureBindingAcknowledged,
   tlsEnabled,
   tlsCertPath,
@@ -96,10 +98,11 @@ export function RemoteControlTokenSection({
     }
   }
 
-  const needsToken = tunnelEnabled && !hasToken;
+  const needsToken = (tunnelEnabled || bind === '0.0.0.0') && !hasToken;
   const transport = classifyRemoteTransport({ bind, tunnelEnabled, tlsEnabled });
   const needsAcknowledgement = requiresInsecureBindingAcknowledgement(transport);
   const tlsIncomplete = tlsEnabled && (!tlsCertPath.trim() || !tlsKeyPath.trim());
+  const isLoopbackBind = bind !== '0.0.0.0';
 
   return (
     <div className="p-6 rounded-[2rem] border border-border-subtle bg-background/60 space-y-4">
@@ -161,6 +164,40 @@ export function RemoteControlTokenSection({
       )}
 
       <div className="border-t border-border-subtle pt-4 space-y-3">
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-text-secondary">
+            {t('remote.bindLabel')}
+          </label>
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+              <input
+                type="radio"
+                name="remote-bind"
+                checked={isLoopbackBind}
+                onChange={() => onBindChange('127.0.0.1')}
+                className="accent-[var(--color-accent)]"
+              />
+              <span>
+                {t('remote.bindLoopback')}
+                <span className="text-text-muted"> · {t('remote.bindLoopbackHint')}</span>
+              </span>
+            </label>
+            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+              <input
+                type="radio"
+                name="remote-bind"
+                checked={!isLoopbackBind}
+                onChange={() => onBindChange('0.0.0.0')}
+                className="accent-[var(--color-accent)]"
+              />
+              <span>
+                {t('remote.bindAllInterfaces')}
+                <span className="text-text-muted"> · {t('remote.bindAllInterfacesHint')}</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
         <div className="flex items-start gap-3">
           {transport === 'plaintext-lan' ? (
             <LockOpen className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />

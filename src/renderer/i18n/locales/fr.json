@@ -1438,7 +1438,12 @@
     "tlsKeyPlaceholder": "/chemin/vers/key.pem",
     "tlsEnabledWarning": "Si le certificat ou la clé est illisible, la passerelle refuse de démarrer plutôt que de retomber sur une écoute non chiffrée.",
     "tlsMissingWarning": "Le TLS est activé mais aucun chemin de certificat nest défini : la passerelle refusera de démarrer.",
-    "tlsTransportLabel": "Chiffré sur ce réseau"
+    "tlsTransportLabel": "Chiffré sur ce réseau",
+    "bindLabel": "Qui peut se connecter",
+    "bindLoopback": "Ce Mac uniquement",
+    "bindLoopbackHint": "recommandé",
+    "bindAllInterfaces": "N'importe qui sur ce réseau",
+    "bindAllInterfacesHint": "accessible depuis votre Wi-Fi"
   },
   "personalization": {
     "memorySectionTitle": "Mémoire",

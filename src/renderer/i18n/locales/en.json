@@ -1372,7 +1372,12 @@
     "tlsKeyPlaceholder": "/path/to/key.pem",
     "tlsEnabledWarning": "If the certificate or key cannot be read, the gateway refuses to start rather than falling back to an unencrypted listener.",
     "tlsMissingWarning": "TLS is on but no certificate paths are set, so the gateway will refuse to start.",
-    "tlsTransportLabel": "Encrypted on this network"
+    "tlsTransportLabel": "Encrypted on this network",
+    "bindLabel": "Who can connect",
+    "bindLoopback": "This Mac only",
+    "bindLoopbackHint": "recommended",
+    "bindAllInterfaces": "Anyone on this network",
+    "bindAllInterfacesHint": "reachable from your Wi-Fi"
   },
   "time": {
     "now": "now"

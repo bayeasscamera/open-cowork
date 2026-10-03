@@ -58,7 +58,12 @@ describe('remote control token UI', () => {
   });
 
   it('warns when a tunnel is enabled without a token, because start-up then fails', () => {
-    expect(section).toContain('const needsToken = tunnelEnabled && !hasToken;');
+    // Asserted in full, including the bind term: a tunnel and a routable bind
+    // each independently make the gateway reachable, so either without a token
+    // must produce the warning.
+    expect(section).toContain(
+      "const needsToken = (tunnelEnabled || bind === '0.0.0.0') && !hasToken;"
+    );
     expect(section).toContain('remote.controlTokenRequiredWarning');
   });
 
@@ -97,6 +102,18 @@ describe('remote control token UI', () => {
         expect(bundle.remote[key.replace('remote.', '')], `${name} is missing ${key}`).toBeTruthy();
       }
     }
+  });
+
+  it('offers the bind choice and persists it, or the control is unreachable', () => {
+    expect(section).toContain("onChange={() => onBindChange('127.0.0.1')}");
+    expect(section).toContain("onChange={() => onBindChange('0.0.0.0')}");
+    expect(panel).toContain('onBindChange={(next) => setGatewayBind(next)}');
+    // A selector that never reaches the config would be decoration.
+    expect(panel).toContain("bind: gatewayBind as '127.0.0.1' | '0.0.0.0',");
+  });
+
+  it('warns that a token is needed before the bind becomes reachable', () => {
+    expect(section).toContain("const needsToken = (tunnelEnabled || bind === '0.0.0.0') && !hasToken;");
   });
 
   it('classifies the transport with the same shared rule the main process enforces', () => {

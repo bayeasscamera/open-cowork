@@ -168,6 +168,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
     try {
       await window.electronAPI.remote.updateGatewayConfig({
         port: gatewayPort,
+        bind: gatewayBind as '127.0.0.1' | '0.0.0.0',
         defaultWorkingDirectory: defaultWorkingDirectory || undefined,
         autoApproveSafeTools,
         tls: { enabled: tlsEnabled, certPath: tlsCertPath, keyPath: tlsKeyPath },
@@ -345,6 +346,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         hasToken={hasControlToken}
         tunnelEnabled={tunnelEnabled}
         bind={gatewayBind}
+        onBindChange={(next) => setGatewayBind(next)}
         insecureBindingAcknowledged={insecureBindingAcknowledged}
         tlsEnabled={tlsEnabled}
         tlsCertPath={tlsCertPath}
