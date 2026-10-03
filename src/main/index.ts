@@ -1692,6 +1692,16 @@ app
     buildMacMenu();
     applyBackgroundAccessSetting(configStore.get('trayEnabled'));
 
+    // The emergency stop is a GLOBAL shortcut, so it works even when the agent
+    // loop is stuck or the window is hidden. It must be registered AFTER the app
+    // is ready: `globalShortcut.register` throws "cannot be used before the app
+    // is ready" otherwise, which silently disarmed the stop in the packaged app.
+    // It reports back whether the accelerator was actually bound, and the UI says
+    // so instead of advertising a dead key.
+    registerEmergencyStopShortcut((result) => {
+      sendToRenderer({ type: 'machine-access.emergency-stopped', payload: result });
+    });
+
     // Show window after core managers are ready so first-load actions can be handled.
     createWindow();
     bootProfiler.mark('managers-ready-window-shown');
@@ -2233,13 +2243,6 @@ registerSandboxIpcHandlers();
 // mode; the mode setter keeps the UI honest about that.
 registerMachineAccessIpcHandlers();
 setMachineAccessSandboxMode(getSandboxAdapter().mode);
-// The stop is a GLOBAL shortcut in the main process, so it works even when the
-// agent loop is stuck or the window is hidden. It reports back whether the
-// accelerator was actually bound, and the UI says so instead of advertising a
-// dead key.
-registerEmergencyStopShortcut((result) => {
-  sendToRenderer({ type: 'machine-access.emergency-stopped', payload: result });
-});
 
 // Agent preset IPC handlers (see main/ipc/preset-handlers.ts)
 registerPresetHandlers();
