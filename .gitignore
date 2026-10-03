@@ -131,3 +131,6 @@ website/.vitepress/cache/
 
 # Local codegraph cache (created at runtime by CodeGraphIndexer)
 .cowork/
+
+# temporary output of the remote verification script
+.cowork-verify/

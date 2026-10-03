@@ -67,7 +67,8 @@
     "typecheck": "tsc --noEmit",
     "pre-build-check": "node scripts/pre-build-check.js",
     "clean": "rimraf dist dist-electron dist-mcp dist-wsl-agent dist-lima-agent .bundle-resources release",
-    "deploy:local": "bash scripts/deploy-local.sh"
+    "deploy:local": "bash scripts/deploy-local.sh",
+    "verify:remote": "esbuild scripts/verify-remote-e2e.ts --bundle --platform=node --format=cjs --outfile=.cowork-verify/remote.cjs --packages=external --log-level=error && node .cowork-verify/remote.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
