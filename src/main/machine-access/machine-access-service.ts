@@ -22,10 +22,13 @@ import { createBinding, isBindingValid } from './approval-binding';
 import {
   getEmergencyStop,
   AllowedApps,
-  macPermissionStates,
+  probePermissionStates,
   type PermissionState,
 } from './machine-control';
 import type { ApprovalBinding, AutonomyLevel, FolderGrant } from './types';
+
+/** The OS probe is slow; never re-run it more often than this. */
+export const PERMISSION_CACHE_MS = 60_000;
 
 export interface MachineAccessDeps {
   workspaceRoot: string;
@@ -53,6 +56,8 @@ export class MachineAccessService {
   readonly journal: FsJournal;
   readonly apps = new AllowedApps();
   private pending = new Map<string, PendingApproval>();
+  private cachedPermissions: { at: number; states: Array<PermissionState & { known: boolean }> } | null =
+    null;
   private readonly deps: MachineAccessDeps;
 
   constructor(deps: MachineAccessDeps) {
@@ -226,10 +231,27 @@ export class MachineAccessService {
 
   // ---- Machine control ----
 
-  permissions(): PermissionState[] {
-    // The real state is probed by the OS bridge; this reports the permission
-    // kinds and their explanations so the UI can never show them as granted.
-    return macPermissionStates().map((state) => ({ ...state, granted: false }));
+  /**
+   * Real permission state. `granted` is only ever true when the OS probe says
+   * so; an unprobeable permission (Automation) comes back `known: false` rather
+   * than being optimistically reported as granted.
+   *
+   * The probe shells out to system_profiler / screencapture, which can take
+   * seconds, so the result is cached: the settings page must never block on it.
+   */
+  async permissions(): Promise<Array<PermissionState & { known: boolean }>> {
+    const now = Date.now();
+    if (this.cachedPermissions && now - this.cachedPermissions.at < PERMISSION_CACHE_MS) {
+      return this.cachedPermissions.states;
+    }
+    const states = await probePermissionStates();
+    this.cachedPermissions = { at: now, states };
+    return states;
+  }
+
+  /** Drop the cached probe (e.g. after the user changed System Settings). */
+  invalidatePermissionCache(): void {
+    this.cachedPermissions = null;
   }
 
   emergencyStop(): { controllers: number; processes: number } {

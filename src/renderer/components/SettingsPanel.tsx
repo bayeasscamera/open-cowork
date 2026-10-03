@@ -36,7 +36,7 @@ import { SettingsPersonalization } from './settings/SettingsPersonalization';
 import { SettingsPermissions } from './settings/SettingsPermissions';
 import { SettingsMachineAccess } from './settings/SettingsMachineAccess';
 import type { FolderGrant, AutonomyLevel } from '@main/machine-access/types';
-import type { PermissionState } from '@main/machine-access/machine-control';
+import type { MachineAccessPermissionState } from '@renderer/types';
 import type { FsOperation } from '@main/machine-access/fs-journal';
 
 interface SettingsPanelProps {
@@ -133,7 +133,7 @@ export interface MachineAccessPanelProps {
   grants: FolderGrant[];
   autonomy: AutonomyLevel;
   allowedApps: string[];
-  permissions: PermissionState[];
+  permissions: MachineAccessPermissionState[];
   history: FsOperation[];
   onAddGrant: () => void;
   onRevokeGrant: (id: string) => void;

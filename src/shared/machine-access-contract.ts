@@ -12,6 +12,11 @@ export type { AutonomyLevel, FolderGrant };
 export interface MachineAccessPermissionState {
   permission: 'accessibility' | 'screen-recording' | 'automation';
   granted: boolean;
+  /**
+   * False when macOS exposes no read-back for this permission (Automation).
+   * The UI must then say "unknown", never "granted".
+   */
+  known: boolean;
   settingsUrl?: string;
   explanation: string;
 }

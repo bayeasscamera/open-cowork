@@ -3,14 +3,14 @@ import { FolderPlus, Trash2, ShieldAlert, OctagonX, FolderOpen } from 'lucide-re
 import { useTranslation } from 'react-i18next';
 import type { FolderGrant, AutonomyLevel } from '@main/machine-access/types';
 import type { FsOperation } from '@main/machine-access/fs-journal';
-import type { PermissionState } from '@main/machine-access/machine-control';
+import type { MachineAccessPermissionState } from '@renderer/types';
 
 export interface SettingsMachineAccessProps {
   grants: FolderGrant[];
   autonomy: AutonomyLevel;
   /** Default autonomy for projects without an explicit pin. */
   allowedApps: string[];
-  permissions: PermissionState[];
+  permissions: MachineAccessPermissionState[];
   history: FsOperation[];
   /** UI-only wiring: the main process owns the real behaviour. */
   onAddGrant: () => void;
@@ -193,7 +193,11 @@ export function SettingsMachineAccess(props: SettingsMachineAccessProps) {
                       : 'text-xs font-medium text-amber-500'
                   }
                 >
-                  {permission.granted ? t('machineAccess.granted') : t('machineAccess.missing')}
+                  {permission.granted
+                    ? t('machineAccess.granted')
+                    : permission.known
+                      ? t('machineAccess.missing')
+                      : t('machineAccess.unknown')}
                 </span>
               </li>
             ))}

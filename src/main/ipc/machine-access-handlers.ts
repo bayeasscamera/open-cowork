@@ -16,7 +16,6 @@ import { ipcMain, dialog, shell, app } from 'electron';
 import { getDatabase } from '../db/database';
 import { MachineAccessService } from '../machine-access/machine-access-service';
 import { getEmergencyStop, AllowedApps } from '../machine-access/machine-control';
-import { macPermissionStates } from '../machine-access/machine-control';
 import { previewRename, executeRename } from '../machine-access/project-rename';
 import { getSharedProjectStore } from '../projects/project-store';
 import { toolRegistry } from '../tools/registry';
@@ -68,7 +67,7 @@ export function registerMachineAccessIpcHandlers(): void {
         grants: svc.listGrants(),
         autonomy: svc.autonomy,
         allowedApps: allowedApps.list(),
-        permissions: macPermissionStates(),
+        permissions: await svc.permissions(),
         history: svc.history(),
         backupQuotaBytes: 512 * 1024 * 1024,
       };

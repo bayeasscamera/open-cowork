@@ -168,11 +168,19 @@ describe('service wiring', () => {
     expect(service.purge().length).toBeGreaterThanOrEqual(0);
   });
 
-  it('reports system permissions as not granted and stops the machine', () => {
-    const permissions = service.permissions();
+  it('reports system permissions as not granted and stops the machine', { timeout: 30000 }, async () => {
+    // The real probe shells out to the OS (slow); the caching path is exercised
+    // instead: first call may be slow, the second is served from cache.
+    const permissions = await service.permissions();
+    const cached = await service.permissions();
+    expect(cached).toEqual(permissions);
     for (const p of permissions) {
-      expect(p.granted).toBe(false);
+      // `granted` reflects the real OS probe on this machine, so it is NOT
+      // asserted to false. What IS invariant: Automation has no macOS
+      // read-back and therefore can never claim granted.
+      expect(typeof p.known).toBe('boolean');
       expect(p.explanation.length).toBeGreaterThan(10);
+      if (p.permission === 'automation') expect(p.granted).toBe(false);
     }
     expect(service.emergencyStop()).toEqual(
       expect.objectContaining({ controllers: expect.any(Number), processes: expect.any(Number) })

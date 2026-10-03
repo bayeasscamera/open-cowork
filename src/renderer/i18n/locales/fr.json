@@ -2179,6 +2179,7 @@
       "reconfirmation": "Cette action vient du contenu de {{source}}.",
       "before": "Avant",
       "after": "Après"
-    }
+    },
+    "unknown": "inconnue"
   }
 }

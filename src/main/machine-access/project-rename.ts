@@ -44,6 +44,12 @@ export interface RenameDeps {
   }) => void;
   isInUse: (workdir: string) => string | null;
   journal: FsJournal;
+  /**
+   * Whether source and destination live on the same filesystem. Injected so
+   * the cross-device branch (copy + verify + trash the source) is reachable in
+   * tests; production omits it and gets the real `stat().dev` comparison.
+   */
+  isSameDevice?: (from: string, to: string) => boolean;
 }
 
 const INVALID_NAME = /[<>:"|?*\0]/;
@@ -161,13 +167,15 @@ export function executeRename(deps: RenameDeps, preview: RenamePreview): { workd
     .map((f) => ({ before: f, after: rebasePath(f, from, to) ?? f }));
 
   const batchId = randomUUID();
-  const sameDevice = (() => {
-    try {
-      return fs.statSync(path.dirname(from)).dev === fs.statSync(path.dirname(to)).dev;
-    } catch {
-      return true;
-    }
-  })();
+  const sameDevice = deps.isSameDevice
+    ? deps.isSameDevice(from, to)
+    : (() => {
+        try {
+          return fs.statSync(path.dirname(from)).dev === fs.statSync(path.dirname(to)).dev;
+        } catch {
+          return true;
+        }
+      })();
 
   // Move the folder first, then the DB — so a DB failure can roll the FS back.
   let fsMoved = false;

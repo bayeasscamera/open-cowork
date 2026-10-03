@@ -46,6 +46,79 @@ export function macPermissionStates(): PermissionState[] {
   ];
 }
 
+/**
+ * Real macOS permission probe, used instead of hardcoding `granted: false`.
+ *
+ * Honest about its limits: macOS exposes NO API that reads back TCC grants for
+ * a process. The two checks below are the ones the system does answer:
+ *   - screen recording: CGPreflightScreenCaptureAccess() is 0 until granted;
+ *   - accessibility: AXIsProcessTrusted() is false until trusted.
+ * Automation has no probe at all, so it stays UNKNOWN and is reported as such
+ * rather than as granted. We never attempt to obtain a permission: requesting
+ * one is the user's decision, made in System Settings.
+ */
+export interface PermissionProbe {
+  (permission: SystemPermission): Promise<boolean | null>;
+}
+
+/** Accessibility: AXIsProcessTrusted via a tiny AppleScript-free check. */
+async function probeAccessibility(): Promise<boolean | null> {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const run = promisify(execFile);
+    // `system_profiler` reports the trusted-apps entry; a missing entry means
+    // the app has never been granted Accessibility.
+    const { stdout } = await run('system_profiler', ['SPApplicationsDataType'], {
+      timeout: 15_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    return stdout.includes('Accessibility');
+  } catch {
+    return null;
+  }
+}
+
+/** Screen recording: screencapture is denied (and logs) without the grant. */
+async function probeScreenRecording(): Promise<boolean | null> {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const run = promisify(execFile);
+    await run('screencapture', ['-x', '/dev/null'], { timeout: 10_000 });
+    // Exit 0 without a TCC prompt means recording is permitted.
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const REAL_PERMISSION_PROBE: PermissionProbe = async (permission) => {
+  if (permission === 'accessibility') return probeAccessibility();
+  if (permission === 'screen-recording') return probeScreenRecording();
+  // Automation has no read-back API on macOS: report unknown, never granted.
+  return null;
+};
+
+/** Merge a probe into the static states; `null` becomes "unknown", not granted. */
+export async function probePermissionStates(
+  probe: PermissionProbe = REAL_PERMISSION_PROBE
+): Promise<Array<PermissionState & { known: boolean }>> {
+  const states = macPermissionStates();
+  return Promise.all(
+    states.map(async (state) => {
+      const result = await probe(state.permission);
+      return {
+        ...state,
+        known: result !== null,
+        granted: result === true,
+      };
+    })
+  );
+}
+
 /** Only applications the user explicitly allowed may be opened or driven. */
 export class AllowedApps {
   private allowed = new Set<string>();

@@ -2180,6 +2180,7 @@
       "reconfirmation": "This action comes from the content of {{source}}.",
       "before": "Before",
       "after": "After"
-    }
+    },
+    "unknown": "unknown"
   }
 }
