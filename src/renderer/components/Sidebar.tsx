@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { Session } from '../types';
 import { partitionSidebarSessions } from '../utils/sidebar-partition';
+import { applyProjectWorkspaceActivation } from '../utils/project-workspace-activation';
 
 import sidebarLogoSrc from '../assets/logo.png';
 
@@ -49,7 +50,6 @@ export function Sidebar() {
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const activeProjectId = useAppStore((s) => s.activeProjectId);
-  const setActiveProjectId = useAppStore((s) => s.setActiveProjectId);
   const openProjectsModal = useAppStore((s) => s.openProjectsModal);
   const openProjectsList = useAppStore((s) => s.openProjectsList);
   const {
@@ -173,6 +173,26 @@ export function Sidebar() {
       return next;
     });
   }, []);
+
+  const handleProjectWorkspaceActivation = useCallback(
+    async (
+      project: { id: string; name: string; workdir: string; archived: boolean },
+      expanded: boolean
+    ) => {
+      const store = useAppStore.getState();
+      await applyProjectWorkspaceActivation({
+        project: { ...project, isArchived: project.archived },
+        expanded,
+        dependencies: {
+          getActiveProjectId: () => store.activeProjectId,
+          setActiveProjectId: store.setActiveProjectId,
+          setWorkingDirPath,
+          notify: store.setGlobalNotice,
+        },
+      });
+    },
+    [setWorkingDirPath]
+  );
 
   // Exit select mode when sidebar collapses
   useEffect(() => {
@@ -729,18 +749,7 @@ export function Sidebar() {
                           const willExpand = !isExpanded;
                           toggleProjectExpanded(project.id);
                           if (!isArchived) {
-                            if (willExpand) {
-                              setActiveProjectId(project.id);
-                              // The displayed workspace follows the project:
-                              // new sessions already start in project.workdir,
-                              // so the folder button must show it too.
-                              void setWorkingDirPath(project.workdir).catch(() => {
-                                // Non-fatal: activation still worked, only the
-                                // folder display keeps the previous value.
-                              });
-                            } else if (isActiveProject) {
-                              setActiveProjectId(null);
-                            }
+                            void handleProjectWorkspaceActivation(project, willExpand);
                           }
                         }}
                         onMouseEnter={() => setHoveredProject(project.id)}

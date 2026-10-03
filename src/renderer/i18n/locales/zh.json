@@ -937,6 +937,7 @@
       "deleteFailed": "删除项目失败",
       "linkFailed": "将会话加入项目失败",
       "nameAndWorkdirRequired": "名称和工作目录为必填项",
+      "workspaceActivationFailed": "无法将显示的工作区切换到项目{{project}}：{{reason}}",
       "updateFailed": "无法更新项目。"
     },
     "presetLabel": "预设",

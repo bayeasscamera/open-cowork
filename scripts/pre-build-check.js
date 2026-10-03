@@ -25,6 +25,34 @@ const RESET = '\x1b[0m';
  */
 
 /**
+ * Official native release targets. This is the complete list of platform/arch
+ * combinations covered by electron-builder.yml and the release workflow.
+ * Anything else must fail before artifact validation begins.
+ */
+const SUPPORTED_BUILD_TARGETS = Object.freeze({
+  darwin: Object.freeze(['arm64']),
+  linux: Object.freeze(['x64']),
+  win32: Object.freeze(['x64']),
+});
+
+/**
+ * @param {string} platform - Node.js process.platform value
+ * @param {string} arch - Node.js process.arch value
+ */
+function assertSupportedBuildTarget(platform, arch) {
+  const supportedArchitectures = SUPPORTED_BUILD_TARGETS[platform];
+  if (!supportedArchitectures || !supportedArchitectures.includes(arch)) {
+    throw new Error(
+      `Unsupported release target: ${platform}/${arch}. Supported targets are ${Object.entries(
+        SUPPORTED_BUILD_TARGETS
+      )
+        .map(([supportedPlatform, architectures]) => `${supportedPlatform}/${architectures.join(',')}`)
+        .join(', ')}.`
+    );
+  }
+}
+
+/**
  * Build the list of checks for the given platform and arch.
  *
  * @param {string} platform - Node.js process.platform value
@@ -32,6 +60,7 @@ const RESET = '\x1b[0m';
  * @returns {CheckSpec[]}
  */
 function buildCheckList(platform, arch) {
+  assertSupportedBuildTarget(platform, arch);
   /** @type {CheckSpec[]} */
   const checks = [
     // Common checks (all platforms, FATAL)
@@ -202,7 +231,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { runChecks, buildCheckList };
+module.exports = { runChecks, buildCheckList, SUPPORTED_BUILD_TARGETS };
 
 if (require.main === module) {
   main();

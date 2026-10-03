@@ -519,6 +519,7 @@
       "deleteFailed": "Échec de la suppression du projet",
       "linkFailed": "Échec de l'ajout de la conversation au projet",
       "nameAndWorkdirRequired": "Le nom et le dossier de travail sont requis",
+      "workspaceActivationFailed": "Impossible de faire suivre l’espace de travail affiché au projet {{project}} : {{reason}}",
       "updateFailed": "Impossible de mettre à jour le projet."
     },
     "presetLabel": "Préréglage",

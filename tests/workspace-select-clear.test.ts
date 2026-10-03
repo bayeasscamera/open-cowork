@@ -41,7 +41,7 @@ describe('clearing the workspace', () => {
 
 describe('project click follows its folder', () => {
   it('activating a project in the sidebar points the UI workspace at its workdir', () => {
-    expect(sidebar).toContain('setWorkingDirPath(project.workdir)');
-    expect(sidebar).toContain('setActiveProjectId(project.id)');
+    expect(sidebar).toContain('applyProjectWorkspaceActivation');
+    expect(sidebar).toContain('handleProjectWorkspaceActivation(project, willExpand)');
   });
 });

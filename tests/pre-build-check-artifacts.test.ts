@@ -96,9 +96,9 @@ describe('pre-build-check: runChecks', () => {
 
   it('reports warnings for optional darwin resources that are missing', () => {
     // Only populate FATAL items; leave warn items absent
-    populateDarwinArtifacts(tmpDir, 'x64');
+    populateDarwinArtifacts(tmpDir, 'arm64');
 
-    const result = runChecks(tmpDir, 'darwin', 'x64');
+    const result = runChecks(tmpDir, 'darwin', 'arm64');
 
     expect(result.failed).toBe(0);
     expect(result.hasFatal).toBe(false);
@@ -107,11 +107,11 @@ describe('pre-build-check: runChecks', () => {
   });
 
   it('reports zero warnings when optional darwin resources are present', () => {
-    populateDarwinArtifacts(tmpDir, 'x64');
-    makeDir(path.join(tmpDir, 'resources/python/darwin-x64'));
-    makeDir(path.join(tmpDir, 'resources/tools/darwin-x64'));
+    populateDarwinArtifacts(tmpDir, 'arm64');
+    makeDir(path.join(tmpDir, 'resources/python/darwin-arm64'));
+    makeDir(path.join(tmpDir, 'resources/tools/darwin-arm64'));
 
-    const result = runChecks(tmpDir, 'darwin', 'x64');
+    const result = runChecks(tmpDir, 'darwin', 'arm64');
 
     expect(result.failed).toBe(0);
     expect(result.warnings).toBe(0);

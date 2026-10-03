@@ -915,6 +915,7 @@
       "deleteFailed": "Failed to delete project",
       "linkFailed": "Failed to add the conversation to the project",
       "nameAndWorkdirRequired": "Name and workspace folder are required",
+      "workspaceActivationFailed": "Could not switch the displayed workspace to {{project}}: {{reason}}",
       "updateFailed": "Could not update the project."
     },
     "presetLabel": "Preset",
