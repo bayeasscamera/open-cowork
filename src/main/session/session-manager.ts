@@ -204,6 +204,7 @@ export class SessionManager {
   private titleGenerationTokens: Map<string, symbol> = new Map();
   private messageCache: Map<string, Message[]> = new Map();
   private static readonly MAX_CACHE_SIZE = 100;
+  private memoryManager?: MemoryManager;
 
   constructor(
     db: DatabaseInstance,
@@ -283,6 +284,9 @@ export class SessionManager {
   }
 
   private createCoworkAgentRunner(): CoworkAgentRunner {
+    if (!this.memoryManager) {
+      this.memoryManager = new MemoryManager(this.db.raw);
+    }
     return new CoworkAgentRunner(
       {
         sendToRenderer: this.sendToRenderer,
@@ -304,8 +308,15 @@ export class SessionManager {
       this.pluginRuntimeService,
       this.skillsAdapter,
       this.extensionManager,
-      new MemoryManager(this.db.raw)
+      this.memoryManager
     );
+  }
+
+  public getMemoryManager(): MemoryManager {
+    if (!this.memoryManager) {
+      this.memoryManager = new MemoryManager(this.db.raw);
+    }
+    return this.memoryManager;
   }
 
   /**

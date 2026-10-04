@@ -37,6 +37,7 @@ const DEFAULT_TOOL_ALLOW: string[] = [
   'multi_edit',
   'notebook_edit',
   'read',
+  'remember_note',
   'task',
   'write',
 ];

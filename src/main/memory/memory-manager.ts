@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Message, MemoryEntry, ContentBlock } from '../../shared/types';
+import type { Message, MemoryEntry, ContentBlock, UserNote } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 import { logError, logWarn } from '../utils/logger';
 import type { MemoryLLMClientLike } from './memory-llm-client';
@@ -97,6 +97,18 @@ export class MemoryManager {
         );
         CREATE INDEX IF NOT EXISTS idx_project_context_session
           ON project_context(session_id);
+
+        CREATE TABLE IF NOT EXISTS user_notes (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT NOT NULL,
+          tags TEXT NOT NULL DEFAULT '[]',
+          pinned INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_notes_pinned
+          ON user_notes(pinned, updated_at);
       `);
     } catch (error) {
       logError('[MemoryManager] Failed to create error_patterns / user_preferences tables:', error);
@@ -154,6 +166,139 @@ export class MemoryManager {
     if (prefs.length === 0) return '';
     const lines = prefs.map((p) => `- ${p.key}: ${p.value}`);
     return `\n\n<user_preferences>\nLearned habits, preferences, and workflows for this user:\n${lines.join('\n')}\n</user_preferences>`;
+  }
+
+  /** Add a personal note to be remembered across sessions */
+  addNote(title: string, content: string, tags: string[] = []): string {
+    const id = uuidv4();
+    const now = Date.now();
+    try {
+      this.db
+        .prepare(
+          'INSERT INTO user_notes (id, title, content, tags, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)'
+        )
+        .run(id, title.trim(), content.trim(), JSON.stringify(tags), now, now);
+      return id;
+    } catch (error) {
+      logError('[MemoryManager] Failed to add user note:', error);
+      throw error;
+    }
+  }
+
+  /** Update an existing user note */
+  updateNote(
+    id: string,
+    updates: { title?: string; content?: string; tags?: string[]; pinned?: boolean }
+  ): boolean {
+    const fields: string[] = [];
+    const values: unknown[] = [];
+
+    if (updates.title !== undefined) {
+      fields.push('title = ?');
+      values.push(updates.title.trim());
+    }
+    if (updates.content !== undefined) {
+      fields.push('content = ?');
+      values.push(updates.content.trim());
+    }
+    if (updates.tags !== undefined) {
+      fields.push('tags = ?');
+      values.push(JSON.stringify(updates.tags));
+    }
+    if (updates.pinned !== undefined) {
+      fields.push('pinned = ?');
+      values.push(updates.pinned ? 1 : 0);
+    }
+
+    if (fields.length === 0) return false;
+
+    fields.push('updated_at = ?');
+    values.push(Date.now());
+    values.push(id);
+
+    try {
+      const result = this.db
+        .prepare(`UPDATE user_notes SET ${fields.join(', ')} WHERE id = ?`)
+        .run(...values);
+      return result.changes > 0;
+    } catch (error) {
+      logError('[MemoryManager] Failed to update user note:', error);
+      return false;
+    }
+  }
+
+  /** Delete a user note by id */
+  deleteNote(id: string): boolean {
+    try {
+      const result = this.db.prepare('DELETE FROM user_notes WHERE id = ?').run(id);
+      return result.changes > 0;
+    } catch (error) {
+      logError('[MemoryManager] Failed to delete user note:', error);
+      return false;
+    }
+  }
+
+  /** Retrieve all persisted user notes (pinned first, then newest update first) */
+  getAllNotes(): UserNote[] {
+    try {
+      const rows = this.db
+        .prepare('SELECT * FROM user_notes ORDER BY pinned DESC, updated_at DESC')
+        .all() as Record<string, unknown>[];
+      return rows.map((r) => this.mapRowToUserNote(r));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Search notes by text query in title or content */
+  searchNotes(query: string): UserNote[] {
+    if (!query || !query.trim()) return this.getAllNotes();
+    try {
+      const term = `%${query.trim()}%`;
+      const rows = this.db
+        .prepare(
+          'SELECT * FROM user_notes WHERE title LIKE ? OR content LIKE ? ORDER BY pinned DESC, updated_at DESC'
+        )
+        .all(term, term) as Record<string, unknown>[];
+      return rows.map((r) => this.mapRowToUserNote(r));
+    } catch {
+      return [];
+    }
+  }
+
+  private mapRowToUserNote(row: Record<string, unknown>): UserNote {
+    let parsedTags: string[] = [];
+    if (typeof row.tags === 'string') {
+      try {
+        const parsed = JSON.parse(row.tags);
+        if (Array.isArray(parsed)) {
+          parsedTags = parsed.filter((item): item is string => typeof item === 'string');
+        }
+      } catch {
+        parsedTags = [];
+      }
+    }
+    return {
+      id: String(row.id || ''),
+      title: String(row.title || ''),
+      content: String(row.content || ''),
+      tags: parsedTags,
+      pinned: Boolean(row.pinned),
+      createdAt: Number(row.created_at || 0),
+      updatedAt: Number(row.updated_at || 0),
+    };
+  }
+
+  /** Format user notes into a system prompt section for the daily companion */
+  formatNotesForContext(): string {
+    const notes = this.getAllNotes();
+    if (notes.length === 0) return '';
+    const lines = notes.map((n) => {
+      const prefix = n.pinned ? '★ ' : '- ';
+      const tagStr = n.tags.length > 0 ? ` [${n.tags.join(', ')}]` : '';
+      return `${prefix}${n.title ? n.title + ': ' : ''}${n.content}${tagStr}`;
+    });
+    return `\n\n<user_notes>\nPersonal notes and memories saved for this user across sessions:\n${lines.join('\n')}\n</user_notes>`;
   }
 
   /** Persist an LLM-generated project context summary for a session */

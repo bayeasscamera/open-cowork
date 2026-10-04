@@ -355,7 +355,20 @@ export function WorkspacePane({ sessionId }: { sessionId: string }) {
         </div>
         <div className="min-h-0 overflow-auto rounded-lg border border-border-subtle bg-background/60 p-2">
           {selected?.kind === 'file' && preview ? (
-            <pre className="whitespace-pre-wrap font-mono text-[10px] text-text-secondary">{preview}</pre>
+            selected.name.toLowerCase().endsWith('.html') || selected.name.toLowerCase().endsWith('.htm') ? (
+              <iframe
+                srcDoc={preview}
+                sandbox="allow-scripts"
+                title={selected.name}
+                className="h-full min-h-[300px] w-full rounded border-0 bg-white"
+              />
+            ) : selected.name.toLowerCase().endsWith('.md') ? (
+              <div className="max-w-none whitespace-pre-wrap font-sans text-xs text-text-primary">
+                {preview}
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap font-mono text-[10px] text-text-secondary">{preview}</pre>
+            )
           ) : (
             <p className="text-xs text-text-muted">{t('controlCenter.workspace.previewEmpty')}</p>
           )}

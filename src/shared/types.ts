@@ -1240,3 +1240,14 @@ export interface MCPToolInfo {
   serverId: string;
   serverName: string;
 }
+
+/** Personal note remembered by the daily companion across sessions. */
+export interface UserNote {
+  id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+}

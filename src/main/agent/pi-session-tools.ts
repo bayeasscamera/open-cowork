@@ -82,6 +82,8 @@ export interface BuildPiSessionToolsDeps {
    * `create_task_skill` or `install_plugin` so the runner reloads on next turn.
    */
   sessionManagerForCreator?: { invalidateSkillsSetup(): void };
+  /** Daily Companion: memory manager to persist notes remembered across sessions. */
+  memoryManager?: { addNote(title: string, content: string, tags?: string[]): string };
 }
 
 export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
@@ -92,6 +94,7 @@ export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
     cwd: deps.cwd,
     pluginRuntimeService: deps.pluginRuntimeService,
     sessionManager: deps.sessionManagerForCreator,
+    memoryManager: deps.memoryManager,
   });
   const webTools = buildWebTools({
     tavilyApiKey: deps.tavilyApiKey,

@@ -256,17 +256,67 @@ export interface SessionManagerLike {
   invalidateSkillsSetup(): void;
 }
 
+/** Minimal interface for memory manager to persist user notes for daily companion. */
+export interface MemoryManagerLike {
+  addNote(title: string, content: string, tags?: string[]): string;
+}
+
 export function buildAgentMetaTools(
   options: {
     sessionId?: string;
     cwd?: string;
     pluginRuntimeService?: PluginRuntimeServiceLike;
     sessionManager?: SessionManagerLike;
+    memoryManager?: MemoryManagerLike;
   } = {}
 ): ToolDefinition[] {
   const skillRegistry = DynamicSkillRegistry.getInstance();
 
   return [
+    // 0. Daily Companion Personal Note Memory
+    {
+      name: 'remember_note',
+      label: 'Remember Note',
+      description:
+        'Save a personal note or important information to remember across sessions. Use when the user explicitly asks to remember something or when capturing preferences, habits, or decisions.',
+      parameters: Type.Object({
+        title: Type.String({ description: 'Short title for the note.' }),
+        content: Type.String({ description: 'Detailed note content to remember.' }),
+        tags: Type.Optional(Type.Array(Type.String(), { description: 'Optional keywords or categories.' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { title: string; content: string; tags?: string[] };
+        if (!options.memoryManager) {
+          return {
+            content: [{ type: 'text' as const, text: 'MemoryManager not available in this session context.' }],
+            details: { success: false },
+          };
+        }
+        try {
+          const noteId = options.memoryManager.addNote(args.title, args.content, args.tags);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Note "${args.title}" remembered successfully (id: ${noteId}). It will be available in future sessions.`,
+              },
+            ],
+            details: { success: true, noteId },
+          };
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Failed to remember note: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
+            details: { success: false },
+          };
+        }
+      },
+    },
+
     // 1. Skill PROPOSAL — the ONLY dynamic-skill path for the main agent:
     // a static markdown draft that stays PENDING until a human approves it
     // in the Skill doctor. No executable code, no auto-activation.

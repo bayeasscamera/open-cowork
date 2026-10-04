@@ -1326,6 +1326,8 @@ export class CoworkAgentRunner {
         // Creator Mode: let the agent install plugins and create skills mid-task.
         pluginRuntimeService: this._pluginRuntimeService,
         sessionManagerForCreator: this,
+        // Daily Companion: let the agent save personal notes across sessions.
+        memoryManager: this.memoryManager,
       });
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)

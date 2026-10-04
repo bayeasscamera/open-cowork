@@ -39,6 +39,7 @@ import type {
   SwarmStats,
   DelegationStats,
   A2AStatus,
+  UserNote,
 } from '../shared/types';
 import type { DiagnosticInput, DiagnosticResult } from '../shared/types';
 import type { HealthReport } from '../shared/health-report';
@@ -1123,6 +1124,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('memory.inspectSession', sessionId, workspaceKey),
     setEnabled: (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> =>
       ipcRenderer.invoke('memory.setEnabled', enabled),
+    notes: {
+      list: (): Promise<UserNote[]> => ipcRenderer.invoke('memory.notes.list'),
+      add: (payload: { title: string; content: string; tags?: string[] }): Promise<string> =>
+        ipcRenderer.invoke('memory.notes.add', payload),
+      update: (payload: {
+        id: string;
+        updates: { title?: string; content?: string; tags?: string[]; pinned?: boolean };
+      }): Promise<boolean> => ipcRenderer.invoke('memory.notes.update', payload),
+      delete: (id: string): Promise<boolean> => ipcRenderer.invoke('memory.notes.delete', id),
+      search: (query: string): Promise<UserNote[]> =>
+        ipcRenderer.invoke('memory.notes.search', query),
+    },
   },
 
   workflow: {
@@ -1987,6 +2000,16 @@ declare global {
           workspaceKey?: string
         ) => Promise<MemoryInspectSessionResult | null>;
         setEnabled: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>;
+        notes: {
+          list: () => Promise<UserNote[]>;
+          add: (payload: { title: string; content: string; tags?: string[] }) => Promise<string>;
+          update: (payload: {
+            id: string;
+            updates: { title?: string; content?: string; tags?: string[]; pinned?: boolean };
+          }) => Promise<boolean>;
+          delete: (id: string) => Promise<boolean>;
+          search: (query: string) => Promise<UserNote[]>;
+        };
       };
       workflow: {
         getState: (sessionId: string) => Promise<WorkflowState | null>;

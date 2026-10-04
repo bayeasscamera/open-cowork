@@ -150,4 +150,47 @@ export function registerMemoryIpcHandlers(context: MemoryIpcContext): void {
     });
     return result;
   });
+
+  // Daily Companion Personal Notes IPC handlers
+  ipcMain.handle('memory.notes.list', () => {
+    const sm = sessionManager;
+    if (!sm) return [];
+    return sm.getMemoryManager().getAllNotes();
+  });
+
+  ipcMain.handle(
+    'memory.notes.add',
+    (_event, payload: { title: string; content: string; tags?: string[] }) => {
+      const sm = sessionManager;
+      if (!sm) throw new Error('SessionManager not initialized');
+      return sm.getMemoryManager().addNote(payload.title, payload.content, payload.tags);
+    }
+  );
+
+  ipcMain.handle(
+    'memory.notes.update',
+    (
+      _event,
+      payload: {
+        id: string;
+        updates: { title?: string; content?: string; tags?: string[]; pinned?: boolean };
+      }
+    ) => {
+      const sm = sessionManager;
+      if (!sm) return false;
+      return sm.getMemoryManager().updateNote(payload.id, payload.updates);
+    }
+  );
+
+  ipcMain.handle('memory.notes.delete', (_event, id: string) => {
+    const sm = sessionManager;
+    if (!sm) return false;
+    return sm.getMemoryManager().deleteNote(id);
+  });
+
+  ipcMain.handle('memory.notes.search', (_event, query: string) => {
+    const sm = sessionManager;
+    if (!sm) return [];
+    return sm.getMemoryManager().searchNotes(query);
+  });
 }
