@@ -1,21 +1,26 @@
 # Rapport de mesure — skills d'écriture Creative en français
 
-**Date** : 2026-10-04
-**Modèle testé** : `custom` / `opencode-go/mimo-v2.6-flash` (profil actif, lu
-dans `config.public.json`)
-**Statut** : **INCOMPLET — aucune conclusion d'efficacité n'est possible**
+**Date** : 2026-10-04 (mis à jour après la réparation de la clé : relais
+`omnirouter`, endpoint local `http://localhost:20128/v1`, sonde « Tester la
+connexion » OK)
+**Modèle testé** : `custom` / `opencode-go/mimo-v2.6-flash`
+**Statut** : **PARTIEL — 1 paire complète sur 3 visées, aucune conclusion
+d'efficacité n'est possible**
 
 ---
 
 ## 1. Réponse courte
 
-**Rien n'est démontré.** Sur les trois générations tentées, une seule a
-abouti, et c'est le bras **sans** skills. Il n'existe donc aucune paire
-comparable, et le skills n'a pas été mis à l'épreuve une seule fois.
+**Presque rien n'est démontré.** Après réparation de la clé, 12 générations ont
+été tentées ; 3 ont produit un texte. Il existe **une seule paire comparable**
+(`fr-03`), mesurée ci-dessous en §10. Le fichier aveugle correspondant
+(`docs/writing-bench/blind-01/`) attend ta notation.
 
-Ce qui est rapporté ici est donc : un harnais vérifié, et une première mesure
-isolée qui apprend quelque chose sur le modèle — pas sur l'efficacité des
-skills.
+Sur cette paire unique : **zéro tic creux des deux côtés** (le modèle n'émet
+pas la pathologie visée, avec ou sans skills), et un écart de typographie
+massif (33 erreurs sans vs 5 avec, presque entièrement des apostrophes
+droites : 28 contre 0). n=1, textes de longueurs très différentes (1980 vs
+1014 caractères, la consigne ne fixait pas la longueur) — **aucune conclusion**.
 
 ---
 
@@ -102,17 +107,16 @@ c'est aussi ce qui rend la phase 7 indispensable plutôt qu(optionnelle.
 
 ## 6. Pour finir la phase 7
 
-1. Réparer l'authentification du fournisseur dans Settings → API.
-2. Rejouer `npm run bench:writing:measure` sur les trois consignes échouées.
-3. Générer le bras « avec skills » : créer une session, charger les skills
-   dans le contexte, puis régénérer les mêmes trois consignes avec le même
-   modèle.
-4. Construire le fichier en aveugle :
-   `npm run bench:writing:blind out/ pairs/`
-5. Le noter **sans ouvrir `ANSWER-KEY.tsv`**.
-6. Dépouiller : `npm run bench:writing:tally out/`.
-
-Tant que ces six points ne sont pas faits, ce document doit rester tel quel.
+1. ~~Réparer l'authentification du fournisseur~~ — **fait** : relais omnirouter,
+   sonde OK le 2026-10-04.
+2. Produire les paires manquantes : `fr-01` (bras avec) et `fr-05` (les deux
+   bras). Le relais était très instable pendant la session (voir §10).
+3. Construire le fichier en aveugle :
+   `npm run bench:writing:blind out/ pairs/` — **fait pour `fr-03`** :
+   `docs/writing-bench/blind-01/`.
+4. Le noter **sans ouvrir `ANSWER-KEY.tsv`** — **à toi de jouer** (grille 1-5,
+   5 axes, dans `REVIEW.md`).
+5. Dépouiller : `npm run bench:writing:tally out/`.
 
 ---
 
@@ -163,3 +167,53 @@ au lieu de 723 (la moitié française invisible était comptée pour rien).
 Le test qui attrape ce défaut vérifie ce que le routeur voit réellement, pas la
 description lisible. Il a été validé sur les deux régressions : guillemet
 réintroduit, apostrophe réintroduite.
+
+---
+
+## 10. Session de génération du 2026-10-04 (relais omnirouter)
+
+12 générations tentées via l'app installée, même modèle, mêmes réglages.
+Bras « sans » = consigne seule. Bras « avec » = consigne + bloc méthode
+explicite nommant les 4 skills (le skill ne peut pas être chargé autrement par
+`session.start` : les skills arrivent par `additionalSkillPaths`, pas par
+l'IPC — l'instruction explicite est la condition réaliste d'usage).
+
+| Session | Bras | Résultat |
+|---|---|---|
+| `fr-03` cuisine abandonnée | sans | **texte, 1980 car.** |
+| `fr-03` cuisine abandonnée | avec | **texte, 1014 car.** |
+| `fr-01` première phrase | sans | texte, 101 car. (session précédente) |
+| `fr-01` +padding neutre (~450 car.) | contrôle | **400** |
+| `fr-01` / `fr-05` avec, suffixe long puis court | avec | **400 puis 404** à chaque fois |
+| `fr-05` sans | sans | **503 puis 404** |
+
+Erreurs relais rencontrées : `503 capacity unavailable`, `404` avec corps
+gzip non décodé, `400 model not found` (message trompeur).
+
+**Fait notable** : le contrôle à padding neutre échoue comme le bras « avec ».
+Ce n'est donc pas le contenu de l'instruction qui coince, mais la **taille du
+prompt** (ou un seuil relais) — avec une composante intermittente, puisque
+`fr-03-avec` (436 car. de consigne) est passé une fois. Le relais a en outre
+été instable toute la session.
+
+### Mesure automatique de la paire `fr-03`
+
+```
+tics/1000 mots   sans 0  avec 0  écart 0
+variance phrases sans 9.5  avec 5.56
+débuts répétés   sans 2  avec 2
+typo             sans 33  avec 5  (dont apostrophes droites : 28 contre 0)
+```
+
+Lecture honnête : les tics creux sont absents des deux côtés (2e confirmation).
+L'écart de typographie est réel mais mécanique — il mesure surtout que le
+texte « avec » applique `typographie-fr.md`, pas qu'il est meilleur. La
+variance plus forte du « sans » vient en partie de sa longueur double. **n=1 :
+aucune conclusion.**
+
+### Sessions nettoyées
+
+Les 14 sessions `bench-*` ont été supprimées de la base après extraction des
+textes (sauvegarde préalable de la base). Textes conservés :
+`docs/writing-bench/blind-01/` (paire + fichier aveugle) et
+`docs/writing-bench/without-fr01.txt`.
