@@ -6,6 +6,8 @@
  * allowed it, the resulting diff and the verification evidence.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import type { AuditEntry, NewAuditEntry } from '../../shared/workflow-types';
 
 export type { AuditAuthorization, AuditEntry, NewAuditEntry } from '../../shared/workflow-types';
@@ -25,7 +27,14 @@ export class AuditLog {
    */
   private idCounter = 0;
 
-  constructor(private readonly now: () => number = () => Date.now()) {}
+  constructor(
+    private readonly logFilePath?: string,
+    private readonly now: () => number = () => Date.now()
+  ) {
+    if (logFilePath) {
+      fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
+    }
+  }
 
   public append(entry: NewAuditEntry): AuditEntry {
     this.idCounter += 1;
@@ -37,6 +46,13 @@ export class AuditLog {
       at: entry.at ?? this.now(),
     };
     this.entries.push(record);
+    if (this.logFilePath) {
+      try {
+        fs.appendFileSync(this.logFilePath, JSON.stringify(record) + '\n');
+      } catch (e) {
+        console.error('Failed to append to audit log file:', e);
+      }
+    }
     return record;
   }
 
@@ -50,6 +66,17 @@ export class AuditLog {
 
   public size(): number {
     return this.entries.length;
+  }
+
+  public flush(): void {
+    if (this.logFilePath) {
+      try {
+        const jsonPath = this.logFilePath.replace('.ndjson', '.json');
+        fs.writeFileSync(jsonPath, this.exportJson(), 'utf-8');
+      } catch (e) {
+        console.error('Failed to flush audit log:', e);
+      }
+    }
   }
 
   public clear(): void {

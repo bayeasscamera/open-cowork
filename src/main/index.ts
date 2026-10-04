@@ -88,6 +88,10 @@ import { registerArtifactStoreIpcHandlers } from './ipc/artifact-store-handlers'
 import { registerRoomIpcHandlers } from './ipc/room-handlers';
 import { getSharedRoomStore } from './rooms/room-store-factory';
 import { registerConfigIpcHandlers } from './ipc/config-handlers';
+import { registerAuditIpcHandlers } from './ipc/audit-handlers';
+import { AuditLog } from './agent/audit-log';
+import { setGlobalAuditLog } from './agent/audit-log-registry';
+import { registerSessionIpcHandlers } from './ipc/session-handlers';
 import { registerLogsIpcHandlers } from './ipc/logs-handlers';
 import { registerGitIpcHandlers } from './ipc/git-handlers';
 import { registerMcpIpcHandlers } from './ipc/mcp-handlers';
@@ -1058,6 +1062,13 @@ app
     // and is re-applied (see below). Headless keeps the full wait: it starts a
     // session immediately, so there is nothing to show meanwhile.
     bootProfiler.mark('whenReady-start');
+    const userDataPathForAudit = app.getPath('userData');
+    const dateStr = new Date().toISOString().split('T')[0];
+    const auditLogPath = path.join(userDataPathForAudit, 'logs', `audit-${dateStr}.ndjson`);
+
+    const globalAuditLog = new AuditLog(auditLogPath);
+    setGlobalAuditLog(globalAuditLog);
+  
     if (configStore.isConfigured()) {
       log('[Config] Applying saved configuration...');
       if (process.argv.includes('--headless')) {
@@ -2389,6 +2400,8 @@ if (safeModeDecision.safeMode) {
 }
 
 // Logs IPC handlers (see main/ipc/logs-handlers.ts)
+registerAuditIpcHandlers();
+registerSessionIpcHandlers(() => sessionManager);
 registerLogsIpcHandlers({
   getSessionManager: () => sessionManager,
   getMainWindow: () => mainWindow,

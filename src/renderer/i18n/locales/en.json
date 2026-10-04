@@ -2297,5 +2297,9 @@
     "status_timeout": "timed out",
     "status_unavailable": "unavailable",
     "status_limit": "limit reached"
+  },
+  "agent": {
+    "steer": "Redirect agent",
+    "queue": "Queue message"
   }
 }

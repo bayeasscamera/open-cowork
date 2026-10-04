@@ -246,8 +246,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Invoke and wait for response
   invoke,
 
+  audit: {
+    list: (): Promise<AuditEntry[]> => ipcRenderer.invoke('audit.list'),
+    tail: (n: number): Promise<AuditEntry[]> => ipcRenderer.invoke('audit.tail', n),
+    export: (format: 'json'|'ndjson'|'csv'): Promise<string> => ipcRenderer.invoke('audit.export', format),
+  },
+
   // Session compaction and context usage
   session: {
+    steer: (sessionId: string, text: string): Promise<void> => ipcRenderer.invoke('session.steer', sessionId, text),
+    queueMessage: (sessionId: string, text: string): Promise<void> => ipcRenderer.invoke('session.queue', sessionId, text),
     compact: (
       sessionId: string,
       customInstructions?: string
@@ -1354,7 +1362,14 @@ declare global {
           { success: true; data: { stagingDir: string; modsDir: string } } | { success: false; error: string }
         >;
       };
+      audit: {
+        list: () => Promise<AuditEntry[]>;
+        tail: (n: number) => Promise<AuditEntry[]>;
+        export: (format: 'json'|'ndjson'|'csv') => Promise<string>;
+      };
       session: {
+        steer: (sessionId: string, text: string) => Promise<void>;
+        queueMessage: (sessionId: string, text: string) => Promise<void>;
         compact: (
           sessionId: string,
           customInstructions?: string

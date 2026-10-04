@@ -29,6 +29,7 @@ import {
   runToolGate,
 } from './pipeline';
 import { logWarn } from '../utils/logger';
+import { getGlobalAuditLog } from '../agent/audit-log-registry';
 
 /** Truncation budget, supplied by the active agent preset. */
 export interface PrunerSettings {
@@ -129,6 +130,19 @@ export async function invokeTool(
     // than dressing it up as a normal result.
     logWarn(`[Tools] '${tool.name}' threw during execute:`, error);
     throw error;
+  }
+
+  
+  const auditLog = getGlobalAuditLog();
+  if (auditLog && !result.isError) {
+    auditLog.append({
+      action: 'tool_call',
+      justification: 'Automated tool invocation',
+      authorization: 'granted',
+      tool: tool.name,
+      args: callArgs,
+      sessionId: effectiveCtx.sessionId
+    } as unknown as import('../../shared/workflow-types').AuditEntry);
   }
 
   const normalized: ToolResult = {

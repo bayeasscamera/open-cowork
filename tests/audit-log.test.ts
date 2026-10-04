@@ -4,7 +4,7 @@ import { AuditLog } from '../src/main/agent/audit-log';
 describe('audit-log', () => {
   it('appends ordered entries with ids and timestamps', () => {
     let tick = 0;
-    const log = new AuditLog(() => 100 + tick++);
+    const log = new AuditLog(undefined, () => 100 + tick++);
     const first = log.append({
       action: 'file.write',
       justification: 'apply patch',
@@ -36,7 +36,7 @@ describe('audit-log', () => {
   });
 
   it('exports a versioned JSON document', () => {
-    const log = new AuditLog(() => 42);
+    const log = new AuditLog(undefined, () => 42);
     log.append({ action: 'a', justification: 'x', authorization: 'auto' });
     const parsed = JSON.parse(log.exportJson()) as {
       version: number;
@@ -54,7 +54,7 @@ describe('audit-log', () => {
     // after a clear() could carry the same id as an entry that had already
     // been exported — two different justifications, one identifier.
     let tick = 0;
-    const log = new AuditLog(() => 1000 + tick++);
+    const log = new AuditLog(undefined, () => 1000 + tick++);
     const first = log.append({ action: 'a', justification: 'x', authorization: 'auto' });
     log.clear();
     const second = log.append({ action: 'b', justification: 'y', authorization: 'auto' });
@@ -66,7 +66,7 @@ describe('audit-log', () => {
     // The collision was timing-dependent: the ids only matched while `now()`
     // returned the same value, so a fast machine hid it.
     let tick = 0;
-    const log = new AuditLog(() => 1000 + tick++ * 37);
+    const log = new AuditLog(undefined, () => 1000 + tick++ * 37);
     const seen = new Set<string>();
     for (let i = 0; i < 20; i++) {
       const entry = log.append({ action: 'a', justification: 'x', authorization: 'auto' });
@@ -78,7 +78,7 @@ describe('audit-log', () => {
   });
 
   it('numbers entries in order within a log', () => {
-    const log = new AuditLog(() => 7);
+    const log = new AuditLog(undefined, () => 7);
     const first = log.append({ action: 'a', justification: 'x', authorization: 'auto' });
     const second = log.append({ action: 'b', justification: 'y', authorization: 'auto' });
     expect(first.id).not.toBe(second.id);

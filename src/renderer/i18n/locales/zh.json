@@ -2297,5 +2297,9 @@
     "status_timeout": "超时",
     "status_unavailable": "不可用",
     "status_limit": "已达上限"
+  },
+  "agent": {
+    "steer": "Redirect agent",
+    "queue": "Queue message"
   }
 }

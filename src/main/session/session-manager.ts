@@ -412,6 +412,32 @@ export class SessionManager {
   }
 
   // Create and start a new session
+
+  public queueMessage(sessionId: string, text: string): void {
+    const session = this.loadSession(sessionId);
+    if (!session) return;
+    this.enqueuePrompt(session, text);
+  }
+
+  public steerAgent(sessionId: string, text: string): void {
+    const session = this.loadSession(sessionId);
+    if (!session) return;
+    this.stopSession(sessionId);
+    this.enqueuePrompt(session, text);
+  }
+
+  public getPendingMessage(sessionId: string): string | null {
+    const queue = this.promptQueues.get(sessionId);
+    if (queue && queue.length > 0) {
+      return queue.map(i => i.prompt).join('\n');
+    }
+    return null;
+  }
+
+  public clearPendingMessage(sessionId: string): void {
+    this.promptQueues.delete(sessionId);
+  }
+
   async startSession(
     title: string,
     prompt: string,

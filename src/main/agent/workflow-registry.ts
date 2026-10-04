@@ -97,7 +97,7 @@ export class WorkflowRegistry {
       return null;
     }
 
-    const audit = new AuditLog(this.options.now);
+    const audit = new AuditLog(undefined, this.options.now);
     const git = createGitRunner(workspaceRoot);
     const checkpoints = new CheckpointManager({
       backend: createFsSnapshotBackend(workspaceRoot),

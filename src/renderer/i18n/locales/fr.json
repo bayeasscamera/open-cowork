@@ -2296,5 +2296,9 @@
     "status_timeout": "délai dépassé",
     "status_unavailable": "indisponible",
     "status_limit": "limite atteinte"
+  },
+  "agent": {
+    "steer": "Rediriger l'agent",
+    "queue": "Mettre en file"
   }
 }
