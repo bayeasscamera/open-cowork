@@ -1,6 +1,6 @@
 ---
 name: writing-principles
-description: "What fiction readers actually reward, and the specific ways model training damages it. Diagnostic layer: use when drafting prose, critiquing a passage, or working out why a scene feels flat. Ce que le lecteur de fiction récompense, et comment l'entraînement le dégrade. Exemples : ce passage sonne plat, pourquoi, réécris cette scène, soigne la prose."
+description: Ce que le lecteur de fiction recompense, et comment l entrainement le degrade. Ce passage sonne plat, pourquoi, reecris cette scene, soigne la prose. What fiction readers reward, and how model training damages it.
 license: Apache-2.0
 metadata:
   tags: "Fiction, Craft, Prose"

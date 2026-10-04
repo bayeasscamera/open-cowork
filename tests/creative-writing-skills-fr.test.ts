@@ -172,24 +172,52 @@ describe('French adaptation: packaging', () => {
       .filter((line) => line.trimStart().startsWith('description:'));
     expect(descriptionLines).toHaveLength(1);
     expect(descriptionLines[0]).not.toMatch(/description:\s*[>|]/);
+    // Unquoted, because the loader's regex stops at the first quote and would
+    // then hand the router only the English half of a bilingual description.
+    expect(descriptionLines[0], `${skill}: quote the description and it truncates`).not.toMatch(
+      /^description:\s*["']/,
+    );
+    // No apostrophe either: it ends the loader's match mid-sentence.
+    expect(descriptionLines[0], `${skill}: apostrophe truncates the description`).not.toMatch(/\w'\w/);
   });
 
   it.each(SKILLS)('%s has a description in French and in English', (skill) => {
     const content = skillMd(skill);
-    // Read the WHOLE frontmatter line. The descriptions are quoted, and the
-    // loader's own regex stops at the closing quote, so capturing only that
-    // slice would silently test the English half alone.
+    // Read the WHOLE description line, not the loader's truncated slice: doing
+    // the loader's capture here would silently test a fragment.
     const front = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)![1];
     const description = front
       .split('\n')
       .find((line) => line.startsWith('description:'))!
       .replace(/^description:\s*/, '')
       .replace(/^["']|["']$/g, '');
-    // Bilingual so the skill triggers on "écris une nouvelle" as well as on
-    // "write a short story". A French-specific letter (accented, cedilla,
-    // oe ligature) proves the French half is really there.
-    expect(description).toMatch(/[\u00C0-\u024F]/);
-    expect(description.length).toBeGreaterThan(80);
+    // Bilingual so the skill triggers on a French request as well as an
+    // English one. Accents are deliberately absent from the description line: an apostrophe
+    // truncates the loader's match, so the French half is written without them.
+    // What matters is that the French half EXISTS and is long enough to route on.
+    expect(description).toMatch(
+      /ecri|redig|polir|passe|reecri|scene|prose|fiction|relecture|chapitre|reference/i,
+    );
+    expect(description.length).toBeGreaterThan(120);
+
+    // The half that actually matters, and the reason this assertion exists.
+    // Verified in the installed app: the loaded description was 98-244 chars
+    // while the real one was 331-422, because the loader stopped at the first
+    // quote and shipped only the English half to the router.
+    // Mirrors the loader exactly. Two ways to lose the French half: a quoted
+    // description stops at the closing quote, and an apostrophe such as the one
+    // in d'ecriture stops the character class too.
+    const routerMatch = front.match(/description:\s*["']?([^"'\r\n]+)/);
+    expect(routerMatch, `${skill}: the loader reads no description`).not.toBeNull();
+    const asRouterSeesIt = routerMatch![1].trim();
+    expect(
+      asRouterSeesIt,
+      `${skill}: the router sees none of the French triggers (ecri, redig, polir)`,
+    ).toMatch(/ecri|redig|pol|reecri|relis|revue|fiction|scene|prose/i);
+    expect(asRouterSeesIt.length).toBeGreaterThan(
+      description.length * 0.8,
+      `${skill}: the router sees only ${asRouterSeesIt.length} of ${description.length} chars`,
+    );
   });
 
   it('requires stop-slop to be invoked explicitly, never automatically', () => {

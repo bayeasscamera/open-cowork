@@ -410,9 +410,15 @@ Three upstream rules do NOT transpose to French and are inverted here. Do not
    if a flat ban reappears.
 2. **"Cut all adverbs" is false in French.** `-ment` adverbs are ordinary and
    often carry meaning. The target is the hollow intensifier.
-3. **Descriptions are one line.** `SkillsManager.getSkillMetadata` reads only
-   the first line of the frontmatter, so a folded `description: >` ships the
-   literal `">"` as the description.
+3. **Descriptions are one line, UNQUOTED and without apostrophes.**
+   `SkillsManager.getSkillMetadata` matches `/description:\s*["']?([^"'\r\n]+)/`,
+   which has three consequences, all found by running the installed app: a
+   folded `description: >` ships the literal `">"`; a **quoted** description
+   stops at the closing quote, so a bilingual description silently routed on
+   its English half only; and an **apostrophe** (`d'écriture`) truncates it
+   mid-sentence. So the French half of each description is written without
+   accents or apostrophes. `tests/creative-writing-skills-fr.test.ts` pins
+   all three.
 
 Also load-bearing: `stop-slop` is `disable-model-invocation: true` — a
 mechanical pass damages prose that is already alive, so it applies only on an

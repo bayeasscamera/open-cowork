@@ -1,6 +1,6 @@
 ---
 name: creative-writing-modes
-description: "Creative-writing layer for putting prose on the page: fresh draft, revision, bridge, alternate take, line polish. Load when drafting, revising or polishing fiction. Couche d'écriture créative pour mettre la prose sur la page : brouillon, révision, passerelle, variante, retouche. Exemples : écris la scène, reprends ce passage, rends ce dialogue plus naturel, fais une autre version, peaufine."
+description: Couche d ecriture pour mettre la prose sur la page : brouillon, revision, passerelle, variante, retouche. Ecris la scene, reprends ce passage, rends ce dialogue plus naturel, peaufine. Putting prose on the page: draft, revise, bridge, alternate take, polish.
 license: Apache-2.0
 metadata:
   tags: "Fiction, Drafting, Revision"

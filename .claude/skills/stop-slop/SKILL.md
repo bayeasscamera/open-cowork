@@ -1,6 +1,6 @@
 ---
 name: stop-slop
-description: "Remove AI writing tics from prose. Explicit request ONLY - invoke on a deliberate polishing pass ('polis ce texte'), never automatically, because a mechanical pass damages prose that is already alive. Retire les tics d'écriture des modèles, à la demande explicite uniquement. Exemples : polis ce texte, nettoie ce paragraphe, passe cette scène au crible."
+description: Retire les tics d ecriture des modeles, sur demande explicite uniquement. Polir ce texte, nettoyer ce paragraphe, passer cette scene au crible, ce texte sonne artificiel. Remove AI writing tics from prose on a deliberate polishing pass only, never automatically.
 disable-model-invocation: true
 license: MIT
 metadata:

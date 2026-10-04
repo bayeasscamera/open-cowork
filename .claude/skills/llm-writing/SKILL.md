@@ -1,6 +1,6 @@
 ---
 name: llm-writing
-description: "Load before writing or revising any human-facing text, in French or English. Deliberate word choice, reader context, and removal of default model phrasing. Utilise avant toute rédaction ou révision de texte : choix des mots, contexte lecteur, suppression des tournures par défaut. Exemples de déclenchement : écris une nouvelle, rédige un mail, revise ce paragraphe."
+description: A charger avant d ecrire ou de reviser un texte destine a un lecteur. Choisir les mots, ancrer dans le contexte, supprimer les tournures par defaut. Ecrire une nouvelle, rediger un mail, reviser ce paragraphe. Load before writing or revising human-facing text.
 license: Apache-2.0
 metadata:
   tags: "Writing, Editing, Prose"

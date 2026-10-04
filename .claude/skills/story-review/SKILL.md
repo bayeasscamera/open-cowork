@@ -1,6 +1,6 @@
 ---
 name: story-review
-description: "Review existing fiction: editorial review, craft critique, continuity and voice, copyediting, proofreading. Diagnosis, not rewriting — load when judging a draft rather than writing it. Relecture de fiction : éditoriale, développement, ligne, copie, correction. Pour diagnostiquer un texte existant, pas le réécrire. Exemples : relis ce chapitre, fais une relecture éditoriale, vérifie la cohérence, corrige les fautes."
+description: Relecture de fiction existante : editoriale, developpement, ligne, copie, correction. Relis ce chapitre, fais une relecture editoriale, verifie la coherence, corrige les fautes. Review existing fiction: editorial, developmental, line, copyedit, proofread.
 license: Apache-2.0
 metadata:
   tags: "Fiction, Review, Editing"

@@ -118,8 +118,10 @@ Tant que ces six points ne sont pas faits, ce document doit rester tel quel.
 
 ## 7. Coût
 
-- Budget des descriptions (présentes dans chaque prompt) : **723 tokens**,
-  mesuré, sous la cible de 1 500.
+- Budget des descriptions (présentes dans chaque prompt) : **485 tokens**,
+  mesuré après correction. Il était de 723 avant que le défaut de guillemets ne
+  soit trouvé (voir §9) ; la moitié française était invisible et comptée pour
+  rien.
 - Corps des skills (chargés uniquement sur demande) : 2 à 5 ko chacun.
 - Références françaises : chargées uniquement si le texte est en français.
 - Coût d'une génération « avec skills » : **non mesuré**.
@@ -135,3 +137,29 @@ produire un tableau.
 
 Le détail des métriques et la méthode figurent dans
 `scripts/writing-bench/metrics.ts`.
+
+---
+
+## 9. Défaut trouvé en installant, et corrigé
+
+En rebuildant et relançant l'app installée pour vérifier que les skills
+étaient bien livrés, j'ai vu que le routeur recevait des descriptions de 98 à
+244 caractères alors qu'elles en font 331 à 422.
+
+Cause : `SkillsManager.getSkillMetadata` utilise
+`/description:\s*["']?([^"'\r\n]+)/`. Trois façons de perdre la moitié
+française, toutes vérifiées :
+
+1. **description pliée** (`description: >`) : renvoie la chaîne littérale `">"`.
+2. **description entre guillemets** : s'arrête à la guillemet fermante, donc
+   seule la moitié anglaise arrivait au routeur. C'est le cas rencontré ici.
+3. **apostrophe** (`d'écriture`) : le classeur de caractères s'arrête là.
+
+Les descriptions des 7 skills ont été réécrites sur une seule ligne, **non
+guillemetées et sans apostrophes**, avec le français en premier pour que le
+routeur dispose des deux moitiés. Budget réel après correction : 485 tokens
+au lieu de 723 (la moitié française invisible était comptée pour rien).
+
+Le test qui attrape ce défaut vérifie ce que le routeur voit réellement, pas la
+description lisible. Il a été validé sur les deux régressions : guillemet
+réintroduit, apostrophe réintroduite.

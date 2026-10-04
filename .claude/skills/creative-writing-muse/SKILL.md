@@ -1,6 +1,6 @@
 ---
 name: creative-writing-muse
-description: "For a single agent that must plan, draft, critique and capture memory by deliberately switching stances. Use when no subagent can be delegated, or when one voice is wanted throughout. Pour un agent seul qui doit planifier, rédiger, critiquer et mémoriser en changeant volontairement de posture. Exemples : fais une passe complète sur ce chapitre, Working through the whole story with one voice, écris et relis ce chapitre."
+description: Pour un agent seul qui doit planifier, rediger, critiquer et memoriser en changeant de posture. Fais une passe complete sur ce chapitre, travaille tout le recit avec une seule voix. For one agent that plans, drafts, critiques and remembers by switching stances, a short story or a chapter.
 license: Apache-2.0
 metadata:
   tags: "Fiction, Orchestration"

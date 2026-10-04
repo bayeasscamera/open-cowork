@@ -1,6 +1,6 @@
 ---
 name: creative-writing-craft
-description: "Craft references for writing fiction well: prose, scenes, style, voice and genre technique. Load when you need how-to-write guidance rather than a production mode. Références techniques pour bien écrire : prose, scènes, style, voix, genres. Exemples : comment construire cette scène, analyse ce style, fais une fiche de personnage."
+description: References techniques pour bien ecrire de la fiction : prose, scenes, style, voix, genres. Comment construire cette scene, analyser ce style, fiche de personnage. Craft references for writing fiction well: prose, scenes, style and voice.
 license: Apache-2.0
 metadata:
   tags: "Fiction, Craft, Reference"
