@@ -56,6 +56,19 @@ const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'enabled'>
       // No environment variables required
     },
   },
+  hindsight: {
+    name: 'Hindsight',
+    type: 'stdio',
+    command: 'npx',
+    args: ['-y', '@vectorize-io/hindsight-coding-agents', 'mcp'],
+    env: {
+      HINDSIGHT_API_KEY: '',
+    },
+    requiresEnv: ['HINDSIGHT_API_KEY'],
+    envDescription: {
+      HINDSIGHT_API_KEY: 'Hindsight API Key (or local server token)',
+    },
+  },
 };
 
 /**
