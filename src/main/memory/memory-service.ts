@@ -17,6 +17,7 @@ import { MemoryNavigator } from './memory-navigator';
 import { DEFAULT_MEMORY_PROMPTS, type MemoryPromptSet } from './memory-prompts';
 import { MemoryRetriever } from './memory-retriever';
 import { MemorySessionStateStore } from './memory-state-store';
+import { HindsightBridge } from './hindsight-bridge';
 import type { ProjectMemoryStore } from './project-memory-store';
 import type { MemoryQuery } from '../../shared/project-memory-types';
 import type {
@@ -226,6 +227,14 @@ export class MemoryService {
   private coreStore: CoreMemoryStore | null = null;
   private stateStore: MemorySessionStateStore | null = null;
   private experienceStore: ExperienceMemoryStore | null = null;
+  private hindsightBridge: HindsightBridge | null = null;
+
+  public getHindsightBridge(): HindsightBridge {
+    if (!this.hindsightBridge) {
+      this.hindsightBridge = new HindsightBridge({ db: this.db.raw });
+    }
+    return this.hindsightBridge;
+  }
 
   constructor(
     private readonly db: DatabaseInstance,
