@@ -196,6 +196,15 @@ prompt** (ou un seuil relais) — avec une composante intermittente, puisque
 `fr-03-avec` (436 car. de consigne) est passé une fois. Le relais a en outre
 été instable toute la session.
 
+**Quel modèle a réellement servi.** Les logs montrent que les 5 sessions bench
+ont demandé `opencode-go/mimo-v2.6-flash` via le fallback synthétique
+(registre pi-ai → protocole openai vers le relais) : les textes mesurés
+viennent du modèle demandé. Les appels auxiliaires (mémoire) utilisaient un
+autre modèle (`@cf/qwen/qwen3.8-27b`) — pas les textes mesurés. Une session en
+échec (`fr-01-avec`) a brièvement basculé sur
+`meta/muse-spark-1.3-contributor:free` ; son texte final étant une erreur, sans
+impact sur les mesures.
+
 ### Mesure automatique de la paire `fr-03`
 
 ```
