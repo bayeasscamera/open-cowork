@@ -131,6 +131,10 @@ describe('buildWebTools execute', () => {
   });
 
   it('web_search uses DuckDuckGo and formats results', async () => {
+    // Stub provider keys so a local TAVILY_API_KEY or BRAVE_API_KEY does not override the fallback.
+    vi.stubEnv('TAVILY_API_KEY', '');
+    vi.stubEnv('BRAVE_API_KEY', '');
+
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(DDG_HTML, { status: 200, headers: { 'content-type': 'text/html' } })
     );

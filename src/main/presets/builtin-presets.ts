@@ -93,8 +93,41 @@ export const LONG_CONTEXT_PRESET: AgentPreset = freezePreset({
   delegation: { maxDepth: 2, allowFork: false, maxRounds: 16 },
 });
 
+/**
+ * Frontend craft preset — activates the impeccable design skill persona.
+ *
+ * The `impeccable` skill is already available in the built-in skills path
+ * (.claude/skills/impeccable/). This preset primes the agent's system prompt
+ * with an expert design-director persona so every UI edit goes through
+ * craft-floor checks and follows the Impeccable design vocabulary.
+ *
+ * No `skills.extraDirs` is needed because the skill lives in the shared
+ * built-in skills directory loaded by every session.
+ */
+export const FRONTEND_CRAFT_PRESET: AgentPreset = freezePreset({
+  id: 'frontend-craft',
+  label: 'Frontend craft',
+  description:
+    'Design-director mode: activates the Impeccable skill, enforces craft-floor quality checks on every UI edit.',
+  persona: {
+    prefix:
+      'You are operating in frontend-craft mode. The Impeccable design skill is active. ' +
+      'Approach every UI task as an award-winning design director: complete deliverables, ' +
+      'no hedging, no placeholders. Before any edit load reference/craft-floor.md from the ' +
+      'impeccable skill. Run the impeccable context script once per session when available.',
+  },
+  tools: { allow: [...DEFAULT_TOOL_ALLOW] },
+  presentation: 'direct',
+  pruner: {
+    thresholdChars: 8192,
+    headChars: 4096,
+    tailChars: 1024,
+  },
+  delegation: { maxDepth: 2, allowFork: false, maxRounds: 16 },
+});
+
 /** Ids of the built-in presets, in presentation order. */
-export const BUILTIN_PRESET_IDS = ['standard', 'code-mode', 'long-context'] as const;
+export const BUILTIN_PRESET_IDS = ['standard', 'code-mode', 'long-context', 'frontend-craft'] as const;
 
 export type BuiltinPresetId = (typeof BUILTIN_PRESET_IDS)[number];
 
@@ -102,6 +135,7 @@ const BY_ID = new Map<string, AgentPreset>([
   [STANDARD_PRESET.id, STANDARD_PRESET],
   [CODE_MODE_PRESET.id, CODE_MODE_PRESET],
   [LONG_CONTEXT_PRESET.id, LONG_CONTEXT_PRESET],
+  [FRONTEND_CRAFT_PRESET.id, FRONTEND_CRAFT_PRESET],
 ]);
 
 export function getBuiltinPreset(id: string | null | undefined): AgentPreset | undefined {

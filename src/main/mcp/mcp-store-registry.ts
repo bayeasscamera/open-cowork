@@ -77,6 +77,17 @@ export class MCPStoreRegistry {
         icon: 'folder',
         installed: false,
       },
+      {
+        id: 'hindsight',
+        name: 'Hindsight Memory',
+        description: 'Mémoire long-terme SOTA : rétention, rappel et réflexion cognitive',
+        category: 'devtools',
+        command: 'npx',
+        args: ['-y', '@vectorize-io/hindsight-coding-agents', 'mcp'],
+        envRequirements: ['HINDSIGHT_API_KEY'],
+        icon: 'brain',
+        installed: false,
+      },
     ];
 
     for (const item of catalog) {

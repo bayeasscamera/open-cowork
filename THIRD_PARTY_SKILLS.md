@@ -117,24 +117,65 @@ scripts d'empaquetage.
 6. **Ajout de `references/fr/`** : `tics-ia-fr.md`, `structures-fr.md`.
    Contenu neuf, construit pour le français.
 
+
 ---
 
-## 3. Vérification des licences
+## 3. pbakaus/impeccable
 
-Les deux licences annoncées par les dépôts ont été lues dans les fichiers
-`LICENSE` et correspondent à ce que la mission énonçait (Apache-2.0 et MIT).
+| Champ | Valeur |
+|---|---|
+| Dépôt | `https://github.com/pbakaus/impeccable` |
+| Commit épinglé | `e103efe779e2dd01274dabae83531fef00bf2563` |
+| Date du commit | 2026-10-03 |
+| Auteur | Paul Bakaus |
+| Licence | Apache-2.0 (copiée dans `.claude/skills/impeccable/LICENSE`) |
+
+### Fichiers repris
+
+| Fichier d'origine | Destinataire | Modifications |
+|---|---|---|
+| `.claude/skills/impeccable/SKILL.md` | `.claude/skills/impeccable/SKILL.md` | Aucun (description déjà monoligne et sans apostrophes) |
+| `.claude/skills/impeccable/reference/*.md` | `.claude/skills/impeccable/reference/*.md` | Aucun |
+| `.claude/skills/impeccable/scripts/*` | `.claude/skills/impeccable/scripts/*` | Aucun |
+| `LICENSE` | `.claude/skills/impeccable/LICENSE` | Aucun |
+
+---
+
+## 4. vectorize-io/hindsight
+
+| Champ | Valeur |
+|---|---|
+| Dépôt | `https://github.com/vectorize-io/hindsight` |
+| Commit épinglé | `f7dd3f4fd7420f7beec60c32c965e5e5cf7be066` |
+| Date du commit | 2026-10-02 |
+| Auteur | Vectorize AI, Inc. |
+| Licence | MIT (copiée dans `.claude/skills/hindsight-memory/LICENSE`) |
+
+### Fichiers repris
+
+| Fichier d'origine | Destinataire | Modifications |
+|---|---|---|
+| `hindsight-integrations/coding-agents/skill/SKILL.md` | `.claude/skills/hindsight-memory/SKILL.md` | Frontmatter adapté (description monoligne sans apostrophes) |
+| `LICENSE` | `.claude/skills/hindsight-memory/LICENSE` | Aucun |
+
+---
+
+## 5. Vérification des licences
+
+Les licences annoncées par les dépôts ont été lues dans les fichiers
+`LICENSE` et correspondent aux exigences (Apache-2.0 et MIT).
 Aucun écart, donc aucune interruption à ce titre.
 
 ```
 Apache-2.0  — .claude/skills/{creative-writing-muse,writing-principles,
              llm-writing,creative-writing-craft,creative-writing-modes,
-             story-review}/LICENSE
-MIT         — .claude/skills/stop-slop/LICENSE
+             story-review,impeccable}/LICENSE
+MIT         — .claude/skills/{stop-slop,hindsight-memory}/LICENSE
 ```
 
 ---
 
-## 4. Revue de sécurité
+## 6. Revue de sécurité
 
 Voir `tests/creative-writing-skills-security.test.ts`, qui rejoue
 automatiquement les contrôles décrits ci-dessous sur les fichiers intégrés.
