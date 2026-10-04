@@ -1323,6 +1323,9 @@ export class CoworkAgentRunner {
           getToolDisplayName: (name) => this.getToolDisplayName(name),
           checkPath: (path, ctx) => PathGuard.isPathAllowed(path, ctx.sessionId),
         }),
+        // Creator Mode: let the agent install plugins and create skills mid-task.
+        pluginRuntimeService: this._pluginRuntimeService,
+        sessionManagerForCreator: this,
       });
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)

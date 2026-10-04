@@ -28,9 +28,11 @@ export const LEGACY_PRUNE_THRESHOLD_CHARS = 500;
  */
 const DEFAULT_TOOL_ALLOW: string[] = [
   'bash',
+  'create_task_skill',
   'edit',
   'glob',
   'grep',
+  'install_plugin',
   'ls',
   'multi_edit',
   'notebook_edit',

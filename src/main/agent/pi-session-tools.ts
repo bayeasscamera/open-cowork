@@ -72,12 +72,27 @@ export interface BuildPiSessionToolsDeps {
    * gate is precisely how a code path ends up obeying different rules.
    */
   gateForCode?: ToolGateDeps;
+  /**
+   * Creator Mode: plugin runtime service for the `install_plugin` tool.
+   * When omitted the tool reports gracefully that the feature is unavailable.
+   */
+  pluginRuntimeService?: { install(pluginName: string): Promise<unknown> };
+  /**
+   * Creator Mode: session manager used to invalidate the skills setup after
+   * `create_task_skill` or `install_plugin` so the runner reloads on next turn.
+   */
+  sessionManagerForCreator?: { invalidateSkillsSetup(): void };
 }
 
 export async function buildPiSessionTools(deps: BuildPiSessionToolsDeps) {
   const mcpCustomTools = deps.mcpManager ? buildMcpCustomTools(deps.mcpManager) : [];
   const extensionCustomTools = deps.extensionCustomTools;
-  const metaTools = buildAgentMetaTools({ sessionId: deps.sessionId, cwd: deps.cwd });
+  const metaTools = buildAgentMetaTools({
+    sessionId: deps.sessionId,
+    cwd: deps.cwd,
+    pluginRuntimeService: deps.pluginRuntimeService,
+    sessionManager: deps.sessionManagerForCreator,
+  });
   const webTools = buildWebTools({
     tavilyApiKey: deps.tavilyApiKey,
     braveApiKey: deps.braveApiKey,

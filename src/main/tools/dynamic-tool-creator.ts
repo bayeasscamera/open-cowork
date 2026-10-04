@@ -246,8 +246,23 @@ export function migrateLegacyDynamicSkillsToProposals(): {
  * 2. `list_agent_capabilities`  — Discover existing skills + pending proposals
  * 3. `deepseek_eval_harness`    — Evaluation Driven Development & Benchmarking
  */
+/** Minimal interface for plugin runtime service needed by install_plugin tool. */
+export interface PluginRuntimeServiceLike {
+  install(pluginName: string): Promise<unknown>;
+}
+
+/** Minimal interface for session manager needed to invalidate skills after creation. */
+export interface SessionManagerLike {
+  invalidateSkillsSetup(): void;
+}
+
 export function buildAgentMetaTools(
-  options: { sessionId?: string; cwd?: string } = {}
+  options: {
+    sessionId?: string;
+    cwd?: string;
+    pluginRuntimeService?: PluginRuntimeServiceLike;
+    sessionManager?: SessionManagerLike;
+  } = {}
 ): ToolDefinition[] {
   const skillRegistry = DynamicSkillRegistry.getInstance();
 
@@ -1356,6 +1371,195 @@ export function buildAgentMetaTools(
           ],
           details: { delegations: list },
         };
+      },
+    },
+
+    // =========================================================================
+    // CREATOR MODE — Autonomous Skill & Plugin Creation
+    // =========================================================================
+
+    // N+1. Create Task Skill — write a SKILL.md into .claude/skills/<name>/ of the CWD
+    {
+      name: 'create_task_skill',
+      label: 'Create Task Skill (Creator Mode)',
+      description:
+        'Create a new SKILL.md (and optional supporting files) inside .claude/skills/<name>/ of the current workspace. ' +
+        'The skill is immediately available for the next agent turn without restarting the session. ' +
+        'Use this when a capability you need for the current task is missing. ' +
+        'IMPORTANT: description must be a single line, no apostrophes, no quotes.',
+      parameters: Type.Object({
+        skillName: Type.String({
+          description: 'Snake-case identifier for the skill (e.g. "pomodoro_timer").',
+        }),
+        skillContent: Type.String({
+          description:
+            'Full SKILL.md content. Frontmatter must have `name:` and `description:` (single-line, no apostrophes).',
+        }),
+        extraFiles: Type.Optional(
+          Type.Array(
+            Type.Object({
+              relativePath: Type.String({
+                description: 'Path relative to the skill directory (e.g. "scripts/run.sh").',
+              }),
+              content: Type.String({ description: 'File content.' }),
+            }),
+            { description: 'Additional files to write alongside SKILL.md (scripts, config, etc.).' }
+          )
+        ),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as {
+          skillName: string;
+          skillContent: string;
+          extraFiles?: Array<{ relativePath: string; content: string }>;
+        };
+
+        // Sanitise skill name: only safe path chars
+        const safeName = args.skillName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+        if (!safeName) {
+          return {
+            content: [{ type: 'text' as const, text: 'Invalid skill name.' }],
+            details: { success: false },
+          };
+        }
+
+        try {
+          const effectiveCwd = options.cwd ?? process.cwd();
+          const skillDir = path.join(effectiveCwd, '.claude', 'skills', safeName);
+
+          fs.mkdirSync(skillDir, { recursive: true });
+
+          const skillMdPath = path.join(skillDir, 'SKILL.md');
+          fs.writeFileSync(skillMdPath, args.skillContent, 'utf8');
+
+          const writtenFiles = ['SKILL.md'];
+
+          // Write extra files — confined to the skill directory (no path traversal)
+          if (args.extraFiles && args.extraFiles.length > 0) {
+            for (const extra of args.extraFiles) {
+              // Normalise and check confinement
+              const normalised = path.normalize(extra.relativePath);
+              if (normalised.startsWith('..') || path.isAbsolute(normalised)) {
+                logWarn(
+                  `[create_task_skill] Skipped extra file outside skill dir: ${extra.relativePath}`
+                );
+                continue;
+              }
+              const dest = path.join(skillDir, normalised);
+              // Double-check after join (defence against edge cases)
+              if (!dest.startsWith(skillDir + path.sep) && dest !== skillDir) {
+                logWarn(`[create_task_skill] Skipped after join check: ${dest}`);
+                continue;
+              }
+              fs.mkdirSync(path.dirname(dest), { recursive: true });
+              fs.writeFileSync(dest, extra.content, 'utf8');
+              writtenFiles.push(normalised);
+            }
+          }
+
+          // Invalidate skills setup so the runner reloads on the next turn
+          if (options.sessionManager) {
+            try {
+              options.sessionManager.invalidateSkillsSetup();
+              log(`[create_task_skill] Skills invalidated for next turn.`);
+            } catch (e) {
+              logWarn(`[create_task_skill] Could not invalidate skills setup:`, e);
+            }
+          }
+
+          const text = [
+            `✅ Skill "${safeName}" created at ${skillDir}`,
+            `Files written: ${writtenFiles.join(', ')}`,
+            `The skill will be active on the next agent turn.`,
+          ].join('\n');
+
+          return {
+            content: [{ type: 'text' as const, text }],
+            details: { success: true, skillDir, skillName: safeName, writtenFiles },
+          };
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `create_task_skill error: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
+            details: { success: false },
+          };
+        }
+      },
+    },
+
+    // N+2. Install Plugin — install a community plugin and activate it immediately
+    {
+      name: 'install_plugin',
+      label: 'Install Plugin (Creator Mode)',
+      description:
+        'Install a plugin from the Cowork plugin registry by its plugin ID and activate it immediately for the current session. ' +
+        'Use this when a plugin provides the capability you need but is not yet installed.',
+      parameters: Type.Object({
+        pluginId: Type.String({
+          description: 'Plugin identifier as listed in the Cowork plugin registry.',
+        }),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { pluginId: string };
+
+        if (!options.pluginRuntimeService) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: 'Plugin installation is not available in the current session context.',
+              },
+            ],
+            details: { success: false, reason: 'no_plugin_service' },
+          };
+        }
+
+        // Sanitise plugin ID: only alphanumeric, hyphens, underscores, dots
+        const safeId = args.pluginId.replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 128);
+        if (!safeId) {
+          return {
+            content: [{ type: 'text' as const, text: 'Invalid plugin ID.' }],
+            details: { success: false },
+          };
+        }
+
+        try {
+          await options.pluginRuntimeService.install(safeId);
+
+          // Invalidate skills so the runner picks up the newly activated plugin on next turn
+          if (options.sessionManager) {
+            try {
+              options.sessionManager.invalidateSkillsSetup();
+              log(`[install_plugin] Skills invalidated after installing "${safeId}".`);
+            } catch (e) {
+              logWarn(`[install_plugin] Could not invalidate skills setup:`, e);
+            }
+          }
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `✅ Plugin "${safeId}" installed and activated. It will be available on the next agent turn.`,
+              },
+            ],
+            details: { success: true, pluginId: safeId },
+          };
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `install_plugin error: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
+            details: { success: false, error: err instanceof Error ? err.message : String(err) },
+          };
+        }
       },
     },
   ];
