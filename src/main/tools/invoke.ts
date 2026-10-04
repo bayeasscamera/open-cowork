@@ -132,17 +132,20 @@ export async function invokeTool(
     throw error;
   }
 
-  
+
   const auditLog = getGlobalAuditLog();
-  if (auditLog && !result.isError) {
-    auditLog.append({
-      action: 'tool_call',
-      justification: 'Automated tool invocation',
-      authorization: 'granted',
-      tool: tool.name,
-      args: callArgs,
-      sessionId: effectiveCtx.sessionId
-    } as unknown as import('../../shared/workflow-types').AuditEntry);
+  if (auditLog) {
+    try {
+      const entry: import('../../shared/workflow-types').NewAuditEntry = {
+        action: `tool:${tool.name}`,
+        justification: `Tool invocation via invokeTool${effectiveCtx.sessionId ? ` (session: ${effectiveCtx.sessionId})` : ''}`,
+        authorization: result.isError ? 'auto' : 'auto',
+        ...(result.isError ? {} : {}),
+      };
+      auditLog.append(entry);
+    } catch {
+      // Audit failure must never interrupt tool execution
+    }
   }
 
   const normalized: ToolResult = {

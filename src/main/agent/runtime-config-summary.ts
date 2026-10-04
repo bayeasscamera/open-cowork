@@ -44,6 +44,8 @@ export interface CoworkAppendPromptInput {
   extensionSystemContext?: string | null;
   projectSystemPromptBlock?: string | null;
   userPreferences?: string | null;
+  /** Personal notes the user asked the agent to remember across sessions. */
+  userNotes?: string | null;
   errorPatterns?: string | null;
   projectResumption?: string | null;
 }
@@ -121,6 +123,7 @@ Tool routing:
     readString(input.extensionSystemContext),
     readString(input.projectSystemPromptBlock),
     readString(input.userPreferences),
+    readString(input.userNotes),
     readString(input.errorPatterns),
     readString(input.projectResumption),
   ];

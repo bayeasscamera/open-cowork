@@ -33,6 +33,39 @@ export class AuditLog {
   ) {
     if (logFilePath) {
       fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
+      // Replay entries from the NDJSON file so in-memory view survives restarts.
+      this.replayFromFile();
+    }
+  }
+
+  /** Load previously persisted entries from the NDJSON file (idempotent). */
+  private replayFromFile(): void {
+    if (!this.logFilePath) return;
+    try {
+      if (!fs.existsSync(this.logFilePath)) return;
+      const raw = fs.readFileSync(this.logFilePath, 'utf-8');
+      let maxCounter = 0;
+      for (const line of raw.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed) as AuditEntry;
+          if (parsed && typeof parsed.id === 'string' && typeof parsed.at === 'number') {
+            this.entries.push(parsed);
+            // Restore idCounter so new ids never collide with replayed ones.
+            const parts = parsed.id.split('-');
+            if (parts.length >= 2) {
+              const n = parseInt(parts[1], 36);
+              if (!isNaN(n) && n > maxCounter) maxCounter = n;
+            }
+          }
+        } catch {
+          // Skip malformed lines rather than aborting the whole replay.
+        }
+      }
+      if (maxCounter > this.idCounter) this.idCounter = maxCounter;
+    } catch {
+      // File unreadable — start fresh, don't crash.
     }
   }
 

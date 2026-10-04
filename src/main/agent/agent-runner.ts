@@ -1285,6 +1285,9 @@ export class CoworkAgentRunner {
         userPreferences: memoryEnabled
           ? this.memoryManager?.formatUserPreferencesForContext() || ''
           : '',
+        userNotes: memoryEnabled
+          ? this.memoryManager?.formatNotesForContext() || ''
+          : '',
         errorPatterns: memoryEnabled
           ? this.memoryManager?.formatErrorPatternsForContext(prompt) || ''
           : '',

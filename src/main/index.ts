@@ -1064,11 +1064,33 @@ app
     bootProfiler.mark('whenReady-start');
     const userDataPathForAudit = app.getPath('userData');
     const dateStr = new Date().toISOString().split('T')[0];
-    const auditLogPath = path.join(userDataPathForAudit, 'logs', `audit-${dateStr}.ndjson`);
+    const auditLogsDir = path.join(userDataPathForAudit, 'logs');
+    const auditLogPath = path.join(auditLogsDir, `audit-${dateStr}.ndjson`);
+
+    // Rotate audit logs — keep at most 7 days, delete the rest.
+    try {
+      const AUDIT_RETENTION_DAYS = 7;
+      const cutoff = Date.now() - AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+      const fs = await import('fs');
+      if (fs.existsSync(auditLogsDir)) {
+        for (const fname of fs.readdirSync(auditLogsDir)) {
+          if (!fname.startsWith('audit-') || !fname.endsWith('.ndjson')) continue;
+          const fullPath = path.join(auditLogsDir, fname);
+          try {
+            const stat = fs.statSync(fullPath);
+            if (stat.mtimeMs < cutoff) fs.unlinkSync(fullPath);
+          } catch {
+            // Skip files we can't stat/delete — non-fatal.
+          }
+        }
+      }
+    } catch {
+      // Rotation failure must never block app boot.
+    }
 
     const globalAuditLog = new AuditLog(auditLogPath);
     setGlobalAuditLog(globalAuditLog);
-  
+
     if (configStore.isConfigured()) {
       log('[Config] Applying saved configuration...');
       if (process.argv.includes('--headless')) {

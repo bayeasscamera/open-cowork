@@ -151,19 +151,39 @@ export function registerMemoryIpcHandlers(context: MemoryIpcContext): void {
     return result;
   });
 
+  // -------------------------------------------------------------------------
   // Daily Companion Personal Notes IPC handlers
+  // Wrapped in try/catch so a SQLite failure returns structured data instead
+  // of crashing the IPC handler and leaving the renderer hanging.
+  // -------------------------------------------------------------------------
+
   ipcMain.handle('memory.notes.list', () => {
-    const sm = sessionManager;
-    if (!sm) return [];
-    return sm.getMemoryManager().getAllNotes();
+    try {
+      const sm = sessionManager;
+      if (!sm) return [];
+      return sm.getMemoryManager().getAllNotes();
+    } catch {
+      return [];
+    }
   });
 
   ipcMain.handle(
     'memory.notes.add',
     (_event, payload: { title: string; content: string; tags?: string[] }) => {
-      const sm = sessionManager;
-      if (!sm) throw new Error('SessionManager not initialized');
-      return sm.getMemoryManager().addNote(payload.title, payload.content, payload.tags);
+      try {
+        if (!payload || typeof payload.content !== 'string' || !payload.content.trim()) {
+          throw new Error('note content is required');
+        }
+        const sm = sessionManager;
+        if (!sm) throw new Error('SessionManager not initialized');
+        const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+        const tags = Array.isArray(payload.tags)
+          ? payload.tags.filter((t): t is string => typeof t === 'string')
+          : [];
+        return sm.getMemoryManager().addNote(title, payload.content.trim(), tags);
+      } catch (err) {
+        throw new Error(`memory.notes.add failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   );
 
@@ -176,21 +196,36 @@ export function registerMemoryIpcHandlers(context: MemoryIpcContext): void {
         updates: { title?: string; content?: string; tags?: string[]; pinned?: boolean };
       }
     ) => {
-      const sm = sessionManager;
-      if (!sm) return false;
-      return sm.getMemoryManager().updateNote(payload.id, payload.updates);
+      try {
+        if (!payload || typeof payload.id !== 'string' || !payload.id) return false;
+        const sm = sessionManager;
+        if (!sm) return false;
+        return sm.getMemoryManager().updateNote(payload.id, payload.updates ?? {});
+      } catch {
+        return false;
+      }
     }
   );
 
   ipcMain.handle('memory.notes.delete', (_event, id: string) => {
-    const sm = sessionManager;
-    if (!sm) return false;
-    return sm.getMemoryManager().deleteNote(id);
+    try {
+      if (typeof id !== 'string' || !id.trim()) return false;
+      const sm = sessionManager;
+      if (!sm) return false;
+      return sm.getMemoryManager().deleteNote(id.trim());
+    } catch {
+      return false;
+    }
   });
 
   ipcMain.handle('memory.notes.search', (_event, query: string) => {
-    const sm = sessionManager;
-    if (!sm) return [];
-    return sm.getMemoryManager().searchNotes(query);
+    try {
+      const sm = sessionManager;
+      if (!sm) return [];
+      const q = typeof query === 'string' ? query.trim() : '';
+      return sm.getMemoryManager().searchNotes(q);
+    } catch {
+      return [];
+    }
   });
 }
