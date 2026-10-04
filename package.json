@@ -68,7 +68,11 @@
     "pre-build-check": "node scripts/pre-build-check.js",
     "clean": "rimraf dist dist-electron dist-mcp dist-wsl-agent dist-lima-agent .bundle-resources release",
     "deploy:local": "bash scripts/deploy-local.sh",
-    "verify:remote": "esbuild scripts/verify-remote-e2e.ts --bundle --platform=node --format=cjs --outfile=.cowork-verify/remote.cjs --packages=external --log-level=error && node .cowork-verify/remote.cjs"
+    "verify:remote": "esbuild scripts/verify-remote-e2e.ts --bundle --platform=node --format=cjs --outfile=.cowork-verify/remote.cjs --packages=external --log-level=error && node .cowork-verify/remote.cjs",
+    "bench:writing:corpus": "tsx scripts/writing-bench/measure.ts --corpus",
+    "bench:writing:measure": "tsx scripts/writing-bench/measure.ts",
+    "bench:writing:blind": "tsx scripts/writing-bench/build-blind-file.ts",
+    "bench:writing:tally": "tsx scripts/writing-bench/tally-blind.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
