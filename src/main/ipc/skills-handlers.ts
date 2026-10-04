@@ -29,15 +29,21 @@ interface SkillsIpcContext {
 }
 
 export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
-  const skillsManager = context.getSkillsManager();
-  const sessionManager = context.getSessionManager();
-  const pluginRuntimeService = context.getPluginRuntimeService();
+  // Resolved LAZILY, on every call. These were captured once at registration
+  // time, but the main process assigns the manager later in startup (there are
+  // two construction sites), so the captured values were permanently null and
+  // every handler answered "Skills manager is still starting" forever. A getter
+  // that never captured proved it: skills.getAll failed 42 times in one session
+  // while the app itself was fine.
+  const getSkills = (): SkillsManager | null => context.getSkillsManager();
+  const getSession = (): SessionManager | null => context.getSessionManager();
+  const getPlugins = (): PluginRuntimeService | null => context.getPluginRuntimeService();
   ipcMain.handle('skills.getAll', async () => {
     try {
-      if (!skillsManager) {
+      if (!getSkills()) {
         throw new Error('Skills manager is still starting');
       }
-      return await skillsManager.listSkills();
+      return await getSkills()!.listSkills();
     } catch (error) {
       logError('[Skills] Error getting skills:', error);
       throw error;
@@ -46,12 +52,10 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('skills.getRuntimeView', async (): Promise<SkillRuntimeReport> => {
     try {
-      const sources = await resolveRuntimeSkillSources(pluginRuntimeService);
+      const sources = await resolveRuntimeSkillSources(getPlugins());
       const enabledByName = new Map<string, boolean>();
-      if (skillsManager) {
-        for (const skill of skillsManager.getAllSkills()) {
-          enabledByName.set(skill.name, skill.enabled);
-        }
+      for (const skill of getSkills()?.getAllSkills() ?? []) {
+        enabledByName.set(skill.name, skill.enabled);
       }
       const view = describeSkillRuntime(sources, (name) => enabledByName.get(name) ?? true);
       return { success: true, view };
@@ -66,11 +70,11 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('skills.install', async (_event, skillPath: string) => {
     try {
-      if (!skillsManager) {
+      if (!getSkills()) {
         throw new Error('SkillsManager not initialized');
       }
-      const skill = await skillsManager.installSkill(skillPath);
-      sessionManager?.invalidateSkillsSetup();
+      const skill = await getSkills()!.installSkill(skillPath);
+      getSession()?.invalidateSkillsSetup();
       return { success: true, skill };
     } catch (error) {
       logError('[Skills] Error installing skill:', error);
@@ -80,11 +84,11 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('skills.delete', async (_event, skillId: string) => {
     try {
-      if (!skillsManager) {
+      if (!getSkills()) {
         throw new Error('SkillsManager not initialized');
       }
-      await skillsManager.uninstallSkill(skillId);
-      sessionManager?.invalidateSkillsSetup();
+      await getSkills()!.uninstallSkill(skillId);
+      getSession()?.invalidateSkillsSetup();
       return { success: true };
     } catch (error) {
       logError('[Skills] Error deleting skill:', error);
@@ -94,11 +98,11 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('skills.setEnabled', async (_event, skillId: string, enabled: boolean) => {
     try {
-      if (!skillsManager) {
+      if (!getSkills()) {
         throw new Error('SkillsManager not initialized');
       }
-      skillsManager.setSkillEnabled(skillId, enabled);
-      sessionManager?.invalidateSkillsSetup();
+      getSkills()!.setSkillEnabled(skillId, enabled);
+      getSession()?.invalidateSkillsSetup();
       return { success: true };
     } catch (error) {
       logError('[Skills] Error toggling skill:', error);
@@ -108,10 +112,10 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('skills.validate', async (_event, skillPath: string) => {
     try {
-      if (!skillsManager) {
+      if (!getSkills()) {
         return { valid: false, errors: ['SkillsManager not initialized'] };
       }
-      const result = await skillsManager.validateSkillFolder(skillPath);
+      const result = await getSkills()!.validateSkillFolder(skillPath);
       return result;
     } catch (error) {
       logError('[Skills] Error validating skill:', error);
@@ -121,10 +125,10 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('skills.getStoragePath', async () => {
     try {
-      if (!skillsManager) {
+      if (!getSkills()) {
         return null;
       }
-      return skillsManager.getGlobalSkillsPath();
+      return getSkills()!.getGlobalSkillsPath();
     } catch (error) {
       logError('[Skills] Error getting storage path:', error);
       return null;
@@ -132,10 +136,10 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
   });
 
   ipcMain.handle('skills.setStoragePath', async (_event, targetPath: string, migrate = true) => {
-    if (!skillsManager) {
+    if (!getSkills()) {
       throw new Error('SkillsManager not initialized');
     }
-    const result = await skillsManager.setGlobalSkillsPath(targetPath, migrate !== false);
+    const result = await getSkills()!.setGlobalSkillsPath(targetPath, migrate !== false);
     sendToRenderer({
       type: 'config.status',
       payload: {
@@ -147,10 +151,10 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
   });
 
   ipcMain.handle('skills.openStoragePath', async () => {
-    if (!skillsManager) {
+    if (!getSkills()) {
       throw new Error('SkillsManager not initialized');
     }
-    const storagePath = skillsManager.getGlobalSkillsPath();
+    const storagePath = getSkills()!.getGlobalSkillsPath();
     const openResult = await shell.openPath(storagePath);
     if (openResult) {
       return { success: false, path: storagePath, error: openResult };
@@ -176,8 +180,8 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
       if (typeof name !== 'string' || !name.trim()) {
         return { success: false, error: 'Skill name is required.' };
       }
-      const activeDir = skillsManager
-        ? skillsManager.getGlobalSkillsPath()
+      const activeDir = getSkills()
+        ? getSkills()!.getGlobalSkillsPath()
         : join(app.getPath('userData'), 'claude', 'skills');
       const rename = typeof renameTo === 'string' && renameTo.trim() ? renameTo : undefined;
       const result = approveProposal(name, activeDir, rename);
@@ -210,10 +214,10 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('plugins.listCatalog', async (_event, options?: { installableOnly?: boolean }) => {
     try {
-      if (!pluginRuntimeService) {
+      if (!getPlugins()) {
         throw new Error('PluginRuntimeService not initialized');
       }
-      return await pluginRuntimeService.listCatalog(options);
+      return await getPlugins()!.listCatalog(options);
     } catch (error) {
       logError('[Plugins] Error listing catalog:', error);
       throw error;
@@ -222,10 +226,10 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('plugins.listInstalled', async () => {
     try {
-      if (!pluginRuntimeService) {
+      if (!getPlugins()) {
         throw new Error('PluginRuntimeService not initialized');
       }
-      return pluginRuntimeService.listInstalled();
+      return getPlugins()!.listInstalled();
     } catch (error) {
       logError('[Plugins] Error listing installed plugins:', error);
       throw error;
@@ -234,11 +238,11 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('plugins.install', async (_event, pluginName: string) => {
     try {
-      if (!pluginRuntimeService) {
+      if (!getPlugins()) {
         throw new Error('PluginRuntimeService not initialized');
       }
-      const result = await pluginRuntimeService.install(pluginName);
-      sessionManager?.invalidateSkillsSetup();
+      const result = await getPlugins()!.install(pluginName);
+      getSession()?.invalidateSkillsSetup();
       return result;
     } catch (error) {
       logError('[Plugins] Error installing plugin:', error);
@@ -248,11 +252,11 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('plugins.setEnabled', async (_event, pluginId: string, enabled: boolean) => {
     try {
-      if (!pluginRuntimeService) {
+      if (!getPlugins()) {
         throw new Error('PluginRuntimeService not initialized');
       }
-      const result = await pluginRuntimeService.setEnabled(pluginId, enabled);
-      sessionManager?.invalidateSkillsSetup();
+      const result = await getPlugins()!.setEnabled(pluginId, enabled);
+      getSession()?.invalidateSkillsSetup();
       return result;
     } catch (error) {
       logError('[Plugins] Error toggling plugin:', error);
@@ -269,12 +273,12 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
       enabled: boolean
     ) => {
       try {
-        if (!pluginRuntimeService) {
+        if (!getPlugins()) {
           throw new Error('PluginRuntimeService not initialized');
         }
-        const result = await pluginRuntimeService.setComponentEnabled(pluginId, component, enabled);
+        const result = await getPlugins()!.setComponentEnabled(pluginId, component, enabled);
         if (component === 'skills') {
-          sessionManager?.invalidateSkillsSetup();
+          getSession()?.invalidateSkillsSetup();
         }
         return result;
       } catch (error) {
@@ -286,11 +290,11 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
 
   ipcMain.handle('plugins.uninstall', async (_event, pluginId: string) => {
     try {
-      if (!pluginRuntimeService) {
+      if (!getPlugins()) {
         throw new Error('PluginRuntimeService not initialized');
       }
-      const result = await pluginRuntimeService.uninstall(pluginId);
-      sessionManager?.invalidateSkillsSetup();
+      const result = await getPlugins()!.uninstall(pluginId);
+      getSession()?.invalidateSkillsSetup();
       return result;
     } catch (error) {
       logError('[Plugins] Error uninstalling plugin:', error);
@@ -304,7 +308,7 @@ export function registerSkillsIpcHandlers(context: SkillsIpcContext): void {
       // capability pane can never disagree about which skills exist. Disabled
       // skills are included on purpose — the report recommends which to switch
       // off, so hiding them would defeat it.
-      const view = describeSkillRuntime(await resolveRuntimeSkillSources(pluginRuntimeService));
+      const view = describeSkillRuntime(await resolveRuntimeSkillSources(getPlugins()));
       const sources: SkillDoctorSkillSource[] = [];
       for (const source of view.sources) {
         for (const skill of source.skills) {

@@ -83,6 +83,69 @@ const register = (options: { withManagers?: boolean } = {}) => {
   });
 };
 
+describe('skills IPC handlers: late manager assignment', () => {
+  // The real startup sequence constructs the manager AFTER the IPC handlers are
+  // registered (src/main/index.ts has two construction sites, and registration
+  // runs first). Capturing the manager at registration time therefore left
+  // every handler holding null for the whole session: skills.getAll answered
+  // "Skills manager is still starting" 42 times in a row while the app itself
+  // was healthy. These tests pin the lazy resolution.
+  beforeEach(() => {
+    mocks.handlers.clear();
+    vi.clearAllMocks();
+    mocks.skills.getGlobalSkillsPath.mockReturnValue('/skills');
+  });
+
+  it('answers getAll once the manager exists, even though it was absent at registration', async () => {
+    let manager: unknown = null;
+    registerSkillsIpcHandlers({
+      getSkillsManager: () => manager as never,
+      getPluginRuntimeService: () => mocks.plugins as never,
+      getSessionManager: () => mocks.session as never,
+    });
+
+    // Registration happened with a null manager: this is the real startup order.
+    expect(manager).toBeNull();
+
+    // The manager appears later, as it does in the main process.
+    manager = mocks.skills;
+    mocks.skills.listSkills.mockResolvedValue([{ name: 'stop-slop' }]);
+
+    // Resolves instead of throwing "still starting": that is the whole point.
+    await expect(invoke('skills.getAll')).resolves.toEqual([{ name: 'stop-slop' }]);
+    expect(mocks.skills.listSkills).toHaveBeenCalled();
+  });
+
+  it('still reports "still starting" while the manager is genuinely absent', async () => {
+    registerSkillsIpcHandlers({
+      getSkillsManager: () => null,
+      getPluginRuntimeService: () => null,
+      getSessionManager: () => null,
+    });
+    await expect(invoke('skills.getAll')).rejects.toThrow(/still starting/);
+  });
+
+  it('reflects the manager that is current, not the one seen at registration', async () => {
+    const first = { getAllSkills: vi.fn(() => [{ name: 'a', enabled: true }]) };
+    const second = { getAllSkills: vi.fn(() => [{ name: 'b', enabled: false }]) };
+    let manager: unknown = first;
+    registerSkillsIpcHandlers({
+      getSkillsManager: () => manager as never,
+      getPluginRuntimeService: () => mocks.plugins as never,
+      getSessionManager: () => mocks.session as never,
+    });
+
+    await invoke('skills.getRuntimeView');
+    expect(first.getAllSkills).toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    manager = second;
+    await invoke('skills.getRuntimeView');
+    expect(second.getAllSkills).toHaveBeenCalled();
+    expect(first.getAllSkills).not.toHaveBeenCalled();
+  });
+});
+
 describe('skills and plugin IPC handlers', () => {
   beforeEach(() => {
     mocks.handlers.clear();
