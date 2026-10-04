@@ -395,6 +395,36 @@ Tests: `tests/machine-access-*.test.ts` (behaviour), `*-branches*.test.ts` and
 `machine-access-e2e.test.ts` for the real-files path. Locked defaults are
 asserted; if you change one, the test must change with it and say why.
 
+## Creative-writing skills (French layer)
+
+Seven writing skills live in `.claude/skills/`, adapted from two pinned
+third-party sources. Attribution, licences and the full change list are in
+`THIRD_PARTY_SKILLS.md`; the user guide is `docs/writing/README.md`.
+
+Three upstream rules do NOT transpose to French and are inverted here. Do not
+"fix" them back:
+
+1. **The em dash is the French dialogue dash.** English bans it as a
+   generation tic; in French `— Bonjour. —` is the convention. Flag it only as
+   an abusive parenthetical. `tests/creative-writing-skills-fr.test.ts` fails
+   if a flat ban reappears.
+2. **"Cut all adverbs" is false in French.** `-ment` adverbs are ordinary and
+   often carry meaning. The target is the hollow intensifier.
+3. **Descriptions are one line.** `SkillsManager.getSkillMetadata` reads only
+   the first line of the frontmatter, so a folded `description: >` ships the
+   literal `">"` as the description.
+
+Also load-bearing: `stop-slop` is `disable-model-invocation: true` — a
+mechanical pass damages prose that is already alive, so it applies only on an
+explicit request, and it carries a fidelity guardrail (never change meaning,
+facts, tone or voice; flag uncertainty instead of deciding).
+
+**No claim of improvement is established.** The benchmark harness
+(`scripts/writing-bench/`) is verified end to end, but the measurement is
+incomplete: one generation of the "without skills" arm succeeded and none of
+the "with skills" arm. See `docs/writing-bench/MEASUREMENT.md`. Treat the
+skills as unmeasured until that file says otherwise.
+
 ## When Adding a New IPC Channel
 
 1. Declare in `src/preload/index.ts` — expose via `contextBridge`
