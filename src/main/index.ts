@@ -166,6 +166,7 @@ import {
 import { CrashGuard } from './utils/crash-guard';
 import { resolveAutoUpdater } from './utils/updater-resolve';
 import { bootProfiler } from './startup/boot-perf';
+import { runPreflight } from './preflight';
 
 /**
  * How long GUI boot waits for an external vault CLI before showing the window
@@ -1062,6 +1063,16 @@ app
     // and is re-applied (see below). Headless keeps the full wait: it starts a
     // session immediately, so there is nothing to show meanwhile.
     bootProfiler.mark('whenReady-start');
+
+    // Verify the bundled resources the app depends on (MCP server, bundled
+    // Node, sandbox agents, skills). No-op outside a packaged build. Logs
+    // CRITICAL/WARNING lines only; never throws, so boot continues either way.
+    try {
+      runPreflight();
+    } catch (err) {
+      logWarn(`[Preflight] Check failed to run: ${String(err)}`);
+    }
+
     const userDataPathForAudit = app.getPath('userData');
     const dateStr = new Date().toISOString().split('T')[0];
     const auditLogsDir = path.join(userDataPathForAudit, 'logs');
