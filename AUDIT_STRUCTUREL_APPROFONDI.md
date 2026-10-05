@@ -192,6 +192,14 @@ et le runtime l'implémente. **Rien ne consomme ces contributions** :
 slots (`statusBar`, `sidePanel`). La chaîne
 `contribute() → renderer → slot` est interrompue au dernier maillon.
 
+> **Corrigé (commit `3278ee7`)** : nouveau `ModUiHost` (`src/main/mods/v2/ui-host.ts`)
+> injecté comme dépendance `ui` du runtime ; validation des contributions côté
+> main (slot connu, forme des nœuds, plafond de 50) ; push renderer sur
+> `modsV2.uiContributionsChanged` + canaux `uiList` / `uiReadValue` /
+> `uiReportValue` ; montage du slot `settingsTab` dans `ModsV2Section` via
+> `ModDeclarativeUi`. Les slots `statusBar` / `messageActions` / `sidePanel`
+> sont acceptés et stockés mais restent sans chrome hôte (documenté en code).
+
 #### Gap 2 — `MachineApprovalCard` n'a ni producteur ni événement
 
 Le composant existe, il est testé, `AGENTS.md` le documente. Mais
@@ -200,12 +208,27 @@ Le composant existe, il est testé, `AGENTS.md` le documente. Mais
 construite (le composant seul), pas abandonnée. C'est le cas typique que
 `AGENTS.md` veut interdire : une surface UI sans contrat wire.
 
+> **Corrigé (commit `1e19369`)** : la requête de permission existante porte déjà
+> le verdict `machineAccess` du gate — `PermissionDialog` monte la carte pour
+> toute requête élevée, ses boutons « approuver une fois / refuser » répondent
+> au round-trip de permission, et les rangées d'action du dialog sont cachées
+> (pas d'approbation permanente pour une action élevée, invariant inchangé).
+> Pour les actions ordinaires, le dialog garde ses boutons dont « toujours
+> autoriser ». Deux clés i18n génériques (`worstCaseHint`, `undoHint`) ajoutées
+> en/fr/zh faute de données pire-cas/annulation par action côté main.
+
 #### Gap 3 — backends sandbox déclarés mais non sélectionnables
 
 `ssh-executor.ts` et `daytona-executor.ts` (299 l.) existent et sont testés, mais
 `SandboxAdapter` n'instancie que `NativeExecutor` (`sandbox-adapter.ts:320`).
 Aucun chemin ne choisit SSH ni Daytona : deux backends sont possibles sur le
 papier et inatteignables en pratique.
+
+> **Corrigé (commit `082ee1d`)** : clé de config `sandboxRemoteMode`
+> (`'off' | 'ssh' | 'daytona'`, défaut `'off'` → zéro changement de comportement) ;
+> paramètres de connexion et secrets exclusivement en variables d'environnement
+> `COWORK_*` (jamais dans le store exportable) ; branche distante dans
+> `_initialize` avec probe `testConnection()` SSH et repli local sur tout échec.
 
 **Total testé-mais-non-câblé : 1 491 lignes** (une seule corrigée : `preflight`).
 
@@ -713,8 +736,9 @@ documenté dans le code), et le SCC de 11 fichiers disparaît du graphe complet.
 
 ### Ce qui reste
 
-- Trois gaps produits à arbitrer : UI déclarative mods v2, `MachineApprovalCard`,
-  backends SSH/Daytona (§3.2).
-- Trois cycles type-only (§5.4) — sans risque runtime, à traiter avec C4.
+- ~~Trois gaps produits à arbitrer~~ — **trois gaps câblés** (`3278ee7`,
+  `1e19369`, `082ee1d`), voir §3.2.
+- Trois cycles type-only (§5.4) — corrigés depuis (commits `5a4a25d`,
+  `9a1299c`) ; le seul cycle restant est le lazy-import sandbox volontaire.
 - La suite complète n'a pas été rejouée dans cette passe (une exécution a tourné
   **pendant** les éditions, résultat inutilisable) : la relancer avant merge.
