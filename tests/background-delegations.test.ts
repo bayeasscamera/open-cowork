@@ -759,7 +759,7 @@ describe('wiring — source contracts', () => {
     // Tool assembly (incl. meta-tools) now lives in pi-session-tools.ts
     const toolsAssembly = flat(read('src/main/agent/pi-session-tools.ts'));
     expect(toolsAssembly).toContain(
-      'buildAgentMetaTools({ sessionId: deps.sessionId, cwd: deps.cwd })'
+      'buildAgentMetaTools({ sessionId: deps.sessionId, cwd: deps.cwd, pluginRuntimeService: deps.pluginRuntimeService, sessionManager: deps.sessionManagerForCreator, memoryManager: deps.memoryManager, })'
     );
   });
 
