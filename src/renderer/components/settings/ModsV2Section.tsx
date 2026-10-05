@@ -13,7 +13,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { InstalledModDto, SafeModeDto } from '../../../shared/mods-v2-contract';
+import type { ContributedUiDto, InstalledModDto, SafeModeDto } from '../../../shared/mods-v2-contract';
+import { ModDeclarativeUi } from '../mods/ModDeclarativeUi';
 
 export interface ModsV2SectionProps {
   /** Injected so the panel is renderable and testable without a live IPC bridge. */
@@ -28,6 +29,16 @@ export interface ModsV2SectionProps {
   safeMode?: () => Promise<SafeModeDto>;
   setEnabled?: (id: string, enabled: boolean) => Promise<void>;
   uninstall?: (id: string) => Promise<void>;
+  /**
+   * Declarative UI contributed by mods. Only the `settingsTab` slot has a host
+   * location today (this panel); other slots are stored in main but not drawn.
+   */
+  initialUiContributions?: ContributedUiDto[];
+  listUiContributions?: () => Promise<ContributedUiDto[]>;
+  onUiContributionsChanged?: (
+    callback: (contributions: ContributedUiDto[]) => void
+  ) => () => void;
+  readUiValue?: (modId: string, nodeId: string) => Promise<unknown>;
 }
 
 function reasonLabel(t: (key: string) => string, reason: SafeModeDto['reason']): string {
@@ -48,6 +59,9 @@ export function ModsV2Section(props: ModsV2SectionProps) {
   const [mods, setMods] = useState<InstalledModDto[]>(props.initialMods ?? []);
   const [safe, setSafe] = useState<SafeModeDto | null>(props.initialSafeMode ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [uiContributions, setUiContributions] = useState<ContributedUiDto[]>(
+    props.initialUiContributions ?? []
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -63,6 +77,30 @@ export function ModsV2Section(props: ModsV2SectionProps) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Declarative UI: seed from props, then fetch the live list and subscribe to
+  // pushes. Failures leave the seed in place — a mod panel that blinks empty
+  // because one round-trip failed is worse than a stale first paint.
+  useEffect(() => {
+    let cancelled = false;
+    const apply = (contributions: ContributedUiDto[]): void => {
+      if (!cancelled) setUiContributions(contributions);
+    };
+    void props.listUiContributions?.().then(apply, () => undefined);
+    const unsubscribe = props.onUiContributionsChanged?.(apply);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [props]);
+
+  // A mod's settingsTab contribution renders inside the mods panel: the mod
+  // declares data, Cowork's own component draws it. `statusBar`,
+  // `messageActions` and `sidePanel` are accepted by main but have no host
+  // chrome yet, so nothing of theirs is drawn here.
+  const settingsTabContributions = uiContributions.filter(
+    (entry) => entry.contribution.slot === 'settingsTab'
+  );
 
   return (
     <section className="mods-v2" data-mods-v2>
@@ -136,6 +174,20 @@ export function ModsV2Section(props: ModsV2SectionProps) {
           </li>
         ))}
       </ul>
+
+      {settingsTabContributions.length > 0 ? (
+        <div className="mods-v2__ui" data-mods-v2-ui>
+          <h3>{t('mods.v2.uiContributions')}</h3>
+          {settingsTabContributions.map((entry) => (
+            <div key={entry.modId} className="mods-v2__ui-entry" data-mod-id={entry.modId}>
+              <ModDeclarativeUi
+                contribution={entry.contribution}
+                backend={props.readUiValue ? { readValue: props.readUiValue } : undefined}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

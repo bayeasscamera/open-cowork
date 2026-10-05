@@ -6,6 +6,8 @@
  * can influence is typed here so both sides agree on what "reviewable" means.
  */
 
+import type { ModUiContribution } from '@cowork/mod-api';
+
 export interface ModFilePreviewDto {
   path: string;
   bytes: number;
@@ -64,6 +66,37 @@ export interface SafeModeDto {
 }
 
 export type ModsV2Reply<T> = { success: true; data: T } | { success: false; error: string };
+
+/**
+ * A UI contribution as shipped to the renderer. The mod id is attached by main
+ * at contribution time — a mod cannot impersonate another mod's slot, and the
+ * renderer always knows whose data it is drawing. The contribution itself was
+ * validated by main (`validateContribution`) before it ever reached the wire.
+ */
+export interface ContributedUiDto {
+  modId: string;
+  contribution: ModUiContribution;
+}
+
+/**
+ * Validate a form-value report coming from the renderer.
+ *
+ * `value` is deliberately `unknown`: it is user-typed data addressed to a mod,
+ * never executed, and the host stores it as-is. Only the addressing fields are
+ * checked — a report aimed at another mod's node is the attack shape here.
+ */
+export function isUiValueReport(
+  input: unknown
+): input is { modId: string; nodeId: string; value: unknown } {
+  if (typeof input !== 'object' || input === null) return false;
+  const candidate = input as Record<string, unknown>;
+  return (
+    typeof candidate.modId === 'string' &&
+    candidate.modId.length > 0 &&
+    typeof candidate.nodeId === 'string' &&
+    candidate.nodeId.length > 0
+  );
+}
 
 /**
  * Validate an install request coming from the renderer.

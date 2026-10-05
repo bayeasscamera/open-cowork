@@ -2,6 +2,7 @@ import type {
   InstalledModDto as ModsV2Installed,
   ModReviewDto as ModsV2Review,
   SafeModeDto as ModsV2SafeMode,
+  ContributedUiDto as ModsV2UiContribution,
 } from '../shared/mods-v2-contract';
 import { contextBridge, ipcRenderer } from 'electron';
 import type { PersonalFilesAPI } from '../shared/personal-files';
@@ -958,6 +959,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('modsV2.safeMode'),
     paths: (): Promise<{ success: true; data: { stagingDir: string; modsDir: string } } | { success: false; error: string }> =>
       ipcRenderer.invoke('modsV2.paths'),
+    // Declarative mod UI: read the contribution list, subscribe to changes,
+    // and report form values back to the mod that owns the node.
+    uiList: (): Promise<
+      { success: true; data: { contributions: ModsV2UiContribution[] } } | { success: false; error: string }
+    > => ipcRenderer.invoke('modsV2.uiList'),
+    uiReadValue: (
+      modId: string,
+      nodeId: string
+    ): Promise<{ success: true; data: { value: unknown } } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.uiReadValue', modId, nodeId),
+    uiReportValue: (
+      modId: string,
+      nodeId: string,
+      value: unknown
+    ): Promise<{ success: true; data: null } | { success: false; error: string }> =>
+      ipcRenderer.invoke('modsV2.uiReportValue', { modId, nodeId, value }),
+    onUiContributionsChanged: (
+      callback: (contributions: ModsV2UiContribution[]) => void
+    ): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, contributions: ModsV2UiContribution[]): void => {
+        callback(contributions);
+      };
+      ipcRenderer.on('modsV2.uiContributionsChanged', listener);
+      return () => {
+        ipcRenderer.removeListener('modsV2.uiContributionsChanged', listener);
+      };
+    },
   },
 
   // Local mods (function hooks)
@@ -1374,6 +1402,21 @@ declare global {
         paths: () => Promise<
           { success: true; data: { stagingDir: string; modsDir: string } } | { success: false; error: string }
         >;
+        uiList: () => Promise<
+          { success: true; data: { contributions: ModsV2UiContribution[] } } | { success: false; error: string }
+        >;
+        uiReadValue: (
+          modId: string,
+          nodeId: string
+        ) => Promise<{ success: true; data: { value: unknown } } | { success: false; error: string }>;
+        uiReportValue: (
+          modId: string,
+          nodeId: string,
+          value: unknown
+        ) => Promise<{ success: true; data: null } | { success: false; error: string }>;
+        onUiContributionsChanged: (
+          callback: (contributions: ModsV2UiContribution[]) => void
+        ) => () => void;
       };
       audit: {
         list: () => Promise<AuditEntry[]>;

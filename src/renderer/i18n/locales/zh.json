@@ -1500,7 +1500,8 @@
       "autoDisabled": "多次失败后已自动禁用。",
       "empty": "未安装任何模组。",
       "failed": "无法加载模组列表。",
-      "untrusted": "从未验证"
+      "untrusted": "从未验证",
+      "uiContributions": "由模组提供的内容"
     }
   },
   "diffPanel": {

@@ -137,6 +137,7 @@ import { createShellProofRunner } from './agent/proof-runner';
 import type { ProjectMemoryStore } from './memory/project-memory-store';
 import { getModsRegistry } from './mods/mods-runtime';
 import { initModsRuntime } from './mods/v2/runtime';
+import { ModUiHost } from './mods/v2/ui-host';
 import { SafeModeController } from './mods/v2/safe-mode';
 import { createBuiltinMods } from './mods/builtin-mods';
 import { createProjectStore, ProjectStore } from './projects/project-store';
@@ -2400,8 +2401,15 @@ const safeMode = new SafeModeController({
   },
 });
 const safeModeDecision = safeMode.evaluate();
+// Host side of declarative mod UI. Constructed before the runtime so every mod
+// context (built-in or loaded) shares it; the window is resolved lazily because
+// the runtime starts before the BrowserWindow exists.
+const modUiHost = new ModUiHost({
+  getWebContents: () => mainWindow?.webContents ?? null,
+});
 initModsRuntime({
   enabled: !safeModeDecision.safeMode,
+  ui: modUiHost,
   tools: {
     // A mod asking for a tool must go through the SAME gate as everyone else:
     // preset allow-list, permissions, path guard, machine access. The gate's
@@ -2509,6 +2517,7 @@ registerModsIpcHandlers();
         consecutiveBootFailures: safeMode.snapshot().consecutiveBootFailures,
       };
     },
+    uiHost: modUiHost,
   });
 
   // Load approved mods at startup, after the handlers exist so the UI can read

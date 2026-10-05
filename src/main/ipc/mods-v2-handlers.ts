@@ -17,10 +17,13 @@ import { buildInstallReview, type InstallReview } from '../mods/v2/install-plan'
 import { getModsRuntime } from '../mods/v2/runtime';
 import {
   isInstallRequest,
+  isUiValueReport,
+  type ContributedUiDto,
   type InstalledModDto,
   type ModReviewDto,
   type SafeModeDto,
 } from '../../shared/mods-v2-contract';
+import type { ModUiHost } from '../mods/v2/ui-host';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -35,6 +38,8 @@ export interface ModsV2Deps {
   /** Commit an approved, staged plugin. */
   commit: (input: { review: InstallReview; stagingDir: string; approvedHash: string; source: string }) => Promise<{ ok: boolean; error?: string }>;
   safeMode: () => SafeModeDto;
+  /** Host side of declarative mod UI: list, read and report form values. */
+  uiHost: ModUiHost;
 }
 
 export function registerModsV2IpcHandlers(deps: ModsV2Deps): void {
@@ -149,6 +154,48 @@ export function registerModsV2IpcHandlers(deps: ModsV2Deps): void {
     } catch (error) {
       logError('[IPC] modsV2.paths failed:', error);
       return { success: false as const, error: 'paths_failed' };
+    }
+  });
+
+  /**
+   * Declarative UI surface. The renderer reads the contribution list (initial
+   * render) and subscribes to `modsV2.uiContributionsChanged` pushes; form
+   * values travel back through `uiReportValue` and are read by mods through
+   * `ctx.ui.readValue`. The renderer can only report values — it can never
+   * contribute UI on a mod's behalf.
+   */
+  ipcMain.handle('modsV2.uiList', async () => {
+    try {
+      return { success: true as const, data: { contributions: deps.uiHost.list() as ContributedUiDto[] } };
+    } catch (error) {
+      logError('[IPC] modsV2.uiList failed:', error);
+      return { success: false as const, error: 'ui_list_failed' };
+    }
+  });
+
+  ipcMain.handle('modsV2.uiReadValue', async (_event, modId: unknown, nodeId: unknown) => {
+    try {
+      if (typeof modId !== 'string' || typeof nodeId !== 'string') {
+        return { success: false as const, error: 'invalid_input' };
+      }
+      const value = await deps.uiHost.readValue(modId, nodeId);
+      return { success: true as const, data: { value } };
+    } catch (error) {
+      logError('[IPC] modsV2.uiReadValue failed:', error);
+      return { success: false as const, error: 'ui_read_failed' };
+    }
+  });
+
+  ipcMain.handle('modsV2.uiReportValue', async (_event, report: unknown) => {
+    try {
+      if (!isUiValueReport(report)) {
+        return { success: false as const, error: 'invalid_input' };
+      }
+      deps.uiHost.reportValue(report.modId, report.nodeId, report.value);
+      return { success: true as const, data: null };
+    } catch (error) {
+      logError('[IPC] modsV2.uiReportValue failed:', error);
+      return { success: false as const, error: 'ui_report_failed' };
     }
   });
 }

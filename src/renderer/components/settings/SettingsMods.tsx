@@ -92,6 +92,17 @@ export function SettingsMods() {
           const reply = await window.electronAPI.modsV2.uninstall(id);
           if (!reply.success) throw new Error(reply.error);
         }}
+        listUiContributions={async () => {
+          const reply = await window.electronAPI.modsV2.uiList();
+          return reply.success ? reply.data.contributions : [];
+        }}
+        onUiContributionsChanged={(callback) =>
+          window.electronAPI.modsV2.onUiContributionsChanged(callback)
+        }
+        readUiValue={async (modId, nodeId) => {
+          const reply = await window.electronAPI.modsV2.uiReadValue(modId, nodeId);
+          return reply.success ? reply.data.value : undefined;
+        }}
       />
       <div className="space-y-3 settings-card space-y-3 p-4" aria-busy={busy}>
         {busy && mods.length === 0 && (

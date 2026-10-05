@@ -1500,7 +1500,8 @@
       "autoDisabled": "Disabled automatically after repeated failures.",
       "empty": "No mod installed.",
       "failed": "Could not load the mod list.",
-      "untrusted": "Never verified"
+      "untrusted": "Never verified",
+      "uiContributions": "Contributed by mods"
     }
   },
   "diffPanel": {

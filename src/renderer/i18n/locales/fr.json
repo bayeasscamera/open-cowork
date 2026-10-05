@@ -1499,7 +1499,8 @@
       "autoDisabled": "Désactivé automatiquement après des échecs répétés.",
       "empty": "Aucun mod installé.",
       "failed": "Impossible de charger la liste des mods.",
-      "untrusted": "Jamais vérifié"
+      "untrusted": "Jamais vérifié",
+      "uiContributions": "Contribué par les mods"
     }
   },
   "diffPanel": {
