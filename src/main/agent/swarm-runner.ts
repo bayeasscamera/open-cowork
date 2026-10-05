@@ -37,7 +37,6 @@ import type { AgentTool, AgentToolUpdateCallback } from '@mariozechner/pi-agent-
 import { AuthStorage, ModelRegistry } from './shared-auth';
 import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import { buildWebTools } from './web-tools';
-import { buildSubAgentDelegationTool } from './background-delegations';
 import { SubAgentGate } from './sub-agent-gate';
 import { proposeSkill } from '../skills/skill-proposals';
 import {
@@ -598,6 +597,22 @@ export async function withTaskTimeout<T>(
 // Real session launcher (pattern: subagent-extension spawn_subagent)
 // ---------------------------------------------------------------------------
 
+/**
+ * Builds the recursive delegation tool handed to a nested sub-agent.
+ *
+ * Injected rather than imported: the tool is built by `background-delegations`,
+ * which already creates this runner. Importing it here made the two modules
+ * import each other — a runtime cycle. When absent, sub-agents simply get no
+ * `delegate_subtask` tool.
+ */
+export type DelegationToolBuilder = (context: {
+  rootSessionId: string;
+  cwd: string;
+  /** Depth of the session this tool is being built FOR. */
+  depth: number;
+  parentTaskId?: string;
+}) => import('@mariozechner/pi-coding-agent').ToolDefinition;
+
 export interface SubAgentSessionArgs {
   task: AgentTask;
   context: string;
@@ -619,6 +634,8 @@ export interface SubAgentSessionArgs {
   systemPrompt?: string;
   /** Parent's global-gate slot handle — a synchronous child borrows it. */
   gateSlot?: { release(): void; reacquire(): Promise<void> };
+  /** Recursive delegation tool factory — see `DelegationToolBuilder`. */
+  buildDelegationTool?: DelegationToolBuilder;
 }
 
 /** One observed tool call inside a sub-agent session. */
@@ -802,10 +819,11 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
   // own subordinate tool. It borrows the parent's global-gate slot while the
   // child runs (no deadlock), and the child inherits the SAME workspace.
   const depth = args.task.depth ?? 0;
+  const buildDelegationTool = args.buildDelegationTool;
   const subAgentDelegationTool =
-    args.rootSessionId && depth < 2
+    args.rootSessionId && depth < 2 && buildDelegationTool
       ? [
-          buildSubAgentDelegationTool({
+          buildDelegationTool({
             rootSessionId: args.rootSessionId,
             cwd: args.cwd,
             depth,
@@ -1116,6 +1134,8 @@ interface SwarmRunnerOptions {
   gate?: SubAgentGate;
   /** Origin session id, propagated so recursive children can report to it. */
   rootSessionId?: string;
+  /** Recursive delegation tool factory — see `DelegationToolBuilder`. */
+  buildDelegationTool?: DelegationToolBuilder;
   /**
    * Per-task cancellation signal + live-progress hook, consulted when the
    * session is launched (used by async delegations for cancel/monitoring).
@@ -1325,6 +1345,9 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           label: profile.label,
           timeoutMs,
           ...(options.rootSessionId ? { rootSessionId: options.rootSessionId } : {}),
+          ...(options.buildDelegationTool
+            ? { buildDelegationTool: options.buildDelegationTool }
+            : {}),
           ...(extras.signal ? { signal: extras.signal } : {}),
           ...(extras.onEvent ? { onEvent: extras.onEvent } : {}),
           ...personaFields,
@@ -1390,6 +1413,9 @@ export function createSwarmRunner(options: SwarmRunnerOptions): SubAgentRunnerFn
           label: activeLabel,
           timeoutMs,
           ...(options.rootSessionId ? { rootSessionId: options.rootSessionId } : {}),
+          ...(options.buildDelegationTool
+            ? { buildDelegationTool: options.buildDelegationTool }
+            : {}),
           ...(extras.signal ? { signal: extras.signal } : {}),
           ...(extras.onEvent ? { onEvent: extras.onEvent } : {}),
           ...(options.gate

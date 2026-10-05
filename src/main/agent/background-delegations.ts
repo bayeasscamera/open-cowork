@@ -34,6 +34,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import type { AgentTask, AgentRole, SubAgentRunnerFn } from './multi-agent-coordinator';
 import { SubAgentGate } from './sub-agent-gate';
+import { MAX_DELEGATION_DEPTH } from './delegation-limits';
 import {
   buildForkSnapshotPrompt,
   decideFork,
@@ -619,8 +620,13 @@ function resolveGroupingEmbedFn(options: StartDelegationOptions): (text: string)
   };
 }
 
-/** Hard hierarchy cap: main agent (0) → sub-agent (1) → sub-sub-agent (2). */
-export const MAX_DELEGATION_DEPTH = 2;
+/**
+ * Hard hierarchy cap: main agent (0) → sub-agent (1) → sub-sub-agent (2).
+ *
+ * Declared in `./delegation-limits` so `fork-policy` can read it without
+ * importing this module back. Re-exported here for existing consumers.
+ */
+export { MAX_DELEGATION_DEPTH };
 
 /** The GLOBAL semaphore shared by the swarm AND every delegation level. */
 export const subAgentGate = new SubAgentGate(DEFAULT_DELEGATION_SETTINGS.maxConcurrent);
@@ -808,6 +814,7 @@ function launchBackgroundTask(
     timeoutMsOverride?: number;
     gate?: SubAgentGate;
     rootSessionId?: string;
+    buildDelegationTool?: typeof buildSubAgentDelegationTool;
     taskExtras?: (t: AgentTask) => {
       signal?: AbortSignal;
       onEvent?: (step: SubAgentToolStep) => void;
@@ -818,6 +825,7 @@ function launchBackgroundTask(
     timeoutMsOverride: settings.timeoutMs,
     gate: subAgentGate,
     rootSessionId: options.sessionId,
+    buildDelegationTool: buildSubAgentDelegationTool,
     taskExtras: () => ({
       signal: controllers.get(id)?.signal,
       onEvent: (step) => {
@@ -1292,12 +1300,14 @@ async function runResearchCrossCheck(
     timeoutMsOverride: number;
     gate: SubAgentGate;
     launchSession?: (args: SubAgentSessionArgs) => Promise<SubAgentSessionResult>;
+    buildDelegationTool?: typeof buildSubAgentDelegationTool;
   } = {
     cwd: covered[0]?.cwd ?? options.cwd,
     getConfig,
     maxConcurrentOverride: 1,
     timeoutMsOverride: settings.timeoutMs,
     gate: subAgentGate,
+    buildDelegationTool: buildSubAgentDelegationTool,
   };
   if (options.launchSession) runnerOptions.launchSession = options.launchSession;
   const run = await createSwarmRunner(runnerOptions)(task, '');

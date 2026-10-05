@@ -14,7 +14,7 @@
  * hierarchy cap. Nothing in this module launches anything.
  */
 
-import { MAX_DELEGATION_DEPTH } from './background-delegations';
+import { MAX_DELEGATION_DEPTH } from './delegation-limits';
 import type { Message } from '../../shared/types';
 
 /** Why a fork was refused. `null` reasons are the success case. */
