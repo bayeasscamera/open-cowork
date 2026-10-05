@@ -740,5 +740,57 @@ documenté dans le code), et le SCC de 11 fichiers disparaît du graphe complet.
   `1e19369`, `082ee1d`), voir §3.2.
 - Trois cycles type-only (§5.4) — corrigés depuis (commits `5a4a25d`,
   `9a1299c`) ; le seul cycle restant est le lazy-import sandbox volontaire.
-- La suite complète n'a pas été rejouée dans cette passe (une exécution a tourné
-  **pendant** les éditions, résultat inutilisable) : la relancer avant merge.
+- ~~La suite complète n'a pas été rejouée dans cette passe~~ — **rejouée et
+  attribuée** le 5 octobre 2026, voir §12.1.
+
+### 12.1 Attribution des échecs de la suite complète (5 octobre 2026)
+
+**Méthode.** Deux exécutions complètes, séquentielles, même environnement, même
+commande (`node scripts/ensure-native-abi.js run`), l'une sur HEAD (`bdde22d`),
+l'autre dans un worktree sur `070df1e` (= `HEAD~3`, avant les trois commits). Les
+runs précédents n'étaient pas comparables ; trois pièges ont été neutralisés,
+chacun vérifié :
+
+1. **ABI natif.** `better-sqlite3` est compilé pour Electron ; un `npx vitest run`
+   brut charge le mauvais binaire et fait échouer toute la famille `memory-*`
+   (68 occurrences de `NODE_MODULE_VERSION` dans le run non corrigé). Le wrapper
+   `ensure-native-abi.js` — câblé sur `npm test` — est la voie correcte.
+2. **Bac à sable de l'agent.** Le shim `node-language-shim.cjs` injecté via
+   `NODE_OPTIONS`, plus la politique de suppression, refusent `unlink` et `spawn` :
+   `EPERM` sur `tests/temp_audit/*`, `.tmp-build-win-artifacts-*` et les enfants
+   `run_code`. Corrigé en vidant `NODE_OPTIONS` et en exécutant hors bac à sable.
+   Contrôle : les cinq fichiers qui échouaient ainsi passent **34/34** en ciblé.
+3. **Contention.** Deux suites en parallèle gonflent le nombre d'échecs (62
+   fichiers observés) — d'où des exécutions séquentielles.
+
+**Résultat mesuré.**
+
+| Run | Fichiers | Tests | Fichiers en échec | Tests en échec |
+|---|---|---|---|---|
+| HEAD `bdde22d` | 501 | 5 026 | **3** | **3** |
+| Baseline `070df1e` | 497 | 4 980 | 6 | 13 |
+
+**Attribution.** `L_head \ L_base = ∅` : **aucun échec de HEAD n'est propre à
+HEAD**. Les trois échecs sont préexistants, identiques sur le baseline :
+
+| Test | Attendu | Obtenu | Origine |
+|---|---|---|---|
+| `tests/system-controller.test.ts` | 21 meta-tools | 24 | dérive de `252e91d`, ancêtre du baseline |
+| `tests/agent-presets.test.ts` | 3 presets | 4 | préexistant |
+| `tests/memory-ipc-handlers.test.ts` | 15 canaux | 20 | préexistant |
+
+Le différentiel inverse — `run-code-e2e-chain`, `run-code-process`,
+`run-code-tool` (3 fichiers, 10 tests) — n'échoue que sur le baseline : tests
+d'enfant `run_code` sensibles au timing, **non reproductibles en ciblé**. Rien
+n'indique une correction apportée par la branche ; ces trois fichiers sont
+instables, pas réparés.
+
+**Conclusion.** Les trois commits (`082ee1d`, `1e19369`, `3278ee7`) n'introduisent
+**aucune régression** mesurable. Les trois échecs restants sont une dérive
+test/code à arbitrer séparément (mettre le test à jour, ou corriger la surface
+exposée) — hors périmètre des trois gaps produits.
+
+**Résidus non suivis** (à ne pas committer) : `tests/temp_audit/` et
+`.tmp-build-win-artifacts-*`. Ils ne font échouer des tests **que** sous le bac à
+sable de l'agent (refus d'`unlink`) ; absents du worktree, ils sont sans effet sur
+l'attribution ci-dessus.
