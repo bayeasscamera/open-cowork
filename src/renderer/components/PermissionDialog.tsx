@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useIPC } from '../hooks/useIPC';
 import type { PermissionRequest } from '../types';
 import { Shield, X, Check, AlertTriangle } from 'lucide-react';
+import { MachineApprovalCard, type ApprovalCardView } from './MachineApprovalCard';
 
 interface PermissionDialogProps {
   permission: PermissionRequest;
@@ -25,6 +26,32 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
   );
   /** A dangerous or sensitive action never gets an "always approve" button. */
   const canAlwaysAllow = !isElevated && permission.toolName !== 'memory_delete';
+
+  // An elevated machine-access request is rendered as the MachineApprovalCard,
+  // which becomes the decision surface: its approve-once/refuse buttons answer
+  // this very permission round-trip, so the dialog's own action rows are
+  // hidden. The card never offers a standing approval — same rule as above.
+  const showApprovalCard = Boolean(machineAccess && isElevated);
+  const description = typeof input['description'] === 'string' ? input['description'] : '';
+  const approvalCard: ApprovalCardView | null = machineAccess
+    ? {
+        titleKey: 'machineAccess.title',
+        what: description || permission.toolName,
+        why: (machineAccess.reasons ?? []).join('; '),
+        worstCase: t('machineAccess.card.worstCaseHint'),
+        undo: t('machineAccess.card.undoHint'),
+        origin: machineAccess.origin ?? 'user-message',
+        risk:
+          machineAccess.level === 'dangereux' || machineAccess.level === 'suspect'
+            ? machineAccess.level
+            : machineAccess.sensitive
+              ? 'suspect'
+              : 'ordinaire',
+        ...(machineAccess.origin && machineAccess.origin !== 'user-message'
+          ? { reconfirmationSource: machineAccess.origin }
+          : {}),
+      }
+    : null;
 
   const getToolDescription = (toolName: string): string => {
     const key = `permission.toolDescriptions.${toolName}`;
@@ -123,8 +150,18 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
           })()}
         </div>
 
-        {/* Machine access: why it is flagged, and where the request came from */}
-        {machineAccess && (
+        {/* Machine access: why it is flagged, and where the request came from.
+            Elevated requests render as the approval card, which answers the
+            permission round-trip itself. */}
+        {showApprovalCard && approvalCard ? (
+          <div className="mt-4">
+            <MachineApprovalCard
+              card={approvalCard}
+              onApproveOnce={() => respondToPermission(permission.toolUseId, 'allow')}
+              onRefuse={() => respondToPermission(permission.toolUseId, 'deny')}
+            />
+          </div>
+        ) : machineAccess && (
           <div
             className={`mt-4 p-3 rounded-xl border ${
               isElevated
@@ -176,7 +213,9 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
           </div>
         )}
 
-        {/* Actions */}
+        {/* Actions — hidden for elevated machine-access requests, where the
+            approval card above is the decision surface. */}
+        {!showApprovalCard && (
         <div className="mt-6 flex items-center gap-3">
           <button
             onClick={() => respondToPermission(permission.toolUseId, 'deny')}
@@ -194,6 +233,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
             {t('permission.allow')}
           </button>
         </div>
+        )}
 
         {/* Always Allow option */}
         {canAlwaysAllow && (!pendingAlwaysAllow ? (

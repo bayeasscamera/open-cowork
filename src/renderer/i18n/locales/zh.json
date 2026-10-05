@@ -2244,7 +2244,9 @@
       "origin": "请求来源",
       "reconfirmation": "此操作来自 {{source}} 的内容。",
       "before": "之前",
-      "after": "之后"
+      "after": "之后",
+      "worstCaseHint": "超出上述描述的数据丢失或损坏。",
+      "undoHint": "立即拒绝是唯一保证的取消方式；已批准的操作可能无法撤销。"
     },
     "unknown": "未知",
     "loading": "正在加载机器访问…",

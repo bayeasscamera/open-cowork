@@ -2244,7 +2244,9 @@
       "origin": "Requested by",
       "reconfirmation": "This action comes from the content of {{source}}.",
       "before": "Before",
-      "after": "After"
+      "after": "After",
+      "worstCaseHint": "Unintended loss or corruption of data beyond what is described above.",
+      "undoHint": "Refusing now is the only guaranteed cancellation; an approved action may be irreversible."
     },
     "unknown": "unknown",
     "loading": "Loading machine access…",

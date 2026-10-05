@@ -34,6 +34,8 @@ const REQUIRED_KEYS = [
   'machineAccess.card.undo',
   'machineAccess.card.origin',
   'machineAccess.card.reconfirmation',
+  'machineAccess.card.worstCaseHint',
+  'machineAccess.card.undoHint',
   'settings.machineAccess',
   'settings.machineAccessDesc',
 ];

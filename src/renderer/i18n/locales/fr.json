@@ -2243,7 +2243,9 @@
       "origin": "Demandé par",
       "reconfirmation": "Cette action vient du contenu de {{source}}.",
       "before": "Avant",
-      "after": "Après"
+      "after": "Après",
+      "worstCaseHint": "Perte ou corruption de données au-delà de ce qui est décrit ci-dessus.",
+      "undoHint": "Refuser maintenant est la seule annulation garantie ; une action approuvée peut être irréversible."
     },
     "unknown": "inconnue",
     "loading": "Chargement de l'accès à la machine…",
