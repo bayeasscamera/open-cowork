@@ -28,13 +28,18 @@ describe('SystemController & Omnipotent OS Control (OpenClaw style)', () => {
     expect(procs[0]).toHaveProperty('name');
   });
 
-  it('exposes all 21 meta tools including the 5 advanced pillars and async delegation', () => {
+  it('exposes all 24 meta tools including the 5 advanced pillars and async delegation', () => {
     const tools = buildAgentMetaTools();
     const names = tools.map((t) => t.name);
 
-    // 21 after the create_dynamic_tool removal; the human-gated propose_skill
-    // (the shared replacement for create_dynamic_skill) is part of the list.
-    expect(tools.length).toBe(21);
+    // 21 after the create_dynamic_tool removal, then +3: `remember_note` (daily
+    // companion notes, 9bb07f8) and the Creator Mode pair `create_task_skill` /
+    // `install_plugin` (252e91d). The human-gated `propose_skill` (the shared
+    // replacement for `create_dynamic_skill`) is part of the list.
+    expect(tools.length).toBe(24);
+    expect(names).toContain('remember_note');
+    expect(names).toContain('create_task_skill');
+    expect(names).toContain('install_plugin');
     expect(names).toContain('propose_skill');
     expect(names).not.toContain('create_dynamic_tool');
     expect(names).not.toContain('create_dynamic_skill');

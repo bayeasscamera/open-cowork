@@ -1,7 +1,7 @@
 /**
  * @module main/presets/builtin-presets
  *
- * The three presets shipped with the app. They are DATA, defined in code
+ * The built-in presets shipped with the app. They are DATA, defined in code
  * rather than read from disk so they cannot be edited, replaced or shadowed by
  * a user file — a user preset colliding with one of these ids is refused at
  * load time (see ./preset-loader.ts).

@@ -172,7 +172,12 @@ describe('preset loader', () => {
 
   it('returns only the built-ins when the presets directory does not exist', () => {
     const loaded = loadPresets({ root: join(root, 'missing') });
-    expect(loaded.presets.map((p) => p.id)).toEqual(['standard', 'code-mode', 'long-context']);
+    expect(loaded.presets.map((p) => p.id)).toEqual([
+      'standard',
+      'code-mode',
+      'long-context',
+      'frontend-craft',
+    ]);
     expect(loaded.issues).toEqual([]);
   });
 
