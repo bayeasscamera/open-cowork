@@ -6,17 +6,30 @@
  * sender, dispatching native notifications for permission/task events.
  */
 import type { BrowserWindow } from 'electron';
-import type { ServerEvent } from '../../shared/types';
+import type { PermissionResult, ServerEvent } from '../../shared/types';
 import { remoteManager } from '../remote/remote-manager';
-import type { SessionManager } from '../session/session-manager';
 import { log, logError, logWarn } from '../utils/logger';
 import { SystemNotifier } from '../utils/system-notifier';
+
+/**
+ * The slice of `SessionManager` this dispatcher actually uses.
+ *
+ * Structural on purpose: importing the class — even as `import type` — tied
+ * `events/` back to `session/` and closed a type-level import cycle through
+ * `session-manager → agent-runner → … → background-delegations → renderer-sender`.
+ * Nothing here needs the rest of the manager, so the dependency is stated as
+ * the two methods that are called.
+ */
+interface SessionDispatcherTarget {
+  loadSession(sessionId: string): { title?: string } | null;
+  handlePermissionResponse(toolUseId: string, result: PermissionResult): void;
+}
 
 /** Accessors for the mutable app-level singletons owned by main/index.ts. */
 interface RendererSenderContext {
   getMainWindow(): BrowserWindow | null;
   getEventSender(): ((event: ServerEvent) => void) | null;
-  getSessionManager(): SessionManager | null;
+  getSessionManager(): SessionDispatcherTarget | null;
   /** Whether delegation completion notifications are enabled (settings gate). */
   getDelegationNotifyEnabled?: () => boolean;
 }
