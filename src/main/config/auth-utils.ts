@@ -1,4 +1,4 @@
-import type { AppConfig } from './config-store';
+import type { AppConfig } from '../../shared/types';
 import { isLoopbackBaseUrl as sharedIsLoopbackBaseUrl } from '../../shared/network/loopback';
 import { normalizeOllamaBaseUrl as sharedNormalizeOllamaBaseUrl } from '../../shared/ollama-base-url';
 

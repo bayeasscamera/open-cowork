@@ -1,6 +1,22 @@
 import { Type } from '@sinclair/typebox';
-import type { MemoryService } from './memory-service';
-import type { MemoryReadResult, MemorySearchResult, MemoryToolDefinition } from './memory-types';
+import type {
+  MemoryReadResult,
+  MemorySearchParams,
+  MemorySearchResult,
+  MemoryToolDefinition,
+} from './memory-types';
+
+/**
+ * The slice of MemoryService that createMemoryTools actually calls.
+ *
+ * Structural on purpose: importing the class — even as `import type` — tied
+ * memory-tools back to memory-service, which imports `createMemoryTools` back:
+ * a type-level cycle.
+ */
+interface MemoryToolsService {
+  search(params: MemorySearchParams): MemorySearchResult[];
+  read(id: string): MemoryReadResult | null;
+}
 
 function formatSearchResult(result: MemorySearchResult): string {
   const lines = [
@@ -52,7 +68,7 @@ function formatReadResult(result: MemoryReadResult): string {
   return lines.join('\n\n');
 }
 
-export function createMemoryTools(memoryService: MemoryService): MemoryToolDefinition[] {
+export function createMemoryTools(memoryService: MemoryToolsService): MemoryToolDefinition[] {
   const searchTool: MemoryToolDefinition = {
     name: 'memory_search',
     label: 'memory_search',

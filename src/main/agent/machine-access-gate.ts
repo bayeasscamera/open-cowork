@@ -22,7 +22,19 @@ import { isSensitivePath } from '../machine-access/sensitive-zones';
 import { peekMachineAccessService } from '../machine-access/runtime';
 import { sanitizeToolResult } from '../machine-access/injection-guard';
 import { log } from '../utils/logger';
-import type { RequestPermission } from './agent-hooks';
+
+/**
+ * Permission-request callback shape. Declared locally instead of imported from
+ * './agent-hooks': that module imports this one for `assessMachineAccessCall`,
+ * so a type import here closed a type-level cycle
+ * (agent-hooks ↔ machine-access-gate).
+ */
+type RequestPermission = (
+  sessionId: string,
+  toolUseId: string,
+  toolName: string,
+  input: Record<string, unknown>
+) => Promise<'allow' | 'deny' | 'allow_always'>;
 
 /** Tools that can act on the machine, and how their arguments map to an action. */
 interface ActionShape {
