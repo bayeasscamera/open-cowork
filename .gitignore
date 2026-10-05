@@ -121,6 +121,9 @@ website/.vitepress/cache/
 
 # Temp directories
 .tmp/
+# Residue from tests/build-windows-artifacts.test.ts (mkdtemp at the repo root).
+# The test removes it in afterEach; a failed cleanup must not pollute `git status`.
+.tmp-build-win-artifacts-*/
 
 # Screenshots (debug/review)
 *.png
@@ -134,3 +137,6 @@ website/.vitepress/cache/
 
 # temporary output of the remote verification script
 .cowork-verify/
+
+# WorkBuddy agent workspace data (project memory + local tool state)
+.workbuddy-ai/
