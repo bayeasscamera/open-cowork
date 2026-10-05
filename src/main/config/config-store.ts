@@ -123,6 +123,9 @@ export interface AppConfig {
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
 
+  // Remote sandbox backend (ssh/daytona); connection params live in env vars
+  sandboxRemoteMode: 'off' | 'ssh' | 'daytona';
+
   // Global memory toggle
   memoryEnabled: boolean;
 
@@ -290,6 +293,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'enableDevLogs',
   'theme',
   'sandboxEnabled',
+  'sandboxRemoteMode',
   'memoryEnabled',
   'coworkInstructions',
   'enableThinking',
@@ -326,6 +330,7 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   theme: (v) => v === 'dark' || v === 'light' || v === 'system',
   enableDevLogs: (v) => typeof v === 'boolean',
   sandboxEnabled: (v) => typeof v === 'boolean',
+  sandboxRemoteMode: (v) => v === 'off' || v === 'ssh' || v === 'daytona',
   enableThinking: (v) => typeof v === 'boolean',
   memoryEnabled: (v) => typeof v === 'boolean',
   coworkInstructions: (v) => typeof v === 'string',
@@ -460,6 +465,7 @@ const defaultConfig: AppConfig = {
   enableDevLogs: false,
   theme: 'light',
   sandboxEnabled: false,
+  sandboxRemoteMode: 'off',
   memoryEnabled: true,
   coworkInstructions: '',
   tavilyApiKey: '',
@@ -1385,6 +1391,10 @@ export class ConfigStore {
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
+      sandboxRemoteMode:
+        raw.sandboxRemoteMode === 'ssh' || raw.sandboxRemoteMode === 'daytona'
+          ? raw.sandboxRemoteMode
+          : 'off',
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       coworkInstructions:
         typeof raw.coworkInstructions === 'string'

@@ -1101,6 +1101,14 @@ export interface AppConfig {
   globalSkillsPath?: string;
   theme?: AppTheme;
   sandboxEnabled?: boolean;
+  /**
+   * Remote sandbox backend. 'off' (default) keeps the current local behaviour
+   * (WSL/Lima/native). 'ssh' and 'daytona' select the remote executors; their
+   * connection parameters are read from COWORK_* environment variables, never
+   * from this store, so secrets (e.g. the Daytona API key) stay out of the
+   * exportable config.
+   */
+  sandboxRemoteMode?: 'off' | 'ssh' | 'daytona';
   memoryEnabled?: boolean;
   /** Personalization: free-form instructions injected into agent system prompts. */
   coworkInstructions?: string;

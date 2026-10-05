@@ -16,7 +16,7 @@ import { log, logError } from '../utils/logger';
 
 const execFileAsync = promisify(execFile);
 
-interface SshExecutorConfig extends SandboxConfig {
+export interface SshExecutorConfig extends SandboxConfig {
   host: string;
   port?: number;
   user?: string;

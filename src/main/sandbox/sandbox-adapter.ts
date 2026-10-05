@@ -16,6 +16,8 @@ import { log, logWarn, logError } from '../utils/logger';
 import { WSLBridge, pathConverter } from './wsl-bridge';
 import { LimaBridge, limaPathConverter } from './lima-bridge';
 import { NativeExecutor } from './native-executor';
+import { SshExecutor, type SshExecutorConfig } from './ssh-executor';
+import { DaytonaExecutor, type DaytonaExecutorConfig } from './daytona-executor';
 import { getSandboxBootstrap } from './sandbox-bootstrap';
 import { configStore } from '../config/config-store';
 import type {
@@ -37,6 +39,61 @@ export interface SandboxAdapterConfig extends SandboxConfig {
   skipInstallPrompts?: boolean;
   /** Main window for dialogs */
   mainWindow?: BrowserWindow | null;
+}
+
+export type SandboxRemoteMode = 'ssh' | 'daytona';
+
+export type RemoteSandboxConfigResult =
+  | { ok: true; config: SshExecutorConfig | DaytonaExecutorConfig }
+  | { ok: false; error: string };
+
+/**
+ * Build the executor configuration for a remote sandbox backend.
+ *
+ * Pure and exported so the selection logic is unit-testable without Electron.
+ * Connection parameters come exclusively from COWORK_* environment variables —
+ * never from the config store — so secrets (Daytona API key, SSH material)
+ * stay out of the exportable plaintext config.
+ *
+ * Env vars:
+ * - SSH: COWORK_SSH_HOST (required), COWORK_SSH_PORT, COWORK_SSH_USER,
+ *   COWORK_SSH_KEY_PATH, COWORK_SSH_REMOTE_WORKSPACE
+ * - Daytona: COWORK_DAYTONA_WORKSPACE_ID (required), COWORK_DAYTONA_API_KEY,
+ *   COWORK_DAYTONA_API_URL
+ */
+export function resolveRemoteSandboxConfig(
+  mode: SandboxRemoteMode,
+  base: SandboxConfig,
+  env: NodeJS.ProcessEnv
+): RemoteSandboxConfigResult {
+  if (mode === 'ssh') {
+    const host = env.COWORK_SSH_HOST?.trim();
+    if (!host) return { ok: false, error: 'COWORK_SSH_HOST is not set' };
+    const port = env.COWORK_SSH_PORT?.trim();
+    return {
+      ok: true,
+      config: {
+        ...base,
+        host,
+        ...(port ? { port: Number(port) } : {}),
+        ...(env.COWORK_SSH_USER?.trim() ? { user: env.COWORK_SSH_USER.trim() } : {}),
+        ...(env.COWORK_SSH_KEY_PATH?.trim() ? { keyPath: env.COWORK_SSH_KEY_PATH.trim() } : {}),
+        remoteWorkspacePath: env.COWORK_SSH_REMOTE_WORKSPACE?.trim() || base.workspacePath,
+      },
+    };
+  }
+
+  const workspaceId = env.COWORK_DAYTONA_WORKSPACE_ID?.trim();
+  if (!workspaceId) return { ok: false, error: 'COWORK_DAYTONA_WORKSPACE_ID is not set' };
+  return {
+    ok: true,
+    config: {
+      ...base,
+      workspaceId,
+      ...(env.COWORK_DAYTONA_API_KEY?.trim() ? { apiKey: env.COWORK_DAYTONA_API_KEY.trim() } : {}),
+      ...(env.COWORK_DAYTONA_API_URL?.trim() ? { apiUrl: env.COWORK_DAYTONA_API_URL.trim() } : {}),
+    },
+  };
 }
 
 interface SandboxState {
@@ -138,6 +195,21 @@ export class SandboxAdapter implements SandboxExecutor {
       this.state.initialized = true;
       log('[SandboxAdapter] Initialized with mode:', this.state.mode);
       return;
+    }
+
+    // Remote backends (SSH / Daytona) take priority when configured.
+    // On any failure we fall back to the platform-local dispatch below.
+    const remoteMode = configStore.get('sandboxRemoteMode') ?? 'off';
+    if (remoteMode === 'ssh' || remoteMode === 'daytona') {
+      const remoteReady = await this.initializeRemote(config, remoteMode);
+      if (remoteReady) {
+        this.state.initialized = true;
+        log('[SandboxAdapter] Initialized with mode:', this.state.mode);
+        return;
+      }
+      logWarn(
+        `[SandboxAdapter] Remote sandbox (${remoteMode}) unavailable, falling back to local dispatch`
+      );
     }
 
     if (platform === 'win32' && !config.forceNative) {
@@ -302,6 +374,52 @@ export class SandboxAdapter implements SandboxExecutor {
       logError('[SandboxAdapter] Failed to initialize Lima bridge:', error);
       await this.showLimaInitFailedWarning(config, error);
       await this.initializeNative(config);
+    }
+  }
+
+  /**
+   * Initialize a remote sandbox backend (SSH or Daytona).
+   *
+   * Connection parameters and secrets come from COWORK_* environment
+   * variables (see resolveRemoteSandboxConfig), never from the config store.
+   *
+   * @returns true if the remote executor is ready, false on any failure
+   *   (caller falls back to local platform dispatch).
+   */
+  private async initializeRemote(
+    config: SandboxAdapterConfig,
+    mode: SandboxRemoteMode
+  ): Promise<boolean> {
+    log(`[SandboxAdapter] Attempting remote sandbox backend: ${mode}`);
+
+    const resolved = resolveRemoteSandboxConfig(mode, config, process.env);
+    if (!resolved.ok) {
+      logWarn(`[SandboxAdapter] Remote sandbox config invalid: ${resolved.error}`);
+      return false;
+    }
+
+    try {
+      if (mode === 'ssh') {
+        const ssh = new SshExecutor();
+        await ssh.initialize(resolved.config);
+        const reachable = await ssh.testConnection();
+        if (!reachable) {
+          logWarn('[SandboxAdapter] SSH sandbox connection test failed');
+          return false;
+        }
+        this.executor = ssh;
+      } else {
+        const daytona = new DaytonaExecutor();
+        await daytona.initialize(resolved.config);
+        this.executor = daytona;
+      }
+
+      this.state.mode = mode;
+      log(`[SandboxAdapter] [OK] Remote sandbox initialized (${mode})`);
+      return true;
+    } catch (error) {
+      logError(`[SandboxAdapter] Failed to initialize ${mode} sandbox:`, error);
+      return false;
     }
   }
 
