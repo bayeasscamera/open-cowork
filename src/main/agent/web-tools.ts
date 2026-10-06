@@ -13,7 +13,7 @@
  *
  * Pure helpers (parsing, provider resolution, URL safety) are exported for tests.
  */
-import { Type, type TSchema } from '@sinclair/typebox';
+import { Type, type TSchema } from 'typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import { log, logWarn } from '../utils/logger';
 
@@ -251,11 +251,7 @@ async function searchTavily(
     }));
 }
 
-async function timedFetch(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number
-): Promise<Response> {
+async function timedFetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -390,7 +386,10 @@ export function buildWebTools(config: WebSearchConfig = {}): ToolDefinition[] {
     }),
     async execute(_toolCallId, params) {
       const args = params as { query: string; max_results?: number };
-      const maxResults = Math.min(Math.max(Math.round(args.max_results ?? DEFAULT_MAX_RESULTS), 1), 20);
+      const maxResults = Math.min(
+        Math.max(Math.round(args.max_results ?? DEFAULT_MAX_RESULTS), 1),
+        20
+      );
       try {
         const { provider, apiKey } = resolveWebSearchProvider(config);
         let items: WebSearchResultItem[];

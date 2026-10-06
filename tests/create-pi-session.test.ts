@@ -18,12 +18,14 @@ const mocks = vi.hoisted(() => ({
   resourceLoaderCtor: vi.fn(),
   createCompactionExtensionFactory: vi.fn((options) => ({ factory: options })),
   modelRegistryCtor: vi.fn(),
+  getAgentDir: vi.fn(() => '/tmp/cowork-pi-agent'),
 }));
 
 vi.mock('../src/main/utils/logger', () => ({ log: mocks.log, logWarn: mocks.logWarn }));
 vi.mock('@mariozechner/pi-coding-agent', () => ({
   createAgentSession: mocks.createAgentSession,
   createCodingTools: vi.fn(),
+  getAgentDir: mocks.getAgentDir,
   SessionManager: { inMemory: mocks.inMemorySession },
   SettingsManager: { inMemory: mocks.inMemorySettings },
   DefaultResourceLoader: class {
@@ -36,9 +38,12 @@ vi.mock('@mariozechner/pi-coding-agent', () => ({
   },
 }));
 vi.mock('../src/main/agent/shared-auth', () => ({
+  // pi-coding-agent 0.73 made the ModelRegistry constructor private; the app
+  // goes through the `create` factory now.
   ModelRegistry: class {
-    constructor(authStorage: unknown) {
+    static create(authStorage: unknown) {
       mocks.modelRegistryCtor(authStorage);
+      return {};
     }
   },
 }));
@@ -237,8 +242,10 @@ describe('createPiSession', () => {
     });
     expect(mocks.resourceLoaderCtor).toHaveBeenCalledWith({
       cwd: '/work',
+      // Required since pi-coding-agent 0.73 — the loader no longer defaults it.
+      agentDir: '/tmp/cowork-pi-agent',
       additionalSkillPaths: ['/skills'],
-      appendSystemPrompt: 'APPEND',
+      appendSystemPrompt: ['APPEND'],
       extensionFactories: [
         {
           factory: {

@@ -22,19 +22,23 @@ import type * as ts from 'typescript';
 import * as path from 'path';
 import {
   createAgentSession,
-  createEditTool,
-  createFindTool,
-  createGrepTool,
-  createLsTool,
-  createReadTool,
-  createWriteTool,
+  createEditToolDefinition,
+  createFindToolDefinition,
+  createGrepToolDefinition,
+  createLsToolDefinition,
+  createReadToolDefinition,
+  createWriteToolDefinition,
   DefaultResourceLoader,
+  getAgentDir,
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
+  type ExtensionContext,
+  type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
 import type { Model, Api } from '@mariozechner/pi-ai';
-import type { AgentTool, AgentToolUpdateCallback } from '@mariozechner/pi-agent-core';
+import type { AgentToolUpdateCallback } from '@mariozechner/pi-agent-core';
 import { AuthStorage, ModelRegistry } from './shared-auth';
+import { getPiAgentInternals } from './pi-agent-access';
 import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import { buildWebTools } from './web-tools';
 import { SubAgentGate } from './sub-agent-gate';
@@ -343,6 +347,12 @@ function extractConfinedToolPath(
 /**
  * Before-tool-call hook confining every path-bearing tool call to the
  * sub-agent workspace. Returns a block decision for calls that escape it.
+ *
+ * Takes the app's own `{ toolName, args }` shape, NOT the SDK's
+ * `{ assistantMessage, toolCall, args, context }`. Callers on the SDK side must
+ * adapt (see `withConfinement` and the session hook in `launchSubAgentSession`):
+ * handing this hook straight to the SDK leaves `toolName` undefined, so it
+ * matches no tool and blocks nothing.
  */
 export function buildConfinementHook(
   cwd: string
@@ -382,35 +392,42 @@ export function collectModifiedPath(cwd: string, toolName: string, args: unknown
 
 /**
  * Wrap a coding tool so any path-bearing call escaping the workspace is
- * refused by the tool itself — independent of session-level hooks, which
- * the child session may not support (setBeforeToolCall is absent in this
- * SDK version, as the real headless run proved).
+ * refused by the tool itself — a layer independent of the session-level
+ * confinement hook, so neither one is a single point of failure.
+ *
+ * Since pi-coding-agent 0.73 the SDK builds its own built-in tools, and
+ * `createAgentSession({ tools })` accepts tool *names* only. Tool objects are
+ * therefore handed over through `customTools`, which overrides a built-in of
+ * the same name in the session's tool registry. Before 0.73 the objects passed
+ * as `tools` were silently discarded (only their `.name` was read), so this
+ * wrapper only becomes effective from this version on.
  */
-// `any` mirrors the SDK's own alias: createAgentSession takes tools as
-// `type Tool = AgentTool<any>`, and only that variance accepts the concrete
-// per-tool parameter schemas.
+// Mirrors the SDK's own (unexported) `AnyToolDefinition` alias: only `any`
+// variance accepts the concrete per-tool parameter schemas.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyTool = AgentTool<any>;
+type AnyToolDefinition = ToolDefinition<any, any, any>;
 
-export function withConfinement(tool: AnyTool, cwd: string): AnyTool {
+export function withConfinement(tool: AnyToolDefinition, cwd: string): AnyToolDefinition {
   const hook = buildConfinementHook(cwd);
   return {
     ...tool,
     execute: async (
       toolCallId: string,
-      // Mirrors the SDK alias (params: any) — see AnyTool above.
+      // Mirrors the SDK alias (params: any) — the concrete per-tool schema is
+      // not expressible through the base ToolDefinition type.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       params: any,
-      signal?: AbortSignal,
+      signal: AbortSignal | undefined,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onUpdate?: AgentToolUpdateCallback<any>
+      onUpdate: AgentToolUpdateCallback<any> | undefined,
+      ctx: ExtensionContext
     ) => {
       const decision = await hook({ toolName: tool.name, args: params });
       if (decision?.block) {
         return {
           content: [
             {
-              type: 'text',
+              type: 'text' as const,
               text:
                 decision.reason ||
                 'Blocked: this path escapes the sub-agent workspace. Work inside the workspace only.',
@@ -419,7 +436,7 @@ export function withConfinement(tool: AnyTool, cwd: string): AnyTool {
           details: undefined,
         };
       }
-      return tool.execute(toolCallId, params, signal, onUpdate);
+      return tool.execute(toolCallId, params, signal, onUpdate, ctx);
     },
   };
 }
@@ -706,7 +723,7 @@ function extractAssistantText(msg: unknown): string {
  */
 export function buildProposeSkillTool(): import('@mariozechner/pi-coding-agent').ToolDefinition {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { Type } = require('@sinclair/typebox') as typeof import('@sinclair/typebox');
+  const { Type } = require('typebox') as typeof import('typebox');
   return {
     name: 'propose_skill',
     label: 'Propose a reusable skill (pending human approval)',
@@ -799,21 +816,26 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
       authStorage.setRuntimeApiKey(model.provider, apiKey);
     }
   }
-  const modelRegistry = new ModelRegistry(authStorage);
+  const modelRegistry = ModelRegistry.create(authStorage);
 
   // No bash tool: a free-form shell cannot be reliably confined without an
   // OS sandbox, and the swarm requires writes to stay inside the workspace.
-  // Every tool is additionally confined by a wrapper refusing paths that
-  // escape the workspace. Web tools (search/fetch) are stateless and not
-  // fs-bound: research delegations need them.
-  const tools = [
-    createReadTool(args.cwd),
-    createWriteTool(args.cwd),
-    createEditTool(args.cwd),
-    createFindTool(args.cwd),
-    createGrepTool(args.cwd),
-    createLsTool(args.cwd),
+  // Web tools (search/fetch) are stateless and not fs-bound: research
+  // delegations need them.
+  //
+  // Since 0.73 the SDK builds its built-in tools itself and `tools` takes
+  // *names*, so the confined objects travel through `customTools`, which
+  // overrides a built-in of the same name. `bash` is deliberately in neither
+  // list.
+  const confinedTools = [
+    createReadToolDefinition(args.cwd),
+    createWriteToolDefinition(args.cwd),
+    createEditToolDefinition(args.cwd),
+    createFindToolDefinition(args.cwd),
+    createGrepToolDefinition(args.cwd),
+    createLsToolDefinition(args.cwd),
   ].map((tool) => withConfinement(tool, args.cwd));
+  const SWARM_TOOL_NAMES = ['read', 'write', 'edit', 'find', 'grep', 'ls'];
 
   // RECURSIVE delegation: a sub-agent below the hard depth cap (2) gets its
   // own subordinate tool. It borrows the parent's global-gate slot while the
@@ -892,8 +914,10 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
   );
   const resourceLoader = new DefaultResourceLoader({
     cwd: args.cwd,
+    // Required since pi-coding-agent 0.73 (no internal fallback any more).
+    agentDir: getAgentDir(),
     additionalSkillPaths: skillSelectionDirs(swarmSkills),
-    appendSystemPrompt: childSystemPrompt,
+    appendSystemPrompt: [childSystemPrompt],
   });
   await resourceLoader.reload();
 
@@ -901,8 +925,11 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
     model,
     authStorage,
     modelRegistry,
-    tools,
+    tools: SWARM_TOOL_NAMES,
     customTools: [
+      // Confined coding tools first: they shadow the SDK built-ins of the same
+      // name. A later custom tool of the same name would win instead.
+      ...confinedTools,
       ...buildWebTools({
         tavilyApiKey: args.config.tavilyApiKey || '',
         braveApiKey: args.config.braveApiKey || '',
@@ -929,19 +956,24 @@ async function launchSubAgentSession(args: SubAgentSessionArgs): Promise<SubAgen
     cwd: args.cwd,
   });
 
-  // Confinement hook: block every path-bearing call escaping the workspace.
   const piSession = session as unknown as {
-    setBeforeToolCall?: (
-      hook: (call: {
-        toolName: string;
-        args: unknown;
-      }) => Promise<{ block: boolean; reason?: string } | void>
-    ) => void;
     abort?: () => Promise<void> | void;
     dispose?: () => void;
   };
-  if (typeof piSession.setBeforeToolCall === 'function') {
-    piSession.setBeforeToolCall(buildConfinementHook(args.cwd));
+
+  // Confinement hook: block every path-bearing call escaping the workspace.
+  //
+  // Two things had to change for this to actually run. pi-agent-core 0.73
+  // exposes the slot as the public assignable `beforeToolCall` property (it was
+  // the private `_beforeToolCall` field written by `setBeforeToolCall`), and
+  // the SDK hands the hook `{ toolCall, args, ... }` — not `{ toolName, args }`.
+  // Reading `call.toolName` here matched nothing, so this hook never blocked a
+  // single call; the adapter below maps the real context onto the hook's shape.
+  const confinementHook = buildConfinementHook(args.cwd);
+  const confinementAgent = getPiAgentInternals(session);
+  if (confinementAgent && 'beforeToolCall' in confinementAgent) {
+    confinementAgent.beforeToolCall = async (ctx) =>
+      confinementHook({ toolName: ctx.toolCall?.name ?? '', args: ctx.args });
   } else {
     // Tool-level confinement (withConfinement) remains active regardless —
     // this hook would only be an additional, session-level layer.

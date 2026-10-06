@@ -29,7 +29,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { Type, type TSchema } from '@sinclair/typebox';
+import { Type, type TSchema } from 'typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import OpenAI from 'openai';
 import { Anthropic } from '@anthropic-ai/sdk';
@@ -527,8 +527,7 @@ async function callGenerationWithSdk(request: GenerationRequest): Promise<Genera
         if (!data) throw new Error('Gemini returned no image part');
         return {
           base64: data,
-          mimeType:
-            normalizeMimeType(imagePart?.inlineData?.mimeType) ?? 'image/png',
+          mimeType: normalizeMimeType(imagePart?.inlineData?.mimeType) ?? 'image/png',
           model: config.model,
           provider: config.provider,
         };
@@ -677,7 +676,8 @@ export function buildImageTools(deps: ImageToolsDeps): ToolDefinition[] {
               type: 'text' as const,
               text:
                 body +
-                NL + NL +
+                NL +
+                NL +
                 '[analysed ' +
                 image.relativePath +
                 ' with ' +
@@ -840,7 +840,9 @@ export function buildImageTools(deps: ImageToolsDeps): ToolDefinition[] {
         const shownPath = toWorkspaceRelative(deps.cwd, absPath);
         const costLine =
           estimatedCostUsd !== undefined
-            ? 'Estimated cost: ' + formatCostEstimateUsd(estimatedCostUsd) + ' (approximate list price).'
+            ? 'Estimated cost: ' +
+              formatCostEstimateUsd(estimatedCostUsd) +
+              ' (approximate list price).'
             : 'Estimated cost: unknown for this model - check your provider dashboard.';
         return {
           content: [
@@ -851,9 +853,17 @@ export function buildImageTools(deps: ImageToolsDeps): ToolDefinition[] {
                 result.model +
                 ' (' +
                 result.provider +
-                ').' + NL +
-                'Path: ' + shownPath + NL +
-                'Size: ' + buffer.byteLength + ' bytes (' + mimeType + ')' + NL +
+                ').' +
+                NL +
+                'Path: ' +
+                shownPath +
+                NL +
+                'Size: ' +
+                buffer.byteLength +
+                ' bytes (' +
+                mimeType +
+                ')' +
+                NL +
                 costLine,
             },
           ],

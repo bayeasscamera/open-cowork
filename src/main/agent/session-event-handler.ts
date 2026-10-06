@@ -387,8 +387,8 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
       break;
     }
 
-    case 'auto_compaction_start': {
-      log('[CoworkAgentRunner] Auto-compaction started, reason:', event.reason);
+    case 'compaction_start': {
+      log('[CoworkAgentRunner] Compaction started, reason:', event.reason);
       const compactionStepId = `compaction-${Date.now()}`;
       ctx.state.setCompactionStepId(compactionStepId);
       ctx.sendTraceStep({
@@ -401,7 +401,7 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
       break;
     }
 
-    case 'auto_compaction_end': {
+    case 'compaction_end': {
       const compactionStepId = ctx.state.getCompactionStepId();
       const status = event.aborted ? 'error' : event.errorMessage ? 'error' : 'completed';
       const title = event.aborted
@@ -409,7 +409,7 @@ export function handlePiSessionEvent(event: AgentSessionEvent, ctx: PiSessionEve
         : event.errorMessage
           ? `Context compaction failed: ${event.errorMessage}`
           : 'Context compaction completed';
-      log('[CoworkAgentRunner] Auto-compaction ended:', title, 'willRetry:', event.willRetry);
+      log('[CoworkAgentRunner] Compaction ended:', title, 'willRetry:', event.willRetry);
 
       // Surface compaction result details to the renderer (skip if retrying)
       if (event.result && !event.willRetry) {

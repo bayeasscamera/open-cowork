@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { MultiAgentCoordinator, type AgentTask, type SubAgentRunResult } from '../src/main/agent/multi-agent-coordinator';
+import {
+  MultiAgentCoordinator,
+  type AgentTask,
+  type SubAgentRunResult,
+} from '../src/main/agent/multi-agent-coordinator';
 import { renderCrossVerificationSection } from '../src/main/agent/cross-verification';
 
 /**
@@ -24,8 +28,8 @@ function makeScriptedRunner(opts: {
     if (task.id.endsWith('-cross-check')) {
       const output =
         task.role === 'reviewer'
-          ? opts.reviewerChallenge ?? 'VERDICT: AGREE\nPOINT: none'
-          : opts.securityChallenge ?? 'VERDICT: AGREE\nPOINT: none';
+          ? (opts.reviewerChallenge ?? 'VERDICT: AGREE\nPOINT: none')
+          : (opts.securityChallenge ?? 'VERDICT: AGREE\nPOINT: none');
       return { output };
     }
     if (task.id.endsWith('-review-rerun')) {
@@ -58,7 +62,9 @@ describe('swarm cross-verification — OPT-IN cost gate', () => {
 
     // Exactly the four DAG tasks — the debate adds nothing on the default path.
     expect(calls).toHaveLength(4);
-    expect(calls.every((c) => !c.id.endsWith('-cross-check') && !c.id.endsWith('-review-rerun'))).toBe(true);
+    expect(
+      calls.every((c) => !c.id.endsWith('-cross-check') && !c.id.endsWith('-review-rerun'))
+    ).toBe(true);
     expect(executed.crossVerificationResults).toBeUndefined();
     expect(renderCrossVerificationSection(executed.crossVerificationResults)).toBe('');
   });
@@ -104,7 +110,9 @@ describe('swarm cross-verification — Zone 1 (reviewer vs security)', () => {
       unresolved: true,
     });
     // The challenged position is preserved verbatim, not overwritten.
-    expect(peer?.divergences[0].targetPosition).toBe('Charging is idempotent, no double-charge risk.');
+    expect(peer?.divergences[0].targetPosition).toBe(
+      'Charging is idempotent, no double-charge risk.'
+    );
 
     // The final report shows the disagreement explicitly.
     const rendered = renderCrossVerificationSection(executed.crossVerificationResults);
@@ -212,7 +220,13 @@ describe('swarm cross-verification — measured added cost', () => {
 });
 
 describe('cross-verification wiring — source contracts', () => {
-  const read = (p: string) => readFileSync(p, 'utf8');
+  // These assertions read source as text, so they must not depend on how the
+  // formatter wraps a call. Source and needle both go through `norm`, which
+  // collapses whitespace and drops the space around brackets, so a prettier
+  // re-wrap cannot break a contract.
+  const norm = (s: string) => s.replace(/\s+/g, ' ').replace(/\s*([(){},])\s*/g, '$1');
+  const read = (p: string) => norm(readFileSync(p, 'utf8'));
+  const contains = (source: string, needle: string) => expect(source).toContain(norm(needle));
 
   it('reuses the SINGLE corrective re-run mechanism (no second parallel one)', () => {
     const runner = read('src/main/agent/swarm-runner.ts');
@@ -220,30 +234,33 @@ describe('cross-verification wiring — source contracts', () => {
     const xv = read('src/main/agent/cross-verification.ts');
 
     // The syntax re-run and the review re-run both build through the shared helper.
-    expect(runner).toContain("from './cross-verification'");
-    expect(runner).toContain('buildCorrectiveContext({');
-    expect(coordinator).toContain('buildDeveloperReviewRerunContext(');
-    expect(xv).toContain('buildCorrectiveContext({');
+    contains(runner, "from './cross-verification'");
+    contains(runner, 'buildCorrectiveContext({');
+    contains(coordinator, 'buildDeveloperReviewRerunContext(');
+    contains(xv, 'buildCorrectiveContext({');
     // The review re-run goes through the SAME runner, never a raw session launch.
     expect(coordinator).not.toContain('launchSession');
-    expect(coordinator).toContain('await runner(');
+    contains(coordinator, 'await runner(');
   });
 
   it('the swarm tool exposes the OPT-IN flag and renders the divergence report', () => {
     const tools = read('src/main/tools/dynamic-tool-creator.ts');
-    expect(tools).toContain('crossVerification: Type.Optional');
-    expect(tools).toContain('createCollaborativePlan(args.goal, {');
-    expect(tools).toContain('renderCrossVerificationSection(executed.crossVerificationResults)');
+    contains(tools, 'crossVerification: Type.Optional');
+    contains(tools, 'createCollaborativePlan(args.goal, {');
+    contains(tools, 'renderCrossVerificationSection(executed.crossVerificationResults)');
     // Research delegations expose the same opt-in flag.
-    expect(tools).toContain('crossVerify: true');
+    contains(tools, 'crossVerify: true');
   });
 
   it('the research cross-check reuses the swarm runner and never blocks delivery', () => {
     const bg = read('src/main/agent/background-delegations.ts');
-    expect(bg).toContain('buildResearchCrossCheckPrompt(');
-    expect(bg).toContain('parseResearchContradictions(');
-    expect(bg).toContain('createSwarmRunner(runnerOptions)(task');
+    contains(bg, 'buildResearchCrossCheckPrompt(');
+    contains(bg, 'parseResearchContradictions(');
+    contains(bg, 'createSwarmRunner(runnerOptions)(task');
     // Injection stays synchronous; the model call is scheduled on completion.
-    expect(bg).toContain('scheduleResearchCrossVerification(current.sessionId, options, effectiveGetConfig)');
+    contains(
+      bg,
+      'scheduleResearchCrossVerification(current.sessionId, options, effectiveGetConfig)'
+    );
   });
 });

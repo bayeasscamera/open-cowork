@@ -1,5 +1,5 @@
-import { Type } from '@sinclair/typebox';
-import { Value } from '@sinclair/typebox/value';
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
 import type { AgentRuntimeCustomTool } from '../extensions/agent-runtime-extension';
 import type { MemoryFilesStore } from './memory-files-store';
 

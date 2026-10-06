@@ -14,13 +14,9 @@
  * callback wired, deletion refuses rather than proceeding unconfirmed.
  */
 
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import type { AgentRuntimeCustomTool } from '../extensions/agent-runtime-extension';
-import {
-  ArtifactStore,
-  ArtifactValidationError,
-  MAX_ARTIFACT_BYTES,
-} from './artifact-store';
+import { ArtifactStore, ArtifactValidationError, MAX_ARTIFACT_BYTES } from './artifact-store';
 
 export interface ArtifactToolsOptions {
   store: ArtifactStore;
@@ -79,7 +75,10 @@ function createArtifactCreateTool(options: ArtifactToolsOptions): AgentRuntimeCu
       try {
         const p = (params || {}) as { title?: string; content?: string; mime_type?: string };
         if (typeof p.title !== 'string' || typeof p.content !== 'string') {
-          return result({ error: 'invalid_params', message: '"title" and "content" are required.' });
+          return result({
+            error: 'invalid_params',
+            message: '"title" and "content" are required.',
+          });
         }
         const artifact = options.store.create({
           title: p.title,
@@ -161,7 +160,9 @@ function createArtifactListTool(options: ArtifactToolsOptions): AgentRuntimeCust
         })
       ),
       include_content: Type.Optional(
-        Type.Boolean({ description: 'Include the current content of each artifact. Off by default.' })
+        Type.Boolean({
+          description: 'Include the current content of each artifact. Off by default.',
+        })
       ),
     }),
     async execute(_toolUseId: string, params: unknown) {
@@ -172,7 +173,9 @@ function createArtifactListTool(options: ArtifactToolsOptions): AgentRuntimeCust
           return result({ error: 'invalid_params', message: 'This session has no project.' });
         }
         const artifacts = options.store.list(
-          scope === 'project' ? { projectId: options.projectId as string } : { sessionId: options.sessionId }
+          scope === 'project'
+            ? { projectId: options.projectId as string }
+            : { sessionId: options.sessionId }
         );
 
         return result({
@@ -209,7 +212,9 @@ function createArtifactReadTool(options: ArtifactToolsOptions): AgentRuntimeCust
         Type.Number({ description: 'Specific version to read. Defaults to the current version.' })
       ),
       list_versions: Type.Optional(
-        Type.Boolean({ description: 'Return the version history with their sizes instead of content.' })
+        Type.Boolean({
+          description: 'Return the version history with their sizes instead of content.',
+        })
       ),
     }),
     async execute(_toolUseId: string, params: unknown) {
@@ -245,7 +250,11 @@ function createArtifactReadTool(options: ArtifactToolsOptions): AgentRuntimeCust
               message: `No version ${p.version} for artifact ${p.artifact_id}.`,
             });
           }
-          return result({ artifactId: p.artifact_id, version: version.version, content: version.content });
+          return result({
+            artifactId: p.artifact_id,
+            version: version.version,
+            content: version.content,
+          });
         }
 
         const artifact = options.store.getWithContent(p.artifact_id);
@@ -302,7 +311,10 @@ function createArtifactDeleteTool(options: ArtifactToolsOptions): AgentRuntimeCu
         }
         const approved = await options.confirmDelete(toolUseId, artifact.id, artifact.title);
         if (approved !== true) {
-          return result({ error: 'confirmation_denied', message: 'The user declined the deletion.' });
+          return result({
+            error: 'confirmation_denied',
+            message: 'The user declined the deletion.',
+          });
         }
         options.store.delete(artifact.id);
         return result({ deleted: true, id: artifact.id, title: artifact.title });

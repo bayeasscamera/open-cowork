@@ -1,10 +1,10 @@
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import {
   createAgentSession,
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
-  createCodingTools,
   DefaultResourceLoader,
+  getAgentDir,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
 import type {
@@ -14,6 +14,7 @@ import type {
   AgentRuntimeCustomTool,
 } from '../extensions/agent-runtime-extension';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+import { getPiAgentInternals } from './pi-agent-access';
 import { MCPManager } from '../mcp/mcp-manager';
 import { configStore } from '../config/config-store';
 import { log, logError } from '../utils/logger';
@@ -208,7 +209,7 @@ function createSpawnSubagentTool(
       try {
         const config = configStore.getAll();
         const authStorage = getSharedAuthStorage();
-        const modelRegistry = new ModelRegistry(authStorage);
+        const modelRegistry = ModelRegistry.create(authStorage);
 
         const modelString = config.model?.trim() || 'anthropic/claude-sonnet-4-6';
         const configProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
@@ -267,7 +268,6 @@ function createSpawnSubagentTool(
         }
 
         const cwd = config.defaultWorkdir || process.cwd();
-        const codingTools = createCodingTools(cwd);
 
         const childSystemPrompt = buildChildSystemPrompt(task, result_format);
         // The loader takes directories, not skills; without this the sub-agent
@@ -275,8 +275,10 @@ function createSpawnSubagentTool(
         const childSkills = selectRelevantSkills(task, currentRuntimeSkills());
         const resourceLoader = new DefaultResourceLoader({
           cwd,
+          // Required since pi-coding-agent 0.73 (no internal fallback any more).
+          agentDir: getAgentDir(),
           additionalSkillPaths: skillSelectionDirs(childSkills),
-          appendSystemPrompt: childSystemPrompt,
+          appendSystemPrompt: [childSystemPrompt],
         });
         await resourceLoader.reload();
 
@@ -284,7 +286,7 @@ function createSpawnSubagentTool(
           model: piModel,
           authStorage,
           modelRegistry,
-          tools: codingTools,
+          tools: ['read', 'bash', 'edit', 'write'],
           customTools: mcpCustomTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
@@ -302,25 +304,24 @@ function createSpawnSubagentTool(
 
         // Install permission gating on child session (mirrors parent behavior)
         if (requestPermission) {
-          const piSession = childSession as unknown as {
-            setBeforeToolCall?: (
-              hook: (call: {
-                toolName: string;
-                args: unknown;
-              }) => Promise<{ block: boolean; reason?: string } | void>
-            ) => void;
-          };
-          if (typeof piSession.setBeforeToolCall === 'function') {
-            piSession.setBeforeToolCall(async (call) => {
-              const decision = await requestPermission(call.toolName, call.args);
+          // pi-agent-core 0.73 exposes the pre-tool-call slot as the public
+          // assignable `beforeToolCall` property (it was the private
+          // `_beforeToolCall` field written by `setBeforeToolCall` before that).
+          // The SDK hands the hook `{ toolCall, args, ... }`, not
+          // `{ toolName, args }` — reading a `toolName` property here matched
+          // nothing, which is why the gate never refused a call before.
+          const agent = getPiAgentInternals(childSession);
+          if (agent && 'beforeToolCall' in agent) {
+            agent.beforeToolCall = async (ctx) => {
+              const decision = await requestPermission(ctx.toolCall?.name ?? '', ctx.args);
               if (decision === 'deny') {
                 return { block: true, reason: 'Permission denied by parent session policy' };
               }
               return undefined;
-            });
+            };
           } else {
             logError(
-              '[SubagentExtension] Child session does not support setBeforeToolCall — permission gating disabled'
+              '[SubagentExtension] Child session does not expose beforeToolCall — permission gating disabled'
             );
           }
         }

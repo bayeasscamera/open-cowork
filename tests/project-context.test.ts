@@ -196,8 +196,9 @@ describe('agent runner wiring — source contract', () => {
   it('appends the resolved project context block to the system prompt', () => {
     expect(runnerSource).toContain('projectContext.systemPromptBlock,');
     // And that array is the appendSystemPrompt payload of the resource loader
-    // (built in create-pi-session.ts).
-    expect(sessionFactorySource).toContain('appendSystemPrompt: deps.coworkAppendPrompt,');
+    // (built in create-pi-session.ts). The loader takes a string[] since
+    // pi-coding-agent 0.73.
+    expect(sessionFactorySource).toContain('appendSystemPrompt: [deps.coworkAppendPrompt],');
   });
 
   it('uses the project ConfigSet when pinned, falling back to the active config', () => {

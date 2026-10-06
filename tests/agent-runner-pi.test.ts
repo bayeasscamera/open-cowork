@@ -124,7 +124,8 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('uses pi DefaultResourceLoader with additionalSkillPaths and appendSystemPrompt', () => {
     // Session construction now lives in create-pi-session.ts
     expect(createPiSessionContent).toContain('additionalSkillPaths: deps.skillPaths');
-    expect(createPiSessionContent).toContain('appendSystemPrompt: deps.coworkAppendPrompt');
+    // appendSystemPrompt takes a string[] since pi-coding-agent 0.73.
+    expect(createPiSessionContent).toContain('appendSystemPrompt: [deps.coworkAppendPrompt]');
     expect(createPiSessionContent).not.toContain('systemPromptOverride');
     expect(agentRunnerContent).not.toContain('systemPromptOverride');
   });

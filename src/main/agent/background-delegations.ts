@@ -230,10 +230,7 @@ blocking. Research, read and (within your permissions) write as needed.
 /** Parse the mandated five-section report; falls back gracefully. */
 export function parseDelegationReport(text: string): DelegationReport {
   const section = (name: string): string | undefined => {
-    const re = new RegExp(
-      `^## ${name}\\s*\\n([\\s\\S]*?)(?=^## |$)`,
-      'im'
-    );
+    const re = new RegExp(`^## ${name}\\s*\\n([\\s\\S]*?)(?=^## |$)`, 'im');
     const m = re.exec(text);
     return m ? m[1].trim() : undefined;
   };
@@ -383,7 +380,9 @@ function loadSettings(): void {
 function persist(): void {
   const file = resolveStorageFile();
   try {
-    const trimmed = Array.from(delegations.values()).sort(byRecencyDesc).slice(0, MAX_TRACKED_TASKS);
+    const trimmed = Array.from(delegations.values())
+      .sort(byRecencyDesc)
+      .slice(0, MAX_TRACKED_TASKS);
     const serialized = trimmed.map((d) => ({
       ...d,
       rawResult: d.rawResult?.slice(0, MAX_PERSISTED_RESULT_CHARS),
@@ -405,8 +404,7 @@ export function normalizeDelegationSettings(raw: unknown): DelegationSettings {
     Math.min(max, Math.max(min, Math.round(v)));
   return {
     configSetId: typeof r.configSetId === 'string' ? r.configSetId.trim() : '',
-    modelId:
-      typeof r.modelId === 'string' && r.modelId.trim() ? r.modelId.trim() : undefined,
+    modelId: typeof r.modelId === 'string' && r.modelId.trim() ? r.modelId.trim() : undefined,
     timeoutMs: clamp(num(r.timeoutMs, DEFAULT_DELEGATION_SETTINGS.timeoutMs), 10_000, 900_000),
     maxConcurrent: clamp(num(r.maxConcurrent, DEFAULT_DELEGATION_SETTINGS.maxConcurrent), 1, 4),
     notifyOnCompletion:
@@ -453,7 +451,11 @@ function enqueuePending(delegationId: string): void {
   pendingBySession.set(delegation.sessionId, queue);
 }
 
-function pushLog(delegation: BackgroundDelegation, kind: DelegationLogEntry['kind'], text: string): void {
+function pushLog(
+  delegation: BackgroundDelegation,
+  kind: DelegationLogEntry['kind'],
+  text: string
+): void {
   delegation.log.push({ at: Date.now(), kind, text });
   if (delegation.log.length > MAX_LOG_STEPS) delegation.log.shift();
 }
@@ -495,7 +497,10 @@ function compareDelegationsByRecency(
 }
 
 /** Newest first. */
-function byRecencyDesc(a: { startedAt: number; id: string }, b: { startedAt: number; id: string }): number {
+function byRecencyDesc(
+  a: { startedAt: number; id: string },
+  b: { startedAt: number; id: string }
+): number {
   return compareDelegationsByRecency(b, a);
 }
 
@@ -529,7 +534,11 @@ function evictOverflowingDelegations(): void {
   }
 }
 
-function emit(delegation: BackgroundDelegation, kind: 'status' | 'progress', detail?: string): void {
+function emit(
+  delegation: BackgroundDelegation,
+  kind: 'status' | 'progress',
+  detail?: string
+): void {
   const event: ServerEvent = {
     type: 'background.task',
     payload: {
@@ -608,7 +617,9 @@ interface StartDelegationOptions {
  * leave the lexical grouping untouched rather than surface an error on a
  * background path the user never asked about.
  */
-function resolveGroupingEmbedFn(options: StartDelegationOptions): (text: string) => Promise<number[]> {
+function resolveGroupingEmbedFn(
+  options: StartDelegationOptions
+): (text: string) => Promise<number[]> {
   if (options.embed) return options.embed;
   const client = options.llmClient ?? new MemoryLLMClient();
   return async (text: string) => {
@@ -636,7 +647,10 @@ export const subAgentGate = new SubAgentGate(DEFAULT_DELEGATION_SETTINGS.maxConc
  * returned object is available before the sub-agent finishes — the caller
  * (tool) must not await the sub-agent's completion.
  */
-export function startDelegation(options: StartDelegationOptions): { taskId: string; done: Promise<void> } {
+export function startDelegation(options: StartDelegationOptions): {
+  taskId: string;
+  done: Promise<void>;
+} {
   ensureLoaded();
 
   // HARD depth cap — enforced here even if a palette leak ever allowed a
@@ -665,7 +679,9 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
   }
 
   // Enforce the delegation-specific concurrency cap BEFORE launching.
-  const runningCount = Array.from(delegations.values()).filter((d) => d.status === 'running').length;
+  const runningCount = Array.from(delegations.values()).filter(
+    (d) => d.status === 'running'
+  ).length;
   if (runningCount >= settings.maxConcurrent) {
     throw new DelegationCapacityError(
       `Max concurrent delegations reached (${settings.maxConcurrent}). Wait for one to finish or raise the cap in the delegations settings.`
@@ -708,7 +724,12 @@ export function startDelegation(options: StartDelegationOptions): { taskId: stri
   const controller = new AbortController();
   controllers.set(id, controller);
 
-  const done = launchBackgroundTask(id, delegation, options, forkDecision?.allowed ? forkDecision : undefined);
+  const done = launchBackgroundTask(
+    id,
+    delegation,
+    options,
+    forkDecision?.allowed ? forkDecision : undefined
+  );
   emit(delegation, 'status');
   return { taskId: id, done };
 }
@@ -722,7 +743,9 @@ class DelegationCapacityError extends Error {
 
 class DelegationDepthError extends Error {
   constructor(depth: number) {
-    super(`Delegation depth ${depth} exceeds the hard cap of 2 levels (main agent → sub-agent → sub-sub-agent).`);
+    super(
+      `Delegation depth ${depth} exceeds the hard cap of 2 levels (main agent → sub-agent → sub-sub-agent).`
+    );
     this.name = 'DelegationDepthError';
   }
 }
@@ -756,9 +779,7 @@ function launchBackgroundTask(
     // A fork starts from the parent's conversation, so the child prompt is the
     // snapshot plus its own instruction rather than the instruction alone.
     prompt: fork
-      ? buildAutonomousPrompt(
-          `${buildForkSnapshotPrompt(fork.snapshot)}\n\n${delegation.prompt}`
-        )
+      ? buildAutonomousPrompt(`${buildForkSnapshotPrompt(fork.snapshot)}\n\n${delegation.prompt}`)
       : buildAutonomousPrompt(delegation.prompt),
     status: 'pending',
     depth: delegation.depth,
@@ -839,7 +860,10 @@ function launchBackgroundTask(
   if (options.launchSession) runnerOptions.launchSession = options.launchSession;
   const runner: SubAgentRunnerFn = createSwarmRunner(runnerOptions);
 
-  const done = runner(task, 'Background delegation — work autonomously; see the report contract in the task.')
+  const done = runner(
+    task,
+    'Background delegation — work autonomously; see the report contract in the task.'
+  )
     .then(async (run) => {
       controllers.delete(id);
       const current = delegations.get(id);
@@ -867,8 +891,12 @@ function launchBackgroundTask(
       if (current.crossVerify) {
         // Fire-and-forget: the delegation is already marked completed and its
         // report enqueued, so a slow grouping never delays the user's result.
-        void scheduleResearchCrossVerification(current.sessionId, options, effectiveGetConfig).catch(
-          (err) => logError('[BackgroundDelegations] Failed to schedule research cross-verification:', err)
+        void scheduleResearchCrossVerification(
+          current.sessionId,
+          options,
+          effectiveGetConfig
+        ).catch((err) =>
+          logError('[BackgroundDelegations] Failed to schedule research cross-verification:', err)
         );
       }
     })
@@ -1132,7 +1160,9 @@ export function cancelDelegation(taskId: string): boolean {
   stopDetachedPollingIfIdle();
   persist();
   emit(delegation, 'status');
-  log(`[BackgroundDelegations] Task ${taskId} (${delegation.title}) cancelled — sub-agent session aborted`);
+  log(
+    `[BackgroundDelegations] Task ${taskId} (${delegation.title}) cancelled — sub-agent session aborted`
+  );
   return true;
 }
 
@@ -1343,10 +1373,15 @@ async function scheduleResearchCrossVerification(
   // fallback for any text that has no embedding.
   let topicGroups: BackgroundDelegation[][];
   try {
-    topicGroups = await groupByEmbedding(pendingCrossVerify, textOf, resolveGroupingEmbedFn(options), {
-      lexicalFallback: sharesResearchTopic,
-      cache: researchEmbeddingCache,
-    });
+    topicGroups = await groupByEmbedding(
+      pendingCrossVerify,
+      textOf,
+      resolveGroupingEmbedFn(options),
+      {
+        lexicalFallback: sharesResearchTopic,
+        cache: researchEmbeddingCache,
+      }
+    );
   } catch (err) {
     logError('[BackgroundDelegations] Semantic grouping failed; using lexical grouping:', err);
     topicGroups = groupResearchByTopic(pendingCrossVerify, textOf);
@@ -1468,7 +1503,7 @@ export function takePendingDelegationResults(sessionId: string): string {
     delegation.delivered = true;
     const body = delegation.report
       ? formatReportForInjection(delegation.report)
-      : delegation.rawResult ?? delegation.error ?? '';
+      : (delegation.rawResult ?? delegation.error ?? '');
     blocks.push(
       `<background_task_result id="${delegation.id}" title="${delegation.title}" role="${delegation.role}">\n` +
         truncateResult(body) +
@@ -1495,7 +1530,9 @@ export function describeRunningDelegations(sessionId: string): string {
   );
   if (running.length === 0) return '';
   const lines = running
-    .map((d) => `- "${d.title}" (id: ${d.id}, started ${new Date(d.startedAt).toLocaleTimeString()})`)
+    .map(
+      (d) => `- "${d.title}" (id: ${d.id}, started ${new Date(d.startedAt).toLocaleTimeString()})`
+    )
     .join('\n');
   return (
     '<background_tasks_running>\n' +
@@ -1609,7 +1646,7 @@ export function buildSubAgentDelegationTool(context: {
   parentTaskId?: string;
 }): import('@mariozechner/pi-coding-agent').ToolDefinition {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { Type } = require('@sinclair/typebox') as typeof import('@sinclair/typebox');
+  const { Type } = require('typebox') as typeof import('typebox');
   const childDepth = context.depth + 1;
   const allowed = childDepth <= MAX_DELEGATION_DEPTH;
   return {
@@ -1618,7 +1655,7 @@ export function buildSubAgentDelegationTool(context: {
     description: allowed
       ? 'Delegate ONE self-contained subtask to your own background subordinate and WAIT for its structured report. ' +
         'Use it to keep your own context focused: hand over a complete, self-sufficient brief. ' +
-        'The report you receive includes the subordinate\'s summary, findings, assumptions and limits.'
+        "The report you receive includes the subordinate's summary, findings, assumptions and limits."
       : `Delegation is unavailable: the hierarchy depth cap (${MAX_DELEGATION_DEPTH} levels) is reached. Work alone and note in your report that a subtask would have merited delegation.`,
     parameters: Type.Object({
       task: Type.String({

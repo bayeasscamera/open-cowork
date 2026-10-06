@@ -1,5 +1,5 @@
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
-import type { TSchema } from '@sinclair/typebox';
+import type { TSchema } from 'typebox';
 import type { Message, Session } from '../../shared/types';
 
 export type CoreMemoryCategory = 'identity' | 'preferences' | 'skills' | 'interests';

@@ -16,7 +16,7 @@
  * a layer.
  */
 
-import type { TSchema } from '@sinclair/typebox';
+import type { TSchema } from 'typebox';
 
 /** What a tool can do, for preset/risk decisions and UI affordances. */
 export type ToolRisk = 'read' | 'write' | 'exec' | 'network';

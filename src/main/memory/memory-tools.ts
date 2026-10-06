@@ -1,4 +1,4 @@
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import type {
   MemoryReadResult,
   MemorySearchParams,
@@ -77,16 +77,11 @@ export function createMemoryTools(memoryService: MemoryToolsService): MemoryTool
     parameters: Type.Object({
       query: Type.String({ minLength: 1, description: 'What you want to remember or look up.' }),
       scope: Type.Optional(
-        Type.Union([
-          Type.Literal('workspace'),
-          Type.Literal('global'),
-          Type.Literal('all'),
-        ])
+        Type.Union([Type.Literal('workspace'), Type.Literal('global'), Type.Literal('all')])
       ),
       workspace: Type.Optional(
         Type.String({
-          description:
-            'Absolute workspace path. Omit to use the current workspace when available.',
+          description: 'Absolute workspace path. Omit to use the current workspace when available.',
         })
       ),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
@@ -94,9 +89,10 @@ export function createMemoryTools(memoryService: MemoryToolsService): MemoryTool
     async execute(_toolCallId, params) {
       const result = memoryService.search({
         query: String((params as { query: string }).query || ''),
-        cwd: typeof (params as { workspace?: string }).workspace === 'string'
-          ? (params as { workspace?: string }).workspace
-          : undefined,
+        cwd:
+          typeof (params as { workspace?: string }).workspace === 'string'
+            ? (params as { workspace?: string }).workspace
+            : undefined,
         scope:
           typeof (params as { scope?: string }).scope === 'string'
             ? ((params as { scope?: 'workspace' | 'global' | 'all' }).scope as

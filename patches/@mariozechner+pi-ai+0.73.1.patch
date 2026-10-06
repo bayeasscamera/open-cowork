@@ -1,0 +1,61 @@
+diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
+index 3ec63be..f8d4c5e 100644
+--- a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
++++ b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
+@@ -641,7 +641,18 @@ export function convertMessages(model, context, compat) {
+                 .filter(isThinkingContentBlock)
+                 .filter((block) => block.thinking.trim().length > 0);
+             if (nonEmptyThinkingBlocks.length > 0) {
+-                if (compat.requiresThinkingAsText) {
++                if (compat.requiresThinkingInContent) {
++                    // DeepSeek V4 wants the reasoning inside content[] rather than in a
++                    // top-level field. Relays that only implement the OpenAI Chat
++                    // Completions schema reject the variant, and
++                    // src/main/agent/openai-payload-sanitizer.ts strips it for those.
++                    const thinkingContent = nonEmptyThinkingBlocks.map((block) => ({
++                        type: "thinking",
++                        thinking: block.thinking,
++                    }));
++                    assistantMsg.content = [...thinkingContent, ...assistantTextParts];
++                }
++                else if (compat.requiresThinkingAsText) {
+                     // Convert thinking blocks to plain text (no tags to avoid model mimicking them)
+                     const thinkingText = nonEmptyThinkingBlocks
+                         .map((block) => sanitizeSurrogates(block.thinking))
+@@ -697,7 +708,11 @@ export function convertMessages(model, context, compat) {
+                     assistantMsg.reasoning_details = reasoningDetails;
+                 }
+             }
++            // A thinking-in-content model already carries its reasoning inside
++            // content[]; adding an empty top-level reasoning_content alongside it
++            // produces a shape no provider asked for, so it is skipped there.
+             if (compat.requiresReasoningContentOnAssistantMessages &&
++                !compat.requiresThinkingInContent &&
+                 model.reasoning &&
+                 assistantMsg.reasoning_content === undefined) {
+                 assistantMsg.reasoning_content = "";
+@@ -866,6 +881,8 @@ function detectCompat(model) {
+     const useMaxTokens = baseUrl.includes("chutes.ai") || isMoonshot || isCloudflareAiGateway;
+     const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
+     const isDeepSeek = provider === "deepseek" || baseUrl.includes("deepseek.com");
++    // Same pattern as DEEPSEEK_V4_MODEL_PATTERN in src/main/agent/pi-model-resolution.ts.
++    const isDeepSeekV4 = /(?:^|[/_-])deepseek[-_.]?v4(?:$|[-:_.])/i.test(model.id);
+     const cacheControlFormat = provider === "openrouter" && model.id.startsWith("anthropic/") ? "anthropic" : undefined;
+     return {
+         supportsStore: !isNonStandard,
+@@ -876,6 +893,7 @@ function detectCompat(model) {
+         requiresToolResultName: false,
+         requiresAssistantAfterToolResult: false,
+         requiresThinkingAsText: false,
++        requiresThinkingInContent: isDeepSeekV4,
+         requiresReasoningContentOnAssistantMessages: isDeepSeek,
+         thinkingFormat: isDeepSeek
+             ? "deepseek"
+@@ -910,6 +928,7 @@ function getCompat(model) {
+         requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,
+         requiresAssistantAfterToolResult: model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
+         requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
++        requiresThinkingInContent: model.compat.requiresThinkingInContent ?? detected.requiresThinkingInContent,
+         requiresReasoningContentOnAssistantMessages: model.compat.requiresReasoningContentOnAssistantMessages ??
+             detected.requiresReasoningContentOnAssistantMessages,
+         thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,

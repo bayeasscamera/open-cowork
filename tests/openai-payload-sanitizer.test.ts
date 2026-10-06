@@ -68,20 +68,35 @@ function deepSeekV4RelayPayload(): Record<string, unknown> {
   };
 }
 
-const OMNIROUTE = { provider: 'custom', customProtocol: 'openai', baseUrl: 'http://localhost:20128/v1' };
+const OMNIROUTE = {
+  provider: 'custom',
+  customProtocol: 'openai',
+  baseUrl: 'http://localhost:20128/v1',
+};
 const XKIRO = { provider: 'custom', customProtocol: 'openai', baseUrl: 'https://api.xkiro.com/v1' };
-const DEEPSEEK = { provider: 'custom', customProtocol: 'openai', baseUrl: 'https://api.deepseek.com/v1' };
+const DEEPSEEK = {
+  provider: 'custom',
+  customProtocol: 'openai',
+  baseUrl: 'https://api.deepseek.com/v1',
+};
 
 describe('openai-payload-sanitizer — endpoint policy', () => {
   it('rejects the thinking variant for third-party relays', () => {
     expect(allowsThinkingContentParts(OMNIROUTE)).toBe(false);
     expect(allowsThinkingContentParts(XKIRO)).toBe(false);
-    expect(allowsThinkingContentParts({ provider: 'custom', baseUrl: 'http://127.0.0.1:1337/v1' })).toBe(false);
+    expect(
+      allowsThinkingContentParts({ provider: 'custom', baseUrl: 'http://127.0.0.1:1337/v1' })
+    ).toBe(false);
   });
 
   it('accepts the thinking variant for the official DeepSeek API and OpenRouter', () => {
     expect(allowsThinkingContentParts(DEEPSEEK)).toBe(true);
-    expect(allowsThinkingContentParts({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' })).toBe(true);
+    expect(
+      allowsThinkingContentParts({
+        provider: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+      })
+    ).toBe(true);
   });
 
   it('parses hostnames defensively', () => {
@@ -148,8 +163,8 @@ describe('openai-payload-sanitizer — regression for the 422 thinking error', (
 
 describe('installPiPayloadHook', () => {
   it('strips thinking parts through the SDK payload hook', async () => {
-    const host: { _onPayload?: (p: Record<string, unknown>) => unknown } = {
-      _onPayload: (p) => p,
+    const host: { onPayload?: (p: Record<string, unknown>) => unknown } = {
+      onPayload: (p) => p,
     };
     const installation = installPiPayloadHook(host, {
       endpoint: OMNIROUTE,
@@ -157,26 +172,26 @@ describe('installPiPayloadHook', () => {
     });
     expect(installation.installed).toBe(true);
     expect(installation.stripsThinking).toBe(true);
-    const repaired = (await host._onPayload!(deepSeekV4RelayPayload())) as Record<string, unknown>;
+    const repaired = (await host.onPayload!(deepSeekV4RelayPayload())) as Record<string, unknown>;
     expect(() => assertOpenAIContentSchema(repaired)).not.toThrow();
   });
 
   it('chains a pre-existing hook and injects Ollama num_ctx', async () => {
     const existing = vi.fn(async (p: Record<string, unknown>) => ({ ...p, temperature: 0.2 }));
-    const host: { _onPayload?: (p: Record<string, unknown>) => unknown } = { _onPayload: existing };
+    const host: { onPayload?: (p: Record<string, unknown>) => unknown } = { onPayload: existing };
     const installation = installPiPayloadHook(host, {
       endpoint: { provider: 'ollama' },
       ollamaNumCtx: 32768,
     });
     expect(installation.installed).toBe(true);
-    const out = (await host._onPayload!({ messages: [] })) as Record<string, unknown>;
+    const out = (await host.onPayload!({ messages: [] })) as Record<string, unknown>;
     expect(existing).toHaveBeenCalledTimes(1);
     expect(out.num_ctx).toBe(32768);
     expect(out.temperature).toBe(0.2);
   });
 
   it('does nothing for endpoints that accept thinking parts', () => {
-    const host: { _onPayload?: (p: Record<string, unknown>) => unknown } = { _onPayload: (p) => p };
+    const host: { onPayload?: (p: Record<string, unknown>) => unknown } = { onPayload: (p) => p };
     const installation = installPiPayloadHook(host, {
       endpoint: DEEPSEEK,
       sanitizeThinking: true,
@@ -193,7 +208,10 @@ describe('installPiPayloadHook', () => {
   });
 
   it('reports when there is no agent at all', () => {
-    const installation = installPiPayloadHook(null, { endpoint: OMNIROUTE, sanitizeThinking: true });
+    const installation = installPiPayloadHook(null, {
+      endpoint: OMNIROUTE,
+      sanitizeThinking: true,
+    });
     expect(installation.reason).toBe('no-host');
   });
 });

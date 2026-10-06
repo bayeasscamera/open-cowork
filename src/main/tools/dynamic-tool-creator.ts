@@ -17,7 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import { log, logError, logWarn } from '../utils/logger';
 import { AutoVerificationLoop } from '../agent/auto-verification-loop';

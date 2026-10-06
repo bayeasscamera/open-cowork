@@ -10,7 +10,7 @@ describe('pi-agent-access', () => {
   });
 
   it('returns the private agent object when present', () => {
-    const agent = { setBeforeToolCall: () => undefined, _beforeToolCall: undefined };
+    const agent = { beforeToolCall: () => undefined, afterToolCall: undefined };
     expect(getPiAgentInternals({ agent })).toBe(agent);
   });
 

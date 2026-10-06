@@ -9,6 +9,17 @@
  * agent-runner.ts) means:
  *  - a single place to update when the SDK shape changes, and
  *  - no \`any\` leaking into the rest of the runtime.
+ *
+ * pi-agent-core 0.73 turned the pre/post tool-call and payload hooks from
+ * private fields (\`_beforeToolCall\`, \`_afterToolCall\`, \`_onPayload\`) written
+ * by \`setBeforeToolCall\` / \`setAfterToolCall\` into public assignable properties
+ * (\`beforeToolCall\`, \`afterToolCall\`, \`onPayload\`). All three are read when the
+ * loop config is built — once per run — so assigning the property after
+ * construction is exactly equivalent to the old setter.
+ *
+ * The SDK installs no hook of its own any more, so a first install has nothing
+ * to chain. Extension \`tool_call\` events now fire from the tool wrappers
+ * AgentSession builds, not from this slot.
  */
 
 /** Loose tool-call context the SDK passes to before/after tool-call hooks. */
@@ -28,14 +39,13 @@ type PiAfterToolCallHook = (ctx: PiToolCallContext) => Promise<unknown>;
 type PiOnPayloadHook = (
   payload: Record<string, unknown>,
   modelArg: unknown
-) => Promise<Record<string, unknown>>;
+) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
 /** The subset of the private Agent object this app relies on. */
 interface PiAgentInternals {
-  setBeforeToolCall?: (hook: PiBeforeToolCallHook) => void;
-  setAfterToolCall?: (hook: PiAfterToolCallHook) => void;
-  _beforeToolCall?: PiBeforeToolCallHook;
-  _onPayload?: PiOnPayloadHook;
+  beforeToolCall?: PiBeforeToolCallHook;
+  afterToolCall?: PiAfterToolCallHook;
+  onPayload?: PiOnPayloadHook;
 }
 
 /**

@@ -15,7 +15,7 @@
  * filtered out on read, and can never be targeted by a write — they are
  * never returned to, or mutated by, the agent.
  */
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import type {
   AgentRuntimeExtension,
   BeforeSessionRunResult,

@@ -46,20 +46,30 @@ type Hook = (ctx: unknown, signal?: AbortSignal) => Promise<unknown>;
 let beforeHook: Hook | undefined;
 let afterHook: Hook | undefined;
 let agent: {
-  _beforeToolCall?: Hook;
-  setBeforeToolCall: ReturnType<typeof vi.fn>;
-  setAfterToolCall: ReturnType<typeof vi.fn>;
+  beforeToolCall?: Hook;
+  afterToolCall?: Hook;
 };
 
+// pi-agent-core 0.73 exposes the hooks as public assignable properties (they
+// were the private `_beforeToolCall` / `_afterToolCall` fields written by
+// `setBeforeToolCall` / `setAfterToolCall`). Accessors keep the module-level
+// `beforeHook` / `afterHook` capture the rest of this file relies on, while
+// staying real own properties so the `in` capability checks pass.
 const makeAgent = (originalBefore?: Hook) => {
+  beforeHook = originalBefore;
   const created = {
-    _beforeToolCall: originalBefore,
-    setBeforeToolCall: vi.fn((fn: Hook) => {
+    get beforeToolCall(): Hook | undefined {
+      return beforeHook;
+    },
+    set beforeToolCall(fn: Hook | undefined) {
       beforeHook = fn;
-    }),
-    setAfterToolCall: vi.fn((fn: Hook) => {
+    },
+    get afterToolCall(): Hook | undefined {
+      return afterHook;
+    },
+    set afterToolCall(fn: Hook | undefined) {
       afterHook = fn;
-    }),
+    },
   };
   agent = created;
   return created;
@@ -107,7 +117,7 @@ describe('installPermissionHook', () => {
     installPermissionHook(permissionOptions(vi.fn()));
 
     expect(logWarn).toHaveBeenCalledWith(
-      '[CoworkAgentRunner] Cannot access agent.setBeforeToolCall — skipping permission hook'
+      '[CoworkAgentRunner] Cannot access agent.beforeToolCall — skipping permission hook'
     );
   });
 
@@ -235,12 +245,12 @@ describe('installPermissionHook', () => {
 
 describe('installModsHooks', () => {
   it('warns and skips when the agent cannot take an after-tool hook', () => {
-    mocks.getPiAgentInternals.mockReturnValue({ setBeforeToolCall: vi.fn() });
+    mocks.getPiAgentInternals.mockReturnValue({ beforeToolCall: vi.fn() });
 
     installModsHooks({} as never, 'session-1');
 
     expect(logWarn).toHaveBeenCalledWith(
-      '[CoworkAgentRunner] Cannot access agent.setAfterToolCall — mods post-hook skipped'
+      '[CoworkAgentRunner] Cannot access agent.afterToolCall — mods post-hook skipped'
     );
   });
 

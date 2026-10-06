@@ -15,7 +15,12 @@ import {
 } from './pi-agent-access';
 import { getModsRuntime } from '../mods/v2/runtime';
 import { recordSkillUseIfApplicable } from '../mods/skill-doctor';
-import { decidePermissionWithDetail, describeDenyRefusal, describeLockdownRefusal, rememberAlwaysAllow } from '../config/permission-rules-store';
+import {
+  decidePermissionWithDetail,
+  describeDenyRefusal,
+  describeLockdownRefusal,
+  rememberAlwaysAllow,
+} from '../config/permission-rules-store';
 import { defaultExtractToolPath, runToolGate, type ToolGateDeps } from '../tools/pipeline';
 import { assessMachineAccessCall } from './machine-access-gate';
 import { toolRegistry, type ToolDefinition } from '../tools/registry';
@@ -40,7 +45,10 @@ export interface PermissionHookOptions {
   /** Active preset allow-list; undefined means no preset restriction. */
   allowedTools?: readonly string[];
   /** Workspace confinement check supplied by the caller (sandbox aware). */
-  checkPath?: (path: string, ctx: { sessionId: string; cwd: string }) => {
+  checkPath?: (
+    path: string,
+    ctx: { sessionId: string; cwd: string }
+  ) => {
     allowed: boolean;
     reason?: string;
   };
@@ -131,12 +139,13 @@ export async function decidePermissionAsync(input: {
 
 /**
  * Install a permission-gating hook on the pi-coding-agent session via
- * `agent.setBeforeToolCall`. This is the only interception point that
- * fires for built-in tools (read, bash, edit, write) — the SDK ignores
- * wrapped `execute` functions on built-in tools passed via `options.tools`.
+ * `agent.beforeToolCall`. This is the only interception point that fires
+ * for built-in tools (read, bash, edit, write) — the SDK ignores wrapped
+ * `execute` functions on built-in tools, and since 0.73 `options.tools`
+ * only accepts tool *names* anyway.
  *
  * The hook consults `decidePermissionWithDetail` from the main-process rules cache:
- *  - 'allow' → delegate to SDK's original hook (proceeds normally)
+ *  - 'allow' → delegate to the hook already in the slot (proceeds normally)
  *  - 'deny'  → return { block: true, reason } (SDK treats as tool error).
  *    User deny rules win even under Full Access; the reason names the rule
  *    and tells the model to adapt rather than retry or stall.
@@ -153,72 +162,76 @@ export function installPermissionHook(options: PermissionHookOptions): void {
     return;
   }
 
-  // Access the Agent instance (public readonly property on AgentSession)
-  // and wrap its beforeToolCall hook with our permission gate.
+  // Access the Agent instance (public readonly property on AgentSession) and
+  // install our gate in its beforeToolCall slot.
   //
-  // We must chain to the SDK's original beforeToolCall hook because it
-  // fires extension tool_call events and manages the _agentEventQueue.
-  // Without chaining, the renderer misses completion events.
+  // The slot is single: the mods pre-hook composes into it too, so we chain to
+  // whatever is already there. pi-agent-core 0.73 exposes it as a public
+  // assignable property — it was the private `_beforeToolCall` field written by
+  // `setBeforeToolCall` before that — and reads it once per run when the loop
+  // config is built, so assigning it here is the exact equivalent of the
+  // removed setter. The `in` check is the capability guard that replaces the
+  // old `typeof agent.setBeforeToolCall === 'function'` test.
   const agent = getPiAgentInternals(options.piSession);
-  if (!agent || typeof agent.setBeforeToolCall !== 'function') {
-    logWarn('[CoworkAgentRunner] Cannot access agent.setBeforeToolCall — skipping permission hook');
+  if (!agent || !('beforeToolCall' in agent)) {
+    logWarn('[CoworkAgentRunner] Cannot access agent.beforeToolCall — skipping permission hook');
     return;
   }
 
-  // Capture the SDK's hook before we overwrite it
-  const sdkBeforeToolCall: PiBeforeToolCallHook | undefined = agent._beforeToolCall;
+  // Capture the hook already in the slot before we overwrite it
+  const chainedBeforeToolCall: PiBeforeToolCallHook | undefined = agent.beforeToolCall;
 
   const requestPermission = options.requestPermission;
 
-  agent.setBeforeToolCall(
-    async (ctx: PiToolCallContext, signal?: AbortSignal): Promise<unknown> => {
-      const toolName: string = ctx.toolCall?.name ?? '';
-      const input: Record<string, unknown> = ctx.args ?? {};
+  agent.beforeToolCall = async (ctx: PiToolCallContext, signal?: AbortSignal): Promise<unknown> => {
+    const toolName: string = ctx.toolCall?.name ?? '';
+    const input: Record<string, unknown> = ctx.args ?? {};
 
-      // The same gate pipeline `invokeTool()` runs (tools/pipeline.ts).
-      // Sharing it is what keeps preset, permission, path-guard and mods
-      // consistent between SDK-dispatched calls and the ones we execute
-      // ourselves (sub-agents, the run_code bridge). The tool is looked up in
-      // the registry only to obtain its input schema for the validation
-      // stage; an unregistered tool still gets permission + mods exactly as
-      // before, so this is a pure de-duplication of the policy, not a change
-      // of behaviour.
-      const registered = toolRegistry.get(toolName);
-      const gateTool: ToolDefinition = registered ?? {
-        name: toolName,
-        description: '',
-        inputSchema: undefined as unknown as ToolDefinition['inputSchema'],
-        risk: 'read',
-        execute: async () => ({ content: '' }),
-      };
+    // The same gate pipeline `invokeTool()` runs (tools/pipeline.ts).
+    // Sharing it is what keeps preset, permission, path-guard and mods
+    // consistent between SDK-dispatched calls and the ones we execute
+    // ourselves (sub-agents, the run_code bridge). The tool is looked up in
+    // the registry only to obtain its input schema for the validation
+    // stage; an unregistered tool still gets permission + mods exactly as
+    // before, so this is a pure de-duplication of the policy, not a change
+    // of behaviour.
+    const registered = toolRegistry.get(toolName);
+    const gateTool: ToolDefinition = registered ?? {
+      name: toolName,
+      description: '',
+      inputSchema: undefined as unknown as ToolDefinition['inputSchema'],
+      risk: 'read',
+      execute: async () => ({ content: '' }),
+    };
 
-      const decision = await runToolGate(
-        gateTool,
-        input,
-        { sessionId: options.sessionId, cwd: options.cwd ?? '' },
-        createSessionGate({
-          allowedTools: options.allowedTools,
-          requestPermission,
-          getToolDisplayName: options.getToolDisplayName,
-          checkPath: options.checkPath,
-          // The SDK's own id, so a prompt raised for this call names the call
-          // the user can see in the UI.
-          toolCallId: ctx.toolCall?.id,
-        })
+    const decision = await runToolGate(
+      gateTool,
+      input,
+      { sessionId: options.sessionId, cwd: options.cwd ?? '' },
+      createSessionGate({
+        allowedTools: options.allowedTools,
+        requestPermission,
+        getToolDisplayName: options.getToolDisplayName,
+        checkPath: options.checkPath,
+        // The SDK's own id, so a prompt raised for this call names the call
+        // the user can see in the UI.
+        toolCallId: ctx.toolCall?.id,
+      })
+    );
+
+    if (!decision.allowed) {
+      log(
+        `[CoworkAgentRunner] Tool '${toolName}' refused at ${decision.stage}: ${decision.reason}`
       );
-
-      if (!decision.allowed) {
-        log(`[CoworkAgentRunner] Tool '${toolName}' refused at ${decision.stage}: ${decision.reason}`);
-        return { block: true, reason: decision.reason };
-      }
-
-      // Allowed — delegate to SDK's original hook for event pipeline
-      return sdkBeforeToolCall ? sdkBeforeToolCall(ctx, signal) : undefined;
+      return { block: true, reason: decision.reason };
     }
-  );
+
+    // Allowed — delegate to whatever was in the slot before us
+    return chainedBeforeToolCall ? chainedBeforeToolCall(ctx, signal) : undefined;
+  };
 
   log(
-    `[CoworkAgentRunner] Permission hook installed on session ${options.sessionId} via agent.setBeforeToolCall`
+    `[CoworkAgentRunner] Permission hook installed on session ${options.sessionId} via agent.beforeToolCall`
   );
 }
 
@@ -226,38 +239,43 @@ export function installPermissionHook(options: PermissionHookOptions): void {
  * Install the local mods hooks on the session agent:
  *  - pre-hook composes into the SAME beforeToolCall slot as the permission
  *    gate (mods run first — they can block a call before permissions).
- *  - post-hook uses the Agent's setAfterToolCall: mods can replace the text
+ *  - post-hook uses the Agent's afterToolCall slot: mods can replace the text
  *    content of tool results BEFORE they are emitted into the model context
  *    (security-redactor) or observe them (telemetry, diff collector).
+ *
+ * Both slots are public assignable properties since pi-agent-core 0.73 (they
+ * were the private `_beforeToolCall` / `_afterToolCall` fields written by
+ * `setBeforeToolCall` / `setAfterToolCall` before that), read once per run.
  */
 export function installModsHooks(piSession: PiAgentSession, sessionId: string): void {
   const agent = getPiAgentInternals(piSession);
-  if (!agent || typeof agent.setAfterToolCall !== 'function') {
-    logWarn('[CoworkAgentRunner] Cannot access agent.setAfterToolCall — mods post-hook skipped');
+  if (!agent || !('afterToolCall' in agent)) {
+    logWarn('[CoworkAgentRunner] Cannot access agent.afterToolCall — mods post-hook skipped');
     return;
   }
 
   // Pre-hook composition into the existing permission slot.
-  const originalBefore: PiBeforeToolCallHook | undefined = agent._beforeToolCall;
+  const originalBefore: PiBeforeToolCallHook | undefined = agent.beforeToolCall;
 
-  if (typeof agent.setBeforeToolCall === 'function') {
-    agent.setBeforeToolCall(
-      async (ctx: PiToolCallContext, signal?: AbortSignal): Promise<unknown> => {
-        const toolName: string = ctx.toolCall?.name ?? '';
-        const args: Record<string, unknown> = ctx.args ?? {};
-        // Pre-hooks are NOT run here. They run inside the shared gate
-        // (`runToolGate` -> `runModsPre`), which this slot delegates to. Running
-        // them in both places meant every SDK-dispatched tool call executed
-        // `onPreToolUse` TWICE — invisible with mods that only observe, but a mod
-        // that multiplies its arguments doubled every call.
-        recordSkillUseIfApplicable(toolName, args);
-        return originalBefore ? originalBefore(ctx, signal) : undefined;
-      }
-    );
+  if ('beforeToolCall' in agent) {
+    agent.beforeToolCall = async (
+      ctx: PiToolCallContext,
+      signal?: AbortSignal
+    ): Promise<unknown> => {
+      const toolName: string = ctx.toolCall?.name ?? '';
+      const args: Record<string, unknown> = ctx.args ?? {};
+      // Pre-hooks are NOT run here. They run inside the shared gate
+      // (`runToolGate` -> `runModsPre`), which this slot delegates to. Running
+      // them in both places meant every SDK-dispatched tool call executed
+      // `onPreToolUse` TWICE — invisible with mods that only observe, but a mod
+      // that multiplies its arguments doubled every call.
+      recordSkillUseIfApplicable(toolName, args);
+      return originalBefore ? originalBefore(ctx, signal) : undefined;
+    };
   }
 
   // Post-hook: replace the result text when any mod rewrites it.
-  agent.setAfterToolCall(async (ctx: PiToolCallContext): Promise<unknown> => {
+  agent.afterToolCall = async (ctx: PiToolCallContext): Promise<unknown> => {
     const toolName: string = ctx.toolCall?.name ?? '';
     const args: Record<string, unknown> = ctx.args ?? {};
     const blocks = Array.isArray(ctx.result?.content) ? ctx.result.content : [];
@@ -274,7 +292,7 @@ export function installModsHooks(piSession: PiAgentSession, sessionId: string): 
       return { content: [{ type: 'text', text: outcome.content }] };
     }
     return undefined;
-  });
+  };
 
   log(`[CoworkAgentRunner] Mods hooks installed on session ${sessionId}`);
 }
@@ -296,7 +314,10 @@ export function createSessionGate(options: {
   allowedTools?: readonly string[];
   requestPermission?: RequestPermission;
   getToolDisplayName: (toolName: string) => string;
-  checkPath?: (path: string, ctx: { sessionId: string; cwd: string }) => {
+  checkPath?: (
+    path: string,
+    ctx: { sessionId: string; cwd: string }
+  ) => {
     allowed: boolean;
     reason?: string;
   };

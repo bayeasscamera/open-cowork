@@ -11,11 +11,10 @@
  */
 import {
   createAgentSession,
-  createCodingTools,
+  getAgentDir,
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
   type AgentSession as PiAgentSession,
-  type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
 import { ModelRegistry } from './shared-auth';
 import { createCompactionExtensionFactory } from './compaction-extension';
@@ -49,14 +48,13 @@ export interface CreatePiSessionDeps {
   session: Session;
   piModel: NonNullable<ResolvedSessionOptions['model']>;
   thinkingLevel: NonNullable<ResolvedSessionOptions['thinkingLevel']>;
-  authStorage: ConstructorParameters<typeof ModelRegistry>[0];
+  authStorage: Parameters<typeof ModelRegistry.create>[0];
   cwd: string;
   skillPaths: string[];
   coworkAppendPrompt: string;
   provider: string;
   customProtocol?: string;
   effectiveBaseUrl?: string;
-  tools: ToolDefinition[];
   customTools: ResolvedSessionOptions['customTools'];
   runtimeSignature: string;
   skillsSignature: string;
@@ -93,8 +91,13 @@ export async function createPiSession(deps: CreatePiSessionDeps): Promise<PiAgen
 
   const resourceLoader = new DefaultResourceLoader({
     cwd: deps.cwd,
+    // Required since pi-coding-agent 0.73: the loader no longer falls back to
+    // getAgentDir() internally, and it uses agentDir unguarded (join(agentDir,
+    // "skills")). Omitting it throws at runtime, and tsc does not report the
+    // missing property when another property in the same literal is mistyped.
+    agentDir: getAgentDir(),
     additionalSkillPaths: deps.skillPaths,
-    appendSystemPrompt: deps.coworkAppendPrompt,
+    appendSystemPrompt: [deps.coworkAppendPrompt],
     extensionFactories: [
       createCompactionExtensionFactory({
         customInstructions: sessionCompactInstructions,
@@ -108,7 +111,7 @@ export async function createPiSession(deps: CreatePiSessionDeps): Promise<PiAgen
   });
   await resourceLoader.reload();
 
-  const modelRegistry = new ModelRegistry(deps.authStorage);
+  const modelRegistry = ModelRegistry.create(deps.authStorage);
 
   // Ollama-specific compaction tuning based on actual context window. The
   // decision itself lives in compaction-policy so the sub-agent paths apply the
@@ -138,7 +141,15 @@ export async function createPiSession(deps: CreatePiSessionDeps): Promise<PiAgen
     thinkingLevel: deps.thinkingLevel,
     authStorage: deps.authStorage,
     modelRegistry,
-    tools: deps.tools as unknown as ReturnType<typeof createCodingTools>,
+    // Tool *names* since pi-coding-agent 0.73 (it used to take tool objects and
+    // only read their `.name`, so this is the same allow-list as before).
+    //
+    // The caller's pre-wrapped coding tools are deliberately NOT forwarded: a
+    // custom tool shadows the built-in of the same name, and the SDK builds its
+    // `bash` from the session settings (shellCommandPrefix, shellPath) which
+    // the app's wrapper does not re-apply. Forwarding them would silently drop
+    // those settings. They still feed the tool presentation/catalog.
+    tools: ['read', 'bash', 'edit', 'write'],
     customTools: deps.customTools,
     sessionManager: PiSessionManager.inMemory(),
     settingsManager: PiSettingsManager.inMemory({

@@ -639,7 +639,7 @@ export class CoworkAgentRunner {
     if (!installation.installed) {
       if (isOllama && installation.reason === 'no-hook') {
         logWarn(
-          '[CoworkAgentRunner] SDK agent does not expose _onPayload — skipping Ollama num_ctx patch'
+          '[CoworkAgentRunner] SDK agent does not expose onPayload — skipping Ollama num_ctx patch'
         );
       }
       return;
@@ -693,9 +693,7 @@ export class CoworkAgentRunner {
   }
 
   /** Phase 7 model routing: swap the local benchmark sink (or clear it). */
-  public setBenchmarkRecorder(
-    recorder?: (input: AgentRunBenchmarkInput) => void
-  ): void {
+  public setBenchmarkRecorder(recorder?: (input: AgentRunBenchmarkInput) => void): void {
     this.benchmarkRecorder = recorder;
   }
 
@@ -753,9 +751,7 @@ export class CoworkAgentRunner {
     // in the transcript right next to the answer the retry produces. It stays
     // local to this run (no instance field) so concurrent sessions can never
     // cross-flush each other's held error.
-    let pendingTerminalError:
-      | { messageText: string; errorCode: TerminalErrorCode }
-      | undefined;
+    let pendingTerminalError: { messageText: string; errorCode: TerminalErrorCode } | undefined;
     // Publishes the held-back error. The session manager calls this when it
     // cannot retry, so the user always ends up with exactly one message
     // describing what happened — never a banner followed by a success.
@@ -1176,9 +1172,7 @@ export class CoworkAgentRunner {
         sessionSkillDirs: baseSkillPaths,
       });
       if (activePreset.warning) logCtxWarn('[CoworkAgentRunner]', activePreset.warning);
-      const skillPaths = [
-        ...new Set([...baseSkillPaths, ...activePreset.extraSkillDirs]),
-      ];
+      const skillPaths = [...new Set([...baseSkillPaths, ...activePreset.extraSkillDirs])];
       const skillsSignature = JSON.stringify(skillPaths);
       log('[CoworkAgentRunner] Skill paths for pi ResourceLoader:', skillPaths);
 
@@ -1285,9 +1279,7 @@ export class CoworkAgentRunner {
         userPreferences: memoryEnabled
           ? this.memoryManager?.formatUserPreferencesForContext() || ''
           : '',
-        userNotes: memoryEnabled
-          ? this.memoryManager?.formatNotesForContext() || ''
-          : '',
+        userNotes: memoryEnabled ? this.memoryManager?.formatNotesForContext() || '' : '',
         errorPatterns: memoryEnabled
           ? this.memoryManager?.formatErrorPatternsForContext(prompt) || ''
           : '',
@@ -1367,7 +1359,6 @@ export class CoworkAgentRunner {
           provider,
           customProtocol: runtimeConfig.customProtocol,
           effectiveBaseUrl,
-          tools: wrappedTools,
           customTools,
           runtimeSignature: sessionRuntimeSignature,
           skillsSignature,
@@ -2144,9 +2135,7 @@ export class CoworkAgentRunner {
     return (
       runResult ??
       this.buildRunResult({
-        errorCode: terminalErrorText
-          ? classifyTerminalError(terminalErrorText)
-          : undefined,
+        errorCode: terminalErrorText ? classifyTerminalError(terminalErrorText) : undefined,
         terminalErrorText,
         startedToolExecutions,
         aborted: controller.signal.aborted,

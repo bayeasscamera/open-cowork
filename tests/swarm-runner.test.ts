@@ -11,19 +11,20 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@mariozechner/pi-coding-agent', () => ({
   createAgentSession: vi.fn(),
-  createReadTool: vi.fn(() => ({})),
-  createWriteTool: vi.fn(() => ({})),
-  createEditTool: vi.fn(() => ({})),
-  createFindTool: vi.fn(() => ({})),
-  createGrepTool: vi.fn(() => ({})),
-  createLsTool: vi.fn(() => ({})),
+  createReadToolDefinition: vi.fn((_cwd: string) => ({ name: 'read' })),
+  createWriteToolDefinition: vi.fn((_cwd: string) => ({ name: 'write' })),
+  createEditToolDefinition: vi.fn((_cwd: string) => ({ name: 'edit' })),
+  createFindToolDefinition: vi.fn((_cwd: string) => ({ name: 'find' })),
+  createGrepToolDefinition: vi.fn((_cwd: string) => ({ name: 'grep' })),
+  createLsToolDefinition: vi.fn((_cwd: string) => ({ name: 'ls' })),
+  getAgentDir: vi.fn(() => '/tmp/cowork-pi-agent'),
   DefaultResourceLoader: vi.fn(function (this: unknown) {
     return { reload: vi.fn() };
   }),
   SessionManager: { inMemory: vi.fn() },
   SettingsManager: { inMemory: vi.fn() },
   AuthStorage: { create: vi.fn(() => ({ setRuntimeApiKey: vi.fn() })) },
-  ModelRegistry: vi.fn(),
+  ModelRegistry: { create: vi.fn(() => ({})) },
 }));
 
 vi.mock('@mariozechner/pi-ai', () => ({
@@ -447,6 +448,64 @@ describe('withConfinement', () => {
     const result = await confined.execute('call-2', { path: 'inside.md' }, undefined, undefined);
     expect(execute).toHaveBeenCalledTimes(1);
     expect(result.content[0]).toMatchObject({ type: 'text', text: 'written' });
+  });
+});
+
+describe('swarm session-level confinement', () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    cwd = mkdtempSync(join(tmpdir(), 'cowork-swarm-confine-'));
+  });
+
+  afterEach(() => {
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('installs a hook that reads the SDK tool-call context, not a toolName field', async () => {
+    // The SDK calls beforeToolCall with { assistantMessage, toolCall, args,
+    // context }. The hook used to read `call.toolName`, which is undefined
+    // there — so it silently never blocked anything. Pin the real shape.
+    const session = {
+      subscribe: () => () => undefined,
+      prompt: async () => undefined,
+      agent: {
+        beforeToolCall: undefined as undefined | ((ctx: unknown) => Promise<unknown>),
+      },
+    };
+    vi.mocked(createAgentSession).mockResolvedValue({ session } as never);
+
+    const runner = createSwarmRunner({ cwd, getConfig: () => makeConfig({}) });
+    await runner({ ...makeTask('developer'), id: 'confine-1' }, '');
+
+    const hook = session.agent.beforeToolCall;
+    expect(typeof hook).toBe('function');
+
+    const escaped = await hook?.({ toolCall: { name: 'write' }, args: { path: '../escape.md' } });
+    expect(escaped).toMatchObject({ block: true });
+
+    const inside = await hook?.({ toolCall: { name: 'write' }, args: { path: 'inside.md' } });
+    expect(inside).toBeUndefined();
+  });
+
+  it('sends the confined coding tools through customTools and never offers bash', async () => {
+    let options: { tools?: string[]; customTools?: Array<{ name: string }> } | undefined;
+    vi.mocked(createAgentSession).mockImplementation(async (opts) => {
+      options = opts as never;
+      return {
+        session: { subscribe: () => () => undefined, prompt: async () => undefined },
+      } as never;
+    });
+
+    const runner = createSwarmRunner({ cwd, getConfig: () => makeConfig({}) });
+    await runner({ ...makeTask('developer'), id: 'confine-2' }, '');
+
+    expect(options?.tools).toEqual(['read', 'write', 'edit', 'find', 'grep', 'ls']);
+    expect(options?.customTools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(['read', 'write', 'edit', 'find', 'grep', 'ls'])
+    );
+    expect(options?.tools).not.toContain('bash');
   });
 });
 

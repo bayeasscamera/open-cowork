@@ -6,7 +6,7 @@
  * tested without an Electron runtime.
  */
 
-import { Type, type TSchema } from '@sinclair/typebox';
+import { Type, type TSchema } from 'typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import type { MCPManager } from '../mcp/mcp-manager';
 import { normalizeMcpToolResultForModel } from './tool-result-utils';
@@ -27,10 +27,7 @@ export function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
     // all, which is worse than not offering the tool.
     const refusal = checkMcpSchema(mcpTool.inputSchema);
     if (refusal) {
-      logWarn(
-        '[MCP] ' +
-          describeMcpSchemaRefusal(mcpTool.serverName, mcpTool.name, refusal)
-      );
+      logWarn('[MCP] ' + describeMcpSchemaRefusal(mcpTool.serverName, mcpTool.name, refusal));
       continue;
     }
     // Wrap the raw JSON Schema inputSchema as a TypeBox TSchema

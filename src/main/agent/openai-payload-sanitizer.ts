@@ -13,16 +13,22 @@
  * which killed the second turn of any tool-using exchange (the assistant's
  * previous turn carried a thinking block).
  *
- * The SDK exposes a private `agent._onPayload(params, model)` hook that runs
+ * The SDK exposes an `agent.onPayload(params, model)` hook that runs
  * AFTER the request body is assembled and just BEFORE it is sent, so the
  * payload can be repaired without forking pi-ai. This module owns both the
  * decision (does this endpoint accept the variant?) and the transformation, so
  * the agent runner only wires a thin hook.
+ *
+ * The hook used to be the private `_onPayload` field (written by the removed
+ * `setBeforeToolCall`-era API); pi-agent-core 0.73 exposes it as the public
+ * assignable `onPayload` property. The `in` check below is what detects it, so
+ * a rename here is not a no-op: with the old name the hook silently never
+ * installed and the 422 it exists to prevent came back.
  */
 
-/** Minimal structural view of the SDK agent's private payload hook. */
+/** Minimal structural view of the SDK agent's payload hook. */
 export interface PayloadHookHost {
-  _onPayload?: (payload: Record<string, unknown>, modelArg: unknown) => unknown;
+  onPayload?: (payload: Record<string, unknown>, modelArg: unknown) => unknown;
 }
 
 /** Endpoint facts needed to decide how the payload may be shaped. */
@@ -158,7 +164,7 @@ export interface PiPayloadHookInstallation {
 }
 
 /**
- * Wrap `agent._onPayload` once, chaining any pre-existing hook. Mirrors the
+ * Wrap `agent.onPayload` once, chaining any pre-existing hook. Mirrors the
  * shape the runner already used for Ollama's `num_ctx`, and adds the
  * thinking-part repair for relays. Returns what was installed for logging.
  */
@@ -167,18 +173,17 @@ export function installPiPayloadHook(
   options: PiPayloadHookOptions = {}
 ): PiPayloadHookInstallation {
   const endpoint = options.endpoint ?? {};
-  const stripsThinking =
-    options.sanitizeThinking === true && !allowsThinkingContentParts(endpoint);
+  const stripsThinking = options.sanitizeThinking === true && !allowsThinkingContentParts(endpoint);
   const injectsNumCtx = typeof options.ollamaNumCtx === 'number';
 
   if (!host) return { installed: false, reason: 'no-host', stripsThinking };
-  if (!('_onPayload' in host)) return { installed: false, reason: 'no-hook', stripsThinking };
+  if (!('onPayload' in host)) return { installed: false, reason: 'no-hook', stripsThinking };
   if (!stripsThinking && !injectsNumCtx) {
     return { installed: false, reason: 'nothing-to-do', stripsThinking };
   }
 
-  const original = host._onPayload;
-  host._onPayload = async (payload: Record<string, unknown>, modelArg: unknown) => {
+  const original = host.onPayload;
+  host.onPayload = async (payload: Record<string, unknown>, modelArg: unknown) => {
     let result = original ? await original.call(host, payload, modelArg) : payload;
     if (result === undefined || result === null) result = payload;
     let next = isRecord(result) ? result : payload;

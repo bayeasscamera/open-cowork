@@ -4,7 +4,7 @@
  *
  * Every effect and every piece of mutable state is injected, so the handler runs
  * without Electron and without a live session: these tests pin message_update,
- * message_end, tool execution and auto-compaction handling.
+ * message_end, tool execution and compaction handling.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -435,8 +435,10 @@ describe('handlePiSessionEvent — message_end', () => {
         effectiveContent: [
           {
             type: 'text',
-            text: 'Draft answer.\n<turn role="assistant">\n<tool_use name="bash" id="call_y">{"command":"ls"}<' +
-              '/tool_use>\n<' + '/turn>',
+            text:
+              'Draft answer.\n<turn role="assistant">\n<tool_use name="bash" id="call_y">{"command":"ls"}<' +
+              '/tool_use>\n<' +
+              '/turn>',
           },
         ],
       })
@@ -623,10 +625,10 @@ describe('handlePiSessionEvent — tool execution', () => {
   });
 });
 
-describe('handlePiSessionEvent — auto-compaction', () => {
+describe('handlePiSessionEvent — compaction', () => {
   it('opens a compaction trace step on start', () => {
     const h = makeHarness();
-    h.run({ type: 'auto_compaction_start', reason: 'threshold' });
+    h.run({ type: 'compaction_start', reason: 'threshold' });
     expect(h.getCompactionStepId()).toMatch(/^compaction-/);
     expect(h.effects.sendTraceStep).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -640,10 +642,10 @@ describe('handlePiSessionEvent — auto-compaction', () => {
 
   it('closes the existing compaction step on end and surfaces the result', () => {
     const h = makeHarness();
-    h.run({ type: 'auto_compaction_start', reason: 'threshold' });
+    h.run({ type: 'compaction_start', reason: 'threshold' });
     const stepId = h.getCompactionStepId();
     h.run({
-      type: 'auto_compaction_end',
+      type: 'compaction_end',
       aborted: false,
       willRetry: false,
       result: {
@@ -671,9 +673,9 @@ describe('handlePiSessionEvent — auto-compaction', () => {
 
   it('surfaces an empty file list when the result carries no details', () => {
     const h = makeHarness();
-    h.run({ type: 'auto_compaction_start', reason: 'threshold' });
+    h.run({ type: 'compaction_start', reason: 'threshold' });
     h.run({
-      type: 'auto_compaction_end',
+      type: 'compaction_end',
       aborted: false,
       willRetry: false,
       result: { summary: 'sum', tokensBefore: 5 },
@@ -696,9 +698,9 @@ describe('handlePiSessionEvent — auto-compaction', () => {
 
   it('skips surfacing the result while a retry is pending', () => {
     const h = makeHarness();
-    h.run({ type: 'auto_compaction_start', reason: 'threshold' });
+    h.run({ type: 'compaction_start', reason: 'threshold' });
     h.run({
-      type: 'auto_compaction_end',
+      type: 'compaction_end',
       aborted: false,
       willRetry: true,
       result: { summary: 'sum', tokensBefore: 9, details: { readFiles: ['x'] } },
@@ -708,9 +710,9 @@ describe('handlePiSessionEvent — auto-compaction', () => {
 
   it('reports an aborted compaction as an error', () => {
     const h = makeHarness();
-    h.run({ type: 'auto_compaction_start', reason: 'threshold' });
+    h.run({ type: 'compaction_start', reason: 'threshold' });
     const stepId = h.getCompactionStepId();
-    h.run({ type: 'auto_compaction_end', aborted: true, willRetry: false });
+    h.run({ type: 'compaction_end', aborted: true, willRetry: false });
     expect(h.effects.sendTraceUpdate).toHaveBeenCalledWith(stepId, {
       status: 'error',
       title: 'Context compaction aborted',
@@ -719,7 +721,7 @@ describe('handlePiSessionEvent — auto-compaction', () => {
 
   it('creates a fallback step when no start event was seen', () => {
     const h = makeHarness();
-    h.run({ type: 'auto_compaction_end', aborted: false, willRetry: false });
+    h.run({ type: 'compaction_end', aborted: false, willRetry: false });
     expect(h.effects.sendTraceUpdate).not.toHaveBeenCalled();
     expect(h.effects.sendTraceStep).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -733,9 +735,9 @@ describe('handlePiSessionEvent — auto-compaction', () => {
 
   it('reports a failed compaction with its message', () => {
     const h = makeHarness();
-    h.run({ type: 'auto_compaction_start', reason: 'threshold' });
+    h.run({ type: 'compaction_start', reason: 'threshold' });
     const stepId = h.getCompactionStepId();
-    h.run({ type: 'auto_compaction_end', aborted: false, errorMessage: 'nope', willRetry: false });
+    h.run({ type: 'compaction_end', aborted: false, errorMessage: 'nope', willRetry: false });
     expect(h.effects.sendTraceUpdate).toHaveBeenCalledWith(
       stepId,
       expect.objectContaining({ status: 'error', title: 'Context compaction failed: nope' })

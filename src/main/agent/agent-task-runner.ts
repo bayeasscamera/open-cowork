@@ -14,8 +14,8 @@ import {
   createAgentSession,
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
-  createCodingTools,
   DefaultResourceLoader,
+  getAgentDir,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
 import type { EvidenceKind } from '../../shared/task-contract';
@@ -33,9 +33,13 @@ import {
   WRITE_TOOLS,
   createWriteScopeGuard,
   toolCallCommand,
-  type ToolBlock,
 } from './write-scope-guard';
-import type { WorkflowTaskContext, WorkflowTaskOutcome, WorkflowTaskRunner } from './workflow-executor';
+import { getPiAgentInternals } from './pi-agent-access';
+import type {
+  WorkflowTaskContext,
+  WorkflowTaskOutcome,
+  WorkflowTaskRunner,
+} from './workflow-executor';
 
 export const DEFAULT_TASK_TIMEOUT_MS = 600_000;
 export const MAX_TASK_SUMMARY_CHARS = 8_000;
@@ -56,9 +60,6 @@ export interface TaskSession {
   subscribe(listener: (event: TaskSessionEvent) => void): () => void;
   dispose(): void;
   abort?(): Promise<void> | void;
-  setBeforeToolCall?(
-    hook: (call: { toolName: string; args: unknown }) => ToolBlock | void | Promise<ToolBlock | void>
-  ): void;
 }
 
 export type TaskSessionFactory = (context: WorkflowTaskContext) => Promise<TaskSession>;
@@ -94,7 +95,8 @@ export function buildTaskSystemPrompt(
   context: WorkflowTaskContext,
   skills?: RuntimeSkillEntry[]
 ): string {
-  const selected = skills ?? selectRelevantSkills(taskSelectionText(context), currentRuntimeSkills());
+  const selected =
+    skills ?? selectRelevantSkills(taskSelectionText(context), currentRuntimeSkills());
   return [
     'You are a focused sub-agent inside Cowork, executing ONE atomic task of an already approved plan.',
     'Work only inside the current working directory: ' + context.cwd + '.',
@@ -218,7 +220,7 @@ async function disposeSession(session: TaskSession): Promise<void> {
 export async function createPiTaskSession(context: WorkflowTaskContext): Promise<TaskSession> {
   const config = configStore.getAll();
   const authStorage = getSharedAuthStorage();
-  const modelRegistry = new ModelRegistry(authStorage);
+  const modelRegistry = ModelRegistry.create(authStorage);
 
   const modelString = config.model?.trim() || 'anthropic/claude-sonnet-4-6';
   const configProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
@@ -236,7 +238,8 @@ export async function createPiTaskSession(context: WorkflowTaskContext): Promise
     );
   }
 
-  const codingTools = createCodingTools(context.cwd);
+  // The SDK builds the built-in tools itself from these names (0.73 takes
+  // tool names, not tool objects — the objects were already ignored before).
   const customTools: ToolDefinition[] = [];
   // Selected once so the loader and the prompt advertise the SAME skills. The
   // loader is given directories, not skills: without additionalSkillPaths this
@@ -244,8 +247,10 @@ export async function createPiTaskSession(context: WorkflowTaskContext): Promise
   const taskSkills = selectRelevantSkills(taskSelectionText(context), currentRuntimeSkills());
   const resourceLoader = new DefaultResourceLoader({
     cwd: context.cwd,
+    // Required since pi-coding-agent 0.73 (no internal fallback any more).
+    agentDir: getAgentDir(),
     additionalSkillPaths: skillSelectionDirs(taskSkills),
-    appendSystemPrompt: buildTaskSystemPrompt(context, taskSkills),
+    appendSystemPrompt: [buildTaskSystemPrompt(context, taskSkills)],
   });
   await resourceLoader.reload();
 
@@ -253,7 +258,7 @@ export async function createPiTaskSession(context: WorkflowTaskContext): Promise
     model: piModel,
     authStorage,
     modelRegistry,
-    tools: codingTools,
+    tools: ['read', 'bash', 'edit', 'write'],
     customTools,
     sessionManager: PiSessionManager.inMemory(),
     settingsManager: PiSettingsManager.inMemory({
@@ -272,18 +277,28 @@ export async function createPiTaskSession(context: WorkflowTaskContext): Promise
 
   const child = session as unknown as TaskSession;
   const guard = createWriteScopeGuard(context.task, context.cwd);
-  if (typeof child.setBeforeToolCall === 'function') {
-    child.setBeforeToolCall((call) => {
-      const verdict = guard(call);
+  // Install the write-scope guard on the SDK agent's pre-tool-call slot.
+  //
+  // pi-agent-core 0.73 exposes it as a public assignable property (it was the
+  // private `_beforeToolCall` field written by `setBeforeToolCall` before
+  // that), read once per run. The SDK hands the hook `{ toolCall, args, ... }`,
+  // NOT `{ toolName, args }`, so the tool name comes from `toolCall.name` —
+  // reading a `toolName` property here silently matches nothing.
+  const agent = getPiAgentInternals(session);
+  if (agent && 'beforeToolCall' in agent) {
+    const chained = agent.beforeToolCall;
+    agent.beforeToolCall = async (ctx, signal) => {
+      const verdict = guard({ toolName: ctx.toolCall?.name ?? '', args: ctx.args });
       if (verdict?.block) {
         // A refusal is a policy boundary: the run cannot proceed unattended.
         context.onToolBlocked?.();
+        return verdict;
       }
-      return verdict;
-    });
+      return chained ? chained(ctx, signal) : undefined;
+    };
   } else {
     logWarn(
-      '[WorkflowTaskRunner] Child session does not support setBeforeToolCall; write-scope guard inactive'
+      '[WorkflowTaskRunner] SDK agent does not expose beforeToolCall; write-scope guard inactive'
     );
   }
   return child;
