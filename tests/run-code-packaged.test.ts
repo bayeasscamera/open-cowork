@@ -9,6 +9,7 @@ import {
 import { runCode } from '../src/main/agent/run-code-host';
 import { ToolRegistry } from '../src/main/tools/registry';
 import { CODE_MODE_PRESET } from '../src/main/presets/builtin-presets';
+import { seatbeltUsable } from './sandbox-capability';
 
 /**
  * run_code in a PACKAGED app.
@@ -35,6 +36,9 @@ const REPO = process.cwd();
 const RESOURCES = `${REPO}/release/mac-arm64/Open Cowork.app/Contents/Resources`;
 const packaged = existsSync(RESOURCES);
 const describePackaged = packaged ? describe : describe.skip;
+// The runtime cases below also execute a real child under the sandbox, so they
+// need a host that will apply a profile as well as a packaged build.
+const describePackagedSandbox = packaged && seatbeltUsable ? describe : describe.skip;
 
 describe('without a packaged build these skip rather than fail', () => {
   it('says so explicitly', () => {
@@ -64,7 +68,7 @@ describePackaged('the packaged app ships a usable child, outside the asar', () =
   });
 });
 
-describePackaged('run_code works against the packaged runtime', () => {
+describePackagedSandbox('run_code works against the packaged runtime', () => {
   it('transpiles and runs TypeScript through the shipped child', async () => {
     const result = await runCode({
       sessionId: 'packaged',

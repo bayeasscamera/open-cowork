@@ -2,11 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import {
-  DynamicSkillRegistry,
-  buildAgentMetaTools,
-} from '../src/main/tools/dynamic-tool-creator';
+import { DynamicSkillRegistry, buildAgentMetaTools } from '../src/main/tools/dynamic-tool-creator';
 import { initSkillProposals, listProposals } from '../src/main/skills/skill-proposals';
+import { codebaseSearchUsable } from './sandbox-capability';
 
 describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills', () => {
   let skillRegistry: DynamicSkillRegistry;
@@ -48,9 +46,11 @@ describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills',
     const metaTools = buildAgentMetaTools();
     const propose = metaTools.find((t) => t.name === 'propose_skill')!;
 
-    const result = await (propose as unknown as {
-      execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
-    }).execute('call_1', {
+    const result = await (
+      propose as unknown as {
+        execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
+      }
+    ).execute('call_1', {
       name: 'sqlite-migration-pattern',
       description: 'Trigger when writing SQLite migrations',
       content: [
@@ -71,21 +71,26 @@ describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills',
     // Pending in the proposals store — NOT in any active registry.
     const pending = listProposals();
     expect(pending.map((p) => p.name)).toContain('sqlite-migration-pattern');
-    expect(
-      skillRegistry.getAllSkills().map((s) => s.slug)
-    ).not.toContain('sqlite-migration-pattern');
+    expect(skillRegistry.getAllSkills().map((s) => s.slug)).not.toContain(
+      'sqlite-migration-pattern'
+    );
   });
 
   it('list_agent_capabilities shows skills and pending proposals (no dynamic tools)', async () => {
     const metaTools = buildAgentMetaTools();
     const listTool = metaTools.find((t) => t.name === 'list_agent_capabilities')!;
 
-    const result = await (listTool as unknown as {
-      execute: (id: string, params: unknown) => Promise<{
-        content: Array<{ text: string }>;
-        details: { skillCount: number; proposalCount: number };
-      }>;
-    }).execute('call_list_1', {});
+    const result = await (
+      listTool as unknown as {
+        execute: (
+          id: string,
+          params: unknown
+        ) => Promise<{
+          content: Array<{ text: string }>;
+          details: { skillCount: number; proposalCount: number };
+        }>;
+      }
+    ).execute('call_list_1', {});
     expect(result.content[0].text).toContain('=== Agent Capabilities ===');
     expect(result.content[0].text).toContain('Dynamic Skills');
     expect(result.content[0].text).toContain('Pending Skill Proposals');
@@ -98,9 +103,11 @@ describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills',
     const metaTools = buildAgentMetaTools();
     const evalHarness = metaTools.find((t) => t.name === 'deepseek_eval_harness')!;
 
-    const rawReport = await (evalHarness as unknown as {
-      execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
-    }).execute('call_3', {
+    const rawReport = await (
+      evalHarness as unknown as {
+        execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
+      }
+    ).execute('call_3', {
       benchmarkName: 'Coding Accuracy Benchmark',
       testCases: [
         { id: 'case_1', prompt: 'Sort array', expectedOutputs: ['[1, 2, 3]'] },
@@ -120,12 +127,17 @@ describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills',
     const metaTools = buildAgentMetaTools();
     const findTool = metaTools.find((t) => t.name === 'find_symbol_usages')!;
 
-    const result = await (findTool as unknown as {
-      execute: (id: string, params: unknown) => Promise<{
-        content: Array<{ text: string }>;
-        details: { count: number };
-      }>;
-    }).execute('call_ast_1', { symbolName: 'DynamicSkillRegistry' });
+    const result = await (
+      findTool as unknown as {
+        execute: (
+          id: string,
+          params: unknown
+        ) => Promise<{
+          content: Array<{ text: string }>;
+          details: { count: number };
+        }>;
+      }
+    ).execute('call_ast_1', { symbolName: 'DynamicSkillRegistry' });
 
     expect(result.content[0].text).toContain('Found');
     expect(result.content[0].text).toContain('usages of "DynamicSkillRegistry"');
@@ -155,13 +167,21 @@ describe('Agent meta-tools — no dynamic TOOL creation, proposal-gated skills',
  * app's privileges.
  */
 describe('search_codebase — shell injection', () => {
+  // The tool shells out to grep with a 10s budget of its own, so the 5s default
+  // is a smaller allowance than the operation it is measuring: under a loaded
+  // full-suite run that reads as a failure while nothing is actually wrong.
+  // These cases assert that nothing executed, which is a correctness claim, not
+  // a speed claim, so they get a budget above the tool's own.
+  const SEARCH_BUDGET_MS = 30_000;
   const marker = path.join(os.tmpdir(), `cowork-inject-${process.pid}-${Date.now()}`);
 
   const runSearch = (query: string) => {
     const tool = buildAgentMetaTools().find((t) => t.name === 'search_codebase')!;
-    return (tool as unknown as {
-      execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
-    }).execute('call_search', { query });
+    return (
+      tool as unknown as {
+        execute: (id: string, params: unknown) => Promise<{ content: Array<{ text: string }> }>;
+      }
+    ).execute('call_search', { query });
   };
 
   afterEach(() => {
@@ -177,17 +197,25 @@ describe('search_codebase — shell injection', () => {
     ['quoted command', (m: string) => `authx authy 'touch' ${m}`],
     ['IFS split', (m: string) => `authx authy $IFS touch ${m}`],
     ['embedded newline', (m: string) => `authx authy\n touch ${m}`],
-  ])('does not execute a %s payload', async (_label, build) => {
-    await runSearch(build(marker));
-    // Whatever the tool returns, nothing ran: the marker was never created.
-    expect(fs.existsSync(marker)).toBe(false);
-  });
+  ])(
+    'does not execute a %s payload',
+    async (_label, build) => {
+      await runSearch(build(marker));
+      // Whatever the tool returns, nothing ran: the marker was never created.
+      expect(fs.existsSync(marker)).toBe(false);
+    },
+    SEARCH_BUDGET_MS
+  );
 
-  it('still searches for a normal query', async () => {
-    const result = await runSearch('DynamicSkillRegistry');
-    expect(result.content[0].text).toContain('DynamicSkillRegistry');
-    expect(result.content[0].text).toMatch(/Found in|No results/);
-  });
+  it.skipIf(!codebaseSearchUsable())(
+    'still searches for a normal query',
+    async () => {
+      const result = await runSearch('DynamicSkillRegistry');
+      expect(result.content[0].text).toContain('DynamicSkillRegistry');
+      expect(result.content[0].text).toMatch(/Found in|No results/);
+    },
+    SEARCH_BUDGET_MS
+  );
 
   it('reports cleanly when a query has no usable search term', async () => {
     const result = await runSearch('a b c');

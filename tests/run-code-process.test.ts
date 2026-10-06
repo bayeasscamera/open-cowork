@@ -14,10 +14,17 @@ import { join } from 'node:path';
 import { build } from 'esbuild';
 
 import { runCode, heapLimitMb } from '../src/main/agent/run-code-host';
-import { DEFAULT_RUN_CODE_LIMITS, buildChildEnv, isSecretEnvName, parseChildMessage, resolveRunCodeLimits } from '../src/main/agent/run-code-protocol';
+import {
+  DEFAULT_RUN_CODE_LIMITS,
+  buildChildEnv,
+  isSecretEnvName,
+  parseChildMessage,
+  resolveRunCodeLimits,
+} from '../src/main/agent/run-code-protocol';
 import { ToolRegistry, type ToolDefinition } from '../src/main/tools/registry';
 import { STANDARD_PRESET } from '../src/main/presets/builtin-presets';
 import { sensitiveReadPaths } from '../src/main/agent/run-code-sandbox';
+import { seatbeltUsable } from './sandbox-capability';
 
 /**
  * run_code is the capability with the largest blast radius, so these tests use
@@ -104,7 +111,10 @@ describe('the child runtime is real', () => {
   });
 });
 
-describe('a script chains tool calls and returns a value', () => {
+// Everything below that runs a real child needs the host to let us apply the
+// Seatbelt profile; where it will not, the suite skips rather than reporting a
+// failure the code is not responsible for (see tests/sandbox-capability.ts).
+describe.skipIf(!seatbeltUsable)('a script chains tool calls and returns a value', () => {
   it('performs three sequential calls and reports the composed result', async () => {
     const { registry, base } = harness([makeTool('echo', 'E:')], ['echo']);
     const result = await runCode({
@@ -141,7 +151,7 @@ describe('a script chains tool calls and returns a value', () => {
   }, 30_000);
 });
 
-describe('a syntax error is reported cleanly, not as a crash', () => {
+describe.skipIf(!seatbeltUsable)('a syntax error is reported cleanly, not as a crash', () => {
   it('returns a compilation error and does not hang', async () => {
     const { registry, base } = harness([], []);
     const result = await runCode({
@@ -166,7 +176,7 @@ describe('a syntax error is reported cleanly, not as a crash', () => {
   }, 30_000);
 });
 
-describe('limits are enforced against a real process', () => {
+describe.skipIf(!seatbeltUsable)('limits are enforced against a real process', () => {
   it('kills the child when it exceeds the time limit', async () => {
     const { registry, base } = harness([], []);
     const started = Date.now();
@@ -256,24 +266,26 @@ describe('limits are enforced against a real process', () => {
 });
 
 describe('the preset allow-list binds code exactly as it binds direct calls', () => {
-  it('refuses a tool the preset does not allow, and does not run it', async () => {
-    let executed = false;
-    const sneaky: ToolDefinition = {
-      name: 'sneaky',
-      description: 'must not run',
-      inputSchema: { type: 'object', properties: {} } as unknown as ToolDefinition['inputSchema'],
-      risk: 'write',
-      execute: async () => {
-        executed = true;
-        return { content: 'leaked' };
-      },
-    };
-    const { registry, base } = harness([sneaky], ['echo']);
+  it.skipIf(!seatbeltUsable)(
+    'refuses a tool the preset does not allow, and does not run it',
+    async () => {
+      let executed = false;
+      const sneaky: ToolDefinition = {
+        name: 'sneaky',
+        description: 'must not run',
+        inputSchema: { type: 'object', properties: {} } as unknown as ToolDefinition['inputSchema'],
+        risk: 'write',
+        execute: async () => {
+          executed = true;
+          return { content: 'leaked' };
+        },
+      };
+      const { registry, base } = harness([sneaky], ['echo']);
 
-    const result = await runCode({
-      ...base,
-      registry,
-      source: `
+      const result = await runCode({
+        ...base,
+        registry,
+        source: `
         try {
           await tools.sneaky({});
           return 'it ran';
@@ -281,11 +293,13 @@ describe('the preset allow-list binds code exactly as it binds direct calls', ()
           return 'refused: ' + error.message;
         }
       `,
-    });
+      });
 
-    expect(executed).toBe(false);
-    expect(result.output).toContain('not available to this agent');
-  }, 30_000);
+      expect(executed).toBe(false);
+      expect(result.output).toContain('not available to this agent');
+    },
+    30_000
+  );
 
   it('the shipped standard preset does not allow run_code at all', () => {
     // Defence in depth: even with code mode enabled, the default preset never
@@ -294,7 +308,7 @@ describe('the preset allow-list binds code exactly as it binds direct calls', ()
   });
 });
 
-describe('the child cannot read secrets from its environment', () => {
+describe.skipIf(!seatbeltUsable)('the child cannot read secrets from its environment', () => {
   it('an API-key variable in the parent env is not visible to the script', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-should-never-be-visible';
     process.env.COWORK_FAKE_TOKEN = 'token-should-never-be-visible';
@@ -326,7 +340,7 @@ describe('the child cannot read secrets from its environment', () => {
   }, 40_000);
 });
 
-describe('a child that crashes does not take the app with it', () => {
+describe.skipIf(!seatbeltUsable)('a child that crashes does not take the app with it', () => {
   it('a hard process exit is reported as a failure', async () => {
     const { registry, base } = harness([], []);
     const result = await runCode({
@@ -395,7 +409,7 @@ describe('a child that crashes does not take the app with it', () => {
   }, 40_000);
 });
 
-describe('a tool called from code is gated by the session, in code', () => {
+describe.skipIf(!seatbeltUsable)('a tool called from code is gated by the session, in code', () => {
   // These cover the case where run_code was supposed to ask the user and did
   // not: the handler was typed, documented and then never called, so supplying
   // one DISABLED gating instead of applying it.
@@ -498,7 +512,7 @@ describe('a tool called from code is gated by the session, in code', () => {
   });
 });
 
-describe('a real sandboxed child cannot read the home directory', () => {
+describe.skipIf(!seatbeltUsable)('a real sandboxed child cannot read the home directory', () => {
   // The confinement, verified end to end through the whole host. The point is
   // that it holds for files nobody thought to list, not only for the credential
   // paths a deny-list would have covered.
@@ -602,44 +616,47 @@ describe('a real sandboxed child cannot read the home directory', () => {
   }, 40_000);
 });
 
-describe('system locations are unreadable, with the default host policy', () => {
-  // The default is verified separately from the unit level: the host passes the
-  // system-wide denies unless the caller overrides them, so these go through the
-  // real runCode without injecting anything.
-  it('cannot read /etc/hosts', async () => {
-    const { registry, base } = harness([], []);
-    const result = await runCode({
-      ...base,
-      registry,
-      source: `
+describe.skipIf(!seatbeltUsable)(
+  'system locations are unreadable, with the default host policy',
+  () => {
+    // The default is verified separately from the unit level: the host passes the
+    // system-wide denies unless the caller overrides them, so these go through the
+    // real runCode without injecting anything.
+    it('cannot read /etc/hosts', async () => {
+      const { registry, base } = harness([], []);
+      const result = await runCode({
+        ...base,
+        registry,
+        source: `
         const fs = await import('node:fs');
         try { return 'READ_HOSTS: ' + fs.readFileSync('/etc/hosts', 'utf8'); }
         catch (error) { return 'BLOCKED: ' + String(error); }
       `,
-      limits: { timeoutMs: 20_000 },
-    });
-    expect(result.output).toContain('BLOCKED');
-    expect(result.output).not.toContain('READ_HOSTS');
-  }, 40_000);
+        limits: { timeoutMs: 20_000 },
+      });
+      expect(result.output).toContain('BLOCKED');
+      expect(result.output).not.toContain('READ_HOSTS');
+    }, 40_000);
 
-  it('cannot list /Applications', async () => {
-    const { registry, base } = harness([], []);
-    const result = await runCode({
-      ...base,
-      registry,
-      source: `
+    it('cannot list /Applications', async () => {
+      const { registry, base } = harness([], []);
+      const result = await runCode({
+        ...base,
+        registry,
+        source: `
         const fs = await import('node:fs');
         try { return 'LISTED: ' + fs.readdirSync('/Applications').length; }
         catch (error) { return 'BLOCKED'; }
       `,
-      limits: { timeoutMs: 20_000 },
-    });
-    expect(result.output).toContain('BLOCKED');
-    expect(result.output).not.toContain('LISTED');
-  }, 40_000);
-});
+        limits: { timeoutMs: 20_000 },
+      });
+      expect(result.output).toContain('BLOCKED');
+      expect(result.output).not.toContain('LISTED');
+    }, 40_000);
+  }
+);
 
-describe('run_code really routes the child through the OS sandbox', () => {
+describe.skipIf(!seatbeltUsable)('run_code really routes the child through the OS sandbox', () => {
   // The policy is unit-tested in run-code-sandbox.test.ts. What that cannot see
   // is whether runCode actually USES it, so these go through the whole path: a
   // real child, launched by the host, attempting real escapes. Bypassing the
@@ -783,44 +800,47 @@ describe('on a platform with no confinement the run is refused, not executed', (
   });
 });
 
-describe('native memory outside the V8 heap is killed, not just observed', () => {
-  // --max-old-space-size does not cover Buffers or ArrayBuffer backing stores,
-  // which live in native memory. Without the watchdog a script allocates
-  // gigabytes while the heap stays small. With it the host kills the child and
-  // says why.
-  it('kills a child that allocates native memory past the budget', async () => {
-    const { registry, base } = harness([], []);
-    const result = await runCode({
-      ...base,
-      registry,
-      source: `
+describe.skipIf(!seatbeltUsable)(
+  'native memory outside the V8 heap is killed, not just observed',
+  () => {
+    // --max-old-space-size does not cover Buffers or ArrayBuffer backing stores,
+    // which live in native memory. Without the watchdog a script allocates
+    // gigabytes while the heap stays small. With it the host kills the child and
+    // says why.
+    it('kills a child that allocates native memory past the budget', async () => {
+      const { registry, base } = harness([], []);
+      const result = await runCode({
+        ...base,
+        registry,
+        source: `
         const blocks = [];
         // fill(1): zero pages stay virtual until written, so an unfixed test
         // would allocate "gigabytes" without any resident page and prove nothing.
         for (let i = 0; i < 40; i++) blocks.push(Buffer.alloc(50 * 1024 * 1024, 1));
         return 'allocated';
       `,
-      limits: { timeoutMs: 60_000, maxMemoryBytes: 256 * 1024 * 1024 },
-    });
-    expect(result.status).toBe('resource_limit');
-    expect(result.error).toMatch(/memory budget/i);
-    expect(result.output).not.toContain('allocated');
-  }, 90_000);
+        limits: { timeoutMs: 60_000, maxMemoryBytes: 256 * 1024 * 1024 },
+      });
+      expect(result.status).toBe('resource_limit');
+      expect(result.error).toMatch(/memory budget/i);
+      expect(result.output).not.toContain('allocated');
+    }, 90_000);
 
-  it('does not kill a script that stays inside its budget', async () => {
-    // Without this, a watchdog that kills everything would pass the test above.
-    const { registry, base } = harness([], []);
-    const result = await runCode({
-      ...base,
-      registry,
-      source: `return 'fine';`,
-      limits: { timeoutMs: 15_000, maxMemoryBytes: 256 * 1024 * 1024 },
-    });
-    expect(result.status).toBe('completed');
-  }, 30_000);
-});
+    it('does not kill a script that stays inside its budget', async () => {
+      // Without this, a watchdog that kills everything would pass the test above.
+      const { registry, base } = harness([], []);
+      const result = await runCode({
+        ...base,
+        registry,
+        source: `return 'fine';`,
+        limits: { timeoutMs: 15_000, maxMemoryBytes: 256 * 1024 * 1024 },
+      });
+      expect(result.status).toBe('completed');
+    }, 30_000);
+  }
+);
 
-describe('CPU time beyond the wall clock is killed', () => {
+describe.skipIf(!seatbeltUsable)('CPU time beyond the wall clock is killed', () => {
   it('kills a child burning CPU on worker threads past the budget', async () => {
     const { registry, base } = harness([], []);
     // Four workers spinning: CPU seconds accumulate ~4x faster than the wall

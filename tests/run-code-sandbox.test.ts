@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync, symlinkSync, realpathSync } from 'node:fs';
+import {
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+  mkdirSync,
+  existsSync,
+  symlinkSync,
+  realpathSync,
+} from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,16 +32,19 @@ import {
  * the ones worth having.
  */
 
+import { seatbeltUsable } from './sandbox-capability';
+
 const NODE = process.execPath;
 const isDarwin = process.platform === 'darwin';
-const hasSeatbelt = existsSync('/usr/bin/sandbox-exec');
+// The binary existing is not the capability: a nested sandbox refuses to apply
+// even a well-formed profile, so the gate is a real probe (see
+// tests/sandbox-capability.ts).
+const hasSeatbelt = seatbeltUsable;
 
 function runInSandbox(policy: string, script: string): { out: string } {
-  const result = spawnSync(
-    '/usr/bin/sandbox-exec',
-    ['-p', policy, NODE, '-e', script],
-    { encoding: 'utf8' }
-  );
+  const result = spawnSync('/usr/bin/sandbox-exec', ['-p', policy, NODE, '-e', script], {
+    encoding: 'utf8',
+  });
   return { out: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() };
 }
 
@@ -81,7 +92,9 @@ describe('the macOS policy denies by default', () => {
       // Compared resolved: /etc is a symlink to /private/etc on macOS, and the
       // policy carries the real path precisely so the rule can match.
       const resolved = resolvePolicyPath(path);
-      expect(policy).toContain(`(deny file-read-data (subpath "${resolved.replace(/\\/g, '\\\\')}"))`);
+      expect(policy).toContain(
+        `(deny file-read-data (subpath "${resolved.replace(/\\/g, '\\\\')}"))`
+      );
     }
   });
 
@@ -122,7 +135,6 @@ describe('the macOS policy denies by default', () => {
       rmSync(link, { force: true });
     }
   });
-
 });
 
 describe('the home directory is jailed, by directory rather than by list', () => {
@@ -190,8 +202,9 @@ describe('the home directory is jailed, by directory rather than by list', () =>
 });
 
 describe('a real sandboxed process is actually confined', () => {
-  // Skipped rather than faked on other platforms: bubblewrap needs a container,
-  // and asserting confinement that was never exercised would be worse than
+  // Skipped rather than faked when the host cannot apply a profile: bubblewrap
+  // needs a container, and a nested sandbox refuses Seatbelt outright, so
+  // asserting confinement that was never exercised would be worse than
   // asserting nothing.
   it.skipIf(!isDarwin || !hasSeatbelt)('can read and write the workspace', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
@@ -303,27 +316,30 @@ describe('a real sandboxed process is actually confined', () => {
     }
   });
 
-  it.skipIf(!isDarwin || !hasSeatbelt)('cannot escape through a symlink out of the workspace', () => {
-    // The workspace is writable, so a symlink planted in it must not become a
-    // way to write somewhere else. This is the escape that a naive
-    // "allow write to workspace" rule gets wrong.
-    const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
-    const outside = mkdtempSync(join(tmpdir(), 'cowork-outside-'));
-    try {
-      symlinkSync(outside, join(workspace, 'link'));
-      const policy = buildSeatbeltPolicy(baseRequest(workspace));
-      const { out } = runInSandbox(
-        policy,
-        `try{require('fs').writeFileSync(${JSON.stringify(join(workspace, 'link', 'escaped.txt'))},'x');console.log('SYMLINK_ESCAPE')}
+  it.skipIf(!isDarwin || !hasSeatbelt)(
+    'cannot escape through a symlink out of the workspace',
+    () => {
+      // The workspace is writable, so a symlink planted in it must not become a
+      // way to write somewhere else. This is the escape that a naive
+      // "allow write to workspace" rule gets wrong.
+      const workspace = mkdtempSync(join(tmpdir(), 'cowork-sb-'));
+      const outside = mkdtempSync(join(tmpdir(), 'cowork-outside-'));
+      try {
+        symlinkSync(outside, join(workspace, 'link'));
+        const policy = buildSeatbeltPolicy(baseRequest(workspace));
+        const { out } = runInSandbox(
+          policy,
+          `try{require('fs').writeFileSync(${JSON.stringify(join(workspace, 'link', 'escaped.txt'))},'x');console.log('SYMLINK_ESCAPE')}
          catch(e){console.log('LINK_BLOCKED:'+e.code)}`
-      );
-      expect(out).not.toContain('SYMLINK_ESCAPE');
-      expect(existsSync(join(outside, 'escaped.txt'))).toBe(false);
-    } finally {
-      rmSync(workspace, { recursive: true, force: true });
-      rmSync(outside, { recursive: true, force: true });
+        );
+        expect(out).not.toContain('SYMLINK_ESCAPE');
+        expect(existsSync(join(outside, 'escaped.txt'))).toBe(false);
+      } finally {
+        rmSync(workspace, { recursive: true, force: true });
+        rmSync(outside, { recursive: true, force: true });
+      }
     }
-  });
+  );
 });
 
 describe('the plan fails closed when no confinement exists', () => {

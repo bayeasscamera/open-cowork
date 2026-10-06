@@ -14,6 +14,7 @@ import {
 } from '../src/main/agent/run-code-runtime';
 import { runCode } from '../src/main/agent/run-code-host';
 import { ToolRegistry } from '../src/main/tools/registry';
+import { seatbeltUsable } from './sandbox-capability';
 
 /**
  * Locating the run_code child at runtime.
@@ -207,43 +208,51 @@ describe('end to end, with the runtime resolved rather than injected', () => {
   // Skipped when the app has not been built, because a test that needs `vite
   // build` to have been run would be a bad gate. When it IS built, this is the
   // only assertion that proves production invocation works: no childScript, no
-  // allowedExecPaths, exactly as the app calls it.
+  // allowedExecPaths, exactly as the app calls it. These cases also execute a
+  // real sandboxed child, so they additionally need a host that will apply a
+  // profile (see tests/sandbox-capability.ts).
   const childBuilt = resolveRunCodeChildScript() !== null;
 
-  it.skipIf(!childBuilt)('runs TypeScript in the built child under the sandbox', async () => {
-    const workspace = mkdtempSync(join(tmpdir(), 'cowork-e2e-'));
-    try {
-      const result = await runCode({
-        sessionId: 'e2e',
-        cwd: workspace,
-        allowedTools: [],
-        registry: new ToolRegistry(),
-        gate: { decidePermission: () => ({ allowed: true }) },
-        // TypeScript on purpose: proving the child transpiles, which is what
-        // requires the esbuild exec grant.
-        source: 'const v: number = 6 * 7; return `answer ${v}`;',
-      });
-      expect(result.status).toBe('completed');
-      expect(result.output).toContain('answer 42');
-      // The child reported its own limit, so the cap really was applied.
-      expect(result.heapLimitBytes).toBeGreaterThan(0);
-    } finally {
-      rmSync(workspace, { recursive: true, force: true });
-    }
-  }, 60_000);
+  it.skipIf(!childBuilt || !seatbeltUsable)(
+    'runs TypeScript in the built child under the sandbox',
+    async () => {
+      const workspace = mkdtempSync(join(tmpdir(), 'cowork-e2e-'));
+      try {
+        const result = await runCode({
+          sessionId: 'e2e',
+          cwd: workspace,
+          allowedTools: [],
+          registry: new ToolRegistry(),
+          gate: { decidePermission: () => ({ allowed: true }) },
+          // TypeScript on purpose: proving the child transpiles, which is what
+          // requires the esbuild exec grant.
+          source: 'const v: number = 6 * 7; return `answer ${v}`;',
+        });
+        expect(result.status).toBe('completed');
+        expect(result.output).toContain('answer 42');
+        // The child reported its own limit, so the cap really was applied.
+        expect(result.heapLimitBytes).toBeGreaterThan(0);
+      } finally {
+        rmSync(workspace, { recursive: true, force: true });
+      }
+    },
+    60_000
+  );
 
-  it.skipIf(!childBuilt)('still refuses an escape from the built child', async () => {
-    const workspace = mkdtempSync(join(tmpdir(), 'cowork-e2e-'));
-    const outside = mkdtempSync(join(tmpdir(), 'cowork-e2e-out-'));
-    const target = join(outside, 'escaped.txt');
-    try {
-      const result = await runCode({
-        sessionId: 'e2e',
-        cwd: workspace,
-        allowedTools: [],
-        registry: new ToolRegistry(),
-        gate: { decidePermission: () => ({ allowed: true }) },
-        source: `
+  it.skipIf(!childBuilt || !seatbeltUsable)(
+    'still refuses an escape from the built child',
+    async () => {
+      const workspace = mkdtempSync(join(tmpdir(), 'cowork-e2e-'));
+      const outside = mkdtempSync(join(tmpdir(), 'cowork-e2e-out-'));
+      const target = join(outside, 'escaped.txt');
+      try {
+        const result = await runCode({
+          sessionId: 'e2e',
+          cwd: workspace,
+          allowedTools: [],
+          registry: new ToolRegistry(),
+          gate: { decidePermission: () => ({ allowed: true }) },
+          source: `
           const fs = await import('node:fs');
           try {
             fs.writeFileSync(${JSON.stringify(target)}, 'x');
@@ -252,14 +261,16 @@ describe('end to end, with the runtime resolved rather than injected', () => {
             return 'REFUSED';
           }
         `,
-      });
-      expect(result.output).toContain('REFUSED');
-      expect(existsSync(target)).toBe(false);
-    } finally {
-      rmSync(workspace, { recursive: true, force: true });
-      rmSync(outside, { recursive: true, force: true });
-    }
-  }, 60_000);
+        });
+        expect(result.output).toContain('REFUSED');
+        expect(existsSync(target)).toBe(false);
+      } finally {
+        rmSync(workspace, { recursive: true, force: true });
+        rmSync(outside, { recursive: true, force: true });
+      }
+    },
+    60_000
+  );
 
   it('fails safely when the child path does not exist, instead of hanging', async () => {
     // A missing FILE is a different case from no resolution at all: the spawn
@@ -278,29 +289,33 @@ describe('end to end, with the runtime resolved rather than injected', () => {
     expect(result.error).toBeTruthy();
   });
 
-  it('reports a clear error when the child is genuinely absent', async () => {
-    // Simulate a build that never produced the child: resolution finds nothing.
-    const workspace = mkdtempSync(join(tmpdir(), 'cowork-noresolve-'));
-    try {
-      const result = await runCode({
-        sessionId: 'e2e',
-        cwd: workspace,
-        allowedTools: [],
-        registry: new ToolRegistry(),
-        gate: { decidePermission: () => ({ allowed: true }) },
-        source: 'return 1;',
-        // Force the "cannot resolve" path deterministically.
-        childScript: undefined,
-      });
-      // In a built tree this succeeds; the assertion is only that the call
-      // either runs or reports the missing-runtime error, never throws.
-      if (result.status === 'failed') {
-        expect(result.error).toMatch(/child runtime/i);
-      } else {
-        expect(result.status).toBe('completed');
+  it.skipIf(!seatbeltUsable)(
+    'reports a clear error when the child is genuinely absent',
+    async () => {
+      // Simulate a build that never produced the child: resolution finds nothing.
+      const workspace = mkdtempSync(join(tmpdir(), 'cowork-noresolve-'));
+      try {
+        const result = await runCode({
+          sessionId: 'e2e',
+          cwd: workspace,
+          allowedTools: [],
+          registry: new ToolRegistry(),
+          gate: { decidePermission: () => ({ allowed: true }) },
+          source: 'return 1;',
+          // Force the "cannot resolve" path deterministically.
+          childScript: undefined,
+        });
+        // In a built tree this succeeds; the assertion is only that the call
+        // either runs or reports the missing-runtime error, never throws.
+        if (result.status === 'failed') {
+          expect(result.error).toMatch(/child runtime/i);
+        } else {
+          expect(result.status).toBe('completed');
+        }
+      } finally {
+        rmSync(workspace, { recursive: true, force: true });
       }
-    } finally {
-      rmSync(workspace, { recursive: true, force: true });
-    }
-  }, 60_000);
+    },
+    60_000
+  );
 });

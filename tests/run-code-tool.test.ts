@@ -1,11 +1,12 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { buildRunCodeTool, RUN_CODE_TOOL_NAME } from '../src/main/tools/run-code-tool';
 import { ToolRegistry, type ToolDefinition } from '../src/main/tools/registry';
 import { runToolGate, type ToolGateDeps } from '../src/main/tools/pipeline';
+import { seatbeltUsable } from './sandbox-capability';
 
 /**
  * The run_code tool adapter.
@@ -79,55 +80,68 @@ describe('input validation happens before anything is spawned', () => {
 
   it('rejects a non-string source rather than coercing it', async () => {
     const tool = build();
-    const result = await tool.execute({ source: { evil: true } }, { sessionId: 's', cwd: workspace });
+    const result = await tool.execute(
+      { source: { evil: true } },
+      { sessionId: 's', cwd: workspace }
+    );
     expect(result.isError).toBe(true);
   });
 });
 
-describe('a tool call made from code is gated exactly like a direct one', () => {
-  it('runs a permitted call', async () => {
-    const tool = build();
-    const result = await tool.execute(
-      {
-        source: `
+// These three suites execute run_code for real, so each one needs a child the
+// host will actually let us sandbox. Skipped rather than faked where it will
+// not (see tests/sandbox-capability.ts).
+describe.skipIf(!seatbeltUsable)(
+  'a tool call made from code is gated exactly like a direct one',
+  () => {
+    it('runs a permitted call', async () => {
+      const tool = build();
+      const result = await tool.execute(
+        {
+          source: `
           const call = await tools.echo({ value: 'hi' });
           return call;
         `,
-      },
-      { sessionId: 's', cwd: workspace }
-    );
-    expect(result.isError).toBeFalsy();
-    expect(result.content).toContain('E:hi');
-  }, 60_000);
+        },
+        { sessionId: 's', cwd: workspace }
+      );
+      expect(result.isError).toBeFalsy();
+      expect(result.content).toContain('E:hi');
+    }, 60_000);
 
-  it('refuses a call the preset does not allow, and does not run it', async () => {
-    // allowedTools excludes `echo`; the tool exists in the registry, so the
-    // only thing that can stop it is the gate.
-    const tool = build({ allowedTools: ['read'] });
-    const result = await tool.execute(
-      { source: `return await tools.echo({ value: 'nope' });` },
-      { sessionId: 's', cwd: workspace }
-    );
-    expect(result.content.toLowerCase()).toMatch(/not available|refused|denied|error/);
-    expect(result.content).not.toContain('E:nope');
-  }, 60_000);
+    it('refuses a call the preset does not allow, and does not run it', async () => {
+      // allowedTools excludes `echo`; the tool exists in the registry, so the
+      // only thing that can stop it is the gate.
+      const tool = build({ allowedTools: ['read'] });
+      const result = await tool.execute(
+        { source: `return await tools.echo({ value: 'nope' });` },
+        { sessionId: 's', cwd: workspace }
+      );
+      expect(result.content.toLowerCase()).toMatch(/not available|refused|denied|error/);
+      expect(result.content).not.toContain('E:nope');
+    }, 60_000);
 
-  it('refuses a call the permission engine denies', async () => {
-    const tool = build({
-      gate: permissiveGate({ decidePermission: () => ({ allowed: false, reason: 'policy says no' }) }),
-    });
-    const result = await tool.execute(
-      { source: `
+    it('refuses a call the permission engine denies', async () => {
+      const tool = build({
+        gate: permissiveGate({
+          decidePermission: () => ({ allowed: false, reason: 'policy says no' }),
+        }),
+      });
+      const result = await tool.execute(
+        {
+          source: `
           try { return await tools.echo({ value: 'x' }); }
           catch (error) { return 'saw: ' + String(error); }
-        ` },
-      { sessionId: 's', cwd: workspace }
-    );
-    expect(result.content).toContain('policy says no');
-  }, 60_000);
-});
+        `,
+        },
+        { sessionId: 's', cwd: workspace }
+      );
+      expect(result.content).toContain('policy says no');
+    }, 60_000);
+  }
+);
 
-describe('failures are reported to the model, never thrown', () => {
+describe.skipIf(!seatbeltUsable)('failures are reported to the model, never thrown', () => {
   it('reports a compile error as a result, so the model can fix its own code', async () => {
     const tool = build();
     const result = await tool.execute(
@@ -150,20 +164,25 @@ describe('failures are reported to the model, never thrown', () => {
 
   it('says so plainly when the script returns nothing', async () => {
     const tool = build();
-    const result = await tool.execute({ source: 'return undefined;' }, { sessionId: 's', cwd: workspace });
+    const result = await tool.execute(
+      { source: 'return undefined;' },
+      { sessionId: 's', cwd: workspace }
+    );
     expect(result.content).toMatch(/returned nothing/i);
   }, 60_000);
 });
 
-describe('the child cannot escape the workspace, through this tool either', () => {
-  it('refuses a write outside the workspace', async () => {
-    const outside = mkdtempSync(join(tmpdir(), 'cowork-rctool-out-'));
-    const target = join(outside, 'escaped.txt');
-    try {
-      const tool = build();
-      const result = await tool.execute(
-        {
-          source: `
+describe.skipIf(!seatbeltUsable)(
+  'the child cannot escape the workspace, through this tool either',
+  () => {
+    it('refuses a write outside the workspace', async () => {
+      const outside = mkdtempSync(join(tmpdir(), 'cowork-rctool-out-'));
+      const target = join(outside, 'escaped.txt');
+      try {
+        const tool = build();
+        const result = await tool.execute(
+          {
+            source: `
             const fs = await import('node:fs');
             try {
               fs.writeFileSync(${JSON.stringify(target)}, 'x');
@@ -172,27 +191,25 @@ describe('the child cannot escape the workspace, through this tool either', () =
               return 'REFUSED';
             }
           `,
-        },
-        { sessionId: 's', cwd: workspace }
-      );
-      expect(result.content).toContain('REFUSED');
-      expect(result.content).not.toContain('WROTE_OUTSIDE');
-      expect(existsSync(target)).toBe(false);
-    } finally {
-      rmSync(outside, { recursive: true, force: true });
-    }
-  }, 60_000);
-});
+          },
+          { sessionId: 's', cwd: workspace }
+        );
+        expect(result.content).toContain('REFUSED');
+        expect(result.content).not.toContain('WROTE_OUTSIDE');
+        expect(existsSync(target)).toBe(false);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    }, 60_000);
+  }
+);
 
 describe('the gate is the same policy for both callers', () => {
   it('the run_code tool runs through the same runToolGate the SDK hook uses', () => {
     // Structural, not behavioural: it asserts the code path is not carrying its
     // own permission logic. A second implementation here is exactly the kind of
     // divergence that lets code calls bypass rules direct calls obey.
-    const source = require('node:fs').readFileSync(
-      'src/main/tools/run-code-tool.ts',
-      'utf8'
-    ) as string;
+    const source = readFileSync('src/main/tools/run-code-tool.ts', 'utf8');
     // The adapter delegates; it must not import or re-implement the pipeline.
     expect(source).not.toMatch(/decidePermission\s*[:=]\s*(\(|async)/);
     expect(source).not.toMatch(/from '\.\.\/tools\/pipeline'/);
@@ -203,10 +220,7 @@ describe('the tool name is shared with the presenter', () => {
   it('is the same constant the presenter keys on, so the two cannot drift', () => {
     // The presenter's DEFAULT_DIRECT_TOOLS lists this name; if the two ever
     // disagreed, code mode would either hide run_code or expose it twice.
-    const presenter = require('node:fs').readFileSync(
-      'src/main/presets/tool-presenter.ts',
-      'utf8'
-    ) as string;
+    const presenter = readFileSync('src/main/presets/tool-presenter.ts', 'utf8');
     expect(presenter).toContain(`RUN_CODE_TOOL_NAME = '${RUN_CODE_TOOL_NAME}'`);
   });
 });

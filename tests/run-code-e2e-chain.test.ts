@@ -14,6 +14,7 @@ import {
 import { invokeTool } from '../src/main/tools/invoke';
 import { toolRegistry } from '../src/main/tools/registry';
 import { RUN_CODE_TOOL_NAME } from '../src/main/tools/run-code-tool';
+import { seatbeltUsable } from './sandbox-capability';
 
 /**
  * The whole path the model actually takes, minus the model.
@@ -128,30 +129,37 @@ describe('a code-mode session offers run_code to the model', () => {
 });
 
 describe('a tool call the model makes from code is gated like any other', () => {
-  it('a permitted call from code executes', async () => {
-    const cwd = workspace();
-    try {
-      const gate = createSessionGate({
-        allowedTools: CODE_MODE_PRESET.tools.allow,
-        requestPermission: async () => 'allow',
-        getToolDisplayName: (name) => name,
-      });
-      await assemble(CODE_MODE_PRESET, cwd);
+  // Only the two cases that actually execute run_code need a child the host
+  // will sandbox; the refusal case below never reaches a spawn (see
+  // tests/sandbox-capability.ts).
+  it.skipIf(!seatbeltUsable)(
+    'a permitted call from code executes',
+    async () => {
+      const cwd = workspace();
+      try {
+        const gate = createSessionGate({
+          allowedTools: CODE_MODE_PRESET.tools.allow,
+          requestPermission: async () => 'allow',
+          getToolDisplayName: (name) => name,
+        });
+        await assemble(CODE_MODE_PRESET, cwd);
 
-      // The real registry entry, invoked through the real funnel.
-      const result = await invokeTool(
-        toolRegistry,
-        RUN_CODE_TOOL_NAME,
-        { source: 'const n: number = 20 + 22; return `got ${n}`;' },
-        { sessionId: 'e2e', cwd },
-        gate
-      );
-      expect(result.isError).toBeFalsy();
-      expect(result.content).toContain('got 42');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 90_000);
+        // The real registry entry, invoked through the real funnel.
+        const result = await invokeTool(
+          toolRegistry,
+          RUN_CODE_TOOL_NAME,
+          { source: 'const n: number = 20 + 22; return `got ${n}`;' },
+          { sessionId: 'e2e', cwd },
+          gate
+        );
+        expect(result.isError).toBeFalsy();
+        expect(result.content).toContain('got 42');
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    },
+    90_000
+  );
 
   it('a tool the preset forbids is still refused from code', async () => {
     const cwd = workspace();
@@ -176,21 +184,23 @@ describe('a tool call the model makes from code is gated like any other', () => 
     }
   }, 90_000);
 
-  it('a script cannot escape the workspace through the full chain', async () => {
-    const cwd = workspace();
-    try {
-      const gate = createSessionGate({
-        allowedTools: CODE_MODE_PRESET.tools.allow,
-        requestPermission: async () => 'allow',
-        getToolDisplayName: (name) => name,
-      });
-      await assemble(CODE_MODE_PRESET, cwd);
+  it.skipIf(!seatbeltUsable)(
+    'a script cannot escape the workspace through the full chain',
+    async () => {
+      const cwd = workspace();
+      try {
+        const gate = createSessionGate({
+          allowedTools: CODE_MODE_PRESET.tools.allow,
+          requestPermission: async () => 'allow',
+          getToolDisplayName: (name) => name,
+        });
+        await assemble(CODE_MODE_PRESET, cwd);
 
-      const result = await invokeTool(
-        toolRegistry,
-        RUN_CODE_TOOL_NAME,
-        {
-          source: `
+        const result = await invokeTool(
+          toolRegistry,
+          RUN_CODE_TOOL_NAME,
+          {
+            source: `
             const fs = await import('node:fs');
             try {
               fs.writeFileSync('/tmp/cowork-chain-escape.txt', 'x');
@@ -199,14 +209,16 @@ describe('a tool call the model makes from code is gated like any other', () => 
               return 'REFUSED';
             }
           `,
-        },
-        { sessionId: 'e2e', cwd },
-        gate
-      );
-      expect(result.content).toContain('REFUSED');
-      expect(result.content).not.toContain('ESCAPED');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 90_000);
+          },
+          { sessionId: 'e2e', cwd },
+          gate
+        );
+        expect(result.content).toContain('REFUSED');
+        expect(result.content).not.toContain('ESCAPED');
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    },
+    90_000
+  );
 });
