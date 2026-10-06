@@ -353,9 +353,9 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
     readableRuntimePaths: [...runtimePaths, ...(request.extraReadablePaths ?? [])],
     // The child must transpile, and esbuild is a native binary it spawns, so
     // that exact path is granted. It is the only binary beyond node.
-    allowedExecPaths: request.allowedExecPaths ?? [resolveEsbuildBinary()].filter(
-      (candidate): candidate is string => candidate !== null
-    ),
+    allowedExecPaths:
+      request.allowedExecPaths ??
+      [resolveEsbuildBinary()].filter((candidate): candidate is string => candidate !== null),
     launcherPath: findSandboxLauncher(platform, existsSync),
   });
   if (!plan.supported) {
@@ -406,7 +406,9 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
       return;
     }
 
-    const finish = (result: Omit<RunCodeResult, 'toolCalls' | 'durationMs' | 'heapLimitBytes'>): void => {
+    const finish = (
+      result: Omit<RunCodeResult, 'toolCalls' | 'durationMs' | 'heapLimitBytes'>
+    ): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -421,9 +423,7 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
         ...result,
         toolCalls,
         durationMs: Date.now() - started,
-        ...(observedHeapLimitBytes === undefined
-          ? {}
-          : { heapLimitBytes: observedHeapLimitBytes }),
+        ...(observedHeapLimitBytes === undefined ? {} : { heapLimitBytes: observedHeapLimitBytes }),
       });
     };
 
@@ -504,14 +504,9 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
         }
 
         const ctx: ToolContext = { sessionId: request.sessionId, cwd: request.cwd };
-        void invokeTool(
-          request.registry,
-          message.tool,
-          message.args,
-          ctx,
-          gate,
-          { pruner: request.pruner }
-        )
+        void invokeTool(request.registry, message.tool, message.args, ctx, gate, {
+          pruner: request.pruner,
+        })
           .then((result) => {
             const content = result.content.slice(0, limits.maxToolResultChars);
             const response: RunCodeResponse = {
@@ -582,11 +577,27 @@ export async function runCode(request: RunCodeRequest): Promise<RunCodeResult> {
       });
     });
 
+    // stdin is a stream: writing to a pipe whose reader is already gone fails
+    // ASYNCHRONOUSLY with EPIPE, delivered as an 'error' event rather than
+    // thrown — so the try/catch around the writes below cannot see it. An
+    // unhandled 'error' on a stream throws in the main process and can take
+    // the app down, so it has to be caught here, before the first write.
+    child.stdin?.on('error', (error: Error) => {
+      logWarn('[RunCode] run_code child stdin error:', error);
+      finish({
+        status: 'failed',
+        output: stdout,
+        error: `run_code child stdin closed: ${error.message}`,
+      });
+    });
+
     // The source goes in as a single JSON line on stdin. stdin must stay OPEN:
     // the host answers the child's tool calls over the same pipe, so closing it
     // here would leave every `tools.*` call waiting forever.
     try {
-      child.stdin?.write(JSON.stringify({ source: request.source, maxToolCalls: limits.maxToolCalls }) + '\n');
+      child.stdin?.write(
+        JSON.stringify({ source: request.source, maxToolCalls: limits.maxToolCalls }) + '\n'
+      );
     } catch (error) {
       finish({
         status: 'failed',
