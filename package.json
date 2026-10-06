@@ -75,8 +75,8 @@
     "bench:writing:tally": "tsx scripts/writing-bench/tally-blind.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@google/genai": "^1.44.0",
+    "@anthropic-ai/sdk": "0.129.0",
+    "@google/genai": "2.24.0",
     "@larksuiteoapi/node-sdk": "1.74.0",
     "@mariozechner/pi-ai": "^0.60.0",
     "@mariozechner/pi-coding-agent": "^0.60.0",
