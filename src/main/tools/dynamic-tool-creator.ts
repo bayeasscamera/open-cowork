@@ -282,13 +282,20 @@ export function buildAgentMetaTools(
       parameters: Type.Object({
         title: Type.String({ description: 'Short title for the note.' }),
         content: Type.String({ description: 'Detailed note content to remember.' }),
-        tags: Type.Optional(Type.Array(Type.String(), { description: 'Optional keywords or categories.' })),
+        tags: Type.Optional(
+          Type.Array(Type.String(), { description: 'Optional keywords or categories.' })
+        ),
       }),
       execute: async (_toolCallId, params) => {
         const args = params as { title: string; content: string; tags?: string[] };
         if (!options.memoryManager) {
           return {
-            content: [{ type: 'text' as const, text: 'MemoryManager not available in this session context.' }],
+            content: [
+              {
+                type: 'text' as const,
+                text: 'MemoryManager not available in this session context.',
+              },
+            ],
             details: { success: false },
           };
         }
@@ -495,10 +502,7 @@ export function buildAgentMetaTools(
             };
           }
 
-          const grep = async (
-            patterns: string[],
-            targets: string[]
-          ): Promise<string> => {
+          const grep = async (patterns: string[], targets: string[]): Promise<string> => {
             const { stdout } = await execFileAsync(
               'grep',
               ['-n', '--include=*.ts', '--include=*.tsx', ...patterns, ...targets],
@@ -747,7 +751,7 @@ export function buildAgentMetaTools(
         const args = params as { action: 'read' | 'write'; text?: string };
         const sys = SystemController.getInstance();
         if (args.action === 'read') {
-          const content = sys.readClipboard();
+          const content = await sys.readClipboard();
           return {
             content: [
               {
@@ -758,7 +762,7 @@ export function buildAgentMetaTools(
             details: { hasContent: Boolean(content) },
           };
         } else {
-          const success = sys.writeClipboard(args.text || '');
+          const success = await sys.writeClipboard(args.text || '');
           return {
             content: [
               {
@@ -1255,7 +1259,7 @@ export function buildAgentMetaTools(
         const crossSection = renderCrossVerificationSection(executed.crossVerificationResults);
         const crossSummary = summarizeCrossVerification(executed.crossVerificationResults);
 
-// Teammate questions are surfaced explicitly (who asked what, the answer
+        // Teammate questions are surfaced explicitly (who asked what, the answer
         // and the measured extra model calls) — empty when team mode was off.
         const teammateExchanges = executed.tasks.flatMap((t) => t.teammateExchanges ?? []);
         const teammateSection = formatTeammateReportSection(teammateExchanges);

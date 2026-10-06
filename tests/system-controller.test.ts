@@ -12,12 +12,12 @@ describe('SystemController & Omnipotent OS Control (OpenClaw style)', () => {
     expect(SystemController.getInstance()).toBe(sys);
   });
 
-  it('reads and writes to clipboard', () => {
+  it('reads and writes to clipboard', async () => {
     const testText = `test-clipboard-${Date.now()}`;
-    const writeOk = sys.writeClipboard(testText);
+    const writeOk = await sys.writeClipboard(testText);
     expect(writeOk).toBe(true);
 
-    const readBack = sys.readClipboard();
+    const readBack = await sys.readClipboard();
     expect(readBack).toBe(testText);
   });
 

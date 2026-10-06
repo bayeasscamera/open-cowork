@@ -7,6 +7,7 @@ const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
   scripts: Record<string, string>;
 };
 const wrapper = readFileSync(resolve(root, 'scripts/ensure-native-abi.js'), 'utf8');
+const rebuild = readFileSync(resolve(root, 'scripts/rebuild-native.js'), 'utf8');
 
 describe('ensure-native-abi test wrapper', () => {
   it('routes npm test and coverage through the wrapper, keeps an escape hatch', () => {
@@ -21,12 +22,32 @@ describe('ensure-native-abi test wrapper', () => {
     // npm >= 12 rejects --runtime/--target/--disturl on `npm rebuild`
     // (EUNKNOWNCONFIG) and blocks install scripts (EALLOWSCRIPTS).
     expect(pkg.scripts.rebuild).toBe('node scripts/rebuild-native.js');
-    const rebuild = readFileSync(resolve(root, 'scripts/rebuild-native.js'), 'utf8');
     expect(rebuild).toContain('prebuild-install');
     expect(rebuild).toContain('--runtime=electron');
     expect(rebuild).toContain('--dist-url=https://electronjs.org/headers');
     // Never shells out to `npm rebuild` — npm >= 12 blocks it.
     expect(rebuild).not.toContain("execSync('npm rebuild");
+  });
+
+  it('skips the Electron rebuild when better-sqlite3 ships a Node-API prebuild', () => {
+    // better-sqlite3 >= 13 is Node-API (NAPI_VERSION=10 in binding.gyp), so one
+    // binary serves Node and Electron — verified by loading the shipped prebuild
+    // in Electron 44 (ABI 149) and Node 22 (ABI 127). lib/binding.js prefers
+    // prebuilds/ over build/Release/, so an Electron rebuild is work the loader
+    // never reads.
+    expect(rebuild).toContain('hostPrebuildPath');
+    expect(rebuild).toContain('"prebuilds"');
+
+    const main = rebuild.match(/function main\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const guard = main.indexOf('hostPrebuildPath()');
+    const build = main.indexOf('buildElectronAbi(');
+    expect(guard).toBeGreaterThan(-1);
+    // The short-circuit must precede any build attempt.
+    expect(guard).toBeLessThan(build);
+
+    // A Node-loadable binary is the expected outcome for a Node-API module, so
+    // the old "wrong runtime?" failure must be gone.
+    expect(rebuild).not.toContain('produced a Node-loadable binary');
   });
 
   it('is a no-op pass-through when Node can already load the binary', () => {

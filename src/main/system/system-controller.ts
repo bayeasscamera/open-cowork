@@ -50,7 +50,10 @@ export class SystemController {
       if (isMac) {
         // macOS open -a
         await execAsync(`open -a "${appName.replace(/"/g, '\\"')}"`);
-        return { success: true, output: `Application "${appName}" launched and brought to foreground.` };
+        return {
+          success: true,
+          output: `Application "${appName}" launched and brought to foreground.`,
+        };
       } else if (process.platform === 'win32') {
         await execAsync(`powershell -Command "Start-Process '${appName.replace(/'/g, "''")}'"`);
         return { success: true, output: `Application "${appName}" started.` };
@@ -79,7 +82,10 @@ export class SystemController {
           const script = `tell application "${appName.replace(/"/g, '\\"')}" to quit`;
           await execAsync(`osascript -e '${script}'`);
         }
-        return { success: true, output: `Application "${appName}" ${force ? 'force killed' : 'closed'}.` };
+        return {
+          success: true,
+          output: `Application "${appName}" ${force ? 'force killed' : 'closed'}.`,
+        };
       } else if (process.platform === 'win32') {
         const flag = force ? '/F' : '';
         await execAsync(`taskkill /IM "${appName}.exe" ${flag}`);
@@ -96,11 +102,17 @@ export class SystemController {
 
   /**
    * Clipboard read / write (Electron clipboard with CLI fallback for headless/Node environments)
+   *
+   * Both are async because Electron 44 moved `clipboard` onto the W3C model:
+   * `readText()` returns a promise and `writeText()` resolves once the data is
+   * committed, so a synchronous wrapper would return a pending promise as if it
+   * were the text. The CLI fallback stays synchronous — it is what actually runs
+   * in headless/Node contexts, where `clipboard` is undefined.
    */
-  readClipboard(): string {
+  async readClipboard(): Promise<string> {
     try {
       if (clipboard && typeof clipboard.readText === 'function') {
-        const text = clipboard.readText();
+        const text = await clipboard.readText();
         if (text) return text;
       }
     } catch {
@@ -111,7 +123,10 @@ export class SystemController {
       if (process.platform === 'darwin') {
         return execSync('pbpaste', { encoding: 'utf-8', timeout: 3000 });
       } else if (process.platform === 'win32') {
-        return execSync('powershell -Command "Get-Clipboard"', { encoding: 'utf-8', timeout: 3000 });
+        return execSync('powershell -Command "Get-Clipboard"', {
+          encoding: 'utf-8',
+          timeout: 3000,
+        });
       }
     } catch {
       // ignore
@@ -119,11 +134,11 @@ export class SystemController {
     return '';
   }
 
-  writeClipboard(text: string): boolean {
+  async writeClipboard(text: string): Promise<boolean> {
     let electronOk = false;
     try {
       if (clipboard && typeof clipboard.writeText === 'function') {
-        clipboard.writeText(text);
+        await clipboard.writeText(text);
         electronOk = true;
       }
     } catch {
@@ -137,7 +152,9 @@ export class SystemController {
         execSync('pbcopy', { input: text, encoding: 'utf-8', timeout: 3000 });
         return true;
       } else if (process.platform === 'win32') {
-        execSync(`powershell -Command "Set-Clipboard -Value '${text.replace(/'/g, "''")}'"`, { timeout: 3000 });
+        execSync(`powershell -Command "Set-Clipboard -Value '${text.replace(/'/g, "''")}'"`, {
+          timeout: 3000,
+        });
         return true;
       }
     } catch (err) {
@@ -193,7 +210,9 @@ export class SystemController {
         return list;
       } else {
         // Windows
-        const { stdout } = await execAsync('powershell -Command "Get-Process | Select-Object -First 30 Id, ProcessName, CPU | ConvertTo-Json"');
+        const { stdout } = await execAsync(
+          'powershell -Command "Get-Process | Select-Object -First 30 Id, ProcessName, CPU | ConvertTo-Json"'
+        );
         const parsed = JSON.parse(stdout);
         const items = Array.isArray(parsed) ? parsed : [parsed];
         return items.map((p: { Id: number; ProcessName: string; CPU?: number }) => ({
@@ -231,8 +250,13 @@ export class SystemController {
     try {
       // Escape script safely
       const escapedScript = script.replace(/'/g, "'\\''");
-      const { stdout, stderr } = await execAsync(`osascript -e '${escapedScript}'`, { timeout: 15_000 });
-      return { success: true, output: (stdout || stderr || 'Script executed successfully.').trim() };
+      const { stdout, stderr } = await execAsync(`osascript -e '${escapedScript}'`, {
+        timeout: 15_000,
+      });
+      return {
+        success: true,
+        output: (stdout || stderr || 'Script executed successfully.').trim(),
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, output: `AppleScript execution failed: ${msg}` };
@@ -242,7 +266,9 @@ export class SystemController {
   /**
    * Pilier 2: Capture screen or active window (native macOS screencapture or Windows PowerShell)
    */
-  async takeScreenshot(targetPath?: string): Promise<{ success: boolean; filePath: string; base64?: string; error?: string }> {
+  async takeScreenshot(
+    targetPath?: string
+  ): Promise<{ success: boolean; filePath: string; base64?: string; error?: string }> {
     const isMac = process.platform === 'darwin';
     const isWin = process.platform === 'win32';
     const destPath = targetPath || path.join(os.tmpdir(), `cowork-screen-${Date.now()}.png`);
@@ -261,7 +287,9 @@ $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bound
 $bmp.Save('${destPath.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png)
 $graphics.Dispose()
 $bmp.Dispose()
-        `.trim().replace(/\n/g, '; ');
+        `
+          .trim()
+          .replace(/\n/g, '; ');
         await execAsync(`powershell -Command "${psScript}"`);
       } else {
         // Linux fallback (import / scrot)
@@ -285,9 +313,15 @@ $bmp.Dispose()
   /**
    * Pilier 2: Simulate GUI Input (Click / Keypress) via AppleScript on macOS
    */
-  async simulateGuiAction(action: 'click' | 'type' | 'key_combo', options: { x?: number; y?: number; text?: string; key?: string; modifiers?: string[] }): Promise<{ success: boolean; output: string }> {
+  async simulateGuiAction(
+    action: 'click' | 'type' | 'key_combo',
+    options: { x?: number; y?: number; text?: string; key?: string; modifiers?: string[] }
+  ): Promise<{ success: boolean; output: string }> {
     if (process.platform !== 'darwin') {
-      return { success: false, output: 'GUI simulation is currently implemented for macOS via System Events.' };
+      return {
+        success: false,
+        output: 'GUI simulation is currently implemented for macOS via System Events.',
+      };
     }
 
     try {

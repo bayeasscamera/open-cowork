@@ -7,17 +7,54 @@
  * rebuild. We therefore call prebuild-install / node-gyp directly — the same
  * path scripts/ensure-native-abi.js uses for its ABI restores.
  *
+ * better-sqlite3 >= 13 is built on Node-API (`NAPI_VERSION=10` in its
+ * binding.gyp, `node-addon-api` in include_dirs), so ONE binary serves both
+ * Node and Electron — there is no Electron-specific ABI to build. Verified by
+ * loading the shipped prebuild inside Electron 44 (ABI 149) and Node 22
+ * (ABI 127): both open a database and round-trip a row.
+ *
+ * That changes what a successful run looks like. The old script treated "the
+ * binary loads from plain Node" as proof of the wrong runtime and failed; for a
+ * Node-API module it is the expected outcome. It also means the build output is
+ * often never read: `lib/binding.js` prefers `prebuilds/<platform>-<arch>.node`
+ * over `build/Release/`, and `lib/<platform>-<arch>.js` hardcodes the prebuild
+ * with no fallback at all. So when a prebuild for this host exists, compiling
+ * is work whose result the loader ignores — we stop before it.
+ *
  * Usage:  node scripts/rebuild-native.js
  * Wired to:  npm run rebuild  (also called by postinstall)
  */
 
 'use strict';
 
+const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
 const PKG_DIR = path.join(ROOT, "node_modules", "better-sqlite3");
+
+/**
+ * The prebuilt binding this host would actually load, mirroring the loader's
+ * own resolution in `lib/binding.js` (platform/arch support list, and the
+ * musl-specific name on Linux). Null when the host has no prebuild.
+ */
+function hostPrebuildPath() {
+  let platform = process.platform;
+  if (platform === "linux") {
+    try {
+      if (!process.report.getReport().header.glibcVersionRuntime) {
+        platform = "linuxmusl";
+      }
+    } catch {
+      /* no report available — assume glibc */
+    }
+  }
+  if (!["linux", "linuxmusl", "darwin", "win32"].includes(platform)) return null;
+  if (!["x64", "arm64"].includes(process.arch)) return null;
+  const candidate = path.join(PKG_DIR, "prebuilds", platform + "-" + process.arch + ".node");
+  return fs.existsSync(candidate) ? candidate : null;
+}
 
 function resolveBin(reqPath) {
   try {
@@ -95,6 +132,19 @@ function buildElectronAbi(version) {
 }
 
 function main() {
+  // Node-API: one binary, both runtimes. When the package ships a prebuild for
+  // this host, the loader prefers it and ignores anything node-gyp writes to
+  // build/Release/ — so a rebuild would be a no-op that only costs time.
+  const prebuild = hostPrebuildPath();
+  if (prebuild) {
+    console.log(
+      "[rebuild-native] Node-API prebuild present (" +
+        path.relative(ROOT, prebuild) +
+        ") — no Electron-specific rebuild needed"
+    );
+    return 0;
+  }
+
   const version = electronVersion();
   if (!version) {
     console.error("[rebuild-native] electron not installed — cannot rebuild for it");
@@ -105,12 +155,16 @@ function main() {
     console.error("[rebuild-native] rebuild failed — run `npm install` to restore a working binary");
     return 1;
   }
+  // A Node-API binary is expected to load from plain Node as well — that is no
+  // longer a sign of the wrong runtime, only failing to load is. See the header.
   const probe = probeAbi();
-  if (probe.loadOk) {
-    console.error("[rebuild-native] rebuild produced a Node-loadable binary — wrong runtime?");
+  if (!probe.loadOk) {
+    console.error("[rebuild-native] rebuilt binary does not load: " + probe.err);
     return 1;
   }
-  console.log("[rebuild-native] rebuilt ABI " + probe.abi + " for Electron " + version);
+  console.log(
+    "[rebuild-native] rebuilt Node-API binary (ABI " + probe.abi + ") for Electron " + version
+  );
   return 0;
 }
 
