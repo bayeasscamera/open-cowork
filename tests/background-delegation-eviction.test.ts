@@ -294,9 +294,31 @@ describe('delegation history eviction', () => {
 
 describe('recency ordering is a total order, not a partial one', () => {
   // Two delegations started in the same millisecond are common — a burst of
-  // tasks, or a fast test. Sorting on `startedAt` alone leaves those pairs in
-  // whatever order the engine produces, which is how "evicts the oldest first"
+  // tasks, or a fast test. Ordering on `startedAt` alone left those pairs to
+  // whatever the engine produced, which is how "evicts the oldest first"
   // became a flake that only appeared under load.
+  it('keeps creation order when a burst lands in the same millisecond', async () => {
+    // Freeze the clock so every task reports the same `Date.now()`. The
+    // collision has to be forced: on a fast machine the loop may or may not
+    // straddle a millisecond boundary, which is exactly why the failure came
+    // and went. Ordering must come from creation order, not from whichever
+    // random id suffix happened to sort higher.
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      for (let i = 0; i < 4; i += 1) {
+        await completedDeliveredDelegation('s1', `frozen ${i}`);
+      }
+    } finally {
+      clock.mockRestore();
+    }
+
+    const tracked = listDelegations();
+    expect(tracked.map((d) => d.title)).toEqual(['frozen 3', 'frozen 2', 'frozen 1', 'frozen 0']);
+    // Distinct timestamps are what make the order above reproducible at all.
+    const stamps = tracked.map((d) => d.startedAt);
+    expect(new Set(stamps).size).toBe(stamps.length);
+  });
+
   it('orders identically across repeated listings', async () => {
     for (let i = 0; i < 5; i += 1) {
       await completedDeliveredDelegation('s1', `burst ${i}`);
@@ -307,7 +329,9 @@ describe('recency ordering is a total order, not a partial one', () => {
   });
 
   it('the most recent task is first even when timestamps collide', async () => {
-    // Every task lands in the same tick, so only the tiebreaker can order them.
+    // A guard rather than a reproduction: if a future change reintroduces
+    // colliding timestamps, the listing must still be stable and must never
+    // repeat or drop a task.
     for (let i = 0; i < 4; i += 1) {
       await completedDeliveredDelegation('s1', `same-tick ${i}`);
     }

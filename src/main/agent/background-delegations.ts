@@ -474,19 +474,35 @@ function pushLog(
  * many delegations a session runs.
  */
 /**
+ * Timestamp for a delegation that is starting, strictly increasing.
+ *
+ * `Date.now()` alone is not enough here. Delegations are started in bursts, and
+ * two that land in the same millisecond used to get the same `startedAt`, which
+ * left "oldest first" — the order eviction and listing both rely on — undefined
+ * for that pair. The `id` tiebreak below only made the *sort* stable: the ids
+ * carry a random suffix, so which of the two came out first still varied
+ * between runs, and the test asserting the newest task is first failed
+ * intermittently because of it.
+ *
+ * Bumping past the previous value keeps the timestamp meaningful — it stays
+ * within a few milliseconds of the wall clock, so nothing user-visible shifts —
+ * and makes creation order the recency order, which is what every caller means
+ * by "oldest".
+ */
+let lastStartedAt = 0;
+
+function nextStartedAt(): number {
+  lastStartedAt = Math.max(Date.now(), lastStartedAt + 1);
+  return lastStartedAt;
+}
+
+/**
  * Total order over delegations by recency.
  *
- * `startedAt` is a millisecond timestamp, so two delegations started in the same
- * tick are common — a burst of tasks, or a fast test. Sorting on it alone leaves
- * those pairs in whatever order the sort happens to produce, which made
- * "evicts the oldest first" and "newest first" both undefined for them. That is
- * a latent flake rather than a visible bug: it only shows up when the timing
- * lands, and then it looks like the history order is wrong.
- *
- * `id` breaks the tie. It is unique, so the order is total and the same inputs
- * always produce the same result. `id` is deliberately not tried first: the
- * timestamp is the meaningful ordering, and the tiebreak only decides pairs the
- * timestamp genuinely cannot distinguish.
+ * `startedAt` is strictly increasing for anything started here (see
+ * `nextStartedAt`), so this is creation order. The `id` tiebreak stays as a
+ * guarantee that the order is total for delegations carrying a timestamp this
+ * module did not assign — restored state, or a test fixture.
  */
 function compareDelegationsByRecency(
   a: { startedAt: number; id: string },
@@ -700,7 +716,7 @@ export function startDelegation(options: StartDelegationOptions): {
     depth,
     parentTaskId: options.parentTaskId,
     status: 'running',
-    startedAt: Date.now(),
+    startedAt: nextStartedAt(),
     delivered: false,
     log: [],
     ...(options.crossVerify ? { crossVerify: true } : {}),
