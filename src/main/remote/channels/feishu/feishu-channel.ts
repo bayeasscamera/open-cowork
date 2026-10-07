@@ -154,6 +154,29 @@ export class FeishuChannel extends ChannelBase {
   }
 
   /**
+   * Whether a group message that did not mention the bot should be processed.
+   *
+   * Defaults to false — silence unless mentioned — so an app that never
+   * configured groups behaves exactly as it did before. `requireMention: false`
+   * opts a group in, and an `allowFrom` list on that group narrows the opt-in
+   * to those users; a group with no entry of its own follows
+   * `defaultGroupSettings`.
+   */
+  shouldProcessUnmentionedGroupMessage(message: RemoteMessage): boolean {
+    const group = this.config.groups?.[message.channelId];
+    const requireMention =
+      group?.requireMention ?? this.config.defaultGroupSettings?.requireMention ?? true;
+    if (requireMention) {
+      return false;
+    }
+
+    if (group?.allowFrom && group.allowFrom.length > 0) {
+      return group.allowFrom.includes(message.sender.id);
+    }
+    return true;
+  }
+
+  /**
    * Verify webhook signature from X-Lark-Signature header
    *
    * Feishu defines the signature differently depending on the app's security

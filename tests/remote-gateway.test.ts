@@ -44,9 +44,11 @@ interface FakeChannel {
   send: ReturnType<typeof vi.fn>;
   onMessage: ReturnType<typeof vi.fn>;
   onError: ReturnType<typeof vi.fn>;
+  /** Present only when the test opts the fake into the group-policy hook. */
+  shouldProcessUnmentionedGroupMessage?: ReturnType<typeof vi.fn>;
 }
 
-function makeChannel(type: ChannelType = 'feishu'): FakeChannel {
+function makeChannel(type: ChannelType = 'feishu', admitsUnmentionedGroup?: boolean): FakeChannel {
   const channel: FakeChannel = {
     type,
     connected: false,
@@ -60,6 +62,9 @@ function makeChannel(type: ChannelType = 'feishu'): FakeChannel {
     onMessage: vi.fn(),
     onError: vi.fn(),
   };
+  if (admitsUnmentionedGroup !== undefined) {
+    channel.shouldProcessUnmentionedGroupMessage = vi.fn(() => admitsUnmentionedGroup);
+  }
   return channel;
 }
 
@@ -596,6 +601,39 @@ describe('RemoteGateway message filtering', () => {
   it('accepts a mentioned group message', async () => {
     const harness = tracked(makeGateway({ mode: 'open' }));
     await deliver(harness, makeMessage({ isGroup: true, isMentioned: true }));
+    expect(harness.router.routeMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a channel admit an unmentioned group message', async () => {
+    const harness = tracked(makeGateway({ mode: 'open' }));
+    const channel = makeChannel('feishu', true);
+    harness.gateway.registerChannel(asChannel(channel));
+
+    await messageHandlerOf(channel)(makeMessage({ isGroup: true, isMentioned: false }));
+
+    expect(channel.shouldProcessUnmentionedGroupMessage).toHaveBeenCalledTimes(1);
+    expect(harness.router.routeMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not consult the channel when the bot was mentioned', async () => {
+    const harness = tracked(makeGateway({ mode: 'open' }));
+    const channel = makeChannel('feishu', true);
+    harness.gateway.registerChannel(asChannel(channel));
+
+    await messageHandlerOf(channel)(makeMessage({ isGroup: true, isMentioned: true }));
+
+    expect(channel.shouldProcessUnmentionedGroupMessage).not.toHaveBeenCalled();
+    expect(harness.router.routeMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not consult the channel for a direct message', async () => {
+    const harness = tracked(makeGateway({ mode: 'open' }));
+    const channel = makeChannel('feishu', true);
+    harness.gateway.registerChannel(asChannel(channel));
+
+    await messageHandlerOf(channel)(makeMessage({ isGroup: false, isMentioned: false }));
+
+    expect(channel.shouldProcessUnmentionedGroupMessage).not.toHaveBeenCalled();
     expect(harness.router.routeMessage).toHaveBeenCalledTimes(1);
   });
 });

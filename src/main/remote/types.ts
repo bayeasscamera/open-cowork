@@ -517,6 +517,16 @@ export interface IChannel {
 
   /** Set error handler */
   onError(handler: (error: Error) => void): void;
+
+  /**
+   * Whether a group message that did not mention the bot should still be
+   * processed.
+   *
+   * Optional: a channel that does not answer keeps the gateway's default, which
+   * is to stay silent until mentioned. A channel answers this from its own
+   * group settings, so the gateway does not need to know them.
+   */
+  shouldProcessUnmentionedGroupMessage?(message: RemoteMessage): boolean;
 }
 
 // ============================================================================

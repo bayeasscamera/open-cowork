@@ -460,6 +460,10 @@ export class RemoteGateway extends EventEmitter {
 
   /**
    * Check if group message should be processed
+   *
+   * A mention always passes. Otherwise the channel decides, from its own group
+   * settings — Feishu can opt a group in with `requireMention: false`. A channel
+   * that does not implement the hook keeps the default: stay silent.
    */
   private shouldProcessGroupMessage(message: RemoteMessage): boolean {
     // Always process if explicitly mentioned
@@ -467,9 +471,8 @@ export class RemoteGateway extends EventEmitter {
       return true;
     }
 
-    // TODO: Check channel-specific group settings
-    // For now, require mention in groups by default
-    return false;
+    const channel = this.channels.get(message.channelType);
+    return channel?.shouldProcessUnmentionedGroupMessage?.(message) ?? false;
   }
 
   /**
@@ -823,7 +826,7 @@ export class RemoteGateway extends EventEmitter {
   private checkAuthRateLimit(ip: string): boolean {
     const now = Date.now();
     // Periodically purge expired entries so the map cannot grow unbounded
-    if (this.authAttempts.size > 0 && (now - this.lastAuthAttemptPurge) > 300000) {
+    if (this.authAttempts.size > 0 && now - this.lastAuthAttemptPurge > 300000) {
       this.lastAuthAttemptPurge = now;
       for (const [key, entry] of this.authAttempts) {
         if (now > entry.resetTime) {
@@ -879,7 +882,10 @@ export class RemoteGateway extends EventEmitter {
     }
 
     if (this.config.auth.mode === 'token') {
-      if (timingSafeEqualStrings(providedToken, this.config.auth.token || '') && this.config.auth.token) {
+      if (
+        timingSafeEqualStrings(providedToken, this.config.auth.token || '') &&
+        this.config.auth.token
+      ) {
         client.authenticated = true;
         this.sendWSMessage(client.ws, {
           type: 'auth_result',
