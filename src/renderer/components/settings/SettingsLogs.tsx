@@ -1,19 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  AlertCircle,
-  CheckCircle,
-  Loader2,
-  Save,
-  Globe,
-  Trash2,
-  Copy,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2, Save, Globe, Trash2, Copy } from 'lucide-react';
 import { formatAppDateTime } from '../../utils/i18n-format';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { SettingsContentSection } from './shared';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
+
+/**
+ * How often the log file list is re-read while this panel is open. Every tick
+ * costs an IPC round-trip plus a readdir/stat sweep in the main process, so it
+ * is deliberately slower than the 3 s it used to be.
+ */
+const LOG_LIST_REFRESH_MS = 5000;
 
 export function SettingsLogs({ isActive }: { isActive: boolean }) {
   const { t } = useTranslation();
@@ -28,18 +27,28 @@ export function SettingsLogs({ isActive }: { isActive: boolean }) {
 
   const loadLogs = useCallback(async () => {
     try {
-      const [files, dir] = await Promise.all([
-        window.electronAPI.logs.getAll(),
-        window.electronAPI.logs.getDirectory(),
-      ]);
+      const files = await window.electronAPI.logs.getAll();
       setLogFiles(files || []);
-      setLogsDirectory(dir || '');
       setError('');
     } catch (err) {
       console.error('Failed to load logs:', err);
       setError(t('logs.exportFailed'));
     }
   }, [t]);
+
+  /**
+   * The logs directory is fixed for the life of the process, so it is read once
+   * per visit rather than on every poll — the refresh loop only needs the file
+   * list, which is the part that actually changes.
+   */
+  const loadLogsDirectory = useCallback(async () => {
+    try {
+      const dir = await window.electronAPI.logs.getDirectory();
+      setLogsDirectory(dir || '');
+    } catch (err) {
+      console.error('Failed to load logs directory:', err);
+    }
+  }, []);
 
   const loadDevLogsStatus = useCallback(async () => {
     try {
@@ -57,12 +66,13 @@ export function SettingsLogs({ isActive }: { isActive: boolean }) {
       return;
     }
     void loadLogs();
+    void loadLogsDirectory();
     void loadDevLogsStatus();
     const interval = setInterval(() => {
       void loadLogs();
-    }, 3000);
+    }, LOG_LIST_REFRESH_MS);
     return () => clearInterval(interval);
-  }, [isActive, loadDevLogsStatus, loadLogs]);
+  }, [isActive, loadDevLogsStatus, loadLogs, loadLogsDirectory]);
 
   async function handleToggleDevLogs() {
     setIsLoading(true);
@@ -106,6 +116,8 @@ export function SettingsLogs({ isActive }: { isActive: boolean }) {
 
   async function handleOpen() {
     setIsLoading(true);
+    setError('');
+    setSuccess('');
     try {
       await window.electronAPI.logs.open();
     } catch (err) {
@@ -192,7 +204,7 @@ export function SettingsLogs({ isActive }: { isActive: boolean }) {
 
       {/* Stats */}
       <SettingsContentSection
-        title={t('logs.logFiles')}
+        title={t('logs.inventoryTitle')}
         description={t('logs.inventoryDescription')}
       >
         <div className="grid grid-cols-2 gap-3">
