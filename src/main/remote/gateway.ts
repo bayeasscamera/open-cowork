@@ -317,7 +317,6 @@ export class RemoteGateway extends EventEmitter {
     return {
       running: this._running,
       port: this._running ? this.config.port : undefined,
-      publicUrl: undefined, // TODO: Add tunnel support
       channels: channelStatuses,
       activeSessions: this.messageRouter.getActiveSessionCount(),
       pendingPairings: this.pairingRequests.size,

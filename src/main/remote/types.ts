@@ -581,9 +581,6 @@ export interface GatewayStatus {
   /** Gateway port */
   port?: number;
 
-  /** Public URL (if tunnel is active) */
-  publicUrl?: string;
-
   /** Connected channels */
   channels: {
     type: ChannelType;

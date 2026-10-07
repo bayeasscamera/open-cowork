@@ -304,7 +304,6 @@ describe('RemoteGateway lifecycle', () => {
     expect(gateway.getStatus()).toEqual({
       running: false,
       port: undefined,
-      publicUrl: undefined,
       channels: [],
       activeSessions: 3,
       pendingPairings: 0,

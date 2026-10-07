@@ -70,11 +70,7 @@ import type {
   PairingRequest,
   RemoteSessionMapping,
 } from '../shared/ipc-types';
-import type {
-  AtomicTask,
-  CreateTaskContractInput,
-  WorkflowMode,
-} from '../shared/task-contract';
+import type { AtomicTask, CreateTaskContractInput, WorkflowMode } from '../shared/task-contract';
 import type {
   MemoryInjection,
   ProjectMemoryItem,
@@ -251,13 +247,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   audit: {
     list: (): Promise<AuditEntry[]> => ipcRenderer.invoke('audit.list'),
     tail: (n: number): Promise<AuditEntry[]> => ipcRenderer.invoke('audit.tail', n),
-    export: (format: 'json'|'ndjson'|'csv'): Promise<string> => ipcRenderer.invoke('audit.export', format),
+    export: (format: 'json' | 'ndjson' | 'csv'): Promise<string> =>
+      ipcRenderer.invoke('audit.export', format),
   },
 
   // Session compaction and context usage
   session: {
-    steer: (sessionId: string, text: string): Promise<void> => ipcRenderer.invoke('session.steer', sessionId, text),
-    queueMessage: (sessionId: string, text: string): Promise<void> => ipcRenderer.invoke('session.queue', sessionId, text),
+    steer: (sessionId: string, text: string): Promise<void> =>
+      ipcRenderer.invoke('session.steer', sessionId, text),
+    queueMessage: (sessionId: string, text: string): Promise<void> =>
+      ipcRenderer.invoke('session.queue', sessionId, text),
     compact: (
       sessionId: string,
       customInstructions?: string
@@ -405,13 +404,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backgroundTasks: {
     list: (sessionId?: string): Promise<{ success: boolean; tasks: BackgroundTask[] }> =>
       invoke({ type: 'backgroundTasks.list', payload: { sessionId } }),
-    get: (
-      taskId: string
-    ): Promise<{ success: boolean; task?: BackgroundTask; error?: string }> =>
+    get: (taskId: string): Promise<{ success: boolean; task?: BackgroundTask; error?: string }> =>
       invoke({ type: 'backgroundTasks.get', payload: { taskId } }),
-    cancel: (
-      taskId: string
-    ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
+    cancel: (taskId: string): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
       invoke({ type: 'backgroundTasks.cancel', payload: { taskId } }),
     /**
      * Redirect a RUNNING sub-agent without interrupting it: the work already
@@ -424,13 +419,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       text: string
     ): Promise<{ success: boolean; taskId?: string; error?: string; code?: string }> =>
       invoke({ type: 'backgroundTasks.redirect', payload: { taskId, text } }),
-    retry: (
-      taskId: string
-    ): Promise<{ success: boolean; taskId?: string; error?: string }> =>
+    retry: (taskId: string): Promise<{ success: boolean; taskId?: string; error?: string }> =>
       invoke({ type: 'backgroundTasks.retry', payload: { taskId } }),
-    delete: (
-      taskId: string
-    ): Promise<{ success: boolean; deleted?: boolean; error?: string }> =>
+    delete: (taskId: string): Promise<{ success: boolean; deleted?: boolean; error?: string }> =>
       invoke({ type: 'backgroundTasks.delete', payload: { taskId } }),
     getSettings: (): Promise<{ success: boolean; settings?: DelegationSettings; error?: string }> =>
       invoke({ type: 'backgroundTasks.getSettings', payload: {} }),
@@ -541,9 +532,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // the workspace-file reads above. The session id is passed explicitly and
     // verified main-side, so a stale or wrong id simply returns nothing.
     persistent: {
-      list: (sessionId: string | null, scope?: 'session' | 'project'): Promise<PersistentArtifact[]> =>
+      list: (
+        sessionId: string | null,
+        scope?: 'session' | 'project'
+      ): Promise<PersistentArtifact[]> =>
         ipcRenderer.invoke('artifacts.persistent.list', sessionId, scope),
-      get: (sessionId: string | null, artifactId: string): Promise<PersistentArtifactContent | null> =>
+      get: (
+        sessionId: string | null,
+        artifactId: string
+      ): Promise<PersistentArtifactContent | null> =>
         ipcRenderer.invoke('artifacts.persistent.get', sessionId, artifactId),
       versions: (
         sessionId: string | null,
@@ -653,13 +650,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getState: (args: { workspaceRoot?: string; projectId?: string }): Promise<MachineAccessState> =>
       ipcRenderer.invoke('machineAccess.getState', args),
 
-    pickFolder: (args?: MachineAccessPickFolderArgs): Promise<{ granted: boolean; grant?: unknown; error?: string }> =>
+    pickFolder: (
+      args?: MachineAccessPickFolderArgs
+    ): Promise<{ granted: boolean; grant?: unknown; error?: string }> =>
       ipcRenderer.invoke('machineAccess.pickFolder', args ?? {}),
 
     revokeGrant: (args: { id: string }): Promise<{ revoked: boolean; error?: string }> =>
       ipcRenderer.invoke('machineAccess.revokeGrant', args),
 
-    setAutonomy: (args: { projectId: string; level: AutonomyLevel }): Promise<{ autonomy?: string; error?: string }> =>
+    setAutonomy: (args: {
+      projectId: string;
+      level: AutonomyLevel;
+    }): Promise<{ autonomy?: string; error?: string }> =>
       ipcRenderer.invoke('machineAccess.setAutonomy', args),
 
     addApp: (args: { name: string }): Promise<{ allowedApps: string[] }> =>
@@ -669,17 +671,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     planBatch: (args: MachineAccessBatchArgs): Promise<{ plan?: unknown; error?: string }> =>
       ipcRenderer.invoke('machineAccess.planBatch', args),
-    runBatch: (args: MachineAccessBatchArgs & { plan: unknown }): Promise<{ result?: unknown; error?: string }> =>
+    runBatch: (
+      args: MachineAccessBatchArgs & { plan: unknown }
+    ): Promise<{ result?: unknown; error?: string }> =>
       ipcRenderer.invoke('machineAccess.runBatch', args),
 
-    undoBatch: (args: { workspaceRoot: string; projectId: string; batchId: string }): Promise<{
+    undoBatch: (args: {
+      workspaceRoot: string;
+      projectId: string;
+      batchId: string;
+    }): Promise<{
       undo?: { undone: string[]; refused: Array<{ id: string; reason: string }> };
       error?: string;
     }> => ipcRenderer.invoke('machineAccess.undoBatch', args),
 
-    previewProjectRename: (args: MachineAccessRenameArgs): Promise<{ preview?: unknown; error?: string }> =>
+    previewProjectRename: (
+      args: MachineAccessRenameArgs
+    ): Promise<{ preview?: unknown; error?: string }> =>
       ipcRenderer.invoke('machineAccess.previewProjectRename', args),
-    runProjectRename: (args: MachineAccessRenameArgs): Promise<{ workdir?: string; error?: string }> =>
+    runProjectRename: (
+      args: MachineAccessRenameArgs
+    ): Promise<{ workdir?: string; error?: string }> =>
       ipcRenderer.invoke('machineAccess.runProjectRename', args),
 
     emergencyStop: (): Promise<{ controllers: number; processes: number; error?: string }> =>
@@ -731,8 +743,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     validate: (skillPath: string): Promise<{ valid: boolean; errors: string[] }> =>
       ipcRenderer.invoke('skills.validate', skillPath),
     getStoragePath: (): Promise<string> => ipcRenderer.invoke('skills.getStoragePath'),
-    getRuntimeView: (): Promise<SkillRuntimeReport> =>
-      ipcRenderer.invoke('skills.getRuntimeView'),
+    getRuntimeView: (): Promise<SkillRuntimeReport> => ipcRenderer.invoke('skills.getRuntimeView'),
     setStoragePath: (
       targetPath: string,
       migrate = true
@@ -945,24 +956,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Mods v2 (review / install / health). Separate from `mods.*`, which still
   // serves the v1 registry — folding them would hide a partial migration.
   modsV2: {
-    inspect: (rootDir: string): Promise<{ success: true; data: ModsV2Review } | { success: false; error: string }> =>
+    inspect: (
+      rootDir: string
+    ): Promise<{ success: true; data: ModsV2Review } | { success: false; error: string }> =>
       ipcRenderer.invoke('modsV2.inspect', rootDir),
-    install: (rootDir: string, approvedHash: string): Promise<{ success: true; data: { id: string } } | { success: false; error: string }> =>
+    install: (
+      rootDir: string,
+      approvedHash: string
+    ): Promise<{ success: true; data: { id: string } } | { success: false; error: string }> =>
       ipcRenderer.invoke('modsV2.install', { rootDir, approvedHash }),
-    list: (): Promise<{ success: true; data: { mods: ModsV2Installed[] } } | { success: false; error: string }> =>
-      ipcRenderer.invoke('modsV2.list'),
-    setEnabled: (id: string, enabled: boolean): Promise<{ success: true; data: null } | { success: false; error: string }> =>
+    list: (): Promise<
+      { success: true; data: { mods: ModsV2Installed[] } } | { success: false; error: string }
+    > => ipcRenderer.invoke('modsV2.list'),
+    setEnabled: (
+      id: string,
+      enabled: boolean
+    ): Promise<{ success: true; data: null } | { success: false; error: string }> =>
       ipcRenderer.invoke('modsV2.setEnabled', id, enabled),
-    uninstall: (id: string): Promise<{ success: true; data: { removed: boolean } } | { success: false; error: string }> =>
+    uninstall: (
+      id: string
+    ): Promise<{ success: true; data: { removed: boolean } } | { success: false; error: string }> =>
       ipcRenderer.invoke('modsV2.uninstall', id),
-    safeMode: (): Promise<{ success: true; data: ModsV2SafeMode } | { success: false; error: string }> =>
-      ipcRenderer.invoke('modsV2.safeMode'),
-    paths: (): Promise<{ success: true; data: { stagingDir: string; modsDir: string } } | { success: false; error: string }> =>
-      ipcRenderer.invoke('modsV2.paths'),
+    safeMode: (): Promise<
+      { success: true; data: ModsV2SafeMode } | { success: false; error: string }
+    > => ipcRenderer.invoke('modsV2.safeMode'),
+    paths: (): Promise<
+      | { success: true; data: { stagingDir: string; modsDir: string } }
+      | { success: false; error: string }
+    > => ipcRenderer.invoke('modsV2.paths'),
     // Declarative mod UI: read the contribution list, subscribe to changes,
     // and report form values back to the mod that owns the node.
     uiList: (): Promise<
-      { success: true; data: { contributions: ModsV2UiContribution[] } } | { success: false; error: string }
+      | { success: true; data: { contributions: ModsV2UiContribution[] } }
+      | { success: false; error: string }
     > => ipcRenderer.invoke('modsV2.uiList'),
     uiReadValue: (
       modId: string,
@@ -978,7 +1004,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onUiContributionsChanged: (
       callback: (contributions: ModsV2UiContribution[]) => void
     ): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, contributions: ModsV2UiContribution[]): void => {
+      const listener = (
+        _: Electron.IpcRendererEvent,
+        contributions: ModsV2UiContribution[]
+      ): void => {
         callback(contributions);
       };
       ipcRenderer.on('modsV2.uiContributionsChanged', listener);
@@ -1050,12 +1079,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Remote control methods
   remote: {
     getConfig: (): Promise<RemoteConfig> => ipcRenderer.invoke('remote.getConfig'),
-    rotateRemoteControlToken: (): Promise<{ success: true; token: string } | { success: false; error?: string }> =>
-      ipcRenderer.invoke('remote.rotateRemoteControlToken'),
+    rotateRemoteControlToken: (): Promise<
+      { success: true; token: string } | { success: false; error?: string }
+    > => ipcRenderer.invoke('remote.rotateRemoteControlToken'),
     getStatus: (): Promise<{
       running: boolean;
       port?: number;
-      publicUrl?: string;
       channels: Array<{ type: string; connected: boolean; error?: string }>;
       activeSessions: number;
       pendingPairings: number;
@@ -1206,10 +1235,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('workflow.planRoles', sessionId, input),
     getAuditLog: (sessionId: string): Promise<AuditEntry[]> =>
       ipcRenderer.invoke('workflow.getAuditLog', sessionId),
-    exportAuditLog: (
-      sessionId: string,
-      format?: 'json' | 'ndjson' | 'csv'
-    ): Promise<string> => ipcRenderer.invoke('workflow.exportAuditLog', sessionId, format),
+    exportAuditLog: (sessionId: string, format?: 'json' | 'ndjson' | 'csv'): Promise<string> =>
+      ipcRenderer.invoke('workflow.exportAuditLog', sessionId, format),
     planIsolation: (sessionId: string, taskIds?: string[]): Promise<IsolationPlan[]> =>
       ipcRenderer.invoke('workflow.planIsolation', sessionId, taskIds),
     createIsolation: (
@@ -1273,10 +1300,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('controlCenter.finishActivity', sessionId, id, outcome),
     clearActivity: (sessionId?: string): Promise<{ removed: number }> =>
       ipcRenderer.invoke('controlCenter.clearActivity', sessionId),
-    workspaceTree: (
-      sessionId: string,
-      options?: WorkspaceTreeOptions
-    ): Promise<WorkspaceEntry[]> =>
+    workspaceTree: (sessionId: string, options?: WorkspaceTreeOptions): Promise<WorkspaceEntry[]> =>
       ipcRenderer.invoke('controlCenter.workspaceTree', sessionId, options),
     readFile: (
       sessionId: string,
@@ -1395,20 +1419,26 @@ declare global {
         ) => Promise<{ success: true; data: null } | { success: false; error: string }>;
         uninstall: (
           id: string
-        ) => Promise<{ success: true; data: { removed: boolean } } | { success: false; error: string }>;
+        ) => Promise<
+          { success: true; data: { removed: boolean } } | { success: false; error: string }
+        >;
         safeMode: () => Promise<
           { success: true; data: ModsV2SafeMode } | { success: false; error: string }
         >;
         paths: () => Promise<
-          { success: true; data: { stagingDir: string; modsDir: string } } | { success: false; error: string }
+          | { success: true; data: { stagingDir: string; modsDir: string } }
+          | { success: false; error: string }
         >;
         uiList: () => Promise<
-          { success: true; data: { contributions: ModsV2UiContribution[] } } | { success: false; error: string }
+          | { success: true; data: { contributions: ModsV2UiContribution[] } }
+          | { success: false; error: string }
         >;
         uiReadValue: (
           modId: string,
           nodeId: string
-        ) => Promise<{ success: true; data: { value: unknown } } | { success: false; error: string }>;
+        ) => Promise<
+          { success: true; data: { value: unknown } } | { success: false; error: string }
+        >;
         uiReportValue: (
           modId: string,
           nodeId: string,
@@ -1421,7 +1451,7 @@ declare global {
       audit: {
         list: () => Promise<AuditEntry[]>;
         tail: (n: number) => Promise<AuditEntry[]>;
-        export: (format: 'json'|'ndjson'|'csv') => Promise<string>;
+        export: (format: 'json' | 'ndjson' | 'csv') => Promise<string>;
       };
       session: {
         steer: (sessionId: string, text: string) => Promise<void>;
@@ -1460,12 +1490,8 @@ declare global {
           refineModelId?: string;
           instructions?: string;
         }) => Promise<{ success: boolean; project?: Project; error?: string }>;
-        list: (
-          includeArchived?: boolean
-        ) => Promise<{ success: boolean; projects: Project[] }>;
-        get: (
-          projectId: string
-        ) => Promise<{
+        list: (includeArchived?: boolean) => Promise<{ success: boolean; projects: Project[] }>;
+        get: (projectId: string) => Promise<{
           success: boolean;
           project?: Project;
           sessions?: Array<{
@@ -1511,9 +1537,7 @@ declare global {
           sessionId: string
         ) => Promise<{ success: boolean; error?: string }>;
         unlinkSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
-        delete: (
-          projectId: string
-        ) => Promise<{
+        delete: (projectId: string) => Promise<{
           success: boolean;
           orphanedSessions?: number;
           removedReferenceFiles?: number;
@@ -1536,9 +1560,7 @@ declare global {
           taskId: string,
           text: string
         ) => Promise<{ success: boolean; taskId?: string; error?: string; code?: string }>;
-        retry: (
-          taskId: string
-        ) => Promise<{ success: boolean; taskId?: string; error?: string }>;
+        retry: (taskId: string) => Promise<{ success: boolean; taskId?: string; error?: string }>;
         delete: (
           taskId: string
         ) => Promise<{ success: boolean; deleted?: boolean; error?: string }>;
@@ -1587,9 +1609,7 @@ declare global {
           mtimeMs?: number;
           error?: string;
         }>;
-        list: (
-          cwd: string
-        ) => Promise<{
+        list: (cwd: string) => Promise<{
           success: boolean;
           files?: Array<{ path: string; mtimeMs: number }>;
           error?: string;
@@ -1655,7 +1675,10 @@ declare global {
         report: (sessionId?: string | null) => Promise<HealthReport>;
       };
       machineAccess: {
-        getState: (args: { workspaceRoot?: string; projectId?: string }) => Promise<MachineAccessState>;
+        getState: (args: {
+          workspaceRoot?: string;
+          projectId?: string;
+        }) => Promise<MachineAccessState>;
         pickFolder: (args?: MachineAccessPickFolderArgs) => Promise<{
           granted: boolean;
           grant?: unknown;
@@ -1673,7 +1696,11 @@ declare global {
           result?: unknown;
           error?: string;
         }>;
-        undoBatch: (args: { workspaceRoot: string; projectId: string; batchId: string }) => Promise<{
+        undoBatch: (args: {
+          workspaceRoot: string;
+          projectId: string;
+          batchId: string;
+        }) => Promise<{
           undo?: { undone: string[]; refused: Array<{ id: string; reason: string }> };
           error?: string;
         }>;
@@ -1681,7 +1708,9 @@ declare global {
           preview?: unknown;
           error?: string;
         }>;
-        runProjectRename: (args: MachineAccessRenameArgs) => Promise<{ workdir?: string; error?: string }>;
+        runProjectRename: (
+          args: MachineAccessRenameArgs
+        ) => Promise<{ workdir?: string; error?: string }>;
         emergencyStop: () => Promise<{ controllers: number; processes: number; error?: string }>;
       };
       a2a: {
@@ -1888,7 +1917,6 @@ declare global {
         getStatus: () => Promise<{
           running: boolean;
           port?: number;
-          publicUrl?: string;
           channels: Array<{ type: string; connected: boolean; error?: string }>;
           activeSessions: number;
           pendingPairings: number;
@@ -1977,9 +2005,7 @@ declare global {
         setEnabled: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
       };
       diff: {
-        getSessionFiles: (
-          sessionId: string
-        ) => Promise<{
+        getSessionFiles: (sessionId: string) => Promise<{
           success: boolean;
           files: Array<{
             path: string;
@@ -1993,9 +2019,7 @@ declare global {
         }>;
       };
       preview: {
-        open: (
-          url: string
-        ) => Promise<{
+        open: (url: string) => Promise<{
           success: boolean;
           error?: string;
           state: { open: boolean; url: string | null };
@@ -2063,10 +2087,7 @@ declare global {
           tasks: Array<Partial<AtomicTask> & Pick<AtomicTask, 'id' | 'title'>>
         ) => Promise<WorkflowState>;
         requestApproval: (sessionId: string) => Promise<ApprovalRequest>;
-        approve: (
-          sessionId: string,
-          decision: ApprovalDecisionInput
-        ) => Promise<ApprovalOutcome>;
+        approve: (sessionId: string, decision: ApprovalDecisionInput) => Promise<ApprovalOutcome>;
         startExecution: (sessionId: string) => Promise<{ started: boolean; reasons: string[] }>;
 
         startTask: (sessionId: string, taskId: string) => Promise<TaskCheckpoint>;
@@ -2082,10 +2103,7 @@ declare global {
         verify: (sessionId: string) => Promise<VerifyResult>;
         planRoles: (sessionId: string, input: RolePlanInput) => Promise<RoleAssignment[]>;
         getAuditLog: (sessionId: string) => Promise<AuditEntry[]>;
-        exportAuditLog: (
-          sessionId: string,
-          format?: 'json' | 'ndjson' | 'csv'
-        ) => Promise<string>;
+        exportAuditLog: (sessionId: string, format?: 'json' | 'ndjson' | 'csv') => Promise<string>;
         planIsolation: (sessionId: string, taskIds?: string[]) => Promise<IsolationPlan[]>;
         createIsolation: (
           sessionId: string,
@@ -2124,7 +2142,10 @@ declare global {
           outcome: { status: ActivityStatus; error?: string; detail?: string }
         ) => Promise<ActivityEvent | null>;
         clearActivity: (sessionId?: string) => Promise<{ removed: number }>;
-        workspaceTree: (sessionId: string, options?: WorkspaceTreeOptions) => Promise<WorkspaceEntry[]>;
+        workspaceTree: (
+          sessionId: string,
+          options?: WorkspaceTreeOptions
+        ) => Promise<WorkspaceEntry[]>;
         readFile: (
           sessionId: string,
           relativePath: string,
