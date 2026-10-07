@@ -17,6 +17,23 @@ import type {
 } from '../../types';
 import { FeishuAPI } from './feishu-api';
 import { FeishuWSClient } from './feishu-ws-client';
+import { computeEventSignature, decryptEventPayload, timingSafeEqualHex } from './feishu-crypto';
+
+/**
+ * Body of a Feishu webhook request, encrypted or not.
+ *
+ * Only the fields this channel actually reads are declared; an encrypted
+ * request carries nothing but `encrypt`, and the plaintext it decrypts to has
+ * the same shape as an unencrypted one.
+ */
+interface FeishuWebhookBody {
+  type?: string;
+  challenge?: unknown;
+  schema?: string;
+  header?: { event_type?: string };
+  event?: Record<string, unknown> & { type?: string };
+  encrypt?: string;
+}
 
 export class FeishuChannel extends ChannelBase {
   readonly type = 'feishu' as const;
@@ -138,6 +155,15 @@ export class FeishuChannel extends ChannelBase {
 
   /**
    * Verify webhook signature from X-Lark-Signature header
+   *
+   * Feishu defines the signature differently depending on the app's security
+   * configuration, so the same header cannot be checked one single way:
+   *
+   * - With an Encrypt Key, the body is ciphertext and Feishu signs it with a
+   *   plain SHA-256 over `timestamp + nonce + encrypt_key + body`.
+   * - With only a Verification Token, the body is plaintext and the token is
+   *   compared from inside the body. The HMAC branch below is the behaviour
+   *   this channel already had; it is left as-is for those deployments.
    */
   private verifyWebhookSignature(
     timestamp: string,
@@ -145,37 +171,38 @@ export class FeishuChannel extends ChannelBase {
     body: string,
     signature: string
   ): boolean {
+    const encryptKey = this.config?.encryptKey;
+    if (encryptKey) {
+      return timingSafeEqualHex(
+        computeEventSignature(timestamp, nonce, encryptKey, body),
+        signature
+      );
+    }
+
     const verificationToken = this.config?.verificationToken;
     if (!verificationToken) return false; // Reject — verificationToken is required for webhook mode
 
-    try {
-      const content = timestamp + nonce + verificationToken + body;
-      const computedSignature = crypto
-        .createHmac('sha256', verificationToken)
-        .update(content)
-        .digest('hex');
-      const sigBuf = Buffer.from(signature, 'hex');
-      const computedBuf = Buffer.from(computedSignature, 'hex');
-      if (sigBuf.length !== computedBuf.length) return false;
-      return crypto.timingSafeEqual(sigBuf, computedBuf);
-    } catch {
-      return false;
-    }
+    const content = timestamp + nonce + verificationToken + body;
+    const computedSignature = crypto
+      .createHmac('sha256', verificationToken)
+      .update(content)
+      .digest('hex');
+    return timingSafeEqualHex(computedSignature, signature);
   }
 
   /**
    * Handle incoming webhook request
    */
   handleWebhook(
-    _headers: Record<string, string>,
+    headers: Record<string, string>,
     body: string
   ): { status: number; data: Record<string, unknown> } {
     log('[Feishu] Received webhook request');
 
     // Verify webhook signature — always required
-    const signature = _headers['x-lark-signature'];
-    const timestamp = _headers['x-lark-request-timestamp'] || '';
-    const nonce = _headers['x-lark-request-nonce'] || '';
+    const signature = headers['x-lark-signature'];
+    const timestamp = headers['x-lark-request-timestamp'] || '';
+    const nonce = headers['x-lark-request-nonce'] || '';
     if (!signature) {
       logWarn('[Feishu] Webhook request rejected: missing X-Lark-Signature header');
       return { status: 403, data: { error: 'Missing signature' } };
@@ -186,7 +213,27 @@ export class FeishuChannel extends ChannelBase {
     }
 
     try {
-      const data = JSON.parse(body);
+      const raw = JSON.parse(body) as FeishuWebhookBody;
+
+      // An encrypted event arrives as a single `encrypt` field and nothing
+      // else, so it has to be decrypted before any of the shape checks below
+      // can apply. Everything after this point sees plaintext either way.
+      const encryptKey = this.config.encryptKey;
+      let data: FeishuWebhookBody;
+      if (encryptKey && typeof raw.encrypt === 'string') {
+        try {
+          data = JSON.parse(decryptEventPayload(encryptKey, raw.encrypt)) as FeishuWebhookBody;
+          log('[Feishu] Decrypted encrypted event');
+        } catch (error) {
+          // A payload we cannot decrypt will never decrypt on a retry: this is
+          // a key mismatch or a tampered body, not a transient failure.
+          logError('[Feishu] Failed to decrypt encrypted event:', error);
+          return { status: 400, data: { error: 'Undecryptable payload' } };
+        }
+      } else {
+        data = raw;
+      }
+
       log('[Feishu] Webhook data:', JSON.stringify(data, null, 2));
 
       // Handle URL verification challenge
@@ -204,7 +251,7 @@ export class FeishuChannel extends ChannelBase {
         const eventType = data.header?.event_type;
         log('[Feishu] Event type:', eventType);
 
-        if (eventType === 'im.message.receive_v1') {
+        if (eventType === 'im.message.receive_v1' && data.event) {
           this.handleMessageEvent(data.event);
         }
 
@@ -224,11 +271,12 @@ export class FeishuChannel extends ChannelBase {
         return { status: 200, data: { code: 0 } };
       }
 
-      // Verify request if encryption is enabled
-      if (this.config.encryptKey && data.encrypt) {
-        log('[Feishu] Encrypted message received, decryption not yet implemented');
-        // TODO: Implement message decryption
-        return { status: 501, data: { code: 1, msg: 'Encrypted webhook not yet supported' } };
+      // An encrypted payload with no Encrypt Key configured cannot be read. Say
+      // so explicitly rather than falling through to the "unknown format" path,
+      // which would acknowledge it with a 200 and hide the misconfiguration.
+      if (typeof data.encrypt === 'string') {
+        logWarn('[Feishu] Encrypted event received but no encryptKey is configured');
+        return { status: 400, data: { error: 'Encrypt Key not configured' } };
       }
 
       log('[Feishu] Unknown webhook format, returning OK');
