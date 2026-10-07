@@ -58,6 +58,15 @@ const ignoredWatchPaths = [
 export default defineConfig({
   plugins: [
     react(),
+    // `vite-plugin-electron` forces `emptyOutDir: false` on its sub-builds,
+    // because its entries all default to the SAME outDir and emptying would wipe
+    // a sibling's output. The three entries below each own a distinct directory,
+    // so that reason does not apply — and leaving the default in place made every
+    // build append a fresh ~9 MB `index-<hash>.js` beside the previous ones.
+    // Measured 2026-10-07: 21 stale main bundles (~190 MB) had accumulated in
+    // `dist-electron/main`, and because electron-builder packages that directory
+    // wholesale they shipped inside a 367 MB app.asar — over half the archive was
+    // dead code from earlier builds. Each entry now empties its own directory.
     electron([
       {
         entry: 'src/main/index.ts',
@@ -67,6 +76,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron/main',
+            emptyOutDir: true,
             rollupOptions: {
               external: [
                 ...nodeBuiltins,
@@ -114,6 +124,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron/run-code-child',
+            emptyOutDir: true,
             rollupOptions: {
               output: {
                 entryFileNames: 'index.js',
@@ -136,6 +147,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron/preload',
+            emptyOutDir: true,
             rollupOptions: {
               external: ['electron'],
             },
