@@ -706,39 +706,12 @@ export class SkillsManager {
   }
 
   /**
-   * Start an MCP server for a skill
-   */
-  async startMcpServer(skill: Skill): Promise<void> {
-    if (skill.type !== 'mcp' || !skill.config?.mcp) {
-      throw new Error('Skill is not an MCP skill');
-    }
-
-    if (this.runningServers.has(skill.id)) {
-      log(`MCP server for ${skill.name} is already running`);
-      return;
-    }
-
-    // TODO: Implement actual MCP server startup
-    // const { spawn } = await import('child_process');
-    // const mcpConfig = skill.config.mcp as McpServerConfig;
-    //
-    // const proc = spawn(mcpConfig.command, mcpConfig.args || [], {
-    //   env: { ...process.env, ...mcpConfig.env },
-    // });
-    //
-    // this.runningServers.set(skill.id, { process: proc, skill });
-
-    // Deliberately not a success line. Nothing was spawned and `runningServers`
-    // is never populated, so `stopMcpServer` below always finds nothing — a
-    // "started" log would send the next reader hunting for a process that does
-    // not exist. The real MCP lifecycle lives in `src/main/mcp/mcp-manager.ts`;
-    // this method has no callers and is kept only as a documented extension
-    // point.
-    logWarn(`MCP server startup is not implemented — nothing started for skill: ${skill.name}`);
-  }
-
-  /**
-   * Stop an MCP server
+   * Stop an MCP server.
+   *
+   * Kept even though nothing ever starts one — `runningServers` is never
+   * populated — because disabling, deleting and uninstalling a skill all call
+   * it, and those paths should stay correct if the lifecycle ever moves here.
+   * The real MCP lifecycle lives in `src/main/mcp/mcp-manager.ts`.
    */
   async stopMcpServer(skillId: string): Promise<void> {
     const server = this.runningServers.get(skillId);
@@ -751,15 +724,6 @@ export class SkillsManager {
 
     this.runningServers.delete(skillId);
     log(`MCP server stopped for skill: ${server.skill.name}`);
-  }
-
-  /**
-   * Stop all running MCP servers
-   */
-  async stopAllServers(): Promise<void> {
-    for (const skillId of this.runningServers.keys()) {
-      await this.stopMcpServer(skillId);
-    }
   }
 
   /**
