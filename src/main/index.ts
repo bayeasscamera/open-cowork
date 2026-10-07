@@ -552,7 +552,9 @@ function setupTray() {
       : process.platform === 'win32'
         ? 'tray-icon.ico'
         : 'tray-icon.png';
-  // TODO: create resources/tray-icon.ico from tray-icon.png for full Windows tray fidelity
+  // A multi-resolution .ico is what the Windows tray actually wants, but the
+  // asset does not exist yet and the .png fallback below covers it, so this is
+  // a packaging gap rather than a bug. Creating the .ico needs a Windows check.
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, iconName)
     : join(__dirname, '../../resources', iconName);

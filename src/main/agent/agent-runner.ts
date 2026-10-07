@@ -463,9 +463,10 @@ export class CoworkAgentRunner {
     log('[CoworkAgentRunner] MCP servers cache invalidated — tools will rebuild on next query');
   }
 
-  // TODO: Credentials should be served via a secure MCP tool or IPC channel,
-  // not injected as plaintext into the system prompt. The getCredentialsPrompt()
-  // method was removed to eliminate credential leakage risk.
+  // No credentials are injected into the system prompt. getCredentialsPrompt()
+  // was removed to close that plaintext leak; if a caller ever needs
+  // credentials again they must arrive through a secure MCP tool or an IPC
+  // channel, not by rebuilding that prompt.
 
   private async resolveSkillPaths(sessionId?: string): Promise<string[]> {
     const basePaths = this._skillsAdapter

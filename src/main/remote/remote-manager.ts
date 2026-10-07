@@ -1205,7 +1205,8 @@ export class RemoteManager extends EventEmitter {
       log('[RemoteManager] Slack channel registered');
     }
 
-    // TODO: Register other channels (WeChat, Telegram, DingTalk)
+    // WeChat, Telegram and DingTalk appear in `ChannelType` but have no channel
+    // class to implement — each is a new integration, not a missing line here.
   }
 
   /**

@@ -8,12 +8,7 @@ import { log, logError } from '../utils/logger';
 import { isUncPath, isWindowsDrivePath } from '../../shared/local-file-path';
 import { resolvePathAgainstWorkspace } from '../../shared/workspace-path';
 import { quarantineRawProtocolMarkup } from '../../shared/raw-protocol-markup';
-import type {
-  RemoteMessage,
-  RemoteResponse,
-  RemoteSessionMapping,
-  ChannelType,
-} from './types';
+import type { RemoteMessage, RemoteResponse, RemoteSessionMapping, ChannelType } from './types';
 import type { Message, ContentBlock, TextContent } from '../../shared/types';
 
 // Callback type for sending responses back to channels
@@ -29,7 +24,7 @@ type AgentCallback = (
   channelId: string,
   senderId: string,
   onMessage: (message: Message) => void,
-  onPartial: (delta: string) => void,
+  onPartial: (delta: string) => void
 ) => Promise<void>;
 type WorkingDirectoryValidator = (cwd: string) => Promise<string | null> | string | null;
 
@@ -44,24 +39,24 @@ interface QueuedMessage {
 export class MessageRouter {
   // Session mappings: channelType:channelId[:userId] -> session
   private sessionMappings: Map<string, RemoteSessionMapping> = new Map();
-  
+
   // Message queues per session
   private messageQueues: Map<string, QueuedMessage[]> = new Map();
-  
+
   // Processing flags
   private processingSession: Set<string> = new Set();
-  
+
   // Callbacks
   private responseCallback?: ResponseCallback;
   private agentCallback?: AgentCallback;
   private workingDirectoryValidator?: WorkingDirectoryValidator;
-  
+
   // Accumulated response text per session (for streaming)
   private responseBuffers: Map<string, string> = new Map();
-  
+
   // Session ID generator
   private sessionIdCounter: number = 0;
-  
+
   // Default working directory for new sessions
   private defaultWorkingDirectory?: string;
 
@@ -73,9 +68,12 @@ export class MessageRouter {
   }
 
   startPeriodicCleanup(): void {
-    this.cleanupInterval = setInterval(() => {
-      this.cleanupStaleSessions();
-    }, 30 * 60 * 1000); // Every 30 minutes
+    this.cleanupInterval = setInterval(
+      () => {
+        this.cleanupStaleSessions();
+      },
+      30 * 60 * 1000
+    ); // Every 30 minutes
   }
 
   stopPeriodicCleanup(): void {
@@ -84,7 +82,7 @@ export class MessageRouter {
       this.cleanupInterval = null;
     }
   }
-  
+
   /**
    * Set default working directory for remote sessions
    */
@@ -92,14 +90,14 @@ export class MessageRouter {
     this.defaultWorkingDirectory = dir;
     log('[MessageRouter] Default working directory set to:', dir || '(none)');
   }
-  
+
   /**
    * Set response callback (called when agent produces a response)
    */
   onResponse(callback: ResponseCallback): void {
     this.responseCallback = callback;
   }
-  
+
   /**
    * Set agent callback (called to execute agent)
    */
@@ -110,19 +108,19 @@ export class MessageRouter {
   setWorkingDirectoryValidator(validator: WorkingDirectoryValidator): void {
     this.workingDirectoryValidator = validator;
   }
-  
+
   /**
    * Route incoming message to agent
    */
   async routeMessage(message: RemoteMessage): Promise<void> {
     const sessionKey = this.getSessionKey(message);
-    
+
     log('[MessageRouter] Routing message:', {
       sessionKey,
       messageId: message.id,
       contentType: message.content.type,
     });
-    
+
     // Get or create session mapping
     let mapping = this.sessionMappings.get(sessionKey);
     if (!mapping) {
@@ -130,17 +128,17 @@ export class MessageRouter {
       this.sessionMappings.set(sessionKey, mapping);
       log('[MessageRouter] Created new session mapping:', mapping);
     }
-    
+
     // Update last active time
     mapping.lastActiveAt = Date.now();
-    
+
     // Add to queue
     this.addToQueue(mapping.sessionId, message);
-    
+
     // Process queue
     await this.processQueue(mapping.sessionId);
   }
-  
+
   /**
    * Get session key from message
    * For DMs: channelType:userId
@@ -153,13 +151,13 @@ export class MessageRouter {
       return `${message.channelType}:dm:${message.sender.id}`;
     }
   }
-  
+
   /**
    * Create new session mapping
    */
   private createSessionMapping(message: RemoteMessage, _key: string): RemoteSessionMapping {
     const sessionId = this.generateSessionId();
-    
+
     return {
       channelType: message.channelType,
       channelId: message.channelId,
@@ -195,12 +193,17 @@ export class MessageRouter {
     if (!cwd) {
       return undefined;
     }
-    if (!currentWorkingDirectory && !path.isAbsolute(cwd) && !isWindowsDrivePath(cwd) && !isUncPath(cwd)) {
+    if (
+      !currentWorkingDirectory &&
+      !path.isAbsolute(cwd) &&
+      !isWindowsDrivePath(cwd) &&
+      !isUncPath(cwd)
+    ) {
       return undefined;
     }
     return resolvePathAgainstWorkspace(cwd, currentWorkingDirectory);
   }
-  
+
   /**
    * Generate unique session ID for remote sessions
    */
@@ -208,7 +211,7 @@ export class MessageRouter {
     this.sessionIdCounter++;
     return `remote-${Date.now()}-${this.sessionIdCounter}`;
   }
-  
+
   /**
    * Add message to queue
    */
@@ -216,18 +219,18 @@ export class MessageRouter {
     if (!this.messageQueues.has(sessionId)) {
       this.messageQueues.set(sessionId, []);
     }
-    
+
     this.messageQueues.get(sessionId)!.push({
       message,
       addedAt: Date.now(),
     });
-    
+
     log('[MessageRouter] Added message to queue:', {
       sessionId,
       queueLength: this.messageQueues.get(sessionId)!.length,
     });
   }
-  
+
   /**
    * Process message queue for a session
    */
@@ -237,15 +240,15 @@ export class MessageRouter {
       log('[MessageRouter] Session already processing, will process later:', sessionId);
       return;
     }
-    
+
     const queue = this.messageQueues.get(sessionId);
     if (!queue || queue.length === 0) {
       return;
     }
-    
+
     // Mark as processing
     this.processingSession.add(sessionId);
-    
+
     try {
       while (queue.length > 0) {
         const item = queue.shift()!;
@@ -255,7 +258,7 @@ export class MessageRouter {
       this.processingSession.delete(sessionId);
     }
   }
-  
+
   /**
    * Process a single message
    */
@@ -264,16 +267,16 @@ export class MessageRouter {
       logError('[MessageRouter] Agent callback not set');
       return;
     }
-    
+
     log('[MessageRouter] Processing message:', {
       sessionId,
       messageId: message.id,
     });
-    
+
     // Convert remote content to agent content blocks
     const content = this.convertToContentBlocks(message);
     const { prompt, cwd } = this.extractPromptAndCwd(message);
-    
+
     // Get session mapping to update/get working directory
     const sessionKey = this.getSessionKey(message);
     const mapping = this.sessionMappings.get(sessionKey);
@@ -295,7 +298,7 @@ export class MessageRouter {
         return;
       }
     }
-    
+
     // Handle !cd command (change directory without executing prompt)
     if (!prompt && resolvedCwd) {
       const ensuredMapping = this.ensureSessionMapping(message, sessionKey, sessionId);
@@ -305,7 +308,7 @@ export class MessageRouter {
       await this.sendCwdChangeResponse(message, resolvedCwd);
       return;
     }
-    
+
     // Determine working directory for this message
     // Priority: 1. [cwd:] prefix in message, 2. session's current cwd, 3. default cwd
     let workingDirectory = resolvedCwd;
@@ -315,12 +318,12 @@ export class MessageRouter {
     if (!workingDirectory) {
       workingDirectory = this.defaultWorkingDirectory;
     }
-    
+
     log('[MessageRouter] Using working directory:', workingDirectory || '(default)');
-    
+
     // Initialize response buffer
     this.responseBuffers.set(sessionId, '');
-    
+
     try {
       // Call agent with working directory and channel info
       await this.agentCallback(
@@ -329,8 +332,8 @@ export class MessageRouter {
         content,
         workingDirectory,
         message.channelType, // Pass channel type for routing
-        message.channelId,   // Pass channel ID for routing
-        message.sender.id,   // Pass sender ID for security verification
+        message.channelId, // Pass channel ID for routing
+        message.sender.id, // Pass sender ID for security verification
         // onMessage callback
         (agentMessage) => {
           this.handleAgentMessage(sessionId, message, agentMessage);
@@ -338,35 +341,37 @@ export class MessageRouter {
         // onPartial callback
         (delta) => {
           this.handlePartialResponse(sessionId, message, delta);
-        },
+        }
       );
 
       if (resolvedCwd) {
         const ensuredMapping = this.ensureSessionMapping(message, sessionKey, sessionId);
         ensuredMapping.workingDirectory = resolvedCwd;
       }
-      
+
       // Send final accumulated response
       await this.sendFinalResponse(sessionId, message);
-      
     } catch (error) {
       logError('[MessageRouter] Error processing message:', error);
-      
+
       // Send error response
       await this.sendErrorResponse(message, error);
     } finally {
       this.responseBuffers.delete(sessionId);
     }
   }
-  
+
   /**
    * Send confirmation for working directory change
    */
-  private async sendCwdChangeResponse(originalMessage: RemoteMessage, newCwd: string): Promise<void> {
+  private async sendCwdChangeResponse(
+    originalMessage: RemoteMessage,
+    newCwd: string
+  ): Promise<void> {
     if (!this.responseCallback) {
       return;
     }
-    
+
     const response: RemoteResponse = {
       channelType: originalMessage.channelType,
       channelId: originalMessage.channelId,
@@ -376,16 +381,16 @@ export class MessageRouter {
       },
       replyTo: originalMessage.id,
     };
-    
+
     await this.responseCallback(response);
   }
-  
+
   /**
    * Convert remote message content to agent content blocks
    */
   private convertToContentBlocks(message: RemoteMessage): ContentBlock[] {
     const blocks: ContentBlock[] = [];
-    
+
     switch (message.content.type) {
       case 'text':
         if (message.content.text) {
@@ -395,18 +400,20 @@ export class MessageRouter {
           } as TextContent);
         }
         break;
-        
+
       case 'image':
-        // TODO: Download image and convert to base64
+        // The agent runtime wants base64, but the message only carries a URL.
+        // Fetching it from here would need the same SSRF guard the Feishu
+        // uploader applies — HTTPS only, resolve the host, refuse private
+        // ranges — before it is safe to add, so the URL is passed as text.
         if (message.content.imageUrl) {
-          // For now, add as text description
           blocks.push({
             type: 'text',
             text: `[用户发送了一张图片: ${message.content.imageUrl}]`,
           } as TextContent);
         }
         break;
-        
+
       case 'file':
         if (message.content.file) {
           blocks.push({
@@ -415,25 +422,26 @@ export class MessageRouter {
           } as TextContent);
         }
         break;
-        
+
       case 'voice':
-        // TODO: Transcribe voice message
+        // Transcribing needs a speech-to-text service and none is wired up, so
+        // the agent is told a voice message arrived and nothing more.
         blocks.push({
           type: 'text',
           text: '[用户发送了语音消息]',
         } as TextContent);
         break;
-        
+
       default:
         blocks.push({
           type: 'text',
           text: message.content.text || '[不支持的消息类型]',
         } as TextContent);
     }
-    
+
     return blocks;
   }
-  
+
   /**
    * Extract prompt text and working directory from message
    * Supports [cwd:路径] prefix to specify working directory
@@ -441,13 +449,13 @@ export class MessageRouter {
    */
   private extractPromptAndCwd(message: RemoteMessage): { prompt: string; cwd?: string } {
     let cwd: string | undefined;
-    
+
     if (message.content.type === 'text' && message.content.text) {
       // Remove mention placeholders (Feishu uses @_user_N style keys)
       // Only strip internal placeholder-style mentions, not all @word patterns
       let text = message.content.text;
       text = text.replace(/@_user_\w+\s*/g, '').trim();
-      
+
       // Check for [cwd:路径] prefix
       // Supports both [cwd:路径] and [cwd: 路径] formats
       const cwdMatch = text.match(/^\[cwd:\s*([^\]]+)\]\s*/i);
@@ -456,53 +464,66 @@ export class MessageRouter {
         text = text.slice(cwdMatch[0].length).trim();
         log('[MessageRouter] Extracted cwd from message:', cwd);
       }
-      
+
       // Check for !cd command (sets session cwd without executing a prompt)
       const cdMatch = text.match(/^!cd\s+(.+)$/i);
       if (cdMatch) {
         cwd = cdMatch[1].trim();
         return { prompt: '', cwd };
       }
-      
+
       return { prompt: text || '你好', cwd };
     }
-    
+
     return { prompt: '请处理上述内容', cwd };
   }
-  
+
   /**
    * Handle agent message (complete message)
    */
-  private handleAgentMessage(sessionId: string, _originalMessage: RemoteMessage, agentMessage: Message): void {
+  private handleAgentMessage(
+    sessionId: string,
+    _originalMessage: RemoteMessage,
+    agentMessage: Message
+  ): void {
     // Extract text from agent message
-    const textContent = agentMessage.content.find(c => c.type === 'text') as TextContent | undefined;
-    
+    const textContent = agentMessage.content.find((c) => c.type === 'text') as
+      | TextContent
+      | undefined;
+
     if (textContent?.text) {
       // Accumulate response
       const buffer = this.responseBuffers.get(sessionId) || '';
       this.responseBuffers.set(sessionId, buffer + textContent.text);
     }
-    
+
     log('[MessageRouter] Received agent message:', {
       sessionId,
       role: agentMessage.role,
-      contentTypes: agentMessage.content.map(c => c.type),
+      contentTypes: agentMessage.content.map((c) => c.type),
     });
   }
-  
+
   /**
    * Handle partial response (streaming)
    */
-  private handlePartialResponse(sessionId: string, _originalMessage: RemoteMessage, delta: string): void {
+  private handlePartialResponse(
+    sessionId: string,
+    _originalMessage: RemoteMessage,
+    delta: string
+  ): void {
     // Accumulate partial response
     const buffer = this.responseBuffers.get(sessionId) || '';
     this.responseBuffers.set(sessionId, buffer + delta);
   }
-  
+
   /**
    * Send final accumulated response
    */
-  private async sendFinalResponse(sessionId: string, originalMessage: RemoteMessage): Promise<void> {
+  private async sendFinalResponse(
+    sessionId: string,
+    originalMessage: RemoteMessage
+  ): Promise<void> {
     const responseText = this.responseBuffers.get(sessionId);
 
     if (!responseText || !this.responseCallback) {
@@ -537,7 +558,7 @@ export class MessageRouter {
 
     await this.responseCallback(response);
   }
-  
+
   /**
    * Send error response
    */
@@ -561,31 +582,33 @@ export class MessageRouter {
 
     await this.responseCallback(response);
   }
-  
+
   /**
    * Get active session count
    */
   getActiveSessionCount(): number {
     return this.sessionMappings.size;
   }
-  
+
   /**
    * Get session mapping by key
    */
-  getSessionMapping(channelType: ChannelType, channelId: string, userId?: string): RemoteSessionMapping | undefined {
-    const key = userId 
-      ? `${channelType}:dm:${userId}`
-      : `${channelType}:group:${channelId}`;
+  getSessionMapping(
+    channelType: ChannelType,
+    channelId: string,
+    userId?: string
+  ): RemoteSessionMapping | undefined {
+    const key = userId ? `${channelType}:dm:${userId}` : `${channelType}:group:${channelId}`;
     return this.sessionMappings.get(key);
   }
-  
+
   /**
    * Get all session mappings
    */
   getAllSessionMappings(): RemoteSessionMapping[] {
     return Array.from(this.sessionMappings.values());
   }
-  
+
   /**
    * Clear session mapping
    */
@@ -602,7 +625,7 @@ export class MessageRouter {
     }
     return false;
   }
-  
+
   /**
    * Clear all sessions
    */
@@ -613,14 +636,14 @@ export class MessageRouter {
     this.processingSession.clear();
     log('[MessageRouter] Cleared all sessions');
   }
-  
+
   /**
    * Cleanup stale sessions (older than specified time)
    */
   cleanupStaleSessions(maxAge: number = 24 * 60 * 60 * 1000): number {
     const now = Date.now();
     let cleaned = 0;
-    
+
     for (const [key, mapping] of this.sessionMappings) {
       if (now - mapping.lastActiveAt > maxAge) {
         this.sessionMappings.delete(key);
@@ -628,11 +651,11 @@ export class MessageRouter {
         cleaned++;
       }
     }
-    
+
     if (cleaned > 0) {
       log('[MessageRouter] Cleaned up stale sessions:', cleaned);
     }
-    
+
     return cleaned;
   }
 }

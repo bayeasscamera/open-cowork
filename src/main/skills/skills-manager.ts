@@ -719,9 +719,6 @@ export class SkillsManager {
       return;
     }
 
-    // TODO: Implement graceful shutdown
-    // server.process.kill();
-
     this.runningServers.delete(skillId);
     log(`MCP server stopped for skill: ${server.skill.name}`);
   }

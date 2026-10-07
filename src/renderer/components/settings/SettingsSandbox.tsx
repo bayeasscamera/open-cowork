@@ -105,8 +105,9 @@ export function SettingsSandbox() {
     }
   }
 
-  // TODO: Re-enable when sandbox debugging is complete
-  // async function handleToggleSandbox() { ... }
+  // TODO: nothing in this panel writes `sandboxEnabled` — it is only read, so
+  // the setting stays reachable from the config file and the config tool alone.
+  // An inline toggle still has to be wired up.
 
   async function handleCheckStatus() {
     if (isChecking) return; // Prevent double-click
@@ -546,7 +547,8 @@ export function SettingsSandbox() {
                   <span className="text-sm font-semibold text-text-primary">SSH Remote Host</span>
                 </div>
                 <p className="text-xs text-text-muted leading-relaxed mb-3">
-                  Exécutez vos sessions sur un serveur GPU ou VPS distant sans consommer la mémoire locale.
+                  Exécutez vos sessions sur un serveur GPU ou VPS distant sans consommer la mémoire
+                  locale.
                 </p>
                 <div className="flex items-center justify-between text-xs text-text-secondary bg-surface p-2 rounded-lg border border-border/60">
                   <span>Protocole standard</span>
@@ -562,7 +564,8 @@ export function SettingsSandbox() {
                   <span className="text-sm font-semibold text-text-primary">Daytona Cloud</span>
                 </div>
                 <p className="text-xs text-text-muted leading-relaxed mb-3">
-                  Conteneurs cloud éphémères ou persistants avec hibernation automatique à coût zéro.
+                  Conteneurs cloud éphémères ou persistants avec hibernation automatique à coût
+                  zéro.
                 </p>
                 <div className="flex items-center justify-between text-xs text-text-secondary bg-surface p-2 rounded-lg border border-border/60">
                   <span>Serverless CLI</span>
