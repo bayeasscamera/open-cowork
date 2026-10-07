@@ -46,6 +46,7 @@ export function SettingsSandbox() {
   const [error, setError] = useState<LocalizedBanner | null>(null);
   const [success, setSuccess] = useState<LocalizedBanner | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isToggling, setIsToggling] = useState(false);
 
   // Aliased so the ~20 existing `isWindows` / `isMac` call sites below stay
   // untouched; the platform question itself now has a single implementation.
@@ -105,9 +106,35 @@ export function SettingsSandbox() {
     }
   }
 
-  // TODO: nothing in this panel writes `sandboxEnabled` — it is only read, so
-  // the setting stays reachable from the config file and the config tool alone.
-  // An inline toggle still has to be wired up.
+  /**
+   * Flip `sandboxEnabled` and persist it.
+   *
+   * The main process already reacts to the change: `config.save` goes through
+   * `syncConfigAfterMutation`, which calls `sessionManager.reloadSandbox()`
+   * whenever `sandboxEnabled` differs (see `src/main/ipc/config-handlers.ts`).
+   * Nothing else has to be told, so this is a plain save plus a status refresh.
+   */
+  async function handleToggleSandbox() {
+    if (isToggling || !isElectron) return;
+
+    setIsToggling(true);
+    setError(null);
+    setSuccess(null);
+
+    const next = !sandboxEnabled;
+    try {
+      await window.electronAPI.config.save({ sandboxEnabled: next });
+      setSandboxEnabled(next);
+      setSuccess({ text: t(next ? 'sandbox.enabledWillSetup' : 'sandbox.disabled') });
+      setTimeout(() => setSuccess(null), 3000);
+      await loadStatus();
+    } catch (err) {
+      console.error('Failed to save sandbox setting:', err);
+      setError({ text: t('sandbox.failedToSave') });
+    } finally {
+      setIsToggling(false);
+    }
+  }
 
   async function handleCheckStatus() {
     if (isChecking) return; // Prevent double-click
@@ -318,9 +345,28 @@ export function SettingsSandbox() {
           <Shield className="w-8 h-8" />
         </div>
         <div>
-          <h3 className="text-base font-semibold text-text-primary">
-            {t('sandbox.enableSandbox')}
-          </h3>
+          <div className="flex items-center justify-center gap-3">
+            <h3 className="text-base font-semibold text-text-primary">
+              {t('sandbox.enableSandbox')}
+            </h3>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={sandboxEnabled}
+              aria-label={t('sandbox.enableSandbox')}
+              onClick={handleToggleSandbox}
+              disabled={isToggling || !isElectron}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                sandboxEnabled ? 'bg-accent' : 'bg-surface-active'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  sandboxEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
           <p className="text-sm text-text-muted mt-1">
             {isWindows
               ? t('sandbox.wslDesc')
