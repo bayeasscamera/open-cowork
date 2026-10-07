@@ -728,7 +728,13 @@ export class SkillsManager {
     //
     // this.runningServers.set(skill.id, { process: proc, skill });
 
-    log(`MCP server started for skill: ${skill.name}`);
+    // Deliberately not a success line. Nothing was spawned and `runningServers`
+    // is never populated, so `stopMcpServer` below always finds nothing — a
+    // "started" log would send the next reader hunting for a process that does
+    // not exist. The real MCP lifecycle lives in `src/main/mcp/mcp-manager.ts`;
+    // this method has no callers and is kept only as a documented extension
+    // point.
+    logWarn(`MCP server startup is not implemented — nothing started for skill: ${skill.name}`);
   }
 
   /**
