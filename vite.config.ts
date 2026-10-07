@@ -38,6 +38,14 @@ const nodeBuiltins = builtinModules.flatMap((m) => [m, `node:${m}`]);
 // helper crash on inherited enumerable exports from the external `ws` package.
 const googleGenAiExternals = ['@google/genai', /^@google\/genai\//];
 const mcpExternals = [/^@modelcontextprotocol\/(?:client|core|server)(?:\/.*)?$/];
+// mistral 2.x (pulled in by pi-ai 0.73) ships an OpenTelemetry integration it
+// loads through a guarded dynamic import, and declares `@opentelemetry/api` as
+// an OPTIONAL peer: the import sits in a try/catch and degrades to a no-op when
+// the package is absent. It is absent here, so the bundler must not resolve
+// named exports off it — that fails the build ("trace is not exported by
+// __vite-optional-peer-dep..."). External keeps the lazy chunk's require, whose
+// failure at load time is exactly the path mistral already handles.
+const otelExternals = [/^@opentelemetry\/api(?:\/.*)?$/];
 const ignoredWatchPaths = [
   '**/release/**',
   '**/dist/**',
@@ -74,6 +82,7 @@ export default defineConfig({
                 '@larksuiteoapi/node-sdk',
                 'openai',
                 ...mcpExternals,
+                ...otelExternals,
                 'electron-updater',
                 'chokidar',
                 'archiver',
