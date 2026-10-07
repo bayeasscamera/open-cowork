@@ -18,6 +18,30 @@ const KEY_FILE_NAME = 'encryption-key.bin';
 const KEY_LENGTH_BYTES = 32;
 const MAGIC_PLAINTEXT = Buffer.from('COWORKPLAINKEY1');
 
+/**
+ * A key file is present but this process cannot decode it.
+ *
+ * Raised instead of rotating, because an undecodable key file is evidence
+ * about *this process*, not about the key. `safeStorage.decryptString` also
+ * fails when the keychain entry is denied to a re-signed build, when the login
+ * keychain is still locked after the machine slept, or when the OS keyring is
+ * briefly unreachable during boot — and in every one of those the key itself is
+ * perfectly intact.
+ *
+ * Callers must therefore treat this as "cannot read right now", never as "the
+ * stored data is unusable". Leaving the file untouched is what lets the next
+ * launch recover.
+ */
+export class StoreKeyUnreadableError extends Error {
+  readonly keyPath: string;
+
+  constructor(keyPath: string, reason: string) {
+    super(`Store encryption key is present but unreadable (${reason}): ${keyPath}`);
+    this.name = 'StoreKeyUnreadableError';
+    this.keyPath = keyPath;
+  }
+}
+
 function resolveKeyDir(): string {
   try {
     if (app && typeof app.getPath === 'function') {
@@ -91,14 +115,26 @@ export function resolveStoreEncryptionKey(): string {
   }
 
   const existing = readKeyFile(keyPath);
-  if (existing) {
+  // A zero-byte file holds no key, so replacing it destroys nothing — treat it
+  // exactly like an absent file. Anything else is a key we must not touch.
+  if (existing && existing.length > 0) {
     const key = decodeKeyFile(existing, safeStorageAvailable);
     if (key) {
       return key;
     }
-    // Unreadable (e.g. keyring changed) — rotate to a new key. Stores will
-    // fall back to legacy keys via createEncryptedStoreWithKeyRotation and
-    // otherwise re-key through the normal unreadable-recovery path.
+
+    // Deliberately NO rotation here.
+    //
+    // This function used to generate a fresh key and overwrite the file. That
+    // turned a read failure into permanent data loss: `config.json` is
+    // encrypted with this key, so replacing it makes every stored secret — the
+    // user's configured providers included — undecryptable, and the store's own
+    // recovery path can only move the file aside and restart from defaults.
+    // The key file stays exactly where it is, so the next launch retries it.
+    throw new StoreKeyUnreadableError(
+      keyPath,
+      safeStorageAvailable ? 'the OS keyring rejected it' : 'the OS keyring is unavailable'
+    );
   }
 
   const { raw, file } = generateNewKey(safeStorageAvailable);

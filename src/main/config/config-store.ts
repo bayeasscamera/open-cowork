@@ -12,14 +12,15 @@
  * Dependencies: electron-store, auth-utils, api-model-presets
  */
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import Store, { type Options as StoreOptions } from 'electron-store';
-import { log, logWarn } from '../utils/logger';
+import { log, logWarn, logError } from '../utils/logger';
 import {
   createEncryptedStoreWithKeyRotation,
   getLegacyDerivedKeyHexes,
 } from '../utils/store-encryption';
-import { resolveStoreEncryptionKey } from '../utils/store-key-manager';
+import { resolveStoreEncryptionKey, StoreKeyUnreadableError } from '../utils/store-key-manager';
 import {
   isOpenAIProvider,
   isOllamaLegacyCustomOpenAIConfig,
@@ -923,14 +924,38 @@ export class ConfigStore {
     // installs migrate transparently via key rotation.
     let stableKey = 'open-cowork-config-stable-v1';
     let keyringLegacyKeys: string[] = [];
+    let degradedStoreDir: string | null = null;
     try {
       stableKey = resolveStoreEncryptionKey();
       keyringLegacyKeys = ['open-cowork-config-stable-v1'];
     } catch (keyError) {
-      logWarn(
-        '[ConfigStore] Falling back to derived store key (keyring unavailable):',
-        keyError instanceof Error ? keyError.message : String(keyError)
-      );
+      if (keyError instanceof StoreKeyUnreadableError) {
+        // The key file exists but this process cannot decode it — almost always
+        // a re-signed build or a keychain that is still locked, not a wrong key.
+        //
+        // Opening the real store here is what destroyed users' configuration:
+        // `createEncryptedStoreWithKeyRotation` cannot decrypt it with any
+        // available key, so it moves `config.json` aside and starts from
+        // defaults — taking every configured provider with it, permanently.
+        //
+        // Instead, run this session on a throwaway directory. The real
+        // `config.json` is never read or written, so the next launch (with a
+        // readable keychain) finds everything intact.
+        degradedStoreDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-config-unreadable-key-'));
+        logError(
+          '[ConfigStore] Store key is unreadable — running on a throwaway store; the existing config.json was NOT modified and will be used again once the key can be read.',
+          keyError.message
+        );
+      } else {
+        logWarn(
+          '[ConfigStore] Falling back to derived store key (keyring unavailable):',
+          keyError instanceof Error ? keyError.message : String(keyError)
+        );
+      }
+    }
+
+    if (degradedStoreDir) {
+      storeOptions.cwd = degradedStoreDir;
     }
 
     this.store = createEncryptedStoreWithKeyRotation<AppConfigRecord>({
@@ -2038,7 +2063,9 @@ export class ConfigStore {
    * - Custom Anthropic: ANTHROPIC_API_KEY = apiKey
    * - OpenRouter: ANTHROPIC_AUTH_TOKEN = apiKey, ANTHROPIC_API_KEY = '' (proxy mode)
    */
-  async applyToEnv(options?: { externalBudgetMs?: number }): Promise<{ externalDeferred: boolean }> {
+  async applyToEnv(options?: {
+    externalBudgetMs?: number;
+  }): Promise<{ externalDeferred: boolean }> {
     const config = this.getAll();
     const activeProfile = config.profiles?.[config.activeProfileKey] || {
       apiKey: config.apiKey,
@@ -2079,10 +2106,13 @@ export class ConfigStore {
               this.pendingExternalSecrets = null;
             }
           );
-          log('[Config] External secret budget expired, deferring vault resolution to background:', {
-            configSetId: config.activeConfigSetId,
-            kind: source.kind,
-          });
+          log(
+            '[Config] External secret budget expired, deferring vault resolution to background:',
+            {
+              configSetId: config.activeConfigSetId,
+              kind: source.kind,
+            }
+          );
         } else if (budgeted.error) {
           log('[Config] External secret could not be resolved:', {
             configSetId: config.activeConfigSetId,

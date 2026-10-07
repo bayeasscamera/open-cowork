@@ -86,4 +86,61 @@ describe('store key manager', () => {
 
     expect(keyA).not.toBe(keyB);
   });
+
+  it('refuses to overwrite a key file it cannot decode', async () => {
+    registerKeyManagerMocks({ encryptionAvailable: true });
+    const { resolveStoreEncryptionKey, StoreKeyUnreadableError } = await loadManager();
+
+    const keyPath = path.join(userDataDir, 'keyring', 'encryption-key.bin');
+    fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+    const foreign = Buffer.from('a key this build cannot open');
+    fs.writeFileSync(keyPath, foreign);
+
+    expect(() => resolveStoreEncryptionKey()).toThrow(StoreKeyUnreadableError);
+
+    // The whole point of the guard: the file is untouched. Overwriting it — what
+    // this used to do — makes every secret encrypted with it, the user's
+    // configured providers included, permanently undecryptable.
+    expect(fs.readFileSync(keyPath)).toEqual(foreign);
+  });
+
+  it('keeps the key across a keyring outage instead of rotating it away', async () => {
+    // Launch 1 — keyring available, so a key is created and persisted.
+    registerKeyManagerMocks({ encryptionAvailable: true });
+    const first = await loadManager();
+    const originalKey = first.resolveStoreEncryptionKey();
+
+    const keyPath = path.join(userDataDir, 'keyring', 'encryption-key.bin');
+    const onDisk = fs.readFileSync(keyPath);
+
+    // Launch 2 — keyring unavailable: a locked login keychain after the machine
+    // slept, or an unreachable keyring at boot. Nothing is written.
+    vi.resetModules();
+    registerKeyManagerMocks({ encryptionAvailable: false });
+    const second = await loadManager();
+    expect(() => second.resolveStoreEncryptionKey()).toThrow(second.StoreKeyUnreadableError);
+    expect(fs.readFileSync(keyPath)).toEqual(onDisk);
+
+    // Launch 3 — keyring back. The SAME key is returned, so the config
+    // encrypted with it is still readable. Before the guard, launch 2 would
+    // have replaced the file with a fresh plaintext key and the config would
+    // have been lost for good.
+    vi.resetModules();
+    registerKeyManagerMocks({ encryptionAvailable: true });
+    const third = await loadManager();
+    expect(third.resolveStoreEncryptionKey()).toBe(originalKey);
+  });
+
+  it('still rotates a zero-byte key file, which holds no key to lose', async () => {
+    registerKeyManagerMocks({ encryptionAvailable: true });
+    const { resolveStoreEncryptionKey } = await loadManager();
+
+    const keyPath = path.join(userDataDir, 'keyring', 'encryption-key.bin');
+    fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+    fs.writeFileSync(keyPath, Buffer.alloc(0));
+
+    const key = resolveStoreEncryptionKey();
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect(fs.readFileSync(keyPath).length).toBeGreaterThan(0);
+  });
 });
