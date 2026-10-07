@@ -102,6 +102,8 @@ win:
     - from: .claude/skills
       to: skills
     # Tray icons — setupTray() looks for these in the Resources root
+    - from: resources/tray-icon.ico
+      to: tray-icon.ico
     - from: resources/tray-icon.png
       to: tray-icon.png
     # Headless CLI launcher (scripts/deploy-local.sh links it on PATH)

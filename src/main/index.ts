@@ -21,6 +21,7 @@ import {
   ipcMain,
   dialog,
   Menu,
+  nativeImage,
   nativeTheme,
   Tray,
   globalShortcut,
@@ -552,20 +553,31 @@ function setupTray() {
       : process.platform === 'win32'
         ? 'tray-icon.ico'
         : 'tray-icon.png';
-  // A multi-resolution .ico is what the Windows tray actually wants, but the
-  // asset does not exist yet and the .png fallback below covers it, so this is
-  // a packaging gap rather than a bug. Creating the .ico needs a Windows check.
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, iconName)
     : join(__dirname, '../../resources', iconName);
 
-  // On Windows, fall back to .png if the .ico file has not been created yet
-  const resolvedIconPath =
-    process.platform === 'win32' && !fs.existsSync(iconPath)
-      ? app.isPackaged
-        ? join(process.resourcesPath, 'tray-icon.png')
-        : join(__dirname, '../../resources', 'tray-icon.png')
-      : iconPath;
+  // Windows gets a multi-resolution .ico (`resources/tray-icon.ico`: 16px + 32px,
+  // DIB entries, like `resources/icon.ico`). The .png stays as the safety net —
+  // `nativeImage` decodes no .ico at all on some platforms, and handing `Tray` an
+  // empty image shows an invisible icon, which is worse than a single-size one.
+  // So decode it here and keep the .png unless a real bitmap comes back.
+  const pngPath = app.isPackaged
+    ? join(process.resourcesPath, 'tray-icon.png')
+    : join(__dirname, '../../resources', 'tray-icon.png');
+
+  let resolvedIconPath = iconPath;
+  if (process.platform === 'win32') {
+    const decoded = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : null;
+    if (!decoded || decoded.isEmpty()) {
+      log(
+        '[Tray] tray-icon.ico unusable (present:',
+        fs.existsSync(iconPath),
+        ') — falling back to tray-icon.png'
+      );
+      resolvedIconPath = pngPath;
+    }
+  }
 
   // Gracefully skip tray if icon is missing (e.g. dev environment)
   if (!fs.existsSync(resolvedIconPath)) {
