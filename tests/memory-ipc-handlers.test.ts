@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   },
   store: { isConfigured: vi.fn(), getAll: vi.fn() },
   sendToRenderer: vi.fn(),
+  /** Accessors handed to personalFilesHandler, so the test can call them later. */
+  windowGetters: [] as Array<() => unknown>,
 }));
 
 vi.mock('electron', () => ({
@@ -33,9 +35,10 @@ vi.mock('electron', () => ({
 }));
 vi.mock('../src/main/config/config-store', () => ({ configStore: mocks.store }));
 vi.mock('../src/main/memory/personal-files-manager', () => ({
-  personalFilesHandler:
-    (_getWindow: unknown, fn: (input: unknown) => unknown) => (_event: unknown, input: unknown) =>
-      fn(input),
+  personalFilesHandler: (getWindow: () => unknown, fn: (input: unknown) => unknown) => {
+    mocks.windowGetters.push(getWindow);
+    return (_event: unknown, input: unknown) => fn(input);
+  },
 }));
 vi.mock('../src/main/events/renderer-sender', () => ({ sendToRenderer: mocks.sendToRenderer }));
 
@@ -51,12 +54,13 @@ const register = (
   options: {
     withService?: boolean;
     sessionManager?: { clearAllCachedAgentSessions: () => void } | null;
+    getMainWindow?: () => unknown;
   } = {}
 ) => {
   const withService = options.withService !== false;
   registerMemoryIpcHandlers({
     getMemoryService: () => (withService ? (mocks.service as never) : null),
-    getMainWindow: () => null,
+    getMainWindow: (options.getMainWindow ?? (() => null)) as never,
     getSessionManager: () => (options.sessionManager ?? null) as never,
   });
 };
@@ -64,6 +68,7 @@ const register = (
 describe('memory IPC handlers', () => {
   beforeEach(() => {
     mocks.handlers.clear();
+    mocks.windowGetters.length = 0;
     vi.clearAllMocks();
     mocks.store.isConfigured.mockReturnValue(true);
     mocks.store.getAll.mockReturnValue({ memoryEnabled: true });
@@ -128,5 +133,22 @@ describe('memory IPC handlers', () => {
       type: 'config.status',
       payload: { isConfigured: true, config: { memoryEnabled: true } },
     });
+  });
+
+  it('gives the personalFiles handlers the live window, not the one captured at registration', () => {
+    const stale = { tag: 'stale' };
+    const live = { tag: 'live' };
+    let current: unknown = stale;
+
+    register({ getMainWindow: () => current });
+    current = live;
+
+    // Each channel received an accessor, not a snapshot. macOS recreates the
+    // window on `app.on('activate')` after the user closes it, so a snapshot
+    // would hand every personalFiles handler a destroyed window.
+    expect(mocks.windowGetters).toHaveLength(4);
+    for (const getWindow of mocks.windowGetters) {
+      expect(getWindow()).toBe(live);
+    }
   });
 });

@@ -21,8 +21,12 @@ interface MemoryIpcContext {
 }
 
 export function registerMemoryIpcHandlers(context: MemoryIpcContext): void {
+  // `memory` and `sessionManager` are each assigned once per run mode before this
+  // registration runs, so capturing them here is safe. `mainWindow` is not: it is
+  // reassigned whenever a window is created and nulled when it closes, and macOS
+  // recreates it on `app.on('activate')`. It is therefore read at call time by
+  // the personalFiles handlers below, matching git-handlers and config-handlers.
   const memory = context.getMemoryService();
-  const mainWindow = context.getMainWindow();
   const sessionManager = context.getSessionManager();
   ipcMain.handle('memory.getOverview', (_event, cwd?: string) => {
     if (!memory) {
@@ -88,28 +92,28 @@ export function registerMemoryIpcHandlers(context: MemoryIpcContext): void {
   ipcMain.handle(
     'personalFiles.list',
     personalFilesHandler(
-      () => mainWindow,
+      () => context.getMainWindow(),
       () => memory?.personalFiles.list() ?? { success: false, error: 'unavailable' }
     )
   );
   ipcMain.handle(
     'personalFiles.read',
     personalFilesHandler(
-      () => mainWindow,
+      () => context.getMainWindow(),
       (input) => memory?.personalFiles.read(input) ?? { success: false, error: 'unavailable' }
     )
   );
   ipcMain.handle(
     'personalFiles.history',
     personalFilesHandler(
-      () => mainWindow,
+      () => context.getMainWindow(),
       (input) => memory?.personalFiles.history(input) ?? { success: false, error: 'unavailable' }
     )
   );
   ipcMain.handle(
     'personalFiles.restore',
     personalFilesHandler(
-      () => mainWindow,
+      () => context.getMainWindow(),
       (input) => memory?.personalFiles.restore(input) ?? { success: false, error: 'unavailable' }
     )
   );
@@ -182,7 +186,9 @@ export function registerMemoryIpcHandlers(context: MemoryIpcContext): void {
           : [];
         return sm.getMemoryManager().addNote(title, payload.content.trim(), tags);
       } catch (err) {
-        throw new Error(`memory.notes.add failed: ${err instanceof Error ? err.message : String(err)}`);
+        throw new Error(
+          `memory.notes.add failed: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
     }
   );

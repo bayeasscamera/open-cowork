@@ -17,7 +17,12 @@ interface WindowIpcContext {
 }
 
 export function registerWindowIpcHandlers(context: WindowIpcContext): void {
-  const mainWindow = context.getMainWindow();
+  // No snapshot of the window here. `mainWindow` is reassigned whenever a window
+  // is created (main/index.ts) and nulled when it closes, and macOS recreates it
+  // on `app.on('activate')` after the user closes it — so a handle captured at
+  // registration would leave the titlebar's minimize/maximize/close buttons
+  // driving a destroyed window. Same convention as git-handlers and
+  // config-handlers: read the accessor inside the handler.
   ipcMain.handle('get-version', () => {
     try {
       return app.getVersion();
@@ -57,7 +62,7 @@ export function registerWindowIpcHandlers(context: WindowIpcContext): void {
 
   ipcMain.on('window.minimize', () => {
     try {
-      mainWindow?.minimize();
+      context.getMainWindow()?.minimize();
     } catch (error) {
       logError('[Window] Error minimizing:', error);
     }
@@ -65,6 +70,7 @@ export function registerWindowIpcHandlers(context: WindowIpcContext): void {
 
   ipcMain.on('window.maximize', () => {
     try {
+      const mainWindow = context.getMainWindow();
       if (mainWindow?.isMaximized()) {
         mainWindow.unmaximize();
       } else {
@@ -77,7 +83,7 @@ export function registerWindowIpcHandlers(context: WindowIpcContext): void {
 
   ipcMain.on('window.close', () => {
     try {
-      mainWindow?.close();
+      context.getMainWindow()?.close();
     } catch (error) {
       logError('[Window] Error closing:', error);
     }

@@ -103,4 +103,33 @@ describe('window IPC handlers', () => {
     expect(mocks.window.maximize).not.toHaveBeenCalled();
     expect(mocks.window.close).toHaveBeenCalledTimes(1);
   });
+
+  it('drives the window that is live now, not the one captured at registration', () => {
+    const makeWindow = () => ({
+      minimize: vi.fn(),
+      maximize: vi.fn(),
+      unmaximize: vi.fn(),
+      close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    });
+    const stale = makeWindow();
+    const live = makeWindow();
+    let current: unknown = stale;
+
+    registerWindowIpcHandlers({ getMainWindow: () => current as never });
+    // macOS recreates the window on `app.on('activate')` after the user closes
+    // it; the titlebar buttons must follow the new window, not the old handle.
+    current = live;
+
+    mocks.listeners.get('window.minimize')?.({});
+    mocks.listeners.get('window.maximize')?.({});
+    mocks.listeners.get('window.close')?.({});
+
+    expect(live.minimize).toHaveBeenCalledTimes(1);
+    expect(live.maximize).toHaveBeenCalledTimes(1);
+    expect(live.close).toHaveBeenCalledTimes(1);
+    expect(stale.minimize).not.toHaveBeenCalled();
+    expect(stale.maximize).not.toHaveBeenCalled();
+    expect(stale.close).not.toHaveBeenCalled();
+  });
 });
