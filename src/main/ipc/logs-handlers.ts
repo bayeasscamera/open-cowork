@@ -38,9 +38,12 @@ const DEFAULT_LOGS_CONTEXT: LogsIpcContext = {
 };
 
 export function registerLogsIpcHandlers(context: LogsIpcContext = DEFAULT_LOGS_CONTEXT): void {
-  const sessionManager = context.getSessionManager();
-  const mainWindow = context.getMainWindow();
-  const currentWorkingDir = context.getCurrentWorkingDir();
+  // Deliberately no snapshot of `context` here. `mainWindow` is recreated
+  // whenever macOS reopens the app after its window was closed
+  // (`app.on('activate')` in main/index.ts), and `logs.export` parents the save
+  // dialog to it: a handle captured at registration goes stale and the dialog is
+  // handed a destroyed window. Same convention as git-handlers and
+  // config-handlers — read the accessor inside the handler.
   ipcMain.handle('logs.getPath', () => {
     try {
       return getLogFilePath();
@@ -148,6 +151,8 @@ export function registerLogsIpcHandlers(context: LogsIpcContext = DEFAULT_LOGS_C
 
   ipcMain.handle('logs.export', async () => {
     try {
+      const sessionManager = context.getSessionManager();
+      const currentWorkingDir = context.getCurrentWorkingDir();
       const logFiles = getAllLogFiles();
       const diagnosticsSummary = buildDiagnosticsSummary({
         app: {
@@ -192,15 +197,22 @@ export function registerLogsIpcHandlers(context: LogsIpcContext = DEFAULT_LOGS_C
         },
       });
 
-      // Show save dialog
-      const result = await dialog.showSaveDialog(mainWindow!, {
+      // Show save dialog, parented to the window that is alive *now*. After the
+      // window has been recreated the handle must be re-read, and a destroyed
+      // window must never be passed as the parent (the previous `mainWindow!`
+      // asserted a non-null window that the snapshot could not guarantee).
+      const parentWindow = context.getMainWindow();
+      const dialogOptions = {
         title: 'Export Logs',
         defaultPath: `opencowork-logs-${new Date().toISOString().split('T')[0]}.zip`,
         filters: [
           { name: 'ZIP Archive', extensions: ['zip'] },
           { name: 'All Files', extensions: ['*'] },
         ],
-      });
+      };
+      const result = parentWindow
+        ? await dialog.showSaveDialog(parentWindow, dialogOptions)
+        : await dialog.showSaveDialog(dialogOptions);
 
       if (result.canceled || !result.filePath) {
         return { success: false, error: 'User cancelled' };

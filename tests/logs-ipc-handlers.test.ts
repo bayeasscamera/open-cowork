@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { BrowserWindow } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -188,5 +189,41 @@ describe('logs IPC handlers', () => {
       success: false,
       error: 'User cancelled',
     });
+  });
+
+  it('reads the window and working directory at call time, not at registration', async () => {
+    vi.resetAllMocks();
+
+    // Registration happens once, at boot, and the window is recreated whenever
+    // macOS reopens the app after its window was closed. A snapshot taken at
+    // registration would hand `logs.export` a destroyed parent window, so the
+    // handlers must read the accessors when they run.
+    let currentWindow = { tag: 'stale' } as unknown as BrowserWindow | null;
+    let currentDir: string | null = '/before';
+
+    registerLogsIpcHandlers({
+      getSessionManager: () => null,
+      getMainWindow: () => currentWindow,
+      getCurrentWorkingDir: () => currentDir,
+    });
+
+    currentWindow = { tag: 'live' };
+    currentDir = '/after';
+
+    mocks.getAllLogFiles.mockReturnValue([]);
+    mocks.buildDiagnosticsSummary.mockReturnValue({ exportedAt: '2024-01-01T00:00:00.000Z' });
+    mocks.showSaveDialog.mockResolvedValue({ canceled: true, filePath: undefined });
+
+    await handler('logs.export')(undefined);
+
+    expect(mocks.showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ tag: 'live' }),
+      expect.anything()
+    );
+    expect(mocks.buildDiagnosticsSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtime: expect.objectContaining({ currentWorkingDir: '/after' }),
+      })
+    );
   });
 });

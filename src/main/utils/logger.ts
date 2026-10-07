@@ -358,35 +358,47 @@ function serializeLogArg(arg: unknown): string {
 }
 
 /**
- * Write to log file
+ * Append one already-formatted line to the log file, opening it on demand.
+ *
+ * Split out of `writeToFile` so the always-persist path (`logAlways`) can reuse
+ * it without passing through the developer-logs gate.
+ */
+function appendLogLine(level: string, args: unknown[]): void {
+  if (!logStream) {
+    initLogFile();
+  }
+
+  if (!logStream) {
+    return;
+  }
+
+  try {
+    const timestamp = getTimestamp();
+    const ctxPrefix = formatCtxPrefix();
+    const message = args.map((arg) => serializeLogArg(arg)).join(' ');
+
+    logStream.write(`[${timestamp}] [${level}] ${ctxPrefix}${message}\n`);
+
+    // Check if rotation is needed every LOG_ROTATION_CHECK_INTERVAL entries
+    logWriteCounter += 1;
+    if (logWriteCounter >= LOG_ROTATION_CHECK_INTERVAL) {
+      logWriteCounter = 0;
+      rotateLogIfNeeded();
+    }
+  } catch (error) {
+    safeConsoleError('[Logger] Failed to write to log file:', error);
+  }
+}
+
+/**
+ * Write to log file, subject to the developer-logs setting.
  */
 function writeToFile(level: string, ...args: unknown[]): void {
   if (!shouldPersistLogLevel(level, devLogsEnabled)) {
     return;
   }
 
-  if (!logStream) {
-    initLogFile();
-  }
-
-  if (logStream) {
-    try {
-      const timestamp = getTimestamp();
-      const ctxPrefix = formatCtxPrefix();
-      const message = args.map((arg) => serializeLogArg(arg)).join(' ');
-
-      logStream.write(`[${timestamp}] [${level}] ${ctxPrefix}${message}\n`);
-
-      // Check if rotation is needed every LOG_ROTATION_CHECK_INTERVAL entries
-      logWriteCounter += 1;
-      if (logWriteCounter >= LOG_ROTATION_CHECK_INTERVAL) {
-        logWriteCounter = 0;
-        rotateLogIfNeeded();
-      }
-    } catch (error) {
-      safeConsoleError('[Logger] Failed to write to log file:', error);
-    }
-  }
+  appendLogLine(level, args);
 }
 
 export function shouldPersistLogLevel(level: string, detailedLogsEnabled: boolean): boolean {
@@ -411,6 +423,21 @@ export function logWarn(...args: unknown[]): void {
 export function logError(...args: unknown[]): void {
   safeConsoleError(`[${getTimestamp()}]`, ...args);
   writeToFile('ERROR', ...args);
+}
+
+/**
+ * Persist one line regardless of the developer-logs setting.
+ *
+ * Reserved for one-shot startup diagnostics. `enableDevLogs` exists to keep
+ * verbose per-request logging off disk; the boot report is not that — it fires
+ * once per launch and is the only honest boot measurement the app has. Emitted
+ * through `log()` it was dropped by the default `enableDevLogs: false`, which
+ * boot applies *before* the report is written, so `boot-perf` produced nothing
+ * in any default install.
+ */
+export function logAlways(...args: unknown[]): void {
+  safeConsoleLog(`[${getTimestamp()}]`, ...args);
+  appendLogLine('INFO', args);
 }
 
 // ── Context-aware logging — reads sessionId/traceId from AsyncLocalStorage ──
@@ -497,16 +524,12 @@ export function setDevLogsEnabled(enabled: boolean): void {
   devLogsEnabled = enabled;
   safeConsoleLog(`[Logger] Developer logs ${enabled ? 'enabled' : 'disabled'}`);
 
-  // If disabling, close the log file
-  if (!enabled && logStream) {
-    try {
-      logStream.end();
-      clearLogStreamState();
-      safeConsoleLog('[Logger] Log file closed (dev logs disabled)');
-    } catch (error) {
-      safeConsoleError('[Logger] Failed to close log file:', error);
-    }
-  }
+  // Disabling stops *detailed* lines; it deliberately leaves the file open.
+  // Boot writes its first lines — and so opens the file — before this setting is
+  // applied, so closing here never produced "no log file". It only split one
+  // session across two, because the next WARN/ERROR or startup diagnostic (which
+  // always persist) immediately reopened a second one. One session, one file,
+  // with the startup context intact.
 }
 
 /**

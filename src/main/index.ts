@@ -51,10 +51,7 @@ import { shutdownSandbox, getSandboxAdapter } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { AppMenuState, ClientEvent, ServerEvent } from '../shared/types';
-import {
-  WORKSPACE_PANELS,
-  type WorkspacePanelDescriptor,
-} from '../shared/workspace-panels';
+import { WORKSPACE_PANELS, type WorkspacePanelDescriptor } from '../shared/workspace-panels';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
 import { startNavServer, stopNavServer } from './nav-server';
@@ -80,7 +77,7 @@ import {
 } from './ipc/client-event-handler';
 import { getUnsupportedWorkspacePathReason } from './workspace-path-constraints';
 
-import { log, logWarn, logError, closeLogFile, setDevLogsEnabled } from './utils/logger';
+import { log, logWarn, logError, logAlways, closeLogFile, setDevLogsEnabled } from './utils/logger';
 import Store from 'electron-store';
 import { safeOpenExternal } from './utils/safe-open-external';
 import { registerArtifactsIpcHandlers } from './ipc/artifacts-handlers';
@@ -113,7 +110,11 @@ import { registerWindowIpcHandlers } from './ipc/window-handlers';
 import * as path from 'path';
 import { registerModsIpcHandlers } from './ipc/mods-handlers';
 import { registerModsV2IpcHandlers } from './ipc/mods-v2-handlers';
-import { ModApprovalStore, type ApprovalStoreLike, type ApprovedMod } from './mods/v2/approval-store';
+import {
+  ModApprovalStore,
+  type ApprovalStoreLike,
+  type ApprovedMod,
+} from './mods/v2/approval-store';
 import { ModInstaller, type InstalledMod } from './mods/v2/installer';
 import { createNodeImporter } from './mods/v2/loader';
 import { getModsRuntime } from './mods/v2/runtime';
@@ -186,14 +187,24 @@ CrashGuard.initialize();
 // Current working directory (persisted between sessions)
 let currentWorkingDir: string | null = null;
 
-// Load .env file from project root (for development)
-const envPath = resolve(__dirname, '../../.env');
-log('[dotenv] Loading from:', envPath);
-const dotenvResult = config({ path: envPath });
-if (dotenvResult.error) {
-  logWarn('[dotenv] Failed to load .env:', dotenvResult.error.message);
-} else {
-  log('[dotenv] Loaded successfully');
+// Load a `.env` file — development only.
+//
+// In a packaged app `__dirname` resolves inside `app.asar`, so `../../.env`
+// names an archive member that can never exist: every launch wrote
+// "ENOENT, .env not found in .../app.asar" as a WARN into the user's log before
+// the window appeared. It is also a path the app does not own, so reading it in
+// production buys nothing. Absence is now the quiet, expected case; only a file
+// that exists but cannot be loaded is worth surfacing.
+if (!app.isPackaged) {
+  const envPath = resolve(__dirname, '../../.env');
+  if (fs.existsSync(envPath)) {
+    const dotenvResult = config({ path: envPath });
+    if (dotenvResult.error) {
+      logWarn('[dotenv] Failed to load .env:', dotenvResult.error.message);
+    } else {
+      log('[dotenv] Loaded successfully:', envPath);
+    }
+  }
 }
 
 // Apply saved config (this overrides .env if config exists)
@@ -925,7 +936,11 @@ async function setWorkingDir(
   // "no directory" mid-chat would silently change tool scoping.
   if (!newDir) {
     if (sessionId) {
-      return { success: false, path: '', error: 'Cannot clear the directory of an existing session' };
+      return {
+        success: false,
+        path: '',
+        error: 'Cannot clear the directory of an existing session',
+      };
     }
     sendToRenderer({
       type: 'workdir.changed',
@@ -1036,8 +1051,7 @@ function refreshA2AServer(): { running: boolean; url: string } {
       token: config.a2aToken,
       appVersion: app.getVersion(),
       backend: createProductionA2ABackend(sessionManager),
-      onLog: (message, details) =>
-        log(message, details as Record<string, unknown> | undefined),
+      onLog: (message, details) => log(message, details as Record<string, unknown> | undefined),
     });
     return { running: true, url: a2aServer.url };
   } catch (error) {
@@ -1785,7 +1799,9 @@ app
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.on('did-finish-load', () => {
         bootProfiler.mark('window-did-finish-load');
-        log(`[BootPerf] Boot stages (ms):\n${bootProfiler.format()}`);
+        // Always persisted: the dev-logs setting is applied earlier in this same
+        // boot, so `log()` would drop the only boot measurement the app produces.
+        logAlways(`[BootPerf] Boot stages (ms):\n${bootProfiler.format()}`);
         sendToRenderer({
           type: 'native-theme.changed',
           payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },
@@ -2523,7 +2539,10 @@ registerModsIpcHandlers();
   // Load approved mods at startup, after the handlers exist so the UI can read
   // health immediately. Failures are reported, never fatal: Cowork must start.
   void installer.loadInstalled(runtime?.bus ?? new ModEventBus()).then(
-    (outcome) => log(`[Mods] Installed mods loaded: ${outcome.loaded.join(', ') || '(none)'}${outcome.refused.length > 0 ? `; refused: ${outcome.refused.map((entry) => entry.id).join(', ')}` : ''}`),
+    (outcome) =>
+      log(
+        `[Mods] Installed mods loaded: ${outcome.loaded.join(', ') || '(none)'}${outcome.refused.length > 0 ? `; refused: ${outcome.refused.map((entry) => entry.id).join(', ')}` : ''}`
+      ),
     (error: unknown) => logWarn('[Mods] Failed to load installed mods:', error)
   );
 }
